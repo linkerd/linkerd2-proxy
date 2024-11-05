@@ -135,26 +135,25 @@ pub mod proto {
                 server_ips: _,
             } = proto;
 
-            let local_rate_limit = {
-                match protocol
-                    .clone()
-                    .and_then(|api::ProxyProtocol { kind }| kind)
-                    .ok_or(InvalidServer::MissingProxyProtocol)?
-                {
-                    api::proxy_protocol::Kind::Detect(api::proxy_protocol::Detect {
-                        http_local_rate_limit,
-                        ..
-                    }) => http_local_rate_limit.unwrap_or_default().into(),
-                    api::proxy_protocol::Kind::Http1(api::proxy_protocol::Http1 {
-                        local_rate_limit,
-                        ..
-                    })
-                    | api::proxy_protocol::Kind::Http2(api::proxy_protocol::Http2 {
-                        local_rate_limit,
-                        ..
-                    }) => local_rate_limit.unwrap_or_default().into(),
-                    _ => Default::default(),
-                }
+            let local_rate_limit = match protocol
+                .clone()
+                .and_then(|api::ProxyProtocol { kind }| kind)
+                .ok_or(InvalidServer::MissingProxyProtocol)?
+            {
+                api::proxy_protocol::Kind::Detect(api::proxy_protocol::Detect {
+                    timeout: _,
+                    http_routes: _,
+                    http_local_rate_limit,
+                }) => http_local_rate_limit.unwrap_or_default().into(),
+                api::proxy_protocol::Kind::Http1(api::proxy_protocol::Http1 {
+                    routes: _,
+                    local_rate_limit,
+                })
+                | api::proxy_protocol::Kind::Http2(api::proxy_protocol::Http2 {
+                    routes: _,
+                    local_rate_limit,
+                }) => local_rate_limit.unwrap_or_default().into(),
+                _ => Default::default(),
             };
 
             let authorizations = {
@@ -180,7 +179,7 @@ pub mod proto {
                 api::proxy_protocol::Kind::Detect(api::proxy_protocol::Detect {
                     http_routes,
                     timeout,
-                    ..
+                    http_local_rate_limit: _,
                 }) => Protocol::Detect {
                     http: mk_routes!(http, http_routes, authorizations.clone())?,
                     timeout: timeout
@@ -189,13 +188,15 @@ pub mod proto {
                     tcp_authorizations: authorizations,
                 },
 
-                api::proxy_protocol::Kind::Http1(api::proxy_protocol::Http1 { routes, .. }) => {
-                    Protocol::Http1(mk_routes!(http, routes, authorizations)?)
-                }
+                api::proxy_protocol::Kind::Http1(api::proxy_protocol::Http1 {
+                    routes,
+                    local_rate_limit: _,
+                }) => Protocol::Http1(mk_routes!(http, routes, authorizations)?),
 
-                api::proxy_protocol::Kind::Http2(api::proxy_protocol::Http2 { routes, .. }) => {
-                    Protocol::Http2(mk_routes!(http, routes, authorizations)?)
-                }
+                api::proxy_protocol::Kind::Http2(api::proxy_protocol::Http2 {
+                    routes,
+                    local_rate_limit: _,
+                }) => Protocol::Http2(mk_routes!(http, routes, authorizations)?),
 
                 api::proxy_protocol::Kind::Grpc(api::proxy_protocol::Grpc { routes }) => {
                     Protocol::Grpc(mk_routes!(grpc, routes, authorizations)?)

@@ -10,7 +10,7 @@ publish = false
 proto = ["linkerd-http-route/proto", "linkerd2-proxy-api", "prost-types"]
 
 [dependencies]
-governor = { version = "0.6", default-features = false, features = ["std", "jitter"] }
+governor = { version = "0.7", default-features = false, features = ["std"] }
 ipnet = "2"
 http = "0.2"
 prost-types = { version = "0.12", optional = true }
@@ -27,3 +27,4 @@ optional = true
 [dev-dependencies]
 maplit = "1"
 quickcheck = { version = "1", default-features = false }
+tokio = { version = "1", features = ["full", "macros"] }
