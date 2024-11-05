@@ -92,7 +92,7 @@ impl ClientPolicies {
                 failure_accrual: Default::default(),
             },
             opaque: opaq::Opaque {
-                routes: Arc::new([opaq::Route {
+                routes: Some(opaq::Route {
                     policy: opaq::Policy {
                         meta: Meta::new_default("default"),
                         filters: Arc::new([]),
@@ -102,7 +102,7 @@ impl ClientPolicies {
                             backend: backend.clone(),
                         }])),
                     },
-                }]),
+                }),
             },
         };
         let policy = ClientPolicy {

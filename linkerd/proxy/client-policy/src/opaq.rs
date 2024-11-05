@@ -1,7 +1,4 @@
 use linkerd_opaq_route as opaq;
-use std::sync::Arc;
-
-pub use linkerd_opaq_route::{find, RouteMatch};
 
 pub type Policy = crate::RoutePolicy<Filter, ()>;
 pub type Route = opaq::Route<Policy>;
@@ -9,7 +6,7 @@ pub type Rule = opaq::Rule<Policy>;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Opaque {
-    pub routes: Arc<[Route]>,
+    pub routes: Option<Route>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
@@ -52,6 +49,11 @@ pub(crate) mod proto {
         #[error("an opaque route must have exactly one rule, but {0} were provided")]
         OnlyOneRule(usize),
 
+        /// Note: this restriction may be removed in the future, if a way of
+        /// actually matching rules for opaque routes is added.
+        #[error("a `ProxyProtocol::Opaque` must have exactly one route, but {0} were provided")]
+        OnlyOneRoute(usize),
+
         #[error("no filters can be configured on opaque routes yet")]
         NoFilters,
 
@@ -59,8 +61,8 @@ pub(crate) mod proto {
         Missing(&'static str),
     }
 
-    pub(crate) fn fill_route_backends(rts: &[Route], set: &mut BackendSet) {
-        for Route { ref policy, .. } in rts {
+    pub(crate) fn fill_route_backends(rts: Option<&Route>, set: &mut BackendSet) {
+        if let Some(Route { policy, .. }) = rts {
             policy.distribution.fill_backends(set);
         }
     }
@@ -68,11 +70,10 @@ pub(crate) mod proto {
     impl TryFrom<outbound::proxy_protocol::Opaque> for Opaque {
         type Error = InvalidOpaqueRoute;
         fn try_from(proto: outbound::proxy_protocol::Opaque) -> Result<Self, Self::Error> {
-            let routes = proto
-                .routes
-                .into_iter()
-                .map(try_route)
-                .collect::<Result<Arc<[_]>, _>>()?;
+            if proto.routes.len() > 1 {
+                return Err(InvalidOpaqueRoute::OnlyOneRoute(proto.routes.len()));
+            }
+            let routes = proto.routes.into_iter().next().map(try_route).transpose()?;
 
             Ok(Self { routes })
         }

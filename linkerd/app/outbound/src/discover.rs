@@ -234,7 +234,7 @@ fn policy_for_backend(
     static NO_OPAQ_FILTERS: Lazy<Arc<[policy::opaq::Filter]>> = Lazy::new(|| Arc::new([]));
 
     let opaque = policy::opaq::Opaque {
-        routes: Arc::new([policy::opaq::Route {
+        routes: Some(policy::opaq::Route {
             policy: policy::opaq::Policy {
                 meta: meta.clone(),
                 filters: NO_OPAQ_FILTERS.clone(),
@@ -246,7 +246,7 @@ fn policy_for_backend(
                     },
                 ])),
             },
-        }]),
+        }),
     };
 
     let routes = Arc::new([policy::http::Route {

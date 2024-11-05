@@ -239,7 +239,7 @@ fn default_service_policy(addr: NameAddr) -> policy::ClientPolicy {
     };
 
     let opaque = policy::opaq::Opaque {
-        routes: Arc::new([policy::opaq::Route {
+        routes: Some(policy::opaq::Route {
             policy: policy::opaq::Policy {
                 distribution: policy::RouteDistribution::FirstAvailable(Arc::new([
                     policy::RouteBackend {
@@ -251,7 +251,7 @@ fn default_service_policy(addr: NameAddr) -> policy::ClientPolicy {
                 meta: meta.clone(),
                 params: (),
             },
-        }]),
+        }),
     };
 
     policy::ClientPolicy {
