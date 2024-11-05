@@ -65,13 +65,8 @@ impl<N> Outbound<N> {
         self.map_stack(|_config, _, concrete| {
             concrete
                 .lift_new()
-                .push_on_service(svc::layer::mk(move |concrete: N| {
-                    svc::stack(concrete.clone())
-                        .push(router::Router::layer())
-                        .push(svc::NewMapErr::layer_from_target::<LogicalError, _>())
-                        .arc_new_clone_tcp()
-                        .into_inner()
-                }))
+                .push_on_service(router::Router::layer())
+                .push_on_service(svc::NewMapErr::layer_from_target::<LogicalError, _>())
                 // Rebuild the inner router stack every time the watch changes.
                 .push(svc::NewSpawnWatch::<Routes, _>::layer_into::<
                     router::Router<T>,
