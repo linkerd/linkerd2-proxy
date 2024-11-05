@@ -33,6 +33,7 @@ tracing = "0.1"
 
 linkerd-app-core = { path = "../core" }
 linkerd-app-test = { path = "../test", optional = true }
+linkerd-errno = { path = "../../errno" }
 linkerd-distribute = { path = "../../distribute" }
 linkerd-http-classify = { path = "../../http/classify" }
 linkerd-http-prom = { path = "../../http/prom" }

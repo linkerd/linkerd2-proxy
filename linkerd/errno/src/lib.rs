@@ -21,8 +21,10 @@ impl fmt::Display for Errno {
     }
 }
 
+impl std::error::Error for Errno {}
+
 #[cfg(not(target_os = "windows"))]
-mod code {
+pub mod code {
     use std::fmt;
 
     macro_rules! mk_err_enum {
@@ -196,7 +198,7 @@ mod code {
 }
 
 #[cfg(target_os = "windows")]
-mod code {
+pub mod code {
     use std::fmt;
 
     #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]

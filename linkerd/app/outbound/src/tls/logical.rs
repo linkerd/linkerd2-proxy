@@ -65,12 +65,14 @@ impl<N> Outbound<N> {
         NSvc::Future: Send,
         NSvc::Error: Into<Error>,
     {
-        self.map_stack(|_config, _, concrete| {
+        self.map_stack(|_config, rt, concrete| {
+            let metrics = rt.metrics.prom.tls.route.clone();
+
             concrete
                 .lift_new()
                 .push_on_service(svc::layer::mk(move |concrete: N| {
                     svc::stack(concrete.clone())
-                        .push(router::Router::layer())
+                        .push(router::Router::layer(metrics.clone()))
                         .push(svc::NewMapErr::layer_from_target::<LogicalError, _>())
                         .arc_new_clone_tcp()
                         .into_inner()

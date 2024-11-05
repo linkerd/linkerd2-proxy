@@ -25,7 +25,9 @@ where
     // Parent target type.
     T: Eq + Hash + Clone + Debug + Send + Sync + 'static,
 {
-    pub fn layer<N, I, NSvc>() -> impl svc::Layer<N, Service = svc::ArcNewCloneTcp<Self, I>> + Clone
+    pub fn layer<N, I, NSvc>(
+        metrics: route::TcpRouteMetrics,
+    ) -> impl svc::Layer<N, Service = svc::ArcNewCloneTcp<Self, I>> + Clone
     where
         I: io::AsyncRead + io::AsyncWrite + Debug + Send + Unpin + 'static,
         // Concrete stack.
@@ -40,7 +42,7 @@ where
                 // Each route builds over concrete backends. All of these
                 // backends are cached here and shared across routes.
                 .push(NewBackendCache::layer())
-                .push_on_service(route::MatchedRoute::layer())
+                .push_on_service(route::MatchedRoute::layer(metrics.clone()))
                 .push(svc::NewOneshotRoute::<Self, (), _>::layer_cached())
                 .arc_new_clone_tcp()
                 .into_inner()
@@ -137,6 +139,7 @@ where
                     parent_ref: parent_ref.clone(),
                     route_ref,
                     distribution,
+                    forbidden: false, //TODO: populate from proto
                 }
             };
 

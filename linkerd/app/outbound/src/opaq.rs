@@ -25,6 +25,7 @@ struct Opaq<T>(T);
 #[derive(Clone, Debug, Default)]
 pub struct OpaqMetrics {
     balance: concrete::BalancerMetrics,
+    route: logical::route::TcpRouteMetrics,
 }
 
 // === impl Outbound ===
@@ -91,7 +92,9 @@ impl OpaqMetrics {
     pub fn register(registry: &mut prom::Registry) -> Self {
         let balance =
             concrete::BalancerMetrics::register(registry.sub_registry_with_prefix("balancer"));
-        Self { balance }
+        let route =
+            logical::route::TcpRouteMetrics::register(registry.sub_registry_with_prefix("route"));
+        Self { balance, route }
     }
 }
 
