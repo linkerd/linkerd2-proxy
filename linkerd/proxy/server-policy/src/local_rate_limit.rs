@@ -1,21 +1,37 @@
+#[cfg(test)]
+use governor::clock::FakeRelativeClock;
 use governor::{
-    clock::DefaultClock,
+    clock::{Clock, DefaultClock},
+    middleware::NoOpMiddleware,
     state::{keyed::HashMapStateStore, InMemoryState, RateLimiter, StateStore},
+    Quota,
 };
 use linkerd_identity::Id;
 use std::{collections::HashMap, num::NonZeroU32, sync::Arc};
 
+#[cfg(test)]
+mod tests;
+
+type Direct = InMemoryState;
+type Keyed = HashMapStateStore<Option<Id>>;
+
 #[derive(Debug, Default)]
-pub struct LocalRateLimit {
-    total: Option<RateLimit<InMemoryState>>,
-    per_identity: Option<RateLimit<HashMapStateStore<Option<Id>>>>,
-    overrides: HashMap<Id, Arc<RateLimit<InMemoryState>>>,
+pub struct LocalRateLimit<C: Clock = DefaultClock> {
+    total: Option<RateLimit<Direct, C>>,
+    per_identity: Option<RateLimit<Keyed, C>>,
+    overrides: HashMap<Id, Arc<RateLimit<Direct, C>>>,
 }
+
 #[derive(Debug)]
-struct RateLimit<S: StateStore> {
+struct RateLimit<S, C = DefaultClock>
+where
+    S: StateStore,
+    C: Clock,
+{
     rps: NonZeroU32,
-    limiter: RateLimiter<S::Key, S, DefaultClock>,
+    limiter: RateLimiter<S::Key, S, C, NoOpMiddleware<C::Instant>>,
 }
+
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum RateLimitError {
     #[error("total rate limit exceeded: {0}rps")]
@@ -26,7 +42,22 @@ pub enum RateLimitError {
     Override(NonZeroU32),
 }
 
+// === impl LocalRateLimit ===
+
 impl LocalRateLimit {
+    pub fn new_no_overrides(
+        total: Option<u32>,
+        per_identity: Option<u32>,
+    ) -> LocalRateLimit<DefaultClock> {
+        LocalRateLimit {
+            total: total.and_then(RateLimit::<Direct, DefaultClock>::new),
+            per_identity: per_identity.and_then(RateLimit::<Keyed, DefaultClock>::new),
+            overrides: HashMap::new(),
+        }
+    }
+}
+
+impl<C: Clock> LocalRateLimit<C> {
     pub fn check(&self, id: Option<&Id>) -> Result<(), RateLimitError> {
         if let Some(lim) = &self.total {
             if lim.limiter.check().is_err() {
@@ -44,6 +75,7 @@ impl LocalRateLimit {
         }
 
         if let Some(lim) = &self.per_identity {
+            // Note that clients with no identity share the same rate limit (Id = None)
             if lim.limiter.check_key(&id.cloned()).is_err() {
                 return Err(RateLimitError::PerIdentity(lim.rps));
             }
@@ -53,36 +85,72 @@ impl LocalRateLimit {
     }
 }
 
+// === impl RateLimit ===
+
+impl RateLimit<Direct, DefaultClock> {
+    fn new(rps: u32) -> Option<Self> {
+        let rps = NonZeroU32::new(rps)?;
+        let limiter = RateLimiter::direct(Quota::per_second(rps));
+
+        Some(Self { rps, limiter })
+    }
+}
+
+impl RateLimit<Keyed, DefaultClock> {
+    fn new(rps: u32) -> Option<Self> {
+        let rps = NonZeroU32::new(rps)?;
+        let limiter = RateLimiter::hashmap(Quota::per_second(rps));
+
+        Some(Self { rps, limiter })
+    }
+}
+
+#[cfg(test)]
+impl RateLimit<Direct, FakeRelativeClock> {
+    fn new(rps: u32) -> Option<Self> {
+        let rps = NonZeroU32::new(rps)?;
+        let quota = Quota::per_second(rps);
+        let limiter = RateLimiter::direct_with_clock(quota, FakeRelativeClock::default());
+
+        Some(Self { rps, limiter })
+    }
+}
+
+#[cfg(test)]
+impl RateLimit<Keyed, FakeRelativeClock> {
+    fn new(rps: u32) -> Option<Self> {
+        let rps = NonZeroU32::new(rps)?;
+        let limiter =
+            RateLimiter::hashmap_with_clock(Quota::per_second(rps), FakeRelativeClock::default());
+
+        Some(Self { rps, limiter })
+    }
+}
+
 #[cfg(feature = "proto")]
 pub mod proto {
     use super::*;
-    use governor::Quota;
     use linkerd2_proxy_api::inbound as api;
 
     impl From<api::HttpLocalRateLimit> for LocalRateLimit {
         fn from(proto: api::HttpLocalRateLimit) -> Self {
-            let total = proto.total.and_then(|lim| {
-                let rps = NonZeroU32::new(lim.requests_per_second)?;
-                let limiter = RateLimiter::direct(Quota::per_second(rps));
-                Some(RateLimit { rps, limiter })
-            });
-            let per_identity = proto.identity.and_then(|lim| {
-                let rps = NonZeroU32::new(lim.requests_per_second)?;
-                let limiter = RateLimiter::hashmap(Quota::per_second(rps));
-                Some(RateLimit { rps, limiter })
-            });
+            let total = proto
+                .total
+                .and_then(|lim| RateLimit::<Direct>::new(lim.requests_per_second));
+            let per_identity = proto
+                .identity
+                .and_then(|lim| RateLimit::<Keyed>::new(lim.requests_per_second));
             let overrides = proto
                 .overrides
                 .into_iter()
                 .flat_map(|ovr| {
-                    let Some(lim) = ovr.limit else {
+                    let Some(limiter) = ovr
+                        .limit
+                        .and_then(|lim| RateLimit::<Direct>::new(lim.requests_per_second))
+                    else {
                         return vec![];
                     };
-                    let Some(rps) = NonZeroU32::new(lim.requests_per_second) else {
-                        return vec![];
-                    };
-                    let limiter = RateLimiter::direct(Quota::per_second(rps));
-                    let limit = Arc::new(RateLimit { rps, limiter });
+                    let limit = Arc::new(limiter);
                     ovr.clients
                         .into_iter()
                         .flat_map(|cl| {
@@ -91,9 +159,9 @@ pub mod proto {
                                 .filter_map(|id| id.name.parse::<Id>().ok())
                         })
                         .map(move |id| (id, limit.clone()))
-                        .collect::<Vec<(Id, Arc<RateLimit<InMemoryState>>)>>()
+                        .collect()
                 })
-                .collect::<HashMap<Id, Arc<RateLimit<InMemoryState>>>>();
+                .collect();
 
             Self {
                 total,
