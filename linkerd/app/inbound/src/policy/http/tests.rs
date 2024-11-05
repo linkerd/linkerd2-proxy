@@ -1,6 +1,7 @@
 use super::*;
 use crate::policy::{Authentication, Authorization, Meta, Protocol, ServerPolicy};
 use linkerd_app_core::{svc::Service, Infallible};
+use linkerd_proxy_server_policy::local_rate_limit::LocalRateLimit;
 
 macro_rules! conn {
     ($client:expr, $dst:expr) => {{
@@ -19,7 +20,7 @@ macro_rules! conn {
 }
 
 macro_rules! new_svc {
-    ($proto:expr, $conn:expr, $rsp:expr) => {{
+    ($proto:expr, $conn:expr, $rsp:expr, $rl: expr) => {{
         let (policy, tx) = AllowPolicy::for_test(
             $conn.dst,
             ServerPolicy {
@@ -29,7 +30,7 @@ macro_rules! new_svc {
                     kind: "Server".into(),
                     name: "testsrv".into(),
                 }),
-                local_rate_limit: Arc::new(Default::default()),
+                local_rate_limit: Arc::new($rl),
             },
         );
         let svc = HttpPolicyService {
@@ -47,7 +48,11 @@ macro_rules! new_svc {
         (svc, tx)
     }};
 
-    ($proto:expr) => {{
+    ($proto:expr, $conn:expr, $rsp:expr) => {{
+        new_svc!($proto, $conn, $rsp, Default::default())
+    }};
+
+    ($proto:expr, $rl:expr) => {{
         new_svc!(
             $proto,
             conn!(),
@@ -57,8 +62,13 @@ macro_rules! new_svc {
                     .unwrap();
                 rsp.extensions_mut().insert(permit.clone());
                 Ok::<_, Infallible>(rsp)
-            }
+            },
+            $rl
         )
+    }};
+
+    ($proto:expr) => {{
+        new_svc!($proto, Default::default())
     }};
 }
 
@@ -363,6 +373,38 @@ async fn http_filter_inject_failure() {
             message: "oopsie".into(),
         }
     );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn rate_limit() {
+    use linkerd_app_core::{Ipv4Net, Ipv6Net};
+
+    let rmeta = Meta::new_default("default");
+    let rl = LocalRateLimit::new_no_overrides(Some(10), Some(5));
+    let authorizations = Arc::new([Authorization {
+        meta: rmeta.clone(),
+        networks: vec![Ipv4Net::default().into(), Ipv6Net::default().into()],
+        authentication: Authentication::Unauthenticated,
+    }]);
+
+    let (mut svc, _tx) = new_svc!(
+        Protocol::Http1(Arc::new([http::default(authorizations.clone())])),
+        rl
+    );
+
+    let rsp = svc
+        .call(
+            ::http::Request::builder()
+                .body(hyper::Body::default())
+                .unwrap(),
+        )
+        .await
+        .expect("serves");
+    let permit = rsp
+        .extensions()
+        .get::<HttpRoutePermit>()
+        .expect("permitted");
+    assert_eq!(permit.labels.route.route, rmeta);
 }
 
 #[tokio::test(flavor = "current_thread")]
