@@ -1224,7 +1224,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4979f22fdb869068da03c9f7528f8297c6fd2606bc3a4affe42e6a823fdb8da4"
 dependencies = [
  "cfg-if",
- "windows-targets 0.52.0",
+ "windows-targets 0.48.5",
 ]
 
 [[package]]
@@ -1871,12 +1871,6 @@ dependencies = [
 [[package]]
 name = "linkerd-opaq-route"
 version = "0.1.0"
-dependencies = [
- "rand",
- "regex",
- "thiserror",
- "tracing",
-]
 
 [[package]]
 name = "linkerd-opencensus"
@@ -2526,7 +2520,7 @@ dependencies = [
 [[package]]
 name = "linkerd2-proxy-api"
 version = "0.14.0"
-source = "git+https://github.com/linkerd/linkerd2-proxy-api.git?branch=main#2be6843a95360eaa370363c42e3aa85142b7a36c"
+source = "git+https://github.com/linkerd/linkerd2-proxy-api.git?branch=main#6c316cc41a3a0e194a70f22b5698ec21ce245e99"
 dependencies = [
  "h2",
  "http",
