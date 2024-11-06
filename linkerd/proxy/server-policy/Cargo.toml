@@ -8,14 +8,17 @@ publish = false
 
 [features]
 proto = ["linkerd-http-route/proto", "linkerd2-proxy-api", "prost-types"]
+test-util = []
 
 [dependencies]
+governor = { version = "0.7", default-features = false, features = ["std"] }
 ipnet = "2"
 http = "0.2"
 prost-types = { version = "0.12", optional = true }
 thiserror = "1"
 
 linkerd-http-route = { path = "../../http/route" }
+linkerd-identity = { path = "../../identity" }
 
 [dependencies.linkerd2-proxy-api]
 workspace = true
@@ -25,3 +28,4 @@ optional = true
 [dev-dependencies]
 maplit = "1"
 quickcheck = { version = "1", default-features = false }
+tokio = { version = "1", features = ["full", "macros"] }

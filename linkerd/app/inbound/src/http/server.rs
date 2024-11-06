@@ -203,6 +203,10 @@ impl errors::HttpRescue<Error> for ServerRescue {
             ));
         }
 
+        if errors::is_caused_by::<linkerd_proxy_server_policy::RateLimitError>(&*error) {
+            return Ok(errors::SyntheticHttpResponse::rate_limited(error));
+        }
+
         if errors::is_caused_by::<crate::GatewayDomainInvalid>(&*error) {
             return Ok(errors::SyntheticHttpResponse::not_found(error));
         }
