@@ -154,6 +154,7 @@ pub mod proto {
                 api::proxy_protocol::Kind::Detect(api::proxy_protocol::Detect {
                     http_routes,
                     timeout,
+                    http_local_rate_limit: _,
                 }) => Protocol::Detect {
                     http: mk_routes!(http, http_routes, authorizations.clone())?,
                     timeout: timeout
@@ -162,13 +163,15 @@ pub mod proto {
                     tcp_authorizations: authorizations,
                 },
 
-                api::proxy_protocol::Kind::Http1(api::proxy_protocol::Http1 { routes }) => {
-                    Protocol::Http1(mk_routes!(http, routes, authorizations)?)
-                }
+                api::proxy_protocol::Kind::Http1(api::proxy_protocol::Http1 {
+                    routes,
+                    local_rate_limit: _,
+                }) => Protocol::Http1(mk_routes!(http, routes, authorizations)?),
 
-                api::proxy_protocol::Kind::Http2(api::proxy_protocol::Http2 { routes }) => {
-                    Protocol::Http2(mk_routes!(http, routes, authorizations)?)
-                }
+                api::proxy_protocol::Kind::Http2(api::proxy_protocol::Http2 {
+                    routes,
+                    local_rate_limit: _,
+                }) => Protocol::Http2(mk_routes!(http, routes, authorizations)?),
 
                 api::proxy_protocol::Kind::Grpc(api::proxy_protocol::Grpc { routes }) => {
                     Protocol::Grpc(mk_routes!(grpc, routes, authorizations)?)

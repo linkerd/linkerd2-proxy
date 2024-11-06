@@ -80,7 +80,11 @@ pub(crate) mod proto {
     }
 
     fn try_route(
-        outbound::OpaqueRoute { metadata, rules }: outbound::OpaqueRoute,
+        outbound::OpaqueRoute {
+            metadata,
+            rules,
+            error: _, // TODO
+        }: outbound::OpaqueRoute,
     ) -> Result<Route, InvalidOpaqueRoute> {
         let meta = Arc::new(
             metadata
@@ -161,7 +165,10 @@ pub(crate) mod proto {
     impl TryFrom<opaque_route::RouteBackend> for RouteBackend<Filter> {
         type Error = InvalidBackend;
         fn try_from(
-            opaque_route::RouteBackend { backend }: opaque_route::RouteBackend,
+            opaque_route::RouteBackend {
+                backend,
+                invalid: _, // TODO
+            }: opaque_route::RouteBackend,
         ) -> Result<Self, Self::Error> {
             let backend = backend.ok_or(InvalidBackend::Missing("backend"))?;
             RouteBackend::try_from_proto(backend, std::iter::empty::<()>())
