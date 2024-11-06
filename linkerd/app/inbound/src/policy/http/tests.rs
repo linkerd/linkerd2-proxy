@@ -382,7 +382,7 @@ async fn rate_limit_allow() {
     let rmeta = Meta::new_default("default");
 
     // Rate-limit with plenty of room for two consecutive requests
-    let rl = LocalRateLimit::new_no_overrides(Some(10), Some(5));
+    let rl = LocalRateLimit::new_no_overrides_for_test(Some(10), Some(5));
 
     let authorizations = Arc::new([Authorization {
         meta: rmeta.clone(),
@@ -433,7 +433,7 @@ async fn rate_limit_deny() {
     let rmeta = Meta::new_default("default");
 
     // Rate-limit with room for only one request per second
-    let rl = LocalRateLimit::new_no_overrides(Some(10), Some(1));
+    let rl = LocalRateLimit::new_no_overrides_for_test(Some(10), Some(1));
 
     let authorizations = Arc::new([Authorization {
         meta: rmeta.clone(),

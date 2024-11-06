@@ -43,15 +43,31 @@ pub enum RateLimitError {
 
 // === impl LocalRateLimit ===
 
+#[cfg(any(feature = "proto", feature = "test-util"))]
+impl RateLimit<Direct, DefaultClock> {
+    fn direct(rps: NonZeroU32) -> Self {
+        let limiter = RateLimiter::direct(governor::Quota::per_second(rps));
+        Self { rps, limiter }
+    }
+}
+
+#[cfg(any(feature = "proto", feature = "test-util"))]
+impl RateLimit<Keyed, DefaultClock> {
+    fn keyed(rps: NonZeroU32) -> Self {
+        let limiter = RateLimiter::hashmap(governor::Quota::per_second(rps));
+        Self { rps, limiter }
+    }
+}
+
 #[cfg(feature = "test-util")]
 impl LocalRateLimit {
-    pub fn new_no_overrides(
+    pub fn new_no_overrides_for_test(
         total: Option<u32>,
         per_identity: Option<u32>,
     ) -> LocalRateLimit<DefaultClock> {
         LocalRateLimit {
-            total: total.and_then(RateLimit::<Direct, DefaultClock>::new),
-            per_identity: per_identity.and_then(RateLimit::<Keyed, DefaultClock>::new),
+            total: total.and_then(NonZeroU32::new).map(RateLimit::direct),
+            per_identity: per_identity.and_then(NonZeroU32::new).map(RateLimit::keyed),
             overrides: HashMap::new(),
         }
     }
@@ -89,7 +105,7 @@ impl<C: Clock> LocalRateLimit<C> {
 
 #[cfg(test)]
 impl RateLimit<Direct, FakeRelativeClock> {
-    fn for_test(rps: u32) -> Self {
+    fn direct_for_test(rps: u32) -> Self {
         let rps = NonZeroU32::new(rps).expect("non-zero RPS");
         let quota = governor::Quota::per_second(rps);
         let limiter = RateLimiter::direct_with_clock(quota, FakeRelativeClock::default());
@@ -100,7 +116,7 @@ impl RateLimit<Direct, FakeRelativeClock> {
 
 #[cfg(test)]
 impl RateLimit<Keyed, FakeRelativeClock> {
-    fn for_test(rps: u32) -> Self {
+    fn keyed_for_test(rps: u32) -> Self {
         let rps = NonZeroU32::new(rps).expect("non-zero RPS");
         let quota = governor::Quota::per_second(rps);
         let limiter = RateLimiter::hashmap_with_clock(quota, FakeRelativeClock::default());
@@ -120,11 +136,11 @@ pub mod proto {
             let total = proto
                 .total
                 .and_then(|l| NonZeroU32::new(l.requests_per_second))
-                .map(RateLimit::<Direct>::new);
+                .map(RateLimit::direct);
             let per_identity = proto
                 .identity
                 .and_then(|l| NonZeroU32::new(l.requests_per_second))
-                .map(RateLimit::<Keyed>::new);
+                .map(RateLimit::keyed);
             let overrides = proto
                 .overrides
                 .into_iter()
@@ -132,7 +148,7 @@ pub mod proto {
                     let Some(limiter) = ovr
                         .limit
                         .and_then(|l| NonZeroU32::new(l.requests_per_second))
-                        .map(RateLimit::<Direct>::new)
+                        .map(RateLimit::direct)
                     else {
                         return vec![];
                     };
@@ -154,20 +170,6 @@ pub mod proto {
                 per_identity,
                 overrides,
             }
-        }
-    }
-
-    impl RateLimit<Direct, DefaultClock> {
-        fn new(rps: NonZeroU32) -> Self {
-            let limiter = RateLimiter::direct(governor::Quota::per_second(rps));
-            Self { rps, limiter }
-        }
-    }
-
-    impl RateLimit<Keyed, DefaultClock> {
-        fn new(rps: NonZeroU32) -> Self {
-            let limiter = RateLimiter::hashmap(governor::Quota::per_second(rps));
-            Self { rps, limiter }
         }
     }
 }
