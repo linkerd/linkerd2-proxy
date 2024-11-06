@@ -162,12 +162,14 @@ pub fn outbound_default_opaque_route(dst: impl ToString) -> outbound::OpaqueRout
         metadata: Some(api::meta::Metadata {
             kind: Some(api::meta::metadata::Kind::Default("default".to_string())),
         }),
+        error: None,
         rules: vec![outbound::opaque_route::Rule {
             backends: Some(opaque_route::Distribution {
                 kind: Some(distribution::Kind::FirstAvailable(
                     distribution::FirstAvailable {
                         backends: vec![opaque_route::RouteBackend {
                             backend: Some(backend(dst)),
+                            invalid: None,
                         }],
                     },
                 )),
