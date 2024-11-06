@@ -1,7 +1,7 @@
 use super::*;
 use crate::policy::{Authentication, Authorization, Meta, Protocol, ServerPolicy};
 use linkerd_app_core::{svc::Service, Infallible};
-use linkerd_proxy_server_policy::local_rate_limit::LocalRateLimit;
+use linkerd_proxy_server_policy::LocalRateLimit;
 
 macro_rules! conn {
     ($client:expr, $dst:expr) => {{

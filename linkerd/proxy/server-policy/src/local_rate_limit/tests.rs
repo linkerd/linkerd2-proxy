@@ -1,7 +1,6 @@
-use std::time::Duration;
-
 use super::*;
 use maplit::hashmap;
+use std::time::Duration;
 
 #[cfg(feature = "proto")]
 #[tokio::test(flavor = "current_thread")]

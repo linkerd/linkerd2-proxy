@@ -1,7 +1,6 @@
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
 
-use local_rate_limit::LocalRateLimit;
 use std::{hash::Hash, sync::Arc, time};
 
 pub mod authz;
@@ -12,6 +11,7 @@ pub mod meta;
 
 pub use self::{
     authz::{Authentication, Authorization},
+    local_rate_limit::{LocalRateLimit, RateLimitError},
     meta::Meta,
 };
 pub use linkerd_http_route as route;

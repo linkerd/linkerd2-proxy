@@ -203,9 +203,7 @@ impl errors::HttpRescue<Error> for ServerRescue {
             ));
         }
 
-        if errors::is_caused_by::<linkerd_proxy_server_policy::local_rate_limit::RateLimitError>(
-            &*error,
-        ) {
+        if errors::is_caused_by::<linkerd_proxy_server_policy::RateLimitError>(&*error) {
             return Ok(errors::SyntheticHttpResponse::rate_limited(error));
         }
 
