@@ -44,7 +44,7 @@ pub trait GetPolicy {
     fn get_policy(&self, dst: OrigDstAddr) -> AllowPolicy;
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub enum DefaultPolicy {
     Allow(ServerPolicy),
     Deny,
@@ -90,6 +90,7 @@ impl From<DefaultPolicy> for ServerPolicy {
             DefaultPolicy::Allow(p) => p,
             DefaultPolicy::Deny => ServerPolicy {
                 protocol: Protocol::Opaque(Arc::new([])),
+                local_rate_limit: Default::default(),
                 meta: Meta::new_default("deny"),
             },
         }
