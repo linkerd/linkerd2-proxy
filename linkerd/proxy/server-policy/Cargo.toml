@@ -8,6 +8,7 @@ publish = false
 
 [features]
 proto = ["linkerd-http-route/proto", "linkerd2-proxy-api", "prost-types"]
+test-util = []
 
 [dependencies]
 governor = { version = "0.7", default-features = false, features = ["std"] }

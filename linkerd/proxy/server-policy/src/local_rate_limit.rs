@@ -44,6 +44,7 @@ pub enum RateLimitError {
 
 // === impl LocalRateLimit ===
 
+#[cfg(feature = "test-util")]
 impl LocalRateLimit {
     pub fn new_no_overrides(
         total: Option<u32>,
