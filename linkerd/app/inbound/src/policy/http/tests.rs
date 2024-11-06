@@ -20,7 +20,7 @@ macro_rules! conn {
 }
 
 macro_rules! new_svc {
-    ($proto:expr, $conn:expr, $rsp:expr, $rl: expr) => {{
+    ($proto:expr, $conn:expr, $rsp:expr, $rl:expr) => {{
         let (policy, tx) = AllowPolicy::for_test(
             $conn.dst,
             ServerPolicy {
@@ -30,6 +30,7 @@ macro_rules! new_svc {
                     kind: "Server".into(),
                     name: "testsrv".into(),
                 }),
+                local_rate_limit_meta: Meta::new_default("rl"),
                 local_rate_limit: Arc::new($rl),
             },
         );
@@ -208,6 +209,7 @@ async fn http_route() {
                 },
             ],
         }])),
+        local_rate_limit_meta: Meta::new_default(""),
         local_rate_limit: Arc::new(Default::default()),
     })
     .expect("must send");

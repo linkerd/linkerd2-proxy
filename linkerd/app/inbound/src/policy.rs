@@ -18,7 +18,7 @@ pub use self::{
 pub use linkerd_app_core::metrics::ServerLabel;
 use linkerd_app_core::{
     identity as id,
-    metrics::{RouteAuthzLabels, ServerAuthzLabels},
+    metrics::{HTTPLocalRateLimitLabels, RouteAuthzLabels, ServerAuthzLabels},
     tls,
     transport::{ClientAddr, OrigDstAddr, Remote},
 };
@@ -27,7 +27,8 @@ pub use linkerd_proxy_server_policy::{
     authz::Suffix,
     grpc::Route as GrpcRoute,
     http::{filter::Redirection, Route as HttpRoute},
-    route, Authentication, Authorization, Meta, Protocol, RoutePolicy, ServerPolicy,
+    route, Authentication, Authorization, Meta, Protocol, RateLimitError, RoutePolicy,
+    ServerPolicy,
 };
 use std::sync::Arc;
 use thiserror::Error;
@@ -90,6 +91,7 @@ impl From<DefaultPolicy> for ServerPolicy {
             DefaultPolicy::Allow(p) => p,
             DefaultPolicy::Deny => ServerPolicy {
                 protocol: Protocol::Opaque(Arc::new([])),
+                local_rate_limit_meta: Meta::new_default(""),
                 local_rate_limit: Default::default(),
                 meta: Meta::new_default("deny"),
             },
@@ -131,6 +133,20 @@ impl AllowPolicy {
     #[inline]
     pub fn server_label(&self) -> ServerLabel {
         ServerLabel(self.server.borrow().meta.clone())
+    }
+
+    #[inline]
+    pub fn ratelimit_label(&self, error: &RateLimitError) -> HTTPLocalRateLimitLabels {
+        let error = match error {
+            RateLimitError::Total(rps) => format!("total({})", rps),
+            RateLimitError::PerIdentity(rps) => format!("per-identity({})", rps),
+            RateLimitError::Override(rps) => format!("override({})", rps),
+        };
+        HTTPLocalRateLimitLabels {
+            server: self.server_label(),
+            rate_limit: self.server.borrow().local_rate_limit_meta.clone(),
+            error,
+        }
     }
 
     async fn changed(&mut self) {

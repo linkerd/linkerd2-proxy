@@ -748,6 +748,7 @@ impl svc::Param<policy::AllowPolicy> for Target {
                     kind: "server".into(),
                     name: "testsrv".into(),
                 }),
+                local_rate_limit_meta: policy::Meta::new_default(""),
                 local_rate_limit: Default::default(),
             },
         );

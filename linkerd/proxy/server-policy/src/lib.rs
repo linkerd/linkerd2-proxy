@@ -20,6 +20,7 @@ pub use linkerd_http_route as route;
 pub struct ServerPolicy {
     pub protocol: Protocol,
     pub meta: Arc<Meta>,
+    pub local_rate_limit_meta: Arc<Meta>,
     pub local_rate_limit: Arc<LocalRateLimit>,
 }
 
@@ -58,7 +59,7 @@ impl ServerPolicy {
                     rules: vec![http::Rule {
                         matches: vec![http::r#match::MatchRequest::default()],
                         policy: http::Policy {
-                            meta,
+                            meta: meta.clone(),
                             authorizations: Arc::new([]),
                             filters: vec![http::Filter::InternalError(
                                 "invalid server configuration",
@@ -68,6 +69,7 @@ impl ServerPolicy {
                 }]),
                 tcp_authorizations: Arc::new([]),
             },
+            local_rate_limit_meta: meta,
             local_rate_limit: Arc::new(LocalRateLimit::default()),
         }
     }
@@ -144,7 +146,7 @@ pub mod proto {
                     timeout: _,
                     http_routes: _,
                     http_local_rate_limit,
-                }) => http_local_rate_limit.unwrap_or_default().into(),
+                }) => http_local_rate_limit.unwrap_or_default(),
                 api::proxy_protocol::Kind::Http1(api::proxy_protocol::Http1 {
                     routes: _,
                     local_rate_limit,
@@ -152,9 +154,16 @@ pub mod proto {
                 | api::proxy_protocol::Kind::Http2(api::proxy_protocol::Http2 {
                     routes: _,
                     local_rate_limit,
-                }) => local_rate_limit.unwrap_or_default().into(),
+                }) => local_rate_limit.unwrap_or_default(),
                 _ => Default::default(),
             };
+
+            let local_rate_limit_meta = local_rate_limit
+                .clone()
+                .metadata
+                .map(TryInto::try_into)
+                .transpose()?
+                .unwrap_or(Meta::Default { name: "".into() });
 
             let authorizations = {
                 // Always permit traffic from localhost.
@@ -213,7 +222,8 @@ pub mod proto {
             Ok(ServerPolicy {
                 protocol,
                 meta,
-                local_rate_limit: Arc::new(local_rate_limit),
+                local_rate_limit_meta: Arc::new(local_rate_limit_meta),
+                local_rate_limit: Arc::new(local_rate_limit.into()),
             })
         }
     }

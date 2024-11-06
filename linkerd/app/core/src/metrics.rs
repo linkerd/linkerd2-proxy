@@ -96,6 +96,14 @@ pub struct RouteAuthzLabels {
     pub authz: Arc<policy::Meta>,
 }
 
+// Labels referencing an inbound HTTP local rate limit.
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct HTTPLocalRateLimitLabels {
+    pub server: ServerLabel,
+    pub rate_limit: Arc<policy::Meta>,
+    pub error: String,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct OutboundEndpointLabels {
     pub server_id: tls::ConditionalClientTls,
@@ -379,6 +387,20 @@ impl FmtLabels for RouteAuthzLabels {
             self.authz.group(),
             self.authz.kind(),
             self.authz.name(),
+        )
+    }
+}
+
+impl FmtLabels for HTTPLocalRateLimitLabels {
+    fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.server.fmt_labels(f)?;
+        write!(
+            f,
+            ",ratelimit_group=\"{}\",ratelimit_kind=\"{}\",ratelimit_name=\"{}\",ratelimit_error=\"{}\"",
+            self.rate_limit.group(),
+            self.rate_limit.kind(),
+            self.rate_limit.name(),
+            self.error,
         )
     }
 }
