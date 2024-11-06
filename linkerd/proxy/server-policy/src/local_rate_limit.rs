@@ -4,7 +4,6 @@ use governor::{
     clock::{Clock, DefaultClock},
     middleware::NoOpMiddleware,
     state::{keyed::HashMapStateStore, InMemoryState, RateLimiter, StateStore},
-    Quota,
 };
 use linkerd_identity::Id;
 use std::{collections::HashMap, num::NonZeroU32, sync::Arc};
@@ -92,7 +91,7 @@ impl<C: Clock> LocalRateLimit<C> {
 impl RateLimit<Direct, DefaultClock> {
     fn new(rps: u32) -> Option<Self> {
         let rps = NonZeroU32::new(rps)?;
-        let limiter = RateLimiter::direct(Quota::per_second(rps));
+        let limiter = RateLimiter::direct(governor::Quota::per_second(rps));
 
         Some(Self { rps, limiter })
     }
@@ -102,7 +101,7 @@ impl RateLimit<Direct, DefaultClock> {
 impl RateLimit<Keyed, DefaultClock> {
     fn new(rps: u32) -> Option<Self> {
         let rps = NonZeroU32::new(rps)?;
-        let limiter = RateLimiter::hashmap(Quota::per_second(rps));
+        let limiter = RateLimiter::hashmap(governor::Quota::per_second(rps));
 
         Some(Self { rps, limiter })
     }
@@ -112,7 +111,7 @@ impl RateLimit<Keyed, DefaultClock> {
 impl RateLimit<Direct, FakeRelativeClock> {
     fn new(rps: u32) -> Option<Self> {
         let rps = NonZeroU32::new(rps)?;
-        let quota = Quota::per_second(rps);
+        let quota = governor::Quota::per_second(rps);
         let limiter = RateLimiter::direct_with_clock(quota, FakeRelativeClock::default());
 
         Some(Self { rps, limiter })
@@ -123,8 +122,8 @@ impl RateLimit<Direct, FakeRelativeClock> {
 impl RateLimit<Keyed, FakeRelativeClock> {
     fn new(rps: u32) -> Option<Self> {
         let rps = NonZeroU32::new(rps)?;
-        let limiter =
-            RateLimiter::hashmap_with_clock(Quota::per_second(rps), FakeRelativeClock::default());
+        let quota = governor::Quota::per_second(rps);
+        let limiter = RateLimiter::hashmap_with_clock(quota, FakeRelativeClock::default());
 
         Some(Self { rps, limiter })
     }
