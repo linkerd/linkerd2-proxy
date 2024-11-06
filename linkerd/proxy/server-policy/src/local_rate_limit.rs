@@ -4,7 +4,6 @@ use governor::{
     clock::{Clock, DefaultClock},
     middleware::NoOpMiddleware,
     state::{keyed::HashMapStateStore, InMemoryState, RateLimiter, StateStore},
-    Quota,
 };
 use linkerd_identity::Id;
 use std::{collections::HashMap, num::NonZeroU32, sync::Arc};
@@ -44,14 +43,31 @@ pub enum RateLimitError {
 
 // === impl LocalRateLimit ===
 
+#[cfg(any(feature = "proto", feature = "test-util"))]
+impl RateLimit<Direct, DefaultClock> {
+    fn direct(rps: NonZeroU32) -> Self {
+        let limiter = RateLimiter::direct(governor::Quota::per_second(rps));
+        Self { rps, limiter }
+    }
+}
+
+#[cfg(any(feature = "proto", feature = "test-util"))]
+impl RateLimit<Keyed, DefaultClock> {
+    fn keyed(rps: NonZeroU32) -> Self {
+        let limiter = RateLimiter::hashmap(governor::Quota::per_second(rps));
+        Self { rps, limiter }
+    }
+}
+
+#[cfg(feature = "test-util")]
 impl LocalRateLimit {
-    pub fn new_no_overrides(
+    pub fn new_no_overrides_for_test(
         total: Option<u32>,
         per_identity: Option<u32>,
     ) -> LocalRateLimit<DefaultClock> {
         LocalRateLimit {
-            total: total.and_then(RateLimit::<Direct, DefaultClock>::new),
-            per_identity: per_identity.and_then(RateLimit::<Keyed, DefaultClock>::new),
+            total: total.and_then(NonZeroU32::new).map(RateLimit::direct),
+            per_identity: per_identity.and_then(NonZeroU32::new).map(RateLimit::keyed),
             overrides: HashMap::new(),
         }
     }
@@ -87,43 +103,25 @@ impl<C: Clock> LocalRateLimit<C> {
 
 // === impl RateLimit ===
 
-impl RateLimit<Direct, DefaultClock> {
-    fn new(rps: u32) -> Option<Self> {
-        let rps = NonZeroU32::new(rps)?;
-        let limiter = RateLimiter::direct(Quota::per_second(rps));
-
-        Some(Self { rps, limiter })
-    }
-}
-
-impl RateLimit<Keyed, DefaultClock> {
-    fn new(rps: u32) -> Option<Self> {
-        let rps = NonZeroU32::new(rps)?;
-        let limiter = RateLimiter::hashmap(Quota::per_second(rps));
-
-        Some(Self { rps, limiter })
-    }
-}
-
 #[cfg(test)]
 impl RateLimit<Direct, FakeRelativeClock> {
-    fn new(rps: u32) -> Option<Self> {
-        let rps = NonZeroU32::new(rps)?;
-        let quota = Quota::per_second(rps);
+    fn direct_for_test(rps: u32) -> Self {
+        let rps = NonZeroU32::new(rps).expect("non-zero RPS");
+        let quota = governor::Quota::per_second(rps);
         let limiter = RateLimiter::direct_with_clock(quota, FakeRelativeClock::default());
 
-        Some(Self { rps, limiter })
+        Self { rps, limiter }
     }
 }
 
 #[cfg(test)]
 impl RateLimit<Keyed, FakeRelativeClock> {
-    fn new(rps: u32) -> Option<Self> {
-        let rps = NonZeroU32::new(rps)?;
-        let limiter =
-            RateLimiter::hashmap_with_clock(Quota::per_second(rps), FakeRelativeClock::default());
+    fn keyed_for_test(rps: u32) -> Self {
+        let rps = NonZeroU32::new(rps).expect("non-zero RPS");
+        let quota = governor::Quota::per_second(rps);
+        let limiter = RateLimiter::hashmap_with_clock(quota, FakeRelativeClock::default());
 
-        Some(Self { rps, limiter })
+        Self { rps, limiter }
     }
 }
 
@@ -134,19 +132,23 @@ pub mod proto {
 
     impl From<api::HttpLocalRateLimit> for LocalRateLimit {
         fn from(proto: api::HttpLocalRateLimit) -> Self {
+            // Zero-value
             let total = proto
                 .total
-                .and_then(|lim| RateLimit::<Direct>::new(lim.requests_per_second));
+                .and_then(|l| NonZeroU32::new(l.requests_per_second))
+                .map(RateLimit::direct);
             let per_identity = proto
                 .identity
-                .and_then(|lim| RateLimit::<Keyed>::new(lim.requests_per_second));
+                .and_then(|l| NonZeroU32::new(l.requests_per_second))
+                .map(RateLimit::keyed);
             let overrides = proto
                 .overrides
                 .into_iter()
                 .flat_map(|ovr| {
                     let Some(limiter) = ovr
                         .limit
-                        .and_then(|lim| RateLimit::<Direct>::new(lim.requests_per_second))
+                        .and_then(|l| NonZeroU32::new(l.requests_per_second))
+                        .map(RateLimit::direct)
                     else {
                         return vec![];
                     };

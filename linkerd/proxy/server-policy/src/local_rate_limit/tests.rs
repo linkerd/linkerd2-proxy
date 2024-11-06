@@ -70,11 +70,11 @@ async fn from_proto() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn check_rate_limits() {
-    let total = RateLimit::<Direct, FakeRelativeClock>::new(35).unwrap();
-    let per_identity = RateLimit::<Keyed, FakeRelativeClock>::new(5).unwrap();
+    let total = RateLimit::direct_for_test(35);
+    let per_identity = RateLimit::keyed_for_test(5);
     let overrides = hashmap! {
-        "client-3".parse().unwrap() => Arc::new(RateLimit::<Direct, FakeRelativeClock>::new(10).unwrap()),
-        "client-4".parse().unwrap() => Arc::new(RateLimit::<Direct, FakeRelativeClock>::new(15).unwrap()),
+        "client-3".parse().unwrap() => Arc::new(RateLimit::direct_for_test(10)),
+        "client-4".parse().unwrap() => Arc::new(RateLimit::direct_for_test(15)),
     };
     let rl = LocalRateLimit {
         total: Some(total),
