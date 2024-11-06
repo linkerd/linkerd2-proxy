@@ -88,6 +88,7 @@ impl<C: Clock> LocalRateLimit<C> {
 
 // === impl RateLimit ===
 
+#[cfg(feature = "test-util")]
 impl RateLimit<Direct, DefaultClock> {
     fn new(rps: u32) -> Option<Self> {
         let rps = NonZeroU32::new(rps)?;
@@ -97,6 +98,7 @@ impl RateLimit<Direct, DefaultClock> {
     }
 }
 
+#[cfg(feature = "test-util")]
 impl RateLimit<Keyed, DefaultClock> {
     fn new(rps: u32) -> Option<Self> {
         let rps = NonZeroU32::new(rps)?;
