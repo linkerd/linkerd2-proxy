@@ -410,6 +410,7 @@ mod tests {
     #[test]
     fn zone_locality() {
         let addr = WeightedAddr {
+            resource_ref: None,
             addr: Some(TcpAddress {
                 ip: Some(IpAddress {
                     ip: Some(Ip::Ipv4(0)),

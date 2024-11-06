@@ -530,6 +530,7 @@ impl From<DestinationBuilder> for pb::Update {
                     tls_identity,
                     authority_override: None,
                     http2: None,
+                    resource_ref: None,
                 }],
                 metric_labels: set_labels,
             })),
@@ -610,7 +611,11 @@ pub fn retry_budget(
 }
 
 pub fn dst_override(authority: String, weight: u32) -> pb::WeightedDst {
-    pb::WeightedDst { authority, weight }
+    pb::WeightedDst {
+        authority,
+        weight,
+        backend_ref: None,
+    }
 }
 
 pub fn route() -> RouteBuilder {
