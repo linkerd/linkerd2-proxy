@@ -1,7 +1,7 @@
 use super::*;
 use crate::policy::{Authentication, Authorization, Meta, Protocol, ServerPolicy};
 use linkerd_app_core::{svc::Service, Infallible};
-use linkerd_proxy_server_policy::LocalRateLimit;
+use linkerd_proxy_server_policy::{LocalRateLimit, RateLimitError};
 
 macro_rules! conn {
     ($client:expr, $dst:expr) => {{
@@ -376,11 +376,14 @@ async fn http_filter_inject_failure() {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn rate_limit() {
+async fn rate_limit_allow() {
     use linkerd_app_core::{Ipv4Net, Ipv6Net};
 
     let rmeta = Meta::new_default("default");
+
+    // Rate-limit with plenty of room for two consecutive requests
     let rl = LocalRateLimit::new_no_overrides(Some(10), Some(5));
+
     let authorizations = Arc::new([Authorization {
         meta: rmeta.clone(),
         networks: vec![Ipv4Net::default().into(), Ipv6Net::default().into()],
@@ -392,6 +395,7 @@ async fn rate_limit() {
         rl
     );
 
+    // First request should be allowed
     let rsp = svc
         .call(
             ::http::Request::builder()
@@ -405,6 +409,74 @@ async fn rate_limit() {
         .get::<HttpRoutePermit>()
         .expect("permitted");
     assert_eq!(permit.labels.route.route, rmeta);
+
+    // Second request should be allowed as well
+    let rsp = svc
+        .call(
+            ::http::Request::builder()
+                .body(hyper::Body::default())
+                .unwrap(),
+        )
+        .await
+        .expect("serves");
+    let permit = rsp
+        .extensions()
+        .get::<HttpRoutePermit>()
+        .expect("permitted");
+    assert_eq!(permit.labels.route.route, rmeta);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn rate_limit_deny() {
+    use linkerd_app_core::{Ipv4Net, Ipv6Net};
+
+    let rmeta = Meta::new_default("default");
+
+    // Rate-limit with room for only one request per second
+    let rl = LocalRateLimit::new_no_overrides(Some(10), Some(1));
+
+    let authorizations = Arc::new([Authorization {
+        meta: rmeta.clone(),
+        networks: vec![Ipv4Net::default().into(), Ipv6Net::default().into()],
+        authentication: Authentication::Unauthenticated,
+    }]);
+
+    let (mut svc, _tx) = new_svc!(
+        Protocol::Http1(Arc::new([http::default(authorizations.clone())])),
+        rl
+    );
+
+    // First request should be allowed
+    let rsp = svc
+        .call(
+            ::http::Request::builder()
+                .body(hyper::Body::default())
+                .unwrap(),
+        )
+        .await
+        .expect("serves");
+    let permit = rsp
+        .extensions()
+        .get::<HttpRoutePermit>()
+        .expect("permitted");
+    assert_eq!(permit.labels.route.route, rmeta);
+
+    // Second request should be denied
+    let rsp = svc
+        .call(
+            ::http::Request::builder()
+                .body(hyper::Body::default())
+                .unwrap(),
+        )
+        .await
+        .expect_err("should deny");
+    let err = rsp
+        .downcast_ref::<RateLimitError>()
+        .expect("rate limit error");
+    match err {
+        RateLimitError::PerIdentity(rps) => assert_eq!(rps, &std::num::NonZeroU32::new(1).unwrap()),
+        _ => panic!("unexpected error"),
+    };
 }
 
 #[tokio::test(flavor = "current_thread")]
