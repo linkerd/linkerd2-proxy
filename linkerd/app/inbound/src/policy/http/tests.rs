@@ -404,11 +404,7 @@ async fn rate_limit_allow() {
         )
         .await
         .expect("serves");
-    let permit = rsp
-        .extensions()
-        .get::<HttpRoutePermit>()
-        .expect("permitted");
-    assert_eq!(permit.labels.route.route, rmeta);
+    assert_eq!(rsp.status(), ::http::StatusCode::OK);
 
     // Second request should be allowed as well
     let rsp = svc
@@ -419,11 +415,7 @@ async fn rate_limit_allow() {
         )
         .await
         .expect("serves");
-    let permit = rsp
-        .extensions()
-        .get::<HttpRoutePermit>()
-        .expect("permitted");
-    assert_eq!(permit.labels.route.route, rmeta);
+    assert_eq!(rsp.status(), ::http::StatusCode::OK);
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -455,11 +447,7 @@ async fn rate_limit_deny() {
         )
         .await
         .expect("serves");
-    let permit = rsp
-        .extensions()
-        .get::<HttpRoutePermit>()
-        .expect("permitted");
-    assert_eq!(permit.labels.route.route, rmeta);
+    assert_eq!(rsp.status(), ::http::StatusCode::OK);
 
     // Second request should be denied
     let rsp = svc
