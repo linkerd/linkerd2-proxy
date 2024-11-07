@@ -1,6 +1,6 @@
 use super::{
     super::{concrete, Concrete},
-    route, NoRoute,
+    route, Logical, NoRoute,
 };
 use crate::{BackendRef, EndpointRef, RouteRef, ServerAddr};
 use linkerd_app_core::{io, proxy::http, svc, transport::addrs::*, Error, NameAddr, Result};
@@ -12,7 +12,7 @@ use std::{fmt::Debug, hash::Hash};
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Router<T: Clone + Debug + Eq + Hash> {
     pub(super) parent: T,
-    pub(super) addr: ServerAddr,
+    pub(super) logical: Logical,
     pub(super) routes: Option<opaq_route::Route<route::Route<T>>>,
     pub(super) backends: distribute::Backends<Concrete<T>>,
 }
@@ -56,21 +56,20 @@ where
 {
     fn from((rts, parent): (crate::opaq::Routes, T)) -> Self {
         let crate::opaq::Routes {
-            addr,
-            meta: parent_ref,
+            logical,
             routes,
             backends,
         } = rts;
 
         let mk_concrete = {
             let parent = parent.clone();
-            let parent_ref = parent_ref.clone();
+            let logical = logical.clone();
 
             move |backend_ref: BackendRef, target: concrete::Dispatch| Concrete {
                 target,
                 parent: parent.clone(),
                 backend_ref,
-                parent_ref: parent_ref.clone(),
+                logical: logical.clone(),
             }
         };
 
@@ -125,23 +124,24 @@ where
                 }
             };
 
-        let mk_policy =
-            |policy::RoutePolicy::<policy::opaq::Filter, ()> {
-                 meta, distribution, ..
-             }| {
-                let route_ref = RouteRef(meta);
-                let parent_ref = parent_ref.clone();
+        let mk_policy = |policy::RoutePolicy::<policy::opaq::Filter, ()> {
+                             meta,
+                             distribution,
+                             filters: _,
+                             params: (),
+                         }| {
+            let route_ref = RouteRef(meta);
+            let logical = logical.clone();
 
-                let distribution = mk_distribution(&route_ref, &distribution);
-                route::Route {
-                    addr,
-                    parent: parent.clone(),
-                    parent_ref: parent_ref.clone(),
-                    route_ref,
-                    distribution,
-                    forbidden: false, //TODO: populate from proto
-                }
-            };
+            let distribution = mk_distribution(&route_ref, &distribution);
+            route::Route {
+                logical,
+                parent: parent.clone(),
+                route_ref,
+                distribution,
+                forbidden: false, // TODO
+            }
+        };
 
         let routes = routes.as_ref().map(|route| opaq_route::Route {
             policy: mk_policy(route.policy.clone()),
@@ -152,8 +152,8 @@ where
         Self {
             routes,
             backends,
-            addr,
             parent,
+            logical,
         }
     }
 }
@@ -177,12 +177,12 @@ where
     }
 }
 
-impl<T> svc::Param<ServerAddr> for Router<T>
+impl<T> svc::Param<Logical> for Router<T>
 where
     T: Eq + Hash + Clone + Debug,
 {
-    fn param(&self) -> ServerAddr {
-        self.addr
+    fn param(&self) -> Logical {
+        self.logical.clone()
     }
 }
 

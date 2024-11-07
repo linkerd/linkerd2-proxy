@@ -151,15 +151,7 @@ where
             .iter()
             .map(|route| tls_route::Route {
                 snis: route.snis.clone(),
-                rules: route
-                    .rules
-                    .iter()
-                    .cloned()
-                    .map(|tls_route::Rule { matches, policy }| tls_route::Rule {
-                        matches,
-                        policy: mk_policy(policy),
-                    })
-                    .collect(),
+                policy: mk_policy(route.policy.clone()),
             })
             .collect();
 

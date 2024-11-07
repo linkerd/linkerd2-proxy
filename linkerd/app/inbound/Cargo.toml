@@ -60,6 +60,9 @@ linkerd-meshtls = { path = "../../meshtls", features = ["rustls"] }
 linkerd-meshtls-rustls = { path = "../../meshtls/rustls", features = [
     "test-util",
 ] }
+linkerd-proxy-server-policy = { path = "../../proxy/server-policy", features = [
+    "test-util",
+] }
 linkerd-tracing = { path = "../../tracing", features = ["ansi"] }
 tokio = { version = "1", features = ["full", "macros"] }
 tokio-test = "0.4"

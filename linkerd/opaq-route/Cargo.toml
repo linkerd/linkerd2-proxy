@@ -4,9 +4,3 @@ version = "0.1.0"
 license = "Apache-2.0"
 edition = "2021"
 publish = false
-
-[dependencies]
-regex = "1"
-rand = "0.8"
-thiserror = "1"
-tracing = "0.1"

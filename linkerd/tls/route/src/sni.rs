@@ -100,6 +100,27 @@ impl std::cmp::Ord for SniMatch {
     }
 }
 
+#[cfg(feature = "proto")]
+pub mod proto {
+    use super::*;
+    use linkerd2_proxy_api::tls_route as api;
+    #[derive(Debug, thiserror::Error)]
+    pub enum InvalidSniMatch {
+        #[error("sni match must contain a match")]
+        Missing,
+    }
+    // === impl MatchSni ===
+    impl TryFrom<api::SniMatch> for MatchSni {
+        type Error = InvalidSniMatch;
+        fn try_from(hm: api::SniMatch) -> Result<Self, Self::Error> {
+            match hm.r#match.ok_or(InvalidSniMatch::Missing)? {
+                api::sni_match::Match::Exact(h) => Ok(MatchSni::Exact(h)),
+                api::sni_match::Match::Suffix(sfx) => Ok(MatchSni::Suffix(sfx.reverse_labels)),
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -6,18 +6,21 @@ use std::{hash::Hash, sync::Arc, time};
 pub mod authz;
 pub mod grpc;
 pub mod http;
+pub mod local_rate_limit;
 pub mod meta;
 
 pub use self::{
     authz::{Authentication, Authorization},
+    local_rate_limit::{LocalRateLimit, RateLimitError},
     meta::Meta,
 };
 pub use linkerd_http_route as route;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub struct ServerPolicy {
     pub protocol: Protocol,
     pub meta: Arc<Meta>,
+    pub local_rate_limit: Arc<LocalRateLimit>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -65,6 +68,7 @@ impl ServerPolicy {
                 }]),
                 tcp_authorizations: Arc::new([]),
             },
+            local_rate_limit: Arc::new(LocalRateLimit::default()),
         }
     }
 }
@@ -131,6 +135,27 @@ pub mod proto {
                 server_ips: _,
             } = proto;
 
+            let local_rate_limit = match protocol
+                .clone()
+                .and_then(|api::ProxyProtocol { kind }| kind)
+                .ok_or(InvalidServer::MissingProxyProtocol)?
+            {
+                api::proxy_protocol::Kind::Detect(api::proxy_protocol::Detect {
+                    timeout: _,
+                    http_routes: _,
+                    http_local_rate_limit,
+                }) => http_local_rate_limit.unwrap_or_default().into(),
+                api::proxy_protocol::Kind::Http1(api::proxy_protocol::Http1 {
+                    routes: _,
+                    local_rate_limit,
+                })
+                | api::proxy_protocol::Kind::Http2(api::proxy_protocol::Http2 {
+                    routes: _,
+                    local_rate_limit,
+                }) => local_rate_limit.unwrap_or_default().into(),
+                _ => Default::default(),
+            };
+
             let authorizations = {
                 // Always permit traffic from localhost.
                 let localhost = Authorization {
@@ -154,6 +179,7 @@ pub mod proto {
                 api::proxy_protocol::Kind::Detect(api::proxy_protocol::Detect {
                     http_routes,
                     timeout,
+                    http_local_rate_limit: _,
                 }) => Protocol::Detect {
                     http: mk_routes!(http, http_routes, authorizations.clone())?,
                     timeout: timeout
@@ -162,13 +188,15 @@ pub mod proto {
                     tcp_authorizations: authorizations,
                 },
 
-                api::proxy_protocol::Kind::Http1(api::proxy_protocol::Http1 { routes }) => {
-                    Protocol::Http1(mk_routes!(http, routes, authorizations)?)
-                }
+                api::proxy_protocol::Kind::Http1(api::proxy_protocol::Http1 {
+                    routes,
+                    local_rate_limit: _,
+                }) => Protocol::Http1(mk_routes!(http, routes, authorizations)?),
 
-                api::proxy_protocol::Kind::Http2(api::proxy_protocol::Http2 { routes }) => {
-                    Protocol::Http2(mk_routes!(http, routes, authorizations)?)
-                }
+                api::proxy_protocol::Kind::Http2(api::proxy_protocol::Http2 {
+                    routes,
+                    local_rate_limit: _,
+                }) => Protocol::Http2(mk_routes!(http, routes, authorizations)?),
 
                 api::proxy_protocol::Kind::Grpc(api::proxy_protocol::Grpc { routes }) => {
                     Protocol::Grpc(mk_routes!(grpc, routes, authorizations)?)
@@ -182,7 +210,11 @@ pub mod proto {
             // avoid label inference.
             let meta = Meta::try_new_with_default(labels, "policy.linkerd.io", "server")?;
 
-            Ok(ServerPolicy { protocol, meta })
+            Ok(ServerPolicy {
+                protocol,
+                meta,
+                local_rate_limit: Arc::new(local_rate_limit),
+            })
         }
     }
 }

@@ -1,11 +1,11 @@
-use super::super::Concrete;
-use crate::{ParentRef, RouteRef, ServerAddr};
+use super::{super::Concrete, Logical};
+use crate::{ParentRef, RouteRef};
 use linkerd_app_core::{
     io,
     metrics::prom::EncodeLabelSetMut,
     svc,
     transport::metrics::tcp::{client::NewInstrumentConnection, TcpMetricsParams},
-    Error,
+    Addr, Error,
 };
 use linkerd_distribute as distribute;
 use linkerd_errno::{code::Code, Errno};
@@ -28,8 +28,7 @@ pub(crate) struct MatchedRoute<T> {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct Route<T> {
     pub(super) parent: T,
-    pub(super) addr: ServerAddr,
-    pub(super) parent_ref: ParentRef,
+    pub(super) logical: Logical,
     pub(super) route_ref: RouteRef,
     pub(super) distribution: BackendDistribution<T>,
     pub(super) forbidden: bool,
@@ -39,7 +38,7 @@ pub(crate) struct Route<T> {
 pub struct RouteLabels {
     parent: ParentRef,
     route: RouteRef,
-    addr: ServerAddr,
+    addr: Addr,
 }
 
 pub(crate) type BackendDistribution<T> = distribute::Distribution<Backend<T>>;
@@ -131,8 +130,8 @@ where
     fn param(&self) -> RouteLabels {
         RouteLabels {
             route: self.params.route_ref.clone(),
-            parent: self.params.parent_ref.clone(),
-            addr: self.params.addr,
+            parent: self.params.logical.meta.clone(),
+            addr: self.params.logical.addr.clone(),
         }
     }
 }
@@ -146,10 +145,21 @@ impl EncodeLabelSetMut for RouteLabels {
             route,
             addr,
         } = self;
+
         parent.encode_label_set(enc)?;
         route.encode_label_set(enc)?;
-        ("target_ip", addr.ip().to_string()).encode(enc.encode_label())?;
-        ("target_port", addr.port().to_string()).encode(enc.encode_label())?;
+
+        (
+            "target_ip",
+            match addr {
+                Addr::Socket(ref a) => Some(a.ip().to_string()),
+                Addr::Name(_) => None,
+            },
+        )
+            .encode(enc.encode_label())?;
+
+        ("target_port", addr.port()).encode(enc.encode_label())?;
+
         Ok(())
     }
 }

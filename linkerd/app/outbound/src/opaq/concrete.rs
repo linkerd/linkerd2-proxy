@@ -1,3 +1,4 @@
+use super::Logical;
 use crate::{
     metrics::BalancerMetricsParams,
     stack_labels,
@@ -12,7 +13,6 @@ use linkerd_app_core::{
         prom::{self, EncodeLabelSetMut},
         OutboundZoneLocality,
     },
-    profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
@@ -72,8 +72,11 @@ struct Balance<T> {
     parent: T,
 }
 
+// TODO: Use crate::metrics::ConcreteLabels once we do not need the logical and concrete labels anymore
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct ConcreteLabels {
+    parent: ParentRef,
+    backend: BackendRef,
     logical: Arc<str>,
     concrete: Arc<str>,
 }
@@ -81,7 +84,8 @@ pub struct ConcreteLabels {
 impl prom::EncodeLabelSetMut for ConcreteLabels {
     fn encode_label_set(&self, enc: &mut prom::encoding::LabelSetEncoder<'_>) -> std::fmt::Result {
         use prom::encoding::EncodeLabel;
-
+        self.parent.encode_label_set(enc)?;
+        self.backend.encode_label_set(enc)?;
         ("logical", &*self.logical).encode(enc.encode_label())?;
         ("concrete", &*self.concrete).encode(enc.encode_label())?;
         Ok(())
@@ -96,24 +100,15 @@ impl prom::encoding::EncodeLabelSet for ConcreteLabels {
 
 impl<T> svc::ExtractParam<balance::Metrics, Balance<T>> for BalancerMetricsParams<ConcreteLabels>
 where
-    T: svc::Param<Option<profiles::LogicalAddr>>,
+    T: svc::Param<Logical>,
+    T: svc::Param<BackendRef>,
 {
     fn extract_param(&self, bal: &Balance<T>) -> balance::Metrics {
-        // we are trying to preserve the original metrics format here.
-        // for that purpose we utilize the logical address that will be
-        // present only if we have used profiles for routing. This means:
-        //
-        // 1. If we are using policy logical and concrete will be the same
-        // 2. If we are using profiles we are doing so because the profiles
-        //    contains traffic split data. In this case the logical and
-        //    concrete are potentially different based on the backend choice.
-        let logical = match bal.parent.param() {
-            Some(profiles::LogicalAddr(addr)) => addr.to_string(),
-            None => bal.addr.to_string(),
-        };
-
+        let Logical { addr, meta: parent } = bal.parent.param();
         self.metrics(&ConcreteLabels {
-            logical: logical.into(),
+            parent,
+            logical: addr.to_string().into(),
+            backend: bal.parent.param(),
             concrete: bal.addr.to_string().into(),
         })
     }
@@ -142,9 +137,11 @@ impl<C> Outbound<C> {
     >
     where
         // Logical target
+        T: svc::Param<Logical>,
         T: svc::Param<Dispatch>,
-        T: svc::Param<Option<profiles::LogicalAddr>>,
         T: Clone + Debug + Send + Sync + 'static,
+        T: svc::Param<BackendRef>,
+        T: svc::Param<ParentRef>,
         // Server-side socket.
         I: io::AsyncRead + io::AsyncWrite + Debug + Send + Unpin + 'static,
         // Endpoint resolution.
@@ -343,7 +340,7 @@ impl<T> svc::Param<Option<SessionProtocol>> for Endpoint<T> {
 
 impl<T> svc::Param<transport::labels::Key> for Endpoint<T>
 where
-    T: svc::Param<Option<profiles::LogicalAddr>>,
+    T: svc::Param<Logical>,
 {
     fn param(&self) -> transport::labels::Key {
         transport::labels::Key::OutboundClient(self.param())
@@ -352,14 +349,15 @@ where
 
 impl<T> svc::Param<metrics::OutboundEndpointLabels> for Endpoint<T>
 where
-    T: svc::Param<Option<profiles::LogicalAddr>>,
+    T: svc::Param<Logical>,
 {
     fn param(&self) -> metrics::OutboundEndpointLabels {
         let authority = self
             .parent
             .param()
-            .as_ref()
-            .map(|profiles::LogicalAddr(a)| a.as_http_authority());
+            .addr
+            .name_addr()
+            .map(|a| a.as_http_authority());
 
         metrics::OutboundEndpointLabels {
             authority,
@@ -385,7 +383,7 @@ impl<T> svc::Param<TcpZoneLabels> for Endpoint<T> {
 
 impl<T> svc::Param<metrics::EndpointLabels> for Endpoint<T>
 where
-    T: svc::Param<Option<profiles::LogicalAddr>>,
+    T: svc::Param<Logical>,
 {
     fn param(&self) -> metrics::EndpointLabels {
         metrics::EndpointLabels::from(svc::Param::<metrics::OutboundEndpointLabels>::param(self))

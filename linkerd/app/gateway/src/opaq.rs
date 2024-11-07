@@ -1,15 +1,13 @@
 use super::{server::Opaq, Gateway};
 use inbound::{GatewayAddr, GatewayDomainInvalid};
-use linkerd_app_core::{io, profiles, svc, tls, transport::addrs::*, Error};
+use linkerd_app_core::{io, svc, tls, transport::addrs::*, Error};
 use linkerd_app_inbound as inbound;
 use linkerd_app_outbound as outbound;
 use tokio::sync::watch;
 
 #[derive(Clone, Debug)]
 pub struct Target {
-    orig_dst: OrigDstAddr,
-    // this value is present only if we are using profiles for discovery
-    profiles_logical: Option<profiles::LogicalAddr>,
+    addr: GatewayAddr,
     routes: watch::Receiver<outbound::opaq::Routes>,
 }
 
@@ -51,32 +49,25 @@ impl Gateway {
 
 impl<T> TryFrom<Opaq<T>> for Target
 where
-    T: svc::Param<OrigDstAddr>,
+    T: svc::Param<GatewayAddr>,
 {
     type Error = GatewayDomainInvalid;
 
     fn try_from(opaq: Opaq<T>) -> Result<Self, Self::Error> {
-        let profile = svc::Param::<Option<profiles::Receiver>>::param(&*opaq);
-        let policy = svc::Param::<outbound::policy::Receiver>::param(&*opaq);
-        let orig_dst = svc::Param::<OrigDstAddr>::param(&*opaq);
-        // we error if there is no profiles resolution
-        if profile.is_none() {
+        use svc::Param;
+
+        let addr: GatewayAddr = (**opaq).param();
+        let Some(profile) = (*opaq).param() else {
+            // The gateway address must be resolvable via the profile API.
             return Err(GatewayDomainInvalid);
-        }
+        };
+        let routes = outbound::opaq::routes_from_discovery(
+            addr.0.clone().into(),
+            Some(profile),
+            (*opaq).param(),
+        );
 
-        let (routes, profiles_logical) =
-            outbound::opaq::routes_from_discovery(orig_dst, profile, policy);
-        Ok(Target {
-            orig_dst,
-            profiles_logical,
-            routes,
-        })
-    }
-}
-
-impl svc::Param<Option<profiles::LogicalAddr>> for Target {
-    fn param(&self) -> Option<profiles::LogicalAddr> {
-        self.profiles_logical.clone()
+        Ok(Target { addr, routes })
     }
 }
 
@@ -88,7 +79,7 @@ impl svc::Param<watch::Receiver<outbound::opaq::Routes>> for Target {
 
 impl PartialEq for Target {
     fn eq(&self, other: &Self) -> bool {
-        self.orig_dst == other.orig_dst
+        self.addr == other.addr
     }
 }
 
@@ -96,6 +87,6 @@ impl Eq for Target {}
 
 impl std::hash::Hash for Target {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.orig_dst.hash(state);
+        self.addr.hash(state);
     }
 }
