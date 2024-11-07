@@ -11,7 +11,8 @@ use linkerd_app_core::{
     transport::addrs::*,
     Addr, Error,
 };
-use std::{fmt::Debug, hash::Hash};
+use once_cell::sync::Lazy;
+use std::{fmt::Debug, hash::Hash, sync::Arc};
 use tokio::sync::watch;
 
 mod concrete;
@@ -163,12 +164,14 @@ fn routes_from_profile(
         decay: std::time::Duration::from_secs(10),
     });
 
+    // TODO(ver) use resource metadata from the profile response.
     let parent_meta = service_meta(&profiles_addr).unwrap_or_else(|| UNKNOWN_META.clone());
 
     let backends: Vec<(policy::RouteBackend<policy::opaq::Filter>, u32)> = profile
         .targets
         .iter()
         .map(|target| {
+            // TODO(ver) use resource metadata from the profile response.
             let backend_meta = service_meta(&target.addr).unwrap_or_else(|| UNKNOWN_META.clone());
             let backend = policy::RouteBackend {
                 backend: policy::Backend {
@@ -190,9 +193,12 @@ fn routes_from_profile(
 
     let distribution = policy::RouteDistribution::RandomAvailable(backends.clone().into());
 
+    static ROUTE_META: Lazy<Arc<policy::Meta>> =
+        Lazy::new(|| policy::Meta::new_default("serviceprofile"));
     let route = policy::opaq::Route {
         policy: policy::opaq::Policy {
-            meta: parent_meta.clone(),
+            // TODO(ver) use resource metadata from the profile response.
+            meta: ROUTE_META.clone(),
             params: (),
             filters: std::sync::Arc::new([]),
             distribution,
