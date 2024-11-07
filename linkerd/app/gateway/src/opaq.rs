@@ -8,8 +8,6 @@ use tokio::sync::watch;
 #[derive(Clone, Debug)]
 pub struct Target {
     addr: GatewayAddr,
-    // this value is present only if we are using profiles for discovery
-    profiles_logical: Option<profiles::LogicalAddr>,
     routes: watch::Receiver<outbound::opaq::Routes>,
 }
 
@@ -67,19 +65,16 @@ where
         let policy = svc::Param::<outbound::policy::Receiver>::param(discovery);
 
         let GatewayAddr(name_addr) = addr.clone();
-        let (routes, profiles_logical) =
+        let (routes, _) =
             outbound::opaq::routes_from_discovery(name_addr.into(), Some(profile), policy);
-        Ok(Target {
-            addr,
-            profiles_logical,
-            routes,
-        })
+        Ok(Target { addr, routes })
     }
 }
 
 impl svc::Param<Option<profiles::LogicalAddr>> for Target {
     fn param(&self) -> Option<profiles::LogicalAddr> {
-        self.profiles_logical.clone()
+        let GatewayAddr(addr) = self.addr.clone();
+        Some(profiles::LogicalAddr(addr))
     }
 }
 
