@@ -5,6 +5,9 @@ license = "Apache-2.0"
 edition = "2021"
 publish = false
 
+[features]
+proto = ["linkerd2-proxy-api"]
+
 [dependencies]
 regex = "1"
 rand = "0.8"
@@ -12,3 +15,8 @@ thiserror = "1"
 tracing = "0.1"
 linkerd-tls = { path = "../" }
 linkerd-dns = { path = "../../dns" }
+
+[dependencies.linkerd2-proxy-api]
+workspace = true
+optional = true
+features = ["outbound"]

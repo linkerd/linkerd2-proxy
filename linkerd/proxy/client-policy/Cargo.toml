@@ -9,6 +9,7 @@ publish = false
 [features]
 proto = [
     "linkerd-http-route/proto",
+    "linkerd-tls-route/proto",
     "linkerd2-proxy-api",
     "prost-types",
     "thiserror",

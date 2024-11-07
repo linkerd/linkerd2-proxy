@@ -333,6 +333,9 @@ pub mod proto {
         #[error("invalid opaque route: {0}")]
         OpaqueRoute(#[from] opaq::proto::InvalidOpaqueRoute),
 
+        #[error("invalid TLS route: {0}")]
+        TlsRoute(#[from] tls::proto::InvalidTlsRoute),
+
         #[error("invalid backend: {0}")]
         Backend(#[from] InvalidBackend),
 
@@ -479,10 +482,7 @@ pub mod proto {
                 proxy_protocol::Kind::Http2(http) => Protocol::Http2(http.try_into()?),
                 proxy_protocol::Kind::Opaque(opaque) => Protocol::Opaque(opaque.try_into()?),
                 proxy_protocol::Kind::Grpc(grpc) => Protocol::Grpc(grpc.try_into()?),
-                proxy_protocol::Kind::Tls(_tls) => {
-                    // TODO(ver): impl TryFrom<proxy_protocol::Tls> for `tls::Tls`
-                    return Err(InvalidPolicy::Protocol("TLS not supported yet"));
-                }
+                proxy_protocol::Kind::Tls(tls) => Protocol::Tls(tls.try_into()?),
             };
 
             let mut backends = BackendSet::default();
