@@ -1,6 +1,6 @@
 use super::concrete;
 use crate::{BackendRef, Outbound, ParentRef};
-use linkerd_app_core::{io, profiles, svc, Addr, Error};
+use linkerd_app_core::{io, svc, Addr, Error};
 use linkerd_proxy_client_policy as client_policy;
 use std::{fmt::Debug, hash::Hash, sync::Arc};
 use tokio::sync::watch;
@@ -57,7 +57,6 @@ impl<N> Outbound<N> {
     where
         // Opaque logical target.
         T: svc::Param<watch::Receiver<Routes>>,
-        T: svc::Param<Option<profiles::LogicalAddr>>,
         T: Eq + Hash + Clone + Debug + Send + Sync + 'static,
         // Server-side socket.
         I: io::AsyncRead + io::AsyncWrite + Debug + Send + Unpin + 'static,
@@ -100,15 +99,6 @@ where
 impl<T> svc::Param<concrete::Dispatch> for Concrete<T> {
     fn param(&self) -> concrete::Dispatch {
         self.target.clone()
-    }
-}
-
-impl<T> svc::Param<Option<profiles::LogicalAddr>> for Concrete<T>
-where
-    T: svc::Param<Option<profiles::LogicalAddr>>,
-{
-    fn param(&self) -> Option<profiles::LogicalAddr> {
-        self.parent.param()
     }
 }
 

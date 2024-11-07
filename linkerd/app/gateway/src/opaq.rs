@@ -1,6 +1,6 @@
 use super::{server::Opaq, Gateway};
 use inbound::{GatewayAddr, GatewayDomainInvalid};
-use linkerd_app_core::{io, profiles, svc, tls, transport::addrs::*, Error};
+use linkerd_app_core::{io, svc, tls, transport::addrs::*, Error};
 use linkerd_app_inbound as inbound;
 use linkerd_app_outbound as outbound;
 use tokio::sync::watch;
@@ -57,24 +57,17 @@ where
         use svc::Param;
 
         let addr: GatewayAddr = (**opaq).param();
-        let (routes, paddr) = outbound::opaq::routes_from_discovery(
+        let Some(profile) = (*opaq).param() else {
+            // The gateway address must be resolvable via the profile API.
+            return Err(GatewayDomainInvalid);
+        };
+        let routes = outbound::opaq::routes_from_discovery(
             addr.0.clone().into(),
-            (*opaq).param(),
+            Some(profile),
             (*opaq).param(),
         );
-        if paddr.is_none() {
-            // The gateway address must be resolveable via the profile API.
-            return Err(GatewayDomainInvalid);
-        }
 
         Ok(Target { addr, routes })
-    }
-}
-
-impl svc::Param<Option<profiles::LogicalAddr>> for Target {
-    fn param(&self) -> Option<profiles::LogicalAddr> {
-        let GatewayAddr(addr) = self.addr.clone();
-        Some(profiles::LogicalAddr(addr))
     }
 }
 
