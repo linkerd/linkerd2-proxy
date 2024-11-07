@@ -19,17 +19,11 @@ fn sni_precedence() {
     let rts = vec![
         Route {
             snis: vec!["*.example.com".parse().unwrap()],
-            rules: vec![Rule {
-                policy: Policy::Unexpected,
-                matches: vec![],
-            }],
+            policy: Policy::Unexpected,
         },
         Route {
             snis: vec!["foo.example.com".parse().unwrap()],
-            rules: vec![Rule {
-                policy: Policy::Expected,
-                matches: vec![],
-            }],
+            policy: Policy::Expected,
         },
     ];
 
@@ -45,19 +39,12 @@ fn sni_precedence() {
 fn first_identical_wins() {
     let rts = vec![
         Route {
-            rules: vec![
-                Rule {
-                    policy: Policy::Expected,
-                    matches: vec![],
-                },
-                // Redundant rule.
-                Rule::default(),
-            ],
+            policy: Policy::Expected,
             snis: vec![],
         },
         // Redundant route.
         Route {
-            rules: vec![Rule::default()],
+            policy: Policy::Unexpected,
             snis: vec![],
         },
     ];
@@ -74,10 +61,7 @@ fn first_identical_wins() {
 fn no_match_suffix() {
     let rts = vec![Route {
         snis: vec!["*.test.example.com".parse().unwrap()],
-        rules: vec![Rule {
-            policy: Policy::Unexpected,
-            matches: vec![],
-        }],
+        policy: Policy::Unexpected,
     }];
 
     let si = SessionInfo {
@@ -91,10 +75,7 @@ fn no_match_suffix() {
 fn no_match_exact() {
     let rts = vec![Route {
         snis: vec!["test.example.com".parse().unwrap()],
-        rules: vec![Rule {
-            policy: Policy::Unexpected,
-            matches: vec![],
-        }],
+        policy: Policy::Unexpected,
     }];
 
     let si = SessionInfo {

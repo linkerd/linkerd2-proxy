@@ -1,11 +1,10 @@
 use linkerd_tls_route as tls;
 use std::sync::Arc;
 
-pub use linkerd_tls_route::{find, r#match, sni, RouteMatch};
+pub use linkerd_tls_route::{find, sni, RouteMatch};
 
 pub type Policy = crate::RoutePolicy<Filter, ()>;
 pub type Route = tls::Route<Policy>;
-pub type Rule = tls::Rule<Policy>;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Tls {
@@ -18,15 +17,12 @@ pub enum Filter {}
 pub fn default(distribution: crate::RouteDistribution<Filter>) -> Route {
     Route {
         snis: vec![],
-        rules: vec![Rule {
-            matches: vec![],
-            policy: Policy {
-                meta: crate::Meta::new_default("default"),
-                filters: Arc::new([]),
-                params: (),
-                distribution,
-            },
-        }],
+        policy: Policy {
+            meta: crate::Meta::new_default("default"),
+            filters: Arc::new([]),
+            params: (),
+            distribution,
+        },
     }
 }
 
@@ -91,10 +87,8 @@ pub(crate) mod proto {
 
     impl Tls {
         pub fn fill_backends(&self, set: &mut BackendSet) {
-            for Route { ref rules, .. } in &*self.routes {
-                for Rule { ref policy, .. } in rules {
-                    policy.distribution.fill_backends(set);
-                }
+            for Route { ref policy, .. } in &*self.routes {
+                policy.distribution.fill_backends(set);
             }
         }
     }
@@ -117,11 +111,6 @@ pub(crate) mod proto {
             .map(sni::MatchSni::try_from)
             .collect::<Result<Vec<_>, _>>()?;
 
-        let rules = rules
-            .into_iter()
-            .map(|rule| try_rule(&meta, rule))
-            .collect::<Result<Vec<_>, _>>()?;
-
         if rules.len() != 1 {
             // Currently, TLS rules have no match expressions, so if there's
             // more than one rule, we have no way of determining which one to
@@ -129,25 +118,28 @@ pub(crate) mod proto {
             return Err(InvalidTlsRoute::OnlyOneRule(rules.len()));
         }
 
-        Ok(Route { snis, rules })
+        let policy = rules
+            .into_iter()
+            .map(|rule| try_rule(&meta, rule))
+            .next()
+            .ok_or(InvalidTlsRoute::OnlyOneRule(0))??;
+
+        Ok(Route { snis, policy })
     }
 
     fn try_rule(
         meta: &Arc<Meta>,
         tls_route::Rule { backends }: tls_route::Rule,
-    ) -> Result<Rule, InvalidTlsRoute> {
+    ) -> Result<Policy, InvalidTlsRoute> {
         let distribution = backends
             .ok_or(InvalidTlsRoute::Missing("distribution"))?
             .try_into()?;
 
-        Ok(Rule {
-            policy: Policy {
-                meta: meta.clone(),
-                filters: NO_FILTERS.clone(),
-                params: (),
-                distribution,
-            },
-            matches: Vec::default(),
+        Ok(Policy {
+            meta: meta.clone(),
+            filters: NO_FILTERS.clone(),
+            params: (),
+            distribution,
         })
     }
 
