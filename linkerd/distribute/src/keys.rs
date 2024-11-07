@@ -1,21 +1,16 @@
+use ahash::{HashMap, HashMapExt};
 use rand::{
     distributions::{WeightedError, WeightedIndex},
     prelude::Distribution as _,
     Rng,
 };
-use std::{collections::HashMap, hash::Hash};
+use std::hash::Hash;
 
 /// Uniquely identifies a key/backend pair for a distribution. This allows
 /// backends to have the same key and still participate in request distribution.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct KeyId {
+pub(crate) struct KeyId {
     idx: usize,
-}
-
-impl KeyId {
-    pub(crate) fn new(idx: usize) -> Self {
-        Self { idx }
-    }
 }
 
 #[derive(Debug)]
@@ -35,6 +30,14 @@ pub struct WeightedKey<K> {
 pub(crate) struct WeightedKeySelector<'a, K> {
     keys: &'a WeightedServiceKeys<K>,
     index: WeightedIndex<u32>,
+}
+
+// === impl KeyId ===
+
+impl KeyId {
+    pub(crate) fn new(idx: usize) -> Self {
+        Self { idx }
+    }
 }
 
 // === impl UnweightedKeys ===

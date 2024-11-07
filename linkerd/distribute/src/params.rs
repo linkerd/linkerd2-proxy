@@ -1,11 +1,10 @@
-use ahash::AHashSet;
-use rand::distributions::WeightedError;
-use std::{fmt::Debug, hash::Hash, sync::Arc};
-
 use crate::{
     keys::{ServiceKeys, WeightedKey},
     WeightedServiceKeys,
 };
+use ahash::AHashSet;
+use rand::distributions::WeightedError;
+use std::{fmt::Debug, hash::Hash, sync::Arc};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Backends<K>(pub(crate) Arc<AHashSet<K>>)
