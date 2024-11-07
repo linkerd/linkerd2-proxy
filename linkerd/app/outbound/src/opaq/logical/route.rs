@@ -1,5 +1,5 @@
-use super::super::Concrete;
-use crate::{ParentRef, RouteRef, ServerAddr};
+use super::{super::Concrete, Logical};
+use crate::RouteRef;
 use linkerd_app_core::{io, svc, Error};
 use linkerd_distribute as distribute;
 use std::{fmt::Debug, hash::Hash};
@@ -18,8 +18,7 @@ pub(crate) struct MatchedRoute<T> {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct Route<T> {
     pub(super) parent: T,
-    pub(super) addr: ServerAddr,
-    pub(super) parent_ref: ParentRef,
+    pub(super) logical: Logical,
     pub(super) route_ref: RouteRef,
     pub(super) distribution: BackendDistribution<T>,
 }

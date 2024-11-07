@@ -9,7 +9,7 @@ use linkerd_app_core::{
     },
     svc,
     transport::addrs::*,
-    Error,
+    Addr, Error,
 };
 use std::{fmt::Debug, hash::Hash};
 use tokio::sync::watch;
@@ -17,7 +17,7 @@ use tokio::sync::watch;
 mod concrete;
 mod logical;
 
-pub use self::logical::{Concrete, Routes};
+pub use self::logical::{Concrete, Logical, Routes};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct Opaq<T>(T);
@@ -37,7 +37,6 @@ impl<C> Outbound<C> {
     pub fn push_opaq_cached<T, I, R>(self, resolve: R) -> Outbound<svc::ArcNewCloneTcp<T, I>>
     where
         // Opaque target
-        T: svc::Param<Option<profiles::LogicalAddr>>,
         T: Clone + Debug + PartialEq + Eq + Hash + Send + Sync + 'static,
         T: svc::Param<watch::Receiver<Routes>>,
         // Server-side connection
@@ -66,15 +65,6 @@ impl<C> Outbound<C> {
 }
 
 // === impl Opaq ===
-
-impl<T> svc::Param<Option<profiles::LogicalAddr>> for Opaq<T>
-where
-    T: svc::Param<Option<profiles::LogicalAddr>>,
-{
-    fn param(&self) -> Option<profiles::LogicalAddr> {
-        self.0.param()
-    }
-}
 
 impl<T> svc::Param<watch::Receiver<logical::Routes>> for Opaq<T>
 where
@@ -111,40 +101,31 @@ fn should_override_opaq_policy(
 /// in order to support traffic splits. Everything else should be delivered through client
 /// policy.
 pub fn routes_from_discovery(
-    orig_dst: OrigDstAddr,
+    addr: Addr,
     profile: Option<profiles::Receiver>,
     mut policy: policy::Receiver,
-) -> (watch::Receiver<Routes>, Option<profiles::LogicalAddr>) {
+) -> watch::Receiver<Routes> {
     if let Some(mut profile) = profile.map(watch::Receiver::from) {
-        if let Some(addr) = should_override_opaq_policy(&profile) {
+        if let Some(paddr) = should_override_opaq_policy(&profile) {
             tracing::debug!("Using ServiceProfile");
-            let init = routes_from_profile(orig_dst, addr.clone(), &profile.borrow_and_update());
+            let init = routes_from_profile(paddr.clone(), &profile.borrow_and_update());
 
-            let profiles_addr = addr.clone();
-            let routes = spawn_routes(profile, init, move |profile: &profiles::Profile| {
-                Some(routes_from_profile(
-                    orig_dst,
-                    profiles_addr.clone(),
-                    profile,
-                ))
+            return spawn_routes(profile, init, move |profile: &profiles::Profile| {
+                Some(routes_from_profile(paddr.clone(), profile))
             });
-            return (routes, Some(addr));
         }
     }
 
     tracing::debug!("Using ClientPolicy routes");
-    let init = routes_from_policy(orig_dst, &policy.borrow_and_update())
+    let init = routes_from_policy(addr.clone(), &policy.borrow_and_update())
         .expect("initial policy must be opaque");
-    (
-        spawn_routes(policy, init, move |policy: &policy::ClientPolicy| {
-            routes_from_policy(orig_dst, policy)
-        }),
-        None,
-    )
+
+    spawn_routes(policy, init, move |policy: &policy::ClientPolicy| {
+        routes_from_policy(addr.clone(), policy)
+    })
 }
 
-fn routes_from_policy(orig_dst: OrigDstAddr, policy: &policy::ClientPolicy) -> Option<Routes> {
-    let parent_ref = ParentRef(policy.parent.clone());
+fn routes_from_policy(addr: Addr, policy: &policy::ClientPolicy) -> Option<Routes> {
     let routes = match policy.protocol {
         policy::Protocol::Opaque(policy::opaq::Opaque { ref routes }) => routes.clone(),
         // we support a detect stack to cover the case when we do detection and fallback to opaq
@@ -156,16 +137,17 @@ fn routes_from_policy(orig_dst: OrigDstAddr, policy: &policy::ClientPolicy) -> O
     };
 
     Some(Routes {
-        addr: orig_dst.into(),
-        meta: parent_ref,
+        logical: Logical {
+            addr,
+            meta: ParentRef(policy.parent.clone()),
+        },
         routes,
         backends: policy.backends.clone(),
     })
 }
 
 fn routes_from_profile(
-    orig_dst: OrigDstAddr,
-    profiles_addr: profiles::LogicalAddr,
+    profiles::LogicalAddr(profiles_addr): profiles::LogicalAddr,
     profile: &profiles::Profile,
 ) -> Routes {
     // TODO: make configurable
@@ -218,9 +200,11 @@ fn routes_from_profile(
     };
 
     Routes {
-        addr: orig_dst.into(),
+        logical: Logical {
+            addr: profiles_addr.into(),
+            meta: ParentRef(parent_meta),
+        },
         backends: backends.into_iter().map(|(b, _)| b.backend).collect(),
-        meta: ParentRef(parent_meta),
         routes: Some(route),
     }
 }

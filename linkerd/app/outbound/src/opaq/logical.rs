@@ -1,6 +1,6 @@
 use super::concrete;
-use crate::{BackendRef, Outbound, ParentRef, ServerAddr};
-use linkerd_app_core::{io, profiles, svc, Error};
+use crate::{BackendRef, Outbound, ParentRef};
+use linkerd_app_core::{io, svc, Addr, Error};
 use linkerd_proxy_client_policy as client_policy;
 use std::{fmt::Debug, hash::Hash, sync::Arc};
 use tokio::sync::watch;
@@ -12,9 +12,14 @@ pub mod router;
 mod tests;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Routes {
-    pub addr: ServerAddr,
+pub struct Logical {
     pub meta: ParentRef,
+    pub addr: Addr,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Routes {
+    pub logical: Logical,
     pub routes: Option<client_policy::opaq::Route>,
     pub backends: Arc<[client_policy::Backend]>,
 }
@@ -23,7 +28,7 @@ pub struct Routes {
 pub struct Concrete<T> {
     target: concrete::Dispatch,
     parent: T,
-    parent_ref: ParentRef,
+    logical: Logical,
     backend_ref: BackendRef,
 }
 
@@ -32,9 +37,9 @@ pub struct Concrete<T> {
 pub struct NoRoute;
 
 #[derive(Debug, thiserror::Error)]
-#[error("logical service {addr}: {source}")]
+#[error("logical service {0}: {source}", logical.addr)]
 pub struct LogicalError {
-    addr: ServerAddr,
+    logical: Logical,
     #[source]
     source: Error,
 }
@@ -52,7 +57,6 @@ impl<N> Outbound<N> {
     where
         // Opaque logical target.
         T: svc::Param<watch::Receiver<Routes>>,
-        T: svc::Param<Option<profiles::LogicalAddr>>,
         T: Eq + Hash + Clone + Debug + Send + Sync + 'static,
         // Server-side socket.
         I: io::AsyncRead + io::AsyncWrite + Debug + Send + Unpin + 'static,
@@ -83,8 +87,10 @@ where
     T: Eq + Hash + Clone + Debug,
 {
     fn from((target, source): (&router::Router<T>, Error)) -> Self {
-        let addr = svc::Param::param(target);
-        Self { addr, source }
+        Self {
+            logical: target.logical.clone(),
+            source,
+        }
     }
 }
 
@@ -96,18 +102,15 @@ impl<T> svc::Param<concrete::Dispatch> for Concrete<T> {
     }
 }
 
-impl<T> svc::Param<Option<profiles::LogicalAddr>> for Concrete<T>
-where
-    T: svc::Param<Option<profiles::LogicalAddr>>,
-{
-    fn param(&self) -> Option<profiles::LogicalAddr> {
-        self.parent.param()
+impl<T> svc::Param<Logical> for Concrete<T> {
+    fn param(&self) -> Logical {
+        self.logical.clone()
     }
 }
 
 impl<T> svc::Param<ParentRef> for Concrete<T> {
     fn param(&self) -> ParentRef {
-        self.parent_ref.clone()
+        self.logical.meta.clone()
     }
 }
 

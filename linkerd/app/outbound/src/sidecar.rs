@@ -11,7 +11,7 @@ use linkerd_app_core::{
     },
     svc,
     transport::addrs::*,
-    Error,
+    Addr, Error,
 };
 use std::fmt::Debug;
 use tokio::sync::watch;
@@ -41,8 +41,6 @@ struct TlsSidecar {
 #[derive(Clone, Debug)]
 struct OpaqSidecar {
     orig_dst: OrigDstAddr,
-    // this value is present only if we are using profiles for discovery
-    profiles_logical: Option<profiles::LogicalAddr>,
     routes: watch::Receiver<opaq::Routes>,
 }
 
@@ -396,12 +394,13 @@ impl std::hash::Hash for TlsSidecar {
 
 impl From<Sidecar> for OpaqSidecar {
     fn from(parent: Sidecar) -> Self {
-        let orig_dst = parent.orig_dst;
-        let (routes, profiles_logical) =
-            opaq::routes_from_discovery(orig_dst, parent.profile, parent.policy);
+        let routes = opaq::routes_from_discovery(
+            Addr::Socket(parent.orig_dst.into()),
+            parent.profile,
+            parent.policy,
+        );
         OpaqSidecar {
-            orig_dst,
-            profiles_logical,
+            orig_dst: parent.orig_dst,
             routes,
         }
     }
@@ -410,12 +409,6 @@ impl From<Sidecar> for OpaqSidecar {
 impl svc::Param<watch::Receiver<opaq::Routes>> for OpaqSidecar {
     fn param(&self) -> watch::Receiver<opaq::Routes> {
         self.routes.clone()
-    }
-}
-
-impl svc::Param<Option<profiles::LogicalAddr>> for OpaqSidecar {
-    fn param(&self) -> Option<profiles::LogicalAddr> {
-        self.profiles_logical.clone()
     }
 }
 

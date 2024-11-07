@@ -25,8 +25,6 @@ struct Http<T> {
 #[derive(Clone, Debug)]
 struct Opaq {
     orig_dst: OrigDstAddr,
-    // this value is present only if we are using profiles for discovery
-    profiles_logical: Option<profiles::LogicalAddr>,
     routes: watch::Receiver<opaq::Routes>,
 }
 
@@ -605,27 +603,21 @@ impl std::hash::Hash for Logical {
     }
 }
 
-impl svc::Param<Option<profiles::LogicalAddr>> for Opaq {
-    fn param(&self) -> Option<profiles::LogicalAddr> {
-        self.profiles_logical.clone()
-    }
-}
-
 impl<T> From<Discovery<T>> for Opaq
 where
-    T: svc::Param<OrigDstAddr> + Clone,
+    T: svc::Param<OrigDstAddr>,
 {
     fn from(discovery: Discovery<T>) -> Self {
-        let policy = svc::Param::<policy::Receiver>::param(&discovery);
-        let profile = svc::Param::<Option<watch::Receiver<profiles::Profile>>>::param(&discovery);
+        use svc::Param;
+
         let orig_dst: OrigDstAddr = discovery.param();
-        let (routes, profiles_logical) =
-            opaq::routes_from_discovery(orig_dst, profile.map(Into::into), policy);
-        Self {
-            routes,
-            profiles_logical,
-            orig_dst,
-        }
+        let routes = opaq::routes_from_discovery(
+            Addr::Socket(orig_dst.into()),
+            discovery.param(),
+            discovery.param(),
+        );
+
+        Self { routes, orig_dst }
     }
 }
 
