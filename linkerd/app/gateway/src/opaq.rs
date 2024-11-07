@@ -49,24 +49,22 @@ impl Gateway {
 
 impl<T> TryFrom<Opaq<T>> for Target
 where
-    outbound::Discovery<T>: svc::Param<Option<profiles::Receiver>>,
-    outbound::Discovery<T>: svc::Param<outbound::policy::Receiver>,
     T: svc::Param<GatewayAddr>,
 {
     type Error = GatewayDomainInvalid;
 
     fn try_from(opaq: Opaq<T>) -> Result<Self, Self::Error> {
-        let addr: GatewayAddr = opaq.param();
-        let discovery: &outbound::Discovery<T> = &opaq;
-
-        let Some(profile) = svc::Param::<Option<profiles::Receiver>>::param(discovery) else {
+        let addr = opaq.param();
+        let (routes, paddr) = outbound::opaq::routes_from_discovery(
+            addr.0.clone().into(),
+            svc::Param::param(&*opaq),
+            svc::Param::param(&*opaq),
+        );
+        if paddr.is_none() {
+            // The gateway address must be resolveable via the profile API.
             return Err(GatewayDomainInvalid);
-        };
-        let policy = svc::Param::<outbound::policy::Receiver>::param(discovery);
+        }
 
-        let GatewayAddr(name_addr) = addr.clone();
-        let (routes, _) =
-            outbound::opaq::routes_from_discovery(name_addr.into(), Some(profile), policy);
         Ok(Target { addr, routes })
     }
 }
