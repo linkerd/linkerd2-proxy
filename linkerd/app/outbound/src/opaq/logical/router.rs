@@ -61,7 +61,7 @@ where
 
         let mk_concrete = {
             let parent = parent.clone();
-            let parent_ref = logical.clone();
+            let logical = logical.clone();
 
             move |backend_ref: BackendRef, target: concrete::Dispatch| Concrete {
                 target,

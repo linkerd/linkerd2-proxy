@@ -59,13 +59,16 @@ where
 
     fn try_from(opaq: Opaq<T>) -> Result<Self, Self::Error> {
         let addr: GatewayAddr = opaq.param();
-        let discovery: &outbound::Discovery<T> = &*opaq;
-        let Some(profile): Option<profiles::Receiver> = discovery.param() else {
+        let discovery: &outbound::Discovery<T> = &opaq;
+
+        let Some(profile) = svc::Param::<Option<profiles::Receiver>>::param(discovery) else {
             return Err(GatewayDomainInvalid);
         };
-        let policy: outbound::policy::Receiver = discovery.param();
+        let policy = svc::Param::<outbound::policy::Receiver>::param(discovery);
+
+        let GatewayAddr(name_addr) = addr.clone();
         let (routes, profiles_logical) =
-            outbound::opaq::routes_from_discovery(addr, Some(profile), policy);
+            outbound::opaq::routes_from_discovery(name_addr.into(), Some(profile), policy);
         Ok(Target {
             addr,
             profiles_logical,
@@ -88,7 +91,7 @@ impl svc::Param<watch::Receiver<outbound::opaq::Routes>> for Target {
 
 impl PartialEq for Target {
     fn eq(&self, other: &Self) -> bool {
-        self.orig_dst == other.orig_dst
+        self.addr == other.addr
     }
 }
 
@@ -96,6 +99,6 @@ impl Eq for Target {}
 
 impl std::hash::Hash for Target {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.orig_dst.hash(state);
+        self.addr.hash(state);
     }
 }

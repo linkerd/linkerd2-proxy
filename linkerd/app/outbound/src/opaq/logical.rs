@@ -88,8 +88,10 @@ where
     T: Eq + Hash + Clone + Debug,
 {
     fn from((target, source): (&router::Router<T>, Error)) -> Self {
-        let logical = target.logical;
-        Self { logical, source }
+        Self {
+            logical: target.logical.clone(),
+            source,
+        }
     }
 }
 

@@ -7,15 +7,15 @@ use linkerd_app_core::{
     io::AsyncReadExt,
     profiles,
     svc::{NewService, ServiceExt},
-    transport::{ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
-    NameAddr,
+    transport::{ClientAddr, Local, Remote, ServerAddr},
+    Addr, NameAddr,
 };
 use std::net::SocketAddr;
 use tokio::{sync::watch, time};
 
 #[derive(Clone, Debug)]
 struct Target {
-    orig_dst: OrigDstAddr,
+    addr: Addr,
     profiles_logical: Option<profiles::LogicalAddr>,
     routes: watch::Receiver<opaq::Routes>,
 }
@@ -28,10 +28,10 @@ async fn forward() {
 
     // We create a logical target to be resolved to endpoints.
     let laddr = "xyz.example.com:4444".parse::<NameAddr>().unwrap();
-    let original_dst = OrigDstAddr("1.2.3.4:444".parse().unwrap());
+    let addr = Addr::Socket("1.2.3.4:444".parse().unwrap());
 
     let (_tx, policy_rx) = watch::channel(default_service_policy(laddr.clone()));
-    let target = Target::new(policy_rx, None, original_dst);
+    let target = Target::new(policy_rx, None, addr);
 
     // The resolution resolves a single endpoint.
     let ep_addr = SocketAddr::new([192, 0, 2, 30].into(), 3333);
@@ -78,10 +78,10 @@ async fn balances() {
 
     // We create a logical target to be resolved to endpoints.
     let laddr = "xyz.example.com:4444".parse::<NameAddr>().unwrap();
-    let original_dst = OrigDstAddr("1.2.3.4:444".parse().unwrap());
+    let addr = Addr::Socket("1.2.3.4:444".parse().unwrap());
 
     let (_tx, policy_rx) = watch::channel(default_service_policy(laddr.clone()));
-    let target = Target::new(policy_rx, None, original_dst);
+    let target = Target::new(policy_rx, None, addr);
 
     // The resolution resolves a single endpoint.
     let ep0_addr = SocketAddr::new([192, 0, 2, 30].into(), 3333);
@@ -264,14 +264,10 @@ fn default_service_policy(addr: NameAddr) -> policy::ClientPolicy {
 // === impl Target ===
 
 impl Target {
-    pub fn new(
-        policy: PolicyReceiver,
-        profile: Option<profiles::Receiver>,
-        orig_dst: OrigDstAddr,
-    ) -> Self {
-        let (routes, profiles_logical) = opaq::routes_from_discovery(orig_dst, profile, policy);
+    pub fn new(policy: PolicyReceiver, profile: Option<profiles::Receiver>, addr: Addr) -> Self {
+        let (routes, profiles_logical) = opaq::routes_from_discovery(addr.clone(), profile, policy);
         Self {
-            orig_dst,
+            addr,
             profiles_logical,
             routes,
         }
@@ -286,7 +282,7 @@ impl svc::Param<watch::Receiver<opaq::Routes>> for Target {
 
 impl std::cmp::PartialEq for Target {
     fn eq(&self, other: &Self) -> bool {
-        self.orig_dst == other.orig_dst
+        self.addr == other.addr
     }
 }
 
@@ -294,7 +290,7 @@ impl std::cmp::Eq for Target {}
 
 impl std::hash::Hash for Target {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.orig_dst.hash(state);
+        self.addr.hash(state);
     }
 }
 

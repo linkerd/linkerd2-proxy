@@ -118,21 +118,24 @@ pub fn routes_from_discovery(
     if let Some(mut profile) = profile.map(watch::Receiver::from) {
         if let Some(paddr) = should_override_opaq_policy(&profile) {
             tracing::debug!("Using ServiceProfile");
-            let init = routes_from_profile(addr, paddr.clone(), &profile.borrow_and_update());
+            let init =
+                routes_from_profile(addr.clone(), paddr.clone(), &profile.borrow_and_update());
+
+            let profiles_addr = Some(paddr.clone());
 
             let routes = spawn_routes(profile, init, move |profile: &profiles::Profile| {
-                Some(routes_from_profile(addr, paddr.clone(), profile))
+                Some(routes_from_profile(addr.clone(), paddr.clone(), profile))
             });
-            return (routes, Some(paddr));
+            return (routes, profiles_addr);
         }
     }
 
     tracing::debug!("Using ClientPolicy routes");
-    let init = routes_from_policy(addr, &policy.borrow_and_update())
+    let init = routes_from_policy(addr.clone(), &policy.borrow_and_update())
         .expect("initial policy must be opaque");
     (
         spawn_routes(policy, init, move |policy: &policy::ClientPolicy| {
-            routes_from_policy(addr, policy)
+            routes_from_policy(addr.clone(), policy)
         }),
         None,
     )
