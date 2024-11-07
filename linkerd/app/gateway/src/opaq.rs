@@ -7,7 +7,7 @@ use tokio::sync::watch;
 
 #[derive(Clone, Debug)]
 pub struct Target {
-    orig_dst: OrigDstAddr,
+    addr: GatewayAddr,
     // this value is present only if we are using profiles for discovery
     profiles_logical: Option<profiles::LogicalAddr>,
     routes: watch::Receiver<outbound::opaq::Routes>,
@@ -51,23 +51,23 @@ impl Gateway {
 
 impl<T> TryFrom<Opaq<T>> for Target
 where
-    T: svc::Param<OrigDstAddr>,
+    outbound::Discovery<T>: svc::Param<Option<profiles::Receiver>>,
+    outbound::Discovery<T>: svc::Param<outbound::policy::Receiver>,
+    T: svc::Param<GatewayAddr>,
 {
     type Error = GatewayDomainInvalid;
 
     fn try_from(opaq: Opaq<T>) -> Result<Self, Self::Error> {
-        let profile = svc::Param::<Option<profiles::Receiver>>::param(&*opaq);
-        let policy = svc::Param::<outbound::policy::Receiver>::param(&*opaq);
-        let orig_dst = svc::Param::<OrigDstAddr>::param(&*opaq);
-        // we error if there is no profiles resolution
-        if profile.is_none() {
+        let addr: GatewayAddr = opaq.param();
+        let discovery: &outbound::Discovery<T> = &*opaq;
+        let Some(profile): Option<profiles::Receiver> = discovery.param() else {
             return Err(GatewayDomainInvalid);
-        }
-
+        };
+        let policy: outbound::policy::Receiver = discovery.param();
         let (routes, profiles_logical) =
-            outbound::opaq::routes_from_discovery(orig_dst, profile, policy);
+            outbound::opaq::routes_from_discovery(addr, Some(profile), policy);
         Ok(Target {
-            orig_dst,
+            addr,
             profiles_logical,
             routes,
         })

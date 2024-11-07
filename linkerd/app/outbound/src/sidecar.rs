@@ -11,7 +11,7 @@ use linkerd_app_core::{
     },
     svc,
     transport::addrs::*,
-    Error,
+    Addr, Error,
 };
 use std::fmt::Debug;
 use tokio::sync::watch;
@@ -396,11 +396,13 @@ impl std::hash::Hash for TlsSidecar {
 
 impl From<Sidecar> for OpaqSidecar {
     fn from(parent: Sidecar) -> Self {
-        let orig_dst = parent.orig_dst;
-        let (routes, profiles_logical) =
-            opaq::routes_from_discovery(orig_dst, parent.profile, parent.policy);
+        let (routes, profiles_logical) = opaq::routes_from_discovery(
+            Addr::Socket(parent.orig_dst.into()),
+            parent.profile,
+            parent.policy,
+        );
         OpaqSidecar {
-            orig_dst,
+            orig_dst: parent.orig_dst,
             profiles_logical,
             routes,
         }

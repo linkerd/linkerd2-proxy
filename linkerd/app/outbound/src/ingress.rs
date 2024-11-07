@@ -613,14 +613,17 @@ impl svc::Param<Option<profiles::LogicalAddr>> for Opaq {
 
 impl<T> From<Discovery<T>> for Opaq
 where
-    T: svc::Param<OrigDstAddr> + Clone,
+    T: svc::Param<OrigDstAddr>,
 {
     fn from(discovery: Discovery<T>) -> Self {
         let policy = svc::Param::<policy::Receiver>::param(&discovery);
         let profile = svc::Param::<Option<watch::Receiver<profiles::Profile>>>::param(&discovery);
         let orig_dst: OrigDstAddr = discovery.param();
-        let (routes, profiles_logical) =
-            opaq::routes_from_discovery(orig_dst, profile.map(Into::into), policy);
+        let (routes, profiles_logical) = opaq::routes_from_discovery(
+            Addr::Socket(orig_dst.into()),
+            discovery.param(),
+            discovery.param(),
+        );
         Self {
             routes,
             profiles_logical,

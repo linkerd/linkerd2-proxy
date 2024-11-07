@@ -9,7 +9,7 @@ use linkerd_app_core::{
     },
     svc,
     transport::addrs::*,
-    Error,
+    Addr, Error,
 };
 use std::{fmt::Debug, hash::Hash};
 use tokio::sync::watch;
@@ -17,7 +17,7 @@ use tokio::sync::watch;
 mod concrete;
 mod logical;
 
-pub use self::logical::{Concrete, Routes};
+pub use self::logical::{Concrete, Logical, Routes};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct Opaq<T>(T);
@@ -111,40 +111,34 @@ fn should_override_opaq_policy(
 /// in order to support traffic splits. Everything else should be delivered through client
 /// policy.
 pub fn routes_from_discovery(
-    orig_dst: OrigDstAddr,
+    addr: Addr,
     profile: Option<profiles::Receiver>,
     mut policy: policy::Receiver,
 ) -> (watch::Receiver<Routes>, Option<profiles::LogicalAddr>) {
     if let Some(mut profile) = profile.map(watch::Receiver::from) {
-        if let Some(addr) = should_override_opaq_policy(&profile) {
+        if let Some(paddr) = should_override_opaq_policy(&profile) {
             tracing::debug!("Using ServiceProfile");
-            let init = routes_from_profile(orig_dst, addr.clone(), &profile.borrow_and_update());
+            let init = routes_from_profile(addr, paddr.clone(), &profile.borrow_and_update());
 
-            let profiles_addr = addr.clone();
             let routes = spawn_routes(profile, init, move |profile: &profiles::Profile| {
-                Some(routes_from_profile(
-                    orig_dst,
-                    profiles_addr.clone(),
-                    profile,
-                ))
+                Some(routes_from_profile(addr, paddr.clone(), profile))
             });
-            return (routes, Some(addr));
+            return (routes, Some(paddr));
         }
     }
 
     tracing::debug!("Using ClientPolicy routes");
-    let init = routes_from_policy(orig_dst, &policy.borrow_and_update())
+    let init = routes_from_policy(addr, &policy.borrow_and_update())
         .expect("initial policy must be opaque");
     (
         spawn_routes(policy, init, move |policy: &policy::ClientPolicy| {
-            routes_from_policy(orig_dst, policy)
+            routes_from_policy(addr, policy)
         }),
         None,
     )
 }
 
-fn routes_from_policy(orig_dst: OrigDstAddr, policy: &policy::ClientPolicy) -> Option<Routes> {
-    let parent_ref = ParentRef(policy.parent.clone());
+fn routes_from_policy(addr: Addr, policy: &policy::ClientPolicy) -> Option<Routes> {
     let routes = match policy.protocol {
         policy::Protocol::Opaque(policy::opaq::Opaque { ref routes }) => routes.clone(),
         // we support a detect stack to cover the case when we do detection and fallback to opaq
@@ -156,15 +150,17 @@ fn routes_from_policy(orig_dst: OrigDstAddr, policy: &policy::ClientPolicy) -> O
     };
 
     Some(Routes {
-        addr: orig_dst.into(),
-        meta: parent_ref,
+        logical: Logical {
+            addr,
+            meta: ParentRef(policy.parent.clone()),
+        },
         routes,
         backends: policy.backends.clone(),
     })
 }
 
 fn routes_from_profile(
-    orig_dst: OrigDstAddr,
+    addr: Addr,
     profiles_addr: profiles::LogicalAddr,
     profile: &profiles::Profile,
 ) -> Routes {
@@ -218,9 +214,11 @@ fn routes_from_profile(
     };
 
     Routes {
-        addr: orig_dst.into(),
+        logical: Logical {
+            addr,
+            meta: ParentRef(parent_meta),
+        },
         backends: backends.into_iter().map(|(b, _)| b.backend).collect(),
-        meta: ParentRef(parent_meta),
         routes: Some(route),
     }
 }
