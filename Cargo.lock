@@ -1564,7 +1564,6 @@ name = "linkerd-distribute"
 version = "0.1.0"
 dependencies = [
  "ahash",
- "indexmap 2.6.0",
  "linkerd-stack",
  "parking_lot",
  "rand",

@@ -1,12 +1,9 @@
-use super::{Distribution, WeightedKeys};
-use indexmap::IndexMap;
-use linkerd_stack::Service;
-use rand::{
-    distributions::{Distribution as _, WeightedError},
-    rngs::SmallRng,
-    SeedableRng,
-};
+use super::Distribution;
+use crate::keys::{KeyId, ServiceKeys, WeightedServiceKeys};
+use linkerd_stack::{NewService, Service};
+use rand::{distributions::WeightedError, rngs::SmallRng, SeedableRng};
 use std::{
+    collections::HashMap,
     hash::Hash,
     sync::Arc,
     task::{Context, Poll},
@@ -15,22 +12,24 @@ use std::{
 /// A service that distributes requests over a set of backends.
 #[derive(Debug)]
 pub struct Distribute<K, S> {
-    backends: IndexMap<K, S>,
+    backends: HashMap<KeyId, S>,
     selection: Selection<K>,
 
     /// Stores the index of the backend that has been polled to ready. The
     /// service at this index will be used on the next invocation of
     /// `Service::call`.
-    ready_idx: Option<usize>,
+    ready_idx: Option<KeyId>,
 }
 
 /// Holds per-distribution state for a [`Distribute`] service.
 #[derive(Debug)]
 enum Selection<K> {
     Empty,
-    FirstAvailable,
+    FirstAvailable {
+        keys: Arc<ServiceKeys<K>>,
+    },
     RandomAvailable {
-        keys: Arc<WeightedKeys<K>>,
+        keys: Arc<WeightedServiceKeys<K>>,
         rng: SmallRng,
     },
 }
@@ -38,11 +37,34 @@ enum Selection<K> {
 // === impl Distribute ===
 
 impl<K: Hash + Eq, S> Distribute<K, S> {
-    pub(crate) fn new(backends: IndexMap<K, S>, dist: Distribution<K>) -> Self {
+    pub(crate) fn new<N>(dist: Distribution<K>, make_svc: N) -> Self
+    where
+        N: for<'a> NewService<&'a K, Service = S>,
+    {
+        let backends = Self::make_backends(&dist, make_svc);
         Self {
             backends,
             selection: dist.into(),
             ready_idx: None,
+        }
+    }
+
+    fn make_backends<N>(dist: &Distribution<K>, make_svc: N) -> HashMap<KeyId, S>
+    where
+        N: for<'a> NewService<&'a K, Service = S>,
+    {
+        // Build the backends needed for this distribution, in the required
+        // order (so that weighted indices align).
+        match dist {
+            Distribution::Empty => HashMap::new(),
+            Distribution::FirstAvailable(keys) => keys
+                .iter()
+                .map(|&id| (id, make_svc.new_service(keys.get(id))))
+                .collect(),
+            Distribution::RandomAvailable(keys) => keys
+                .iter()
+                .map(|&id| (id, make_svc.new_service(&keys.get(id).key)))
+                .collect(),
         }
     }
 }
@@ -72,10 +94,14 @@ where
                 tracing::debug!("empty distribution will never become ready");
             }
 
-            Selection::FirstAvailable => {
-                for (idx, svc) in self.backends.values_mut().enumerate() {
+            Selection::FirstAvailable { ref keys } => {
+                for id in keys.iter() {
+                    let svc = self
+                        .backends
+                        .get_mut(id)
+                        .expect("distributions must not reference unknown backends");
                     if svc.poll_ready(cx)?.is_ready() {
-                        self.ready_idx = Some(idx);
+                        self.ready_idx = Some(*id);
                         return Poll::Ready(Ok(()));
                     }
                 }
@@ -88,25 +114,23 @@ where
                 ref keys,
                 ref mut rng,
             } => {
-                // Clone the weighted index so that we can zero out the weights
-                // as pending services are polled.
-                let mut index = keys.index();
+                let mut selector = keys.selector();
                 loop {
-                    // Sample the weighted index to find a backend to try.
-                    let idx = index.sample(rng);
-                    let (_, svc) = self
+                    let id = selector.select_weighted(rng);
+                    let svc = self
                         .backends
-                        .get_index_mut(idx)
+                        .get_mut(&id)
                         .expect("distributions must not reference unknown backends");
 
                     if svc.poll_ready(cx)?.is_ready() {
-                        self.ready_idx = Some(idx);
+                        self.ready_idx = Some(id);
                         return Poll::Ready(Ok(()));
                     }
 
-                    // Zero out the weight of the backend we just tried so that
-                    // it's not selected again.
-                    match index.update_weights(&[(idx, &0)]) {
+                    // Since the backend we just tried isn't ready, zero out the weight
+                    // so that it's not tried again in this round, i.e. subsequent calls
+                    // to `poll_ready` can try this backend again.
+                    match selector.disable_backend(id) {
                         Ok(()) => {}
                         Err(WeightedError::AllWeightsZero) => {
                             // There are no backends remaining.
@@ -127,12 +151,12 @@ where
     }
 
     fn call(&mut self, req: Req) -> Self::Future {
-        let idx = self
+        let id = self
             .ready_idx
             .take()
             .expect("poll_ready must be called first");
 
-        let (_, svc) = self.backends.get_index_mut(idx).expect("index must exist");
+        let svc = self.backends.get_mut(&id).expect("index must exist");
 
         svc.call(req)
     }
@@ -168,7 +192,7 @@ impl<K> From<Distribution<K>> for Selection<K> {
     fn from(dist: Distribution<K>) -> Self {
         match dist {
             Distribution::Empty => Self::Empty,
-            Distribution::FirstAvailable(_) => Self::FirstAvailable,
+            Distribution::FirstAvailable(keys) => Self::FirstAvailable { keys },
             Distribution::RandomAvailable(keys) => Self::RandomAvailable {
                 keys,
                 rng: SmallRng::from_rng(rand::thread_rng()).expect("RNG must initialize"),
@@ -181,7 +205,7 @@ impl<K> Clone for Selection<K> {
     fn clone(&self) -> Self {
         match self {
             Self::Empty => Selection::Empty,
-            Self::FirstAvailable => Self::FirstAvailable,
+            Self::FirstAvailable { keys } => Self::FirstAvailable { keys: keys.clone() },
             Self::RandomAvailable { keys, .. } => Self::RandomAvailable {
                 keys: keys.clone(),
                 rng: SmallRng::from_rng(rand::thread_rng()).expect("RNG must initialize"),
@@ -192,15 +216,43 @@ impl<K> Clone for Selection<K> {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
+
     use super::*;
     use tokio_test::*;
     use tower_test::mock;
+
+    fn mock_first_available<K: Clone + PartialEq + Eq + Hash, S>(
+        svcs: Vec<(K, S)>,
+    ) -> Distribute<K, S> {
+        // Wrap in RefCell because NewService is only blanked impl'd for Fn, not FnMut
+        let svcs = RefCell::new(svcs);
+        let dist = Distribution::first_available(svcs.borrow().iter().map(|(k, _)| k.clone()));
+        let dist = Distribute::new(dist, |_: &K| svcs.borrow_mut().remove(0).1);
+        assert!(svcs.borrow().is_empty());
+        dist
+    }
+
+    fn mock_random_available<K: Clone + PartialEq + Eq + Hash, S>(
+        svcs: Vec<(K, S, u32)>,
+    ) -> Distribute<K, S> {
+        let svcs = RefCell::new(svcs);
+        let dist = Distribution::random_available(
+            svcs.borrow()
+                .iter()
+                .map(|(k, _, weight)| (k.clone(), *weight)),
+        )
+        .unwrap();
+        let dist = Distribute::new(dist, |_: &K| svcs.borrow_mut().remove(0).1);
+        assert!(svcs.borrow().is_empty());
+        dist
+    }
 
     #[test]
     fn empty_pending() {
         let mut dist_svc = mock::Spawn::new(Distribute::<&'static str, mock::Mock<(), ()>>::new(
             Default::default(),
-            Default::default(),
+            |_: &&str| panic!("Empty service should never call make_svc"),
         ));
         assert_eq!(dist_svc.get_ref().backends.len(), 0);
         assert_pending!(dist_svc.poll_ready());
@@ -210,12 +262,10 @@ mod tests {
     fn first_available_woken() {
         let (mulder, mut mulder_ctl) = mock::pair::<(), ()>();
         let (scully, mut scully_ctl) = mock::pair::<(), ()>();
-        let mut dist_svc = mock::Spawn::new(Distribute::new(
-            vec![("mulder", mulder), ("scully", scully)]
-                .into_iter()
-                .collect(),
-            Distribution::FirstAvailable(Arc::new(["mulder", "scully"])),
-        ));
+        let mut dist_svc = mock::Spawn::new(mock_first_available(vec![
+            ("mulder", mulder),
+            ("scully", scully),
+        ]));
 
         mulder_ctl.allow(0);
         scully_ctl.allow(0);
@@ -228,17 +278,15 @@ mod tests {
     fn first_available_prefers_first() {
         let (mulder, mut mulder_ctl) = mock::pair();
         let (scully, mut scully_ctl) = mock::pair();
-        let mut dist_svc = mock::Spawn::new(Distribute::new(
-            vec![("mulder", mulder), ("scully", scully)]
-                .into_iter()
-                .collect(),
-            Distribution::FirstAvailable(Arc::new(["mulder", "scully"])),
-        ));
+        let mut dist_svc = mock::Spawn::new(mock_first_available(vec![
+            ("mulder", mulder),
+            ("scully", scully),
+        ]));
 
         scully_ctl.allow(1);
         mulder_ctl.allow(1);
         assert_ready_ok!(dist_svc.poll_ready());
-        assert_eq!(dist_svc.get_ref().ready_idx, Some(0));
+        assert_eq!(dist_svc.get_ref().ready_idx, Some(KeyId::new(0)));
         let mut call = task::spawn(dist_svc.call(()));
         match assert_ready!(mulder_ctl.poll_request()) {
             Some(((), rsp)) => rsp.send_response(()),
@@ -251,19 +299,38 @@ mod tests {
     fn first_available_uses_second() {
         let (mulder, mut mulder_ctl) = mock::pair();
         let (scully, mut scully_ctl) = mock::pair();
-        let mut dist_svc = mock::Spawn::new(Distribute::new(
-            vec![("mulder", mulder), ("scully", scully)]
-                .into_iter()
-                .collect(),
-            Distribution::FirstAvailable(Arc::new(["mulder", "scully"])),
-        ));
+        let mut dist_svc = mock::Spawn::new(mock_first_available(vec![
+            ("mulder", mulder),
+            ("scully", scully),
+        ]));
 
         mulder_ctl.allow(0);
         scully_ctl.allow(1);
         assert_ready_ok!(dist_svc.poll_ready());
-        assert_eq!(dist_svc.get_ref().ready_idx, Some(1));
+        assert_eq!(dist_svc.get_ref().ready_idx, Some(KeyId::new(1)));
         let mut call = task::spawn(dist_svc.call(()));
         match assert_ready!(scully_ctl.poll_request()) {
+            Some(((), rsp)) => rsp.send_response(()),
+            _ => panic!("expected request"),
+        }
+        assert_ready_ok!(call.poll());
+    }
+
+    #[test]
+    fn first_available_duplicate_keys() {
+        let (mulder_1, mut mulder_1_ctl) = mock::pair();
+        let (mulder_2, mut mulder_2_ctl) = mock::pair();
+        let mut dist_svc = mock::Spawn::new(mock_first_available(vec![
+            ("mulder", mulder_1),
+            ("mulder", mulder_2),
+        ]));
+
+        mulder_2_ctl.allow(1);
+        mulder_1_ctl.allow(1);
+        assert_ready_ok!(dist_svc.poll_ready());
+        assert_eq!(dist_svc.get_ref().ready_idx, Some(KeyId::new(0)));
+        let mut call = task::spawn(dist_svc.call(()));
+        match assert_ready!(mulder_1_ctl.poll_request()) {
             Some(((), rsp)) => rsp.send_response(()),
             _ => panic!("expected request"),
         }
@@ -275,13 +342,11 @@ mod tests {
         let (mulder, mut mulder_ctl) = mock::pair::<(), ()>();
         let (scully, mut scully_ctl) = mock::pair::<(), ()>();
         let (skinner, mut skinner_ctl) = mock::pair::<(), ()>();
-        let mut dist_svc = mock::Spawn::new(Distribute::new(
-            vec![("mulder", mulder), ("scully", scully), ("skinner", skinner)]
-                .into_iter()
-                .collect(),
-            Distribution::random_available([("mulder", 1), ("scully", 99998), ("skinner", 1)])
-                .unwrap(),
-        ));
+        let mut dist_svc = mock::Spawn::new(mock_random_available(vec![
+            ("mulder", mulder, 1),
+            ("scully", scully, 99998),
+            ("skinner", skinner, 1),
+        ]));
 
         mulder_ctl.allow(0);
         scully_ctl.allow(0);
@@ -296,19 +361,17 @@ mod tests {
         let (mulder, mut mulder_ctl) = mock::pair();
         let (scully, mut scully_ctl) = mock::pair();
         let (skinner, mut skinner_ctl) = mock::pair();
-        let mut dist_svc = mock::Spawn::new(Distribute::new(
-            vec![("mulder", mulder), ("scully", scully), ("skinner", skinner)]
-                .into_iter()
-                .collect(),
-            Distribution::random_available([("mulder", 1), ("scully", 99998), ("skinner", 1)])
-                .unwrap(),
-        ));
+        let mut dist_svc = mock::Spawn::new(mock_random_available(vec![
+            ("mulder", mulder, 1),
+            ("scully", scully, 99998),
+            ("skinner", skinner, 1),
+        ]));
 
         mulder_ctl.allow(1);
         scully_ctl.allow(1);
         skinner_ctl.allow(1);
         assert_ready_ok!(dist_svc.poll_ready());
-        assert_eq!(dist_svc.get_ref().ready_idx, Some(1));
+        assert_eq!(dist_svc.get_ref().ready_idx, Some(KeyId::new(1)));
         let mut call = task::spawn(dist_svc.call(()));
         match assert_ready!(scully_ctl.poll_request()) {
             Some(((), rsp)) => rsp.send_response(()),
@@ -322,21 +385,43 @@ mod tests {
         let (mulder, mut mulder_ctl) = mock::pair();
         let (scully, mut scully_ctl) = mock::pair();
         let (skinner, mut skinner_ctl) = mock::pair();
-        let mut dist_svc = mock::Spawn::new(Distribute::new(
-            vec![("mulder", mulder), ("scully", scully), ("skinner", skinner)]
-                .into_iter()
-                .collect(),
-            Distribution::random_available([("mulder", 1), ("scully", 99998), ("skinner", 1)])
-                .unwrap(),
-        ));
+        let mut dist_svc = mock::Spawn::new(mock_random_available(vec![
+            ("mulder", mulder, 1),
+            ("scully", scully, 99998),
+            ("skinner", skinner, 1),
+        ]));
 
         mulder_ctl.allow(1);
         scully_ctl.allow(0);
         skinner_ctl.allow(0);
         assert_ready_ok!(dist_svc.poll_ready());
-        assert_eq!(dist_svc.get_ref().ready_idx, Some(0));
+        assert_eq!(dist_svc.get_ref().ready_idx, Some(KeyId::new(0)));
         let mut call = task::spawn(dist_svc.call(()));
         match assert_ready!(mulder_ctl.poll_request()) {
+            Some(((), rsp)) => rsp.send_response(()),
+            _ => panic!("expected request"),
+        }
+        assert_ready_ok!(call.poll());
+    }
+
+    #[test]
+    fn random_available_duplicate_keys_allowed() {
+        let (mulder_1, mut mulder_1_ctl) = mock::pair();
+        let (mulder_2, mut mulder_2_ctl) = mock::pair();
+        let (mulder_3, mut mulder_3_ctl) = mock::pair();
+        let mut dist_svc = mock::Spawn::new(mock_random_available(vec![
+            ("mulder", mulder_1, 1),
+            ("mulder", mulder_2, 99998),
+            ("mulder", mulder_3, 1),
+        ]));
+
+        mulder_1_ctl.allow(1);
+        mulder_2_ctl.allow(1);
+        mulder_3_ctl.allow(1);
+        assert_ready_ok!(dist_svc.poll_ready());
+        assert_eq!(dist_svc.get_ref().ready_idx, Some(KeyId::new(1)));
+        let mut call = task::spawn(dist_svc.call(()));
+        match assert_ready!(mulder_2_ctl.poll_request()) {
             Some(((), rsp)) => rsp.send_response(()),
             _ => panic!("expected request"),
         }

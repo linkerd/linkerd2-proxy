@@ -7,7 +7,6 @@ publish = false
 
 [dependencies]
 ahash = "0.8"
-indexmap = "2"
 linkerd-stack = { path = "../stack" }
 parking_lot = "0.12"
 rand = { version = "0.8", features = ["small_rng"] }
