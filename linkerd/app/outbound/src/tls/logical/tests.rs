@@ -147,26 +147,22 @@ fn default_backend(addr: SocketAddr) -> client_policy::Backend {
 
 fn sni_route(backend: client_policy::Backend, sni: sni::MatchSni) -> client_policy::tls::Route {
     use client_policy::{
-        tls::{Filter, Policy, Route, Rule},
+        tls::{Filter, Policy, Route},
         Meta, RouteBackend, RouteDistribution,
     };
-    use linkerd_tls_route::r#match::MatchSession;
     use once_cell::sync::Lazy;
     static NO_FILTERS: Lazy<Arc<[Filter]>> = Lazy::new(|| Arc::new([]));
     Route {
         snis: vec![sni],
-        rules: vec![Rule {
-            matches: vec![MatchSession::default()],
-            policy: Policy {
-                meta: Meta::new_default("test_route"),
+        policy: Policy {
+            meta: Meta::new_default("test_route"),
+            filters: NO_FILTERS.clone(),
+            params: (),
+            distribution: RouteDistribution::FirstAvailable(Arc::new([RouteBackend {
                 filters: NO_FILTERS.clone(),
-                params: (),
-                distribution: RouteDistribution::FirstAvailable(Arc::new([RouteBackend {
-                    filters: NO_FILTERS.clone(),
-                    backend,
-                }])),
-            },
-        }],
+                backend,
+            }])),
+        },
     }
 }
 

@@ -5,10 +5,8 @@
 #![forbid(unsafe_code)]
 
 use linkerd_tls::ServerName;
-use r#match::SessionMatch;
 use tracing::trace;
 
-pub mod r#match;
 pub mod sni;
 #[cfg(test)]
 mod tests;
@@ -24,19 +22,6 @@ pub struct Route<P> {
     /// When no SNI matches are present, all SNIs match.
     pub snis: Vec<MatchSni>,
 
-    /// Must not be empty.
-    pub rules: Vec<Rule<P>>,
-}
-
-/// Policies for a given set of route matches.
-#[derive(Clone, Debug, Default, Hash, PartialEq, Eq)]
-pub struct Rule<P> {
-    /// A list of session matchers, *any* of which may apply.
-    ///
-    /// The "best" match is used when comparing rules.
-    pub matches: Vec<r#match::MatchSession>,
-
-    /// The policy to apply to sessions matched by this rule.
     pub policy: P,
 }
 
@@ -45,7 +30,6 @@ pub struct Rule<P> {
 #[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct RouteMatch {
     sni: Option<SniMatch>,
-    route: r#match::SessionMatch,
 }
 
 /// Provides metadata information about a TLS session. For now this contains
@@ -74,27 +58,7 @@ pub fn find<P>(routes: &[Route<P>], session_info: SessionInfo) -> Option<(RouteM
             Some(sni_match)
         };
 
-        trace!(rules = %rt.rules.len());
-        let (route, policy) = best(rt.rules.iter().filter_map(|rule| {
-            // If there are no matches in the list, then the rule has an
-            // implicit default match.
-            if rule.matches.is_empty() {
-                trace!("implicit match");
-                return Some((SessionMatch::default(), &rule.policy));
-            }
-            // Find the best match to compare against other rules/routes
-            // (if any apply). The order/precedence of matches is not
-            // relevant.
-            let summary = rule
-                .matches
-                .iter()
-                .filter_map(|m| m.match_session(&session_info))
-                .max()?;
-            trace!("matches!");
-            Some((summary, &rule.policy))
-        }))?;
-
-        Some((RouteMatch { sni, route }, policy))
+        Some((RouteMatch { sni }, &rt.policy))
     }))
 }
 

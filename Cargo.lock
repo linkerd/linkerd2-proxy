@@ -2416,6 +2416,7 @@ version = "0.1.0"
 dependencies = [
  "linkerd-dns",
  "linkerd-tls",
+ "linkerd2-proxy-api",
  "rand",
  "regex",
  "thiserror",
