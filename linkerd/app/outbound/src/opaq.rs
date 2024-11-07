@@ -58,7 +58,7 @@ impl<C> Outbound<C> {
                 stk.push_new_idle_cached(config.discovery_idle_timeout)
                     // Use a dedicated target type to configure parameters for
                     // the opaque stack. It also helps narrow the cache key.
-                    .push_map_target(|parent: T| Opaq(parent))
+                    .push_map_target(Opaq)
                     .arc_new_clone_tcp()
             })
     }
