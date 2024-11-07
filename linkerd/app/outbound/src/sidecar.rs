@@ -11,7 +11,7 @@ use linkerd_app_core::{
     },
     svc,
     transport::addrs::*,
-    Error,
+    Addr, Error,
 };
 use std::fmt::Debug;
 use tokio::sync::watch;
@@ -38,6 +38,12 @@ struct TlsSidecar {
     routes: watch::Receiver<tls::Routes>,
 }
 
+#[derive(Clone, Debug)]
+struct OpaqSidecar {
+    orig_dst: OrigDstAddr,
+    routes: watch::Receiver<opaq::Routes>,
+}
+
 // === impl Outbound ===
 
 impl Outbound<()> {
@@ -58,7 +64,14 @@ impl Outbound<()> {
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
         R::Resolution: Unpin,
     {
-        let opaq = self.to_tcp_connect().push_opaq_cached(resolve.clone());
+        let opaq = self.clone().with_stack(
+            self.to_tcp_connect()
+                .push_opaq_cached(resolve.clone())
+                .into_stack()
+                .push_map_target(OpaqSidecar::from)
+                .arc_new_clone_tcp(),
+        );
+
         let tls = self
             .to_tcp_connect()
             .push_tls_cached(resolve.clone())
@@ -121,12 +134,6 @@ impl svc::Param<Remote<ServerAddr>> for Sidecar {
     }
 }
 
-impl svc::Param<Option<profiles::LogicalAddr>> for Sidecar {
-    fn param(&self) -> Option<profiles::LogicalAddr> {
-        self.profile.clone()?.logical_addr()
-    }
-}
-
 impl svc::Param<Option<profiles::Receiver>> for Sidecar {
     fn param(&self) -> Option<profiles::Receiver> {
         self.profile.clone()
@@ -148,23 +155,6 @@ impl svc::Param<Protocol> for Sidecar {
             policy::Protocol::Tls(_) => Protocol::Tls,
             policy::Protocol::Detect { .. } => Protocol::Detect,
         }
-    }
-}
-
-impl svc::Param<opaq::Logical> for Sidecar {
-    fn param(&self) -> opaq::Logical {
-        if let Some(profile) = self.profile.clone() {
-            if let Some(profiles::LogicalAddr(addr)) = profile.logical_addr() {
-                return opaq::Logical::Route(addr, profile);
-            }
-
-            if let Some((addr, metadata)) = profile.endpoint() {
-                return opaq::Logical::Forward(Remote(ServerAddr(addr)), metadata);
-            }
-        }
-
-        let OrigDstAddr(addr) = self.orig_dst;
-        opaq::Logical::Forward(Remote(ServerAddr(addr)), Default::default())
     }
 }
 
@@ -395,6 +385,42 @@ impl std::cmp::PartialEq for TlsSidecar {
 impl std::cmp::Eq for TlsSidecar {}
 
 impl std::hash::Hash for TlsSidecar {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.orig_dst.hash(state);
+    }
+}
+
+// === impl OpaqSidecar ===
+
+impl From<Sidecar> for OpaqSidecar {
+    fn from(parent: Sidecar) -> Self {
+        let routes = opaq::routes_from_discovery(
+            Addr::Socket(parent.orig_dst.into()),
+            parent.profile,
+            parent.policy,
+        );
+        OpaqSidecar {
+            orig_dst: parent.orig_dst,
+            routes,
+        }
+    }
+}
+
+impl svc::Param<watch::Receiver<opaq::Routes>> for OpaqSidecar {
+    fn param(&self) -> watch::Receiver<opaq::Routes> {
+        self.routes.clone()
+    }
+}
+
+impl std::cmp::PartialEq for OpaqSidecar {
+    fn eq(&self, other: &Self) -> bool {
+        self.orig_dst == other.orig_dst
+    }
+}
+
+impl std::cmp::Eq for OpaqSidecar {}
+
+impl std::hash::Hash for OpaqSidecar {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.orig_dst.hash(state);
     }

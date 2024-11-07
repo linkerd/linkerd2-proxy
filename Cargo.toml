@@ -40,6 +40,7 @@ members = [
     "linkerd/meshtls/rustls",
     "linkerd/meshtls/verifier",
     "linkerd/metrics",
+    "linkerd/opaq-route",
     "linkerd/opencensus",
     "linkerd/opentelemetry",
     "linkerd/pool",

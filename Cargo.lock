@@ -1491,6 +1491,7 @@ dependencies = [
  "linkerd-io",
  "linkerd-meshtls",
  "linkerd-meshtls-rustls",
+ "linkerd-opaq-route",
  "linkerd-proxy-client-policy",
  "linkerd-retry",
  "linkerd-stack",
@@ -1891,6 +1892,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd-opaq-route"
+version = "0.1.0"
+
+[[package]]
 name = "linkerd-opencensus"
 version = "0.1.0"
 dependencies = [
@@ -2054,6 +2059,7 @@ dependencies = [
  "linkerd-error",
  "linkerd-exp-backoff",
  "linkerd-http-route",
+ "linkerd-opaq-route",
  "linkerd-proxy-api-resolve",
  "linkerd-proxy-core",
  "linkerd-tls-route",

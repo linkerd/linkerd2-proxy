@@ -234,16 +234,18 @@ fn policy_for_backend(
     static NO_OPAQ_FILTERS: Lazy<Arc<[policy::opaq::Filter]>> = Lazy::new(|| Arc::new([]));
 
     let opaque = policy::opaq::Opaque {
-        policy: Some(policy::opaq::Policy {
-            meta: meta.clone(),
-            filters: NO_OPAQ_FILTERS.clone(),
-            params: Default::default(),
-            distribution: policy::RouteDistribution::FirstAvailable(Arc::new([
-                policy::RouteBackend {
-                    filters: NO_OPAQ_FILTERS.clone(),
-                    backend: backend.clone(),
-                },
-            ])),
+        routes: Some(policy::opaq::Route {
+            policy: policy::opaq::Policy {
+                meta: meta.clone(),
+                filters: NO_OPAQ_FILTERS.clone(),
+                params: Default::default(),
+                distribution: policy::RouteDistribution::FirstAvailable(Arc::new([
+                    policy::RouteBackend {
+                        filters: NO_OPAQ_FILTERS.clone(),
+                        backend: backend.clone(),
+                    },
+                ])),
+            },
         }),
     };
 
@@ -324,6 +326,15 @@ impl<T> From<((Option<profiles::Receiver>, policy::Receiver), T)> for Discovery<
 impl<T> svc::Param<Option<profiles::Receiver>> for Discovery<T> {
     fn param(&self) -> Option<profiles::Receiver> {
         self.profile.clone()
+    }
+}
+
+impl<T> svc::Param<OrigDstAddr> for Discovery<T>
+where
+    T: svc::Param<OrigDstAddr>,
+{
+    fn param(&self) -> OrigDstAddr {
+        self.parent.param()
     }
 }
 
