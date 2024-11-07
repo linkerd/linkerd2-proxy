@@ -1,3 +1,4 @@
+use crate::Meta;
 #[cfg(test)]
 use governor::clock::FakeRelativeClock;
 use governor::{
@@ -16,6 +17,7 @@ type Keyed = HashMapStateStore<Option<Id>>;
 
 #[derive(Debug, Default)]
 pub struct LocalRateLimit<C: Clock = DefaultClock> {
+    meta: Option<Arc<Meta>>,
     total: Option<RateLimit<Direct, C>>,
     per_identity: Option<RateLimit<Keyed, C>>,
     overrides: HashMap<Id, Arc<RateLimit<Direct, C>>>,
@@ -66,6 +68,7 @@ impl LocalRateLimit {
         per_identity: Option<u32>,
     ) -> LocalRateLimit<DefaultClock> {
         LocalRateLimit {
+            meta: None,
             total: total.and_then(NonZeroU32::new).map(RateLimit::direct),
             per_identity: per_identity.and_then(NonZeroU32::new).map(RateLimit::keyed),
             overrides: HashMap::new(),
@@ -99,6 +102,10 @@ impl<C: Clock> LocalRateLimit<C> {
 
         Ok(())
     }
+
+    pub fn meta(&self) -> Option<Arc<Meta>> {
+        self.meta.clone()
+    }
 }
 
 // === impl RateLimit ===
@@ -128,11 +135,18 @@ impl RateLimit<Keyed, FakeRelativeClock> {
 #[cfg(feature = "proto")]
 pub mod proto {
     use super::*;
+    use crate::meta::proto::InvalidMeta;
     use linkerd2_proxy_api::inbound as api;
 
-    impl From<api::HttpLocalRateLimit> for LocalRateLimit {
-        fn from(proto: api::HttpLocalRateLimit) -> Self {
-            // Zero-value
+    impl TryFrom<api::HttpLocalRateLimit> for LocalRateLimit {
+        type Error = InvalidMeta;
+
+        fn try_from(proto: api::HttpLocalRateLimit) -> Result<Self, Self::Error> {
+            let meta = proto
+                .metadata
+                .map(Meta::try_from)
+                .transpose()?
+                .map(Arc::new);
             let total = proto
                 .total
                 .and_then(|l| NonZeroU32::new(l.requests_per_second))
@@ -165,11 +179,12 @@ pub mod proto {
                 })
                 .collect();
 
-            Self {
+            Ok(Self {
+                meta,
                 total,
                 per_identity,
                 overrides,
-            }
+            })
         }
     }
 }

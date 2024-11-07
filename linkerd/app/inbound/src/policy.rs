@@ -91,7 +91,6 @@ impl From<DefaultPolicy> for ServerPolicy {
             DefaultPolicy::Allow(p) => p,
             DefaultPolicy::Deny => ServerPolicy {
                 protocol: Protocol::Opaque(Arc::new([])),
-                local_rate_limit_meta: Meta::new_default(""),
                 local_rate_limit: Default::default(),
                 meta: Meta::new_default("deny"),
             },
@@ -135,7 +134,6 @@ impl AllowPolicy {
         ServerLabel(self.server.borrow().meta.clone())
     }
 
-    #[inline]
     pub fn ratelimit_label(&self, error: &RateLimitError) -> HTTPLocalRateLimitLabels {
         let error = match error {
             RateLimitError::Total(rps) => format!("total({})", rps),
@@ -144,7 +142,7 @@ impl AllowPolicy {
         };
         HTTPLocalRateLimitLabels {
             server: self.server_label(),
-            rate_limit: self.server.borrow().local_rate_limit_meta.clone(),
+            rate_limit: self.server.borrow().local_rate_limit.meta(),
             error,
         }
     }

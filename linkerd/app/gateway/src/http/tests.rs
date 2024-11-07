@@ -129,7 +129,6 @@ async fn upgraded_request_remains_relative_form() {
                         }),
                     }]))]),
                 },
-                local_rate_limit_meta: policy::Meta::new_default(""),
                 local_rate_limit: Arc::new(Default::default()),
             };
             let (policy, tx) = inbound::policy::AllowPolicy::for_test(self.param(), policy);

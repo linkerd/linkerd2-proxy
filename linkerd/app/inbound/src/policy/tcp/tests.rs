@@ -26,7 +26,6 @@ async fn unauthenticated_allowed() {
             kind: "server".into(),
             name: "test".into(),
         }),
-        local_rate_limit_meta: Meta::new_default(""),
         local_rate_limit: Arc::new(Default::default()),
     };
 
@@ -77,7 +76,6 @@ async fn authenticated_identity() {
             kind: "server".into(),
             name: "test".into(),
         }),
-        local_rate_limit_meta: Meta::new_default(""),
         local_rate_limit: Arc::new(Default::default()),
     };
 
@@ -142,7 +140,6 @@ async fn authenticated_suffix() {
             kind: "server".into(),
             name: "test".into(),
         }),
-        local_rate_limit_meta: Meta::new_default(""),
         local_rate_limit: Arc::new(Default::default()),
     };
 
@@ -203,7 +200,6 @@ async fn tls_unauthenticated() {
             kind: "server".into(),
             name: "test".into(),
         }),
-        local_rate_limit_meta: Meta::new_default(""),
         local_rate_limit: Arc::new(Default::default()),
     };
 
