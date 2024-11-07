@@ -22,7 +22,7 @@ futures = { version = "0.3", default-features = false }
 pprof = { version = "0.13", optional = true, features = ["prost-codec"] }
 serde = "1"
 serde_json = "1"
-thiserror = "1"
+thiserror = "2"
 tokio = { version = "1", features = ["macros", "sync", "parking_lot"] }
 tracing = "0.1"
 

@@ -15,7 +15,7 @@ linkerd-error = { path = "../../error" }
 linkerd-io = { path = "../../io" }
 linkerd-stack = { path = "../../stack" }
 socket2 = "0.5"
-thiserror = "1"
+thiserror = "2"
 tokio = { version = "1", features = ["macros", "net"] }
 tokio-stream = { version = "0.1", features = ["net"] }
 tracing = "0.1"

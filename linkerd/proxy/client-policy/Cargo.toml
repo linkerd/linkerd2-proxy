@@ -22,7 +22,7 @@ http = "0.2"
 once_cell = { version = "1" }
 prost-types = { version = "0.12", optional = true }
 tonic = { version = "0.10", default-features = false }
-thiserror = { version = "1", optional = true }
+thiserror = { version = "2", optional = true }
 
 linkerd-error = { path = "../../error" }
 linkerd-exp-backoff = { path = "../../exp-backoff" }

@@ -8,7 +8,7 @@ publish = false
 
 [dependencies]
 prometheus-client = "0.22"
-thiserror = "1"
+thiserror = "2"
 tracing = "0.1"
 url = "2.5.3"
 

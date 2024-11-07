@@ -29,7 +29,7 @@ linkerd-opentelemetry = { path = "../opentelemetry" }
 linkerd-tonic-stream = { path = "../tonic-stream" }
 rangemap = "1"
 regex = "1"
-thiserror = "1"
+thiserror = "2"
 tokio = { version = "1", features = ["rt"] }
 tokio-stream = { version = "0.1", features = ["time", "sync"] }
 tonic = { version = "0.10", default-features = false, features = ["prost"] }
