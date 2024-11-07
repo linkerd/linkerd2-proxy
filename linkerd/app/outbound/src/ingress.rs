@@ -616,11 +616,13 @@ where
     T: svc::Param<OrigDstAddr>,
 {
     fn from(discovery: Discovery<T>) -> Self {
+        use svc::Param;
+
         let orig_dst: OrigDstAddr = discovery.param();
         let (routes, profiles_logical) = opaq::routes_from_discovery(
             Addr::Socket(orig_dst.into()),
-            svc::Param::param(&discovery),
-            svc::Param::param(&discovery),
+            discovery.param(),
+            discovery.param(),
         );
 
         Self {

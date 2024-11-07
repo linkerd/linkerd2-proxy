@@ -54,11 +54,13 @@ where
     type Error = GatewayDomainInvalid;
 
     fn try_from(opaq: Opaq<T>) -> Result<Self, Self::Error> {
-        let addr = opaq.param();
+        use svc::Param;
+
+        let addr: GatewayAddr = (**opaq).param();
         let (routes, paddr) = outbound::opaq::routes_from_discovery(
             addr.0.clone().into(),
-            svc::Param::param(&*opaq),
-            svc::Param::param(&*opaq),
+            (*opaq).param(),
+            (*opaq).param(),
         );
         if paddr.is_none() {
             // The gateway address must be resolveable via the profile API.
