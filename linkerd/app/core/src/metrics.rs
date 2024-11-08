@@ -404,7 +404,7 @@ impl FmtLabels for HTTPLocalRateLimitLabels {
                 self.error,
             )
         } else {
-            Ok(())
+            write!(f, ",ratelimit_error=\"{}\"", self.error)
         }
     }
 }
