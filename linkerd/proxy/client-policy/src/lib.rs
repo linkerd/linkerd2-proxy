@@ -10,7 +10,10 @@ pub mod meta;
 pub mod opaq;
 pub mod tls;
 
-pub use self::meta::Meta;
+pub use self::meta::{
+    reference::{BackendRef, EndpointRef, ParentRef, RouteRef},
+    Meta,
+};
 pub use linkerd_http_route as route;
 pub use linkerd_proxy_api_resolve::Metadata as EndpointMetadata;
 
