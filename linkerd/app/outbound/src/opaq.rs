@@ -18,7 +18,7 @@ use tokio::sync::watch;
 mod concrete;
 mod logical;
 
-pub use self::logical::{Concrete, Logical, Routes};
+pub use self::logical::{route::filters::errors::*, Concrete, Logical, Routes};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct Opaq<T>(T);

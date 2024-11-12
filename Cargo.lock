@@ -1512,7 +1512,6 @@ dependencies = [
  "linkerd-app-core",
  "linkerd-app-test",
  "linkerd-distribute",
- "linkerd-errno",
  "linkerd-http-classify",
  "linkerd-http-prom",
  "linkerd-http-retry",
@@ -2549,7 +2548,6 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "linkerd-errno",
- "linkerd-error",
  "linkerd-io",
  "linkerd-metrics",
  "linkerd-stack",

@@ -5,7 +5,6 @@ mod client;
 mod report;
 mod sensor;
 mod server;
-pub mod tcp;
 pub mod zone;
 
 pub use self::{

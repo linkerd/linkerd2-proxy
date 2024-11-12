@@ -10,7 +10,6 @@ description = """Transport-level metrics"""
 [dependencies]
 futures = { version = "0.3", default-features = false }
 linkerd-errno = { path = "../errno" }
-linkerd-error = { path = "../error" }
 linkerd-io = { path = "../io" }
 linkerd-metrics = { path = "../metrics" }
 linkerd-stack = { path = "../stack" }

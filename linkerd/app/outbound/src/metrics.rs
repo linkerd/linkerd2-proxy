@@ -16,6 +16,7 @@ use linkerd_app_core::{
 use std::fmt::Write;
 
 pub(crate) mod error;
+pub(crate) mod transport;
 pub use linkerd_app_core::{metrics::*, proxy::balance};
 
 /// Holds LEGACY outbound proxy metrics.

@@ -17,7 +17,7 @@ use tokio::sync::watch;
 mod concrete;
 mod logical;
 
-pub use self::logical::{Concrete, Routes};
+pub use self::logical::{route::filters::errors::*, Concrete, Routes};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct Tls<T> {

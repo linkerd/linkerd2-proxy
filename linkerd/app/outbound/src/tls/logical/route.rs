@@ -1,21 +1,17 @@
 use super::super::Concrete;
-use crate::{ParentRef, RouteRef};
-use linkerd_app_core::{
-    io,
-    metrics::prom,
-    svc,
-    tls::ServerName,
-    transport::metrics::tcp::{client::NewInstrumentConnection, TcpMetricsParams},
-    Addr, Error,
+use crate::{
+    metrics::transport::{NewTransportRouteMetrics, TransportRouteMetricsFamily},
+    ParentRef, RouteRef,
 };
+use linkerd_app_core::{io, metrics::prom, svc, tls::ServerName, Addr, Error};
 use linkerd_distribute as distribute;
 use linkerd_proxy_client_policy as policy;
 use linkerd_tls_route as tls_route;
 use std::{fmt::Debug, hash::Hash, sync::Arc};
 
-mod filters;
+pub(crate) mod filters;
 
-pub type TlsRouteMetrics = TcpMetricsParams<RouteLabels>;
+pub type TlsRouteMetrics = TransportRouteMetricsFamily<RouteLabels>;
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub(crate) struct Backend<T> {
@@ -115,7 +111,7 @@ where
                         source,
                     }
                 }))
-                .push(NewInstrumentConnection::layer(metrics.clone()))
+                .push(NewTransportRouteMetrics::layer(metrics.clone()))
                 .arc_new_clone_tcp()
                 .into_inner()
         })
