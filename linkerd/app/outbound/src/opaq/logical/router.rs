@@ -100,6 +100,7 @@ where
                 let concrete = mk_dispatch(&rb.backend);
                 route::Backend {
                     route_ref: route_ref.clone(),
+                    filters: rb.filters.clone(),
                     concrete,
                 }
             };
@@ -122,21 +123,24 @@ where
                 }
             };
 
-        let mk_policy =
-            |policy::RoutePolicy::<policy::opaq::Filter, ()> {
-                 meta, distribution, ..
-             }| {
-                let route_ref = RouteRef(meta);
-                let logical = logical.clone();
+        let mk_policy = |policy::RoutePolicy::<policy::opaq::Filter, ()> {
+                             meta,
+                             distribution,
+                             filters,
+                             ..
+                         }| {
+            let route_ref = RouteRef(meta);
+            let logical = logical.clone();
 
-                let distribution = mk_distribution(&route_ref, &distribution);
-                route::Route {
-                    logical,
-                    parent: parent.clone(),
-                    route_ref,
-                    distribution,
-                }
-            };
+            let distribution = mk_distribution(&route_ref, &distribution);
+            route::Route {
+                logical,
+                parent: parent.clone(),
+                route_ref,
+                filters,
+                distribution,
+            }
+        };
 
         let routes = routes.as_ref().map(|route| opaq_route::Route {
             policy: mk_policy(route.policy.clone()),

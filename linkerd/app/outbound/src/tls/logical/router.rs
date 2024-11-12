@@ -105,6 +105,7 @@ where
                 let concrete = mk_dispatch(&rb.backend);
                 route::Backend {
                     route_ref: route_ref.clone(),
+                    filters: rb.filters.clone(),
                     concrete,
                 }
             };
@@ -127,22 +128,25 @@ where
                 }
             };
 
-        let mk_policy =
-            |policy::RoutePolicy::<policy::tls::Filter, ()> {
-                 meta, distribution, ..
-             }| {
-                let route_ref = RouteRef(meta);
-                let parent_ref = parent_ref.clone();
+        let mk_policy = |policy::RoutePolicy::<policy::tls::Filter, ()> {
+                             meta,
+                             distribution,
+                             filters,
+                             ..
+                         }| {
+            let route_ref = RouteRef(meta);
+            let parent_ref = parent_ref.clone();
 
-                let distribution = mk_distribution(&route_ref, &distribution);
-                route::Route {
-                    addr: addr.clone(),
-                    parent: parent.clone(),
-                    parent_ref: parent_ref.clone(),
-                    route_ref,
-                    distribution,
-                }
-            };
+            let distribution = mk_distribution(&route_ref, &distribution);
+            route::Route {
+                addr: addr.clone(),
+                parent: parent.clone(),
+                parent_ref: parent_ref.clone(),
+                route_ref,
+                filters,
+                distribution,
+            }
+        };
 
         let routes = routes
             .iter()

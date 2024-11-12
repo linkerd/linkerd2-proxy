@@ -13,7 +13,11 @@ pub struct Opaque {
 pub struct NonIoErrors;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum Filter {}
+pub enum Filter {
+    ForbiddenRoute,
+    InvalidBackend(std::sync::Arc<str>),
+    InternalError(&'static str),
+}
 
 impl NonIoErrors {
     pub fn contains(&self, e: &(dyn std::error::Error + 'static)) -> bool {
@@ -27,7 +31,7 @@ pub(crate) mod proto {
     use super::*;
     use crate::{
         proto::{BackendSet, InvalidBackend, InvalidDistribution, InvalidMeta},
-        Meta, RouteBackend, RouteDistribution,
+        Backend, Meta, RouteBackend, RouteDistribution,
     };
     use linkerd2_proxy_api::outbound::{self, opaque_route};
 
@@ -83,7 +87,7 @@ pub(crate) mod proto {
         outbound::OpaqueRoute {
             metadata,
             rules,
-            error: _, // TODO
+            error,
         }: outbound::OpaqueRoute,
     ) -> Result<Route, InvalidOpaqueRoute> {
         let meta = Arc::new(
@@ -100,21 +104,27 @@ pub(crate) mod proto {
         }
 
         let rule = rules.first().cloned().expect("already checked");
-        let policy = try_rule(&meta, rule)?;
+        let policy = try_rule(&meta, rule, error)?;
         Ok(Route { policy })
     }
 
     fn try_rule(
         meta: &Arc<Meta>,
         opaque_route::Rule { backends }: opaque_route::Rule,
+        route_error: Option<opaque_route::RouteError>,
     ) -> Result<Policy, InvalidOpaqueRoute> {
         let distribution = backends
             .ok_or(InvalidOpaqueRoute::Missing("distribution"))?
             .try_into()?;
 
+        let filters = match route_error {
+            Some(e) => Arc::new([e.into()]),
+            None => NO_FILTERS.clone(),
+        };
+
         Ok(Policy {
             meta: meta.clone(),
-            filters: NO_FILTERS.clone(),
+            filters,
             params: (),
             distribution,
         })
@@ -165,22 +175,30 @@ pub(crate) mod proto {
     impl TryFrom<opaque_route::RouteBackend> for RouteBackend<Filter> {
         type Error = InvalidBackend;
         fn try_from(
-            opaque_route::RouteBackend {
-                backend,
-                invalid: _, // TODO
-            }: opaque_route::RouteBackend,
+            opaque_route::RouteBackend { backend, invalid }: opaque_route::RouteBackend,
         ) -> Result<Self, Self::Error> {
             let backend = backend.ok_or(InvalidBackend::Missing("backend"))?;
-            RouteBackend::try_from_proto(backend, std::iter::empty::<()>())
+
+            let backend = Backend::try_from(backend)?;
+
+            let filters = match invalid {
+                Some(invalid) => Arc::new([invalid.into()]),
+                None => NO_FILTERS.clone(),
+            };
+
+            Ok(RouteBackend { filters, backend })
         }
     }
 
-    // Necessary to satisfy `RouteBackend::try_from_proto` type constraints.
-    // TODO(eliza): if filters are added to opaque routes, change this to a
-    // proper `TryFrom` impl...
-    impl From<()> for Filter {
-        fn from(_: ()) -> Self {
-            unreachable!("no filters can be configured on opaque routes yet")
+    impl From<opaque_route::RouteError> for Filter {
+        fn from(_: opaque_route::RouteError) -> Self {
+            Self::ForbiddenRoute
+        }
+    }
+
+    impl From<opaque_route::route_backend::Invalid> for Filter {
+        fn from(ib: opaque_route::route_backend::Invalid) -> Self {
+            Self::InvalidBackend(ib.message.into())
         }
     }
 }

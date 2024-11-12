@@ -2,13 +2,17 @@ use super::super::Concrete;
 use crate::{ParentRef, RouteRef};
 use linkerd_app_core::{io, svc, Addr, Error};
 use linkerd_distribute as distribute;
+use linkerd_proxy_client_policy as policy;
 use linkerd_tls_route as tls_route;
-use std::{fmt::Debug, hash::Hash};
+use std::{fmt::Debug, hash::Hash, sync::Arc};
+
+mod filters;
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub(crate) struct Backend<T> {
     pub(crate) route_ref: RouteRef,
     pub(crate) concrete: Concrete<T>,
+    pub(super) filters: Arc<[policy::tls::Filter]>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -23,6 +27,7 @@ pub(crate) struct Route<T> {
     pub(super) addr: Addr,
     pub(super) parent_ref: ParentRef,
     pub(super) route_ref: RouteRef,
+    pub(super) filters: Arc<[policy::tls::Filter]>,
     pub(super) distribution: BackendDistribution<T>,
 }
 
@@ -45,6 +50,7 @@ impl<T: Clone> Clone for Backend<T> {
         Self {
             route_ref: self.route_ref.clone(),
             concrete: self.concrete.clone(),
+            filters: self.filters.clone(),
         }
     }
 }
@@ -74,12 +80,16 @@ where
             svc::stack(inner)
                 .push_map_target(|t| t)
                 .push_map_target(|b: Backend<T>| b.concrete)
+                // apply backend filters
+                .push_filter(filters::apply)
                 .lift_new()
                 .push(NewDistribute::layer())
                 // The router does not take the backend's availability into
                 // consideration, so we must eagerly fail requests to prevent
                 // leaking tasks onto the runtime.
                 .push_on_service(svc::LoadShed::layer())
+                // apply route level filters
+                .push_filter(filters::apply)
                 .push(svc::NewMapErr::layer_with(|rt: &Self| {
                     let route = rt.params.route_ref.clone();
                     move |source| RouteError {
@@ -96,5 +106,17 @@ where
 impl<T: Clone> svc::Param<BackendDistribution<T>> for MatchedRoute<T> {
     fn param(&self) -> BackendDistribution<T> {
         self.params.distribution.clone()
+    }
+}
+
+impl<T: Clone> svc::Param<Arc<[policy::tls::Filter]>> for MatchedRoute<T> {
+    fn param(&self) -> Arc<[policy::tls::Filter]> {
+        self.params.filters.clone()
+    }
+}
+
+impl<T: Clone> svc::Param<Arc<[policy::tls::Filter]>> for Backend<T> {
+    fn param(&self) -> Arc<[policy::tls::Filter]> {
+        self.filters.clone()
     }
 }

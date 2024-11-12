@@ -172,9 +172,20 @@ impl ClientPolicy {
                     routes: HTTP_ROUTES.clone(),
                     failure_accrual: Default::default(),
                 },
-                // TODO(ver): Include a route with a filter that emits errors
-                // for connections.
-                opaque: opaq::Opaque { routes: None },
+
+                opaque: opaq::Opaque {
+                    routes: Some(opaq::Route {
+                        policy: opaq::Policy {
+                            meta: META.clone(),
+                            filters: std::iter::once(opaq::Filter::InternalError(
+                                "invalid client policy configuration",
+                            ))
+                            .collect(),
+                            distribution: RouteDistribution::Empty,
+                            params: (),
+                        },
+                    }),
+                },
             },
             backends: BACKENDS.clone(),
         }
