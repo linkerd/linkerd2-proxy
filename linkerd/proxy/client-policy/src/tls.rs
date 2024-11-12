@@ -1,7 +1,6 @@
 use linkerd_tls_route as tls;
-use std::sync::Arc;
-
 pub use linkerd_tls_route::{find, sni, RouteMatch};
+use std::sync::Arc;
 
 pub type Policy = crate::RoutePolicy<Filter, ()>;
 pub type Route = tls::Route<Policy>;
@@ -12,7 +11,11 @@ pub struct Tls {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum Filter {}
+pub enum Filter {
+    ForbiddenRoute,
+    InvalidBackend(Arc<str>),
+    InternalError(&'static str),
+}
 
 pub fn default(distribution: crate::RouteDistribution<Filter>) -> Route {
     Route {
@@ -39,7 +42,7 @@ pub(crate) mod proto {
     use super::*;
     use crate::{
         proto::{BackendSet, InvalidBackend, InvalidDistribution, InvalidMeta},
-        Meta, RouteBackend, RouteDistribution,
+        Backend, Meta, RouteBackend, RouteDistribution,
     };
     use linkerd2_proxy_api::outbound::{self, tls_route};
     use linkerd_tls_route::sni::proto::InvalidSniMatch;
@@ -98,7 +101,7 @@ pub(crate) mod proto {
             rules,
             snis,
             metadata,
-            ..
+            error,
         } = proto;
         let meta = Arc::new(
             metadata
@@ -120,7 +123,7 @@ pub(crate) mod proto {
 
         let policy = rules
             .into_iter()
-            .map(|rule| try_rule(&meta, rule))
+            .map(|rule| try_rule(&meta, rule, error.clone()))
             .next()
             .ok_or(InvalidTlsRoute::OnlyOneRule(0))??;
 
@@ -130,14 +133,20 @@ pub(crate) mod proto {
     fn try_rule(
         meta: &Arc<Meta>,
         tls_route::Rule { backends }: tls_route::Rule,
+        route_error: Option<tls_route::RouteError>,
     ) -> Result<Policy, InvalidTlsRoute> {
         let distribution = backends
             .ok_or(InvalidTlsRoute::Missing("distribution"))?
             .try_into()?;
 
+        let filters = match route_error {
+            Some(e) => Arc::new([e.into()]),
+            None => NO_FILTERS.clone(),
+        };
+
         Ok(Policy {
             meta: meta.clone(),
-            filters: NO_FILTERS.clone(),
+            filters,
             params: (),
             distribution,
         })
@@ -188,22 +197,30 @@ pub(crate) mod proto {
     impl TryFrom<tls_route::RouteBackend> for RouteBackend<Filter> {
         type Error = InvalidBackend;
         fn try_from(
-            tls_route::RouteBackend {
-                backend,
-                invalid: _, // TODO
-            }: tls_route::RouteBackend,
+            tls_route::RouteBackend { backend, invalid }: tls_route::RouteBackend,
         ) -> Result<Self, Self::Error> {
             let backend = backend.ok_or(InvalidBackend::Missing("backend"))?;
-            RouteBackend::try_from_proto(backend, std::iter::empty::<()>())
+
+            let backend = Backend::try_from(backend)?;
+
+            let filters = match invalid {
+                Some(invalid) => Arc::new([invalid.into()]),
+                None => NO_FILTERS.clone(),
+            };
+
+            Ok(RouteBackend { filters, backend })
         }
     }
 
-    // Necessary to satisfy `RouteBackend::try_from_proto` type constraints.
-    // TODO(eliza): if filters are added to opaque routes, change this to a
-    // proper `TryFrom` impl...
-    impl From<()> for Filter {
-        fn from(_: ()) -> Self {
-            unreachable!("no filters can be configured on opaque routes yet")
+    impl From<tls_route::RouteError> for Filter {
+        fn from(_: tls_route::RouteError) -> Self {
+            Self::ForbiddenRoute
+        }
+    }
+
+    impl From<tls_route::route_backend::Invalid> for Filter {
+        fn from(ib: tls_route::route_backend::Invalid) -> Self {
+            Self::InvalidBackend(ib.message.into())
         }
     }
 }

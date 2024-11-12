@@ -102,6 +102,7 @@ where
                 let concrete = mk_dispatch(&rb.backend);
                 route::Backend {
                     route_ref: route_ref.clone(),
+                    filters: rb.filters.clone(),
                     concrete,
                 }
             };
@@ -127,8 +128,8 @@ where
         let mk_policy = |policy::RoutePolicy::<policy::opaq::Filter, ()> {
                              meta,
                              distribution,
-                             filters: _,
-                             params: (),
+                             filters,
+                             ..
                          }| {
             let route_ref = RouteRef(meta);
             let logical = logical.clone();
@@ -138,8 +139,8 @@ where
                 logical,
                 parent: parent.clone(),
                 route_ref,
+                filters,
                 distribution,
-                forbidden: false, // TODO
             }
         };
 

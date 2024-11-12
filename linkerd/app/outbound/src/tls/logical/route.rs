@@ -2,17 +2,18 @@ use super::super::Concrete;
 use crate::{ParentRef, RouteRef};
 use linkerd_app_core::{
     io,
-    metrics::prom::EncodeLabelSetMut,
+    metrics::prom,
     svc,
     tls::ServerName,
     transport::metrics::tcp::{client::NewInstrumentConnection, TcpMetricsParams},
     Addr, Error,
 };
 use linkerd_distribute as distribute;
-use linkerd_errno::{code::Code, Errno};
+use linkerd_proxy_client_policy as policy;
 use linkerd_tls_route as tls_route;
-use prometheus_client::encoding::*;
-use std::{fmt::Debug, hash::Hash};
+use std::{fmt::Debug, hash::Hash, sync::Arc};
+
+mod filters;
 
 pub type TlsRouteMetrics = TcpMetricsParams<RouteLabels>;
 
@@ -20,6 +21,7 @@ pub type TlsRouteMetrics = TcpMetricsParams<RouteLabels>;
 pub(crate) struct Backend<T> {
     pub(crate) route_ref: RouteRef,
     pub(crate) concrete: Concrete<T>,
+    pub(super) filters: Arc<[policy::tls::Filter]>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -34,8 +36,8 @@ pub(crate) struct Route<T> {
     pub(super) addr: Addr,
     pub(super) parent_ref: ParentRef,
     pub(super) route_ref: RouteRef,
+    pub(super) filters: Arc<[policy::tls::Filter]>,
     pub(super) distribution: BackendDistribution<T>,
-    pub(super) forbidden: bool,
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -64,6 +66,7 @@ impl<T: Clone> Clone for Backend<T> {
         Self {
             route_ref: self.route_ref.clone(),
             concrete: self.concrete.clone(),
+            filters: self.filters.clone(),
         }
     }
 }
@@ -95,19 +98,16 @@ where
             svc::stack(inner)
                 .push_map_target(|t| t)
                 .push_map_target(|b: Backend<T>| b.concrete)
+                // apply backend filters
+                .push_filter(filters::apply)
                 .lift_new()
                 .push(NewDistribute::layer())
                 // The router does not take the backend's availability into
                 // consideration, so we must eagerly fail requests to prevent
                 // leaking tasks onto the runtime.
                 .push_on_service(svc::LoadShed::layer())
-                .push_filter(|rt: Self| -> Result<_, Error> {
-                    if rt.params.forbidden {
-                        Err(Errno::from(Code::ECONNREFUSED).into())
-                    } else {
-                        Ok(rt)
-                    }
-                })
+                // apply route level filters
+                .push_filter(filters::apply)
                 .push(svc::NewMapErr::layer_with(|rt: &Self| {
                     let route = rt.params.route_ref.clone();
                     move |source| RouteError {
@@ -128,6 +128,18 @@ impl<T: Clone> svc::Param<BackendDistribution<T>> for MatchedRoute<T> {
     }
 }
 
+impl<T: Clone> svc::Param<Arc<[policy::tls::Filter]>> for MatchedRoute<T> {
+    fn param(&self) -> Arc<[policy::tls::Filter]> {
+        self.params.filters.clone()
+    }
+}
+
+impl<T: Clone> svc::Param<Arc<[policy::tls::Filter]>> for Backend<T> {
+    fn param(&self) -> Arc<[policy::tls::Filter]> {
+        self.filters.clone()
+    }
+}
+
 impl<T> svc::Param<RouteLabels> for MatchedRoute<T>
 where
     T: Eq + Hash + Clone + Debug,
@@ -144,8 +156,9 @@ where
 
 // === impl RouteLabels ===
 
-impl EncodeLabelSetMut for RouteLabels {
-    fn encode_label_set(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
+impl prom::EncodeLabelSetMut for RouteLabels {
+    fn encode_label_set(&self, enc: &mut prom::encoding::LabelSetEncoder<'_>) -> std::fmt::Result {
+        use prom::encoding::*;
         let Self {
             parent,
             route,
@@ -158,8 +171,9 @@ impl EncodeLabelSetMut for RouteLabels {
     }
 }
 
-impl EncodeLabelSet for RouteLabels {
-    fn encode(&self, mut enc: LabelSetEncoder<'_>) -> std::fmt::Result {
+impl prom::encoding::EncodeLabelSet for RouteLabels {
+    fn encode(&self, mut enc: prom::encoding::LabelSetEncoder<'_>) -> std::fmt::Result {
+        use prom::EncodeLabelSetMut;
         self.encode_label_set(&mut enc)
     }
 }
