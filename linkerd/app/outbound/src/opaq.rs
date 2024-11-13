@@ -18,7 +18,7 @@ use tokio::sync::watch;
 mod concrete;
 mod logical;
 
-pub use self::logical::{Concrete, Logical, Routes};
+pub use self::logical::{route::filters::errors::*, Concrete, Logical, Routes};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct Opaq<T>(T);
@@ -26,6 +26,7 @@ struct Opaq<T>(T);
 #[derive(Clone, Debug, Default)]
 pub struct OpaqMetrics {
     balance: concrete::BalancerMetrics,
+    route: logical::route::TcpRouteMetrics,
 }
 
 // === impl Outbound ===
@@ -82,7 +83,9 @@ impl OpaqMetrics {
     pub fn register(registry: &mut prom::Registry) -> Self {
         let balance =
             concrete::BalancerMetrics::register(registry.sub_registry_with_prefix("balancer"));
-        Self { balance }
+        let route =
+            logical::route::TcpRouteMetrics::register(registry.sub_registry_with_prefix("route"));
+        Self { balance, route }
     }
 }
 

@@ -17,7 +17,7 @@ use tokio::sync::watch;
 mod concrete;
 mod logical;
 
-pub use self::logical::{Concrete, Routes};
+pub use self::logical::{route::filters::errors::*, Concrete, Routes};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct Tls<T> {
@@ -64,6 +64,7 @@ where
 #[derive(Clone, Debug, Default)]
 pub struct TlsMetrics {
     balance: concrete::BalancerMetrics,
+    route: logical::route::TlsRouteMetrics,
 }
 
 // === impl Outbound ===
@@ -129,6 +130,8 @@ impl TlsMetrics {
     pub fn register(registry: &mut prom::Registry) -> Self {
         let balance =
             concrete::BalancerMetrics::register(registry.sub_registry_with_prefix("balancer"));
-        Self { balance }
+        let route =
+            logical::route::TlsRouteMetrics::register(registry.sub_registry_with_prefix("route"));
+        Self { balance, route }
     }
 }

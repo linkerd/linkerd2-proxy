@@ -11,7 +11,7 @@ where
     if let Some(filter) = filters.iter().next() {
         match filter {
             tls::Filter::ForbiddenRoute => {
-                return Err(errors::TlSForbiddenRoute.into());
+                return Err(errors::TLSForbiddenRoute.into());
             }
 
             tls::Filter::InvalidBackend(message) => {
@@ -32,7 +32,7 @@ pub mod errors {
 
     #[derive(Debug, thiserror::Error)]
     #[error("forbidden TLS route")]
-    pub struct TlSForbiddenRoute;
+    pub struct TLSForbiddenRoute;
 
     #[derive(Debug, thiserror::Error)]
     #[error("invalid TLS backend: {0}")]

@@ -66,10 +66,12 @@ impl<N> Outbound<N> {
         NSvc::Future: Send,
         NSvc::Error: Into<Error>,
     {
-        self.map_stack(|_config, _, concrete| {
+        self.map_stack(|_config, rt, concrete| {
+            let metrics = rt.metrics.prom.opaq.route.clone();
+
             concrete
                 .lift_new()
-                .push_on_service(router::Router::layer())
+                .push_on_service(router::Router::layer(metrics.clone()))
                 .push_on_service(svc::NewMapErr::layer_from_target::<LogicalError, _>())
                 // Rebuild the inner router stack every time the watch changes.
                 .push(svc::NewSpawnWatch::<Routes, _>::layer_into::<
