@@ -49,17 +49,15 @@ pub(crate) struct NewTransportRouteMetrics<N, L: Clone> {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct TransportRouteMetricsService<T, N> {
-    target: T,
-    inner: N,
+pub(crate) struct TransportRouteMetricsService<S> {
+    inner: S,
     metrics: TransportRouteMetrics,
 }
 // === impl TransportRouteMetricsFamily ===
 
 impl<L> Default for TransportRouteMetricsFamily<L>
 where
-    L: EncodeLabelSetMut + std::fmt::Debug + std::hash::Hash,
-    L: Eq + Clone,
+    L: Clone + Hash + Eq,
 {
     fn default() -> Self {
         Self {
@@ -71,8 +69,7 @@ where
 
 impl<L> TransportRouteMetricsFamily<L>
 where
-    L: EncodeLabelSetMut + std::fmt::Debug + std::hash::Hash,
-    L: Eq + Clone + Send + Sync + 'static,
+    L: Clone + Hash + Eq + EncodeLabelSetMut + Debug + Send + Sync + 'static,
 {
     pub(crate) fn register(registry: &mut Registry) -> Self {
         let open = prom::Family::<L, prom::Counter>::default();
@@ -177,39 +174,34 @@ impl<N, L: Clone> NewTransportRouteMetrics<N, L> {
     }
 }
 
-impl<T, N, L> NewService<T> for NewTransportRouteMetrics<N, L>
+impl<T, N, L, S> NewService<T> for NewTransportRouteMetrics<N, L>
 where
-    N: Clone,
+    N: NewService<T, Service = S>,
     L: Clone + Hash + Eq + EncodeLabelSetMut + Debug + Send + Sync + 'static,
-    T: Param<L>,
+    T: Param<L> + Clone,
 {
-    type Service = TransportRouteMetricsService<T, N>;
+    type Service = TransportRouteMetricsService<S>;
 
     fn new_service(&self, target: T) -> Self::Service {
         let labels: L = target.param();
         let metrics = self.family.metrics(labels);
-        TransportRouteMetricsService::new(target, self.inner.clone(), metrics)
+        let svc = self.inner.new_service(target);
+        TransportRouteMetricsService::new(svc, metrics)
     }
 }
 
 // === impl TransportRouteMetricsService ===
 
-impl<T, N> TransportRouteMetricsService<T, N> {
-    fn new(target: T, inner: N, metrics: TransportRouteMetrics) -> Self {
-        Self {
-            target,
-            inner,
-            metrics,
-        }
+impl<S> TransportRouteMetricsService<S> {
+    fn new(inner: S, metrics: TransportRouteMetrics) -> Self {
+        Self { inner, metrics }
     }
 }
 
-impl<T, I, N, S> Service<I> for TransportRouteMetricsService<T, N>
+impl<I, S> Service<I> for TransportRouteMetricsService<S>
 where
-    T: Clone + Send + Sync + 'static,
-    I: io::AsyncRead + io::AsyncWrite + Debug + Send + Unpin + 'static,
-    N: NewService<T, Service = S> + Clone + Send + 'static,
-    S: Service<I> + Send,
+    I: io::AsyncRead + io::AsyncWrite + Send + 'static,
+    S: Service<I> + Send + Clone + 'static,
     S::Error: Into<Error>,
     S::Future: Send,
 {
@@ -218,20 +210,17 @@ where
     type Future = Pin<Box<dyn Future<Output = Result<S::Response, Error>> + Send + 'static>>;
 
     #[inline]
-    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Poll::Ready(Ok(()))
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx).map_err(Into::into)
     }
 
     fn call(&mut self, io: I) -> Self::Future {
-        let target = self.target.clone();
-        let new_accept = self.inner.clone();
         let metrics = self.metrics.clone();
+        let inner = self.inner.clone();
 
         Box::pin(async move {
-            let svc = new_accept.new_service(target);
             metrics.inc_open();
-
-            match svc.oneshot(io).await.map_err(Into::into) {
+            match inner.oneshot(io).await.map_err(Into::into) {
                 Ok(result) => {
                     metrics.inc_closed(None);
                     Ok(result)
@@ -244,6 +233,8 @@ where
         })
     }
 }
+
+// === impl TransportRouteMetrics ===
 
 impl TransportRouteMetrics {
     fn inc_open(&self) {
