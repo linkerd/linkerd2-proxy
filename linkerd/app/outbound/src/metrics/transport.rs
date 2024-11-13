@@ -2,7 +2,7 @@ use crate::{opaq, tls};
 use linkerd_app_core::{
     io,
     metrics::prom::{self, encoding::*, registry::Registry, EncodeLabelSetMut, Family},
-    svc::{layer, NewService, Param, Service, ServiceExt},
+    svc::{layer, NewService, Param, Service},
     Error,
 };
 use std::{fmt::Debug, hash::Hash};
@@ -216,11 +216,12 @@ where
 
     fn call(&mut self, io: I) -> Self::Future {
         let metrics = self.metrics.clone();
-        let inner = self.inner.clone();
+
+        self.metrics.inc_open();
+        let call = self.inner.call(io);
 
         Box::pin(async move {
-            metrics.inc_open();
-            match inner.oneshot(io).await.map_err(Into::into) {
+            match call.await.map_err(Into::into) {
                 Ok(result) => {
                     metrics.inc_closed(None);
                     Ok(result)
