@@ -302,7 +302,14 @@ impl<T, N> HttpPolicyService<T, N> {
             .borrow()
             .local_rate_limit
             .check(id)
-            .map_err(Into::into)
+            .map_err(|err| {
+                self.metrics.ratelimit(
+                    self.policy.ratelimit_label(&err),
+                    self.connection.dst,
+                    self.connection.tls.clone(),
+                );
+                err.into()
+            })
     }
 }
 

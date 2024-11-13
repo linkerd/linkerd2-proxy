@@ -58,7 +58,7 @@ async fn from_proto() {
         ],
     };
 
-    let rl = Into::<LocalRateLimit>::into(rl_proto);
+    let rl = TryInto::<LocalRateLimit>::try_into(rl_proto).unwrap();
     assert_eq!(rl.total.as_ref().unwrap().rps.get(), 100);
     assert_eq!(rl.per_identity.as_ref().unwrap().rps.get(), 20);
 
@@ -77,6 +77,7 @@ async fn check_rate_limits() {
         "client-4".parse().unwrap() => Arc::new(RateLimit::direct_for_test(15)),
     };
     let rl = LocalRateLimit {
+        meta: None,
         total: Some(total),
         per_identity: Some(per_identity),
         overrides,

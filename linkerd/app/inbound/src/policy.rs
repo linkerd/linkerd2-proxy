@@ -5,6 +5,8 @@ mod http;
 mod store;
 mod tcp;
 
+use crate::metrics::authz::HTTPLocalRateLimitLabels;
+
 pub(crate) use self::store::Store;
 pub use self::{
     config::Config,
@@ -27,7 +29,8 @@ pub use linkerd_proxy_server_policy::{
     authz::Suffix,
     grpc::Route as GrpcRoute,
     http::{filter::Redirection, Route as HttpRoute},
-    route, Authentication, Authorization, Meta, Protocol, RoutePolicy, ServerPolicy,
+    route, Authentication, Authorization, Meta, Protocol, RateLimitError, RoutePolicy,
+    ServerPolicy,
 };
 use std::sync::Arc;
 use thiserror::Error;
@@ -131,6 +134,20 @@ impl AllowPolicy {
     #[inline]
     pub fn server_label(&self) -> ServerLabel {
         ServerLabel(self.server.borrow().meta.clone())
+    }
+
+    pub fn ratelimit_label(&self, error: &RateLimitError) -> HTTPLocalRateLimitLabels {
+        use RateLimitError::*;
+
+        let scope = match error {
+            Total(_) => "total",
+            PerIdentity(_) | Override(_) => "identity",
+        };
+        HTTPLocalRateLimitLabels {
+            server: self.server_label(),
+            rate_limit: self.server.borrow().local_rate_limit.meta(),
+            scope,
+        }
     }
 
     async fn changed(&mut self) {

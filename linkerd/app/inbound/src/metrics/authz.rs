@@ -1,4 +1,4 @@
-use crate::policy::{AllowPolicy, HttpRoutePermit, ServerPermit};
+use crate::policy::{AllowPolicy, HttpRoutePermit, Meta, ServerPermit};
 use linkerd_app_core::{
     metrics::{
         metrics, Counter, FmtLabels, FmtMetrics, RouteAuthzLabels, RouteLabels, ServerAuthzLabels,
@@ -19,6 +19,10 @@ metrics! {
     },
     inbound_http_route_not_found_total: Counter {
         "The total number of inbound HTTP requests that could not be associated with a route"
+    },
+
+    inbound_http_local_ratelimit_total: Counter {
+        "The total number of inbound HTTP requests that were rate-limited"
     },
 
     inbound_tcp_authz_allow_total: Counter {
@@ -43,6 +47,7 @@ struct HttpInner {
     allow: Mutex<HashMap<RouteAuthzKey, Counter>>,
     deny: Mutex<HashMap<RouteKey, Counter>>,
     route_not_found: Mutex<HashMap<ServerKey, Counter>>,
+    http_local_rate_limit: Mutex<HashMap<HttpLocalRateLimitKey, Counter>>,
 }
 
 #[derive(Debug, Default)]
@@ -50,6 +55,13 @@ struct TcpInner {
     allow: Mutex<HashMap<ServerAuthzKey, Counter>>,
     deny: Mutex<HashMap<ServerKey, Counter>>,
     terminate: Mutex<HashMap<ServerKey, Counter>>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct HTTPLocalRateLimitLabels {
+    pub server: ServerLabel,
+    pub rate_limit: Option<Arc<Meta>>,
+    pub scope: &'static str,
 }
 
 #[derive(Debug, Hash, PartialEq, Eq)]
@@ -63,6 +75,7 @@ type ServerKey = Key<ServerLabel>;
 type ServerAuthzKey = Key<ServerAuthzLabels>;
 type RouteKey = Key<RouteLabels>;
 type RouteAuthzKey = Key<RouteAuthzLabels>;
+type HttpLocalRateLimitKey = Key<HTTPLocalRateLimitLabels>;
 
 // === impl HttpAuthzMetrics ===
 
@@ -95,6 +108,20 @@ impl HttpAuthzMetrics {
             .deny
             .lock()
             .entry(RouteKey::new(labels, dst, tls))
+            .or_default()
+            .incr();
+    }
+
+    pub fn ratelimit(
+        &self,
+        labels: HTTPLocalRateLimitLabels,
+        dst: OrigDstAddr,
+        tls: tls::ConditionalServerTls,
+    ) {
+        self.0
+            .http_local_rate_limit
+            .lock()
+            .entry(HttpLocalRateLimitKey::new(labels, dst, tls))
             .or_default()
             .incr();
     }
@@ -139,6 +166,19 @@ impl FmtMetrics for HttpAuthzMetrics {
             )?;
         }
         drop(route_not_found);
+
+        let local_ratelimit = self.0.http_local_rate_limit.lock();
+        if !local_ratelimit.is_empty() {
+            inbound_http_local_ratelimit_total.fmt_help(f)?;
+            inbound_http_local_ratelimit_total.fmt_scopes(
+                f,
+                local_ratelimit
+                    .iter()
+                    .map(|(k, c)| ((k.target, (&k.labels, TlsAccept(&k.tls))), c)),
+                |c| c,
+            )?;
+        }
+        drop(local_ratelimit);
 
         Ok(())
     }
@@ -199,6 +239,26 @@ impl FmtMetrics for TcpAuthzMetrics {
         drop(terminate);
 
         Ok(())
+    }
+}
+
+// === impl HTTPLocalRateLimitLabels ===
+
+impl FmtLabels for HTTPLocalRateLimitLabels {
+    fn fmt_labels(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.server.fmt_labels(f)?;
+        if let Some(rl) = &self.rate_limit {
+            write!(
+                f,
+                ",ratelimit_group=\"{}\",ratelimit_kind=\"{}\",ratelimit_name=\"{}\",ratelimit_scope=\"{}\"",
+                rl.group(),
+                rl.kind(),
+                rl.name(),
+                self.scope,
+            )
+        } else {
+            write!(f, ",ratelimit_scope=\"{}\"", self.scope)
+        }
     }
 }
 

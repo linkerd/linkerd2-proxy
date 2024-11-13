@@ -58,7 +58,7 @@ impl ServerPolicy {
                     rules: vec![http::Rule {
                         matches: vec![http::r#match::MatchRequest::default()],
                         policy: http::Policy {
-                            meta,
+                            meta: meta.clone(),
                             authorizations: Arc::new([]),
                             filters: vec![http::Filter::InternalError(
                                 "invalid server configuration",
@@ -144,7 +144,7 @@ pub mod proto {
                     timeout: _,
                     http_routes: _,
                     http_local_rate_limit,
-                }) => http_local_rate_limit.unwrap_or_default().into(),
+                }) => http_local_rate_limit.unwrap_or_default().try_into(),
                 api::proxy_protocol::Kind::Http1(api::proxy_protocol::Http1 {
                     routes: _,
                     local_rate_limit,
@@ -152,9 +152,9 @@ pub mod proto {
                 | api::proxy_protocol::Kind::Http2(api::proxy_protocol::Http2 {
                     routes: _,
                     local_rate_limit,
-                }) => local_rate_limit.unwrap_or_default().into(),
-                _ => Default::default(),
-            };
+                }) => local_rate_limit.unwrap_or_default().try_into(),
+                _ => Ok(Default::default()),
+            }?;
 
             let authorizations = {
                 // Always permit traffic from localhost.
