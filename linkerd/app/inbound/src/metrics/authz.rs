@@ -61,7 +61,7 @@ struct TcpInner {
 pub struct HTTPLocalRateLimitLabels {
     pub server: ServerLabel,
     pub rate_limit: Option<Arc<Meta>>,
-    pub scope: String,
+    pub scope: &'static str,
 }
 
 #[derive(Debug, Hash, PartialEq, Eq)]

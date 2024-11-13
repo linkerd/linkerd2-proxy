@@ -140,8 +140,8 @@ impl AllowPolicy {
         use RateLimitError::*;
 
         let scope = match error {
-            Total(_) => "total".to_string(),
-            PerIdentity(_) | Override(_) => "identity".to_string(),
+            Total(_) => "total",
+            PerIdentity(_) | Override(_) => "identity",
         };
         HTTPLocalRateLimitLabels {
             server: self.server_label(),
