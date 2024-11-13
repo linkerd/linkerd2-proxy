@@ -5,6 +5,8 @@ mod http;
 mod store;
 mod tcp;
 
+use crate::metrics::authz::HTTPLocalRateLimitLabels;
+
 pub(crate) use self::store::Store;
 pub use self::{
     config::Config,
@@ -18,7 +20,7 @@ pub use self::{
 pub use linkerd_app_core::metrics::ServerLabel;
 use linkerd_app_core::{
     identity as id,
-    metrics::{HTTPLocalRateLimitLabels, RouteAuthzLabels, ServerAuthzLabels},
+    metrics::{RouteAuthzLabels, ServerAuthzLabels},
     tls,
     transport::{ClientAddr, OrigDstAddr, Remote},
 };
@@ -135,15 +137,16 @@ impl AllowPolicy {
     }
 
     pub fn ratelimit_label(&self, error: &RateLimitError) -> HTTPLocalRateLimitLabels {
-        let error = match error {
-            RateLimitError::Total(rps) => format!("total({})", rps),
-            RateLimitError::PerIdentity(rps) => format!("per-identity({})", rps),
-            RateLimitError::Override(rps) => format!("override({})", rps),
+        use RateLimitError::*;
+
+        let scope = match error {
+            Total(_) => "total".to_string(),
+            PerIdentity(_) | Override(_) => "identity".to_string(),
         };
         HTTPLocalRateLimitLabels {
             server: self.server_label(),
             rate_limit: self.server.borrow().local_rate_limit.meta(),
-            error,
+            scope,
         }
     }
 

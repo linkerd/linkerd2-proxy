@@ -1,8 +1,8 @@
-use crate::policy::{AllowPolicy, HttpRoutePermit, ServerPermit};
+use crate::policy::{AllowPolicy, HttpRoutePermit, Meta, ServerPermit};
 use linkerd_app_core::{
     metrics::{
-        metrics, Counter, FmtLabels, FmtMetrics, HTTPLocalRateLimitLabels, RouteAuthzLabels,
-        RouteLabels, ServerAuthzLabels, ServerLabel, TargetAddr, TlsAccept,
+        metrics, Counter, FmtLabels, FmtMetrics, RouteAuthzLabels, RouteLabels, ServerAuthzLabels,
+        ServerLabel, TargetAddr, TlsAccept,
     },
     tls,
     transport::OrigDstAddr,
@@ -55,6 +55,13 @@ struct TcpInner {
     allow: Mutex<HashMap<ServerAuthzKey, Counter>>,
     deny: Mutex<HashMap<ServerKey, Counter>>,
     terminate: Mutex<HashMap<ServerKey, Counter>>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct HTTPLocalRateLimitLabels {
+    pub server: ServerLabel,
+    pub rate_limit: Option<Arc<Meta>>,
+    pub scope: String,
 }
 
 #[derive(Debug, Hash, PartialEq, Eq)]
@@ -232,6 +239,26 @@ impl FmtMetrics for TcpAuthzMetrics {
         drop(terminate);
 
         Ok(())
+    }
+}
+
+// === impl HTTPLocalRateLimitLabels ===
+
+impl FmtLabels for HTTPLocalRateLimitLabels {
+    fn fmt_labels(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.server.fmt_labels(f)?;
+        if let Some(rl) = &self.rate_limit {
+            write!(
+                f,
+                ",ratelimit_group=\"{}\",ratelimit_kind=\"{}\",ratelimit_name=\"{}\",ratelimit_scope=\"{}\"",
+                rl.group(),
+                rl.kind(),
+                rl.name(),
+                self.scope,
+            )
+        } else {
+            write!(f, ",ratelimit_scope=\"{}\"", self.scope)
+        }
     }
 }
 

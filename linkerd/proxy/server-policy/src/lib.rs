@@ -90,9 +90,6 @@ pub mod proto {
         #[error("missing protocol detection timeout")]
         MissingProxyProtocol,
 
-        #[error("invalid rate limit configuration: {0}")]
-        InvalidRateLimitConfig(#[from] RateLimitError),
-
         #[error("invalid label: {0}")]
         Meta(#[from] InvalidMeta),
 
