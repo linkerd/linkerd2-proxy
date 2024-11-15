@@ -192,7 +192,7 @@ impl TestServer {
 
         // Build a real HTTP/2 client using the mocked socket.
         let (client, task) = client
-            .executor(crate::executor::TracingExecutor)
+            .executor(crate::TracingExecutor)
             .handshake::<_, BoxBody>(cio)
             .await
             .expect("client connect");

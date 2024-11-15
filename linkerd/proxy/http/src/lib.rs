@@ -9,7 +9,6 @@ pub mod classify;
 pub mod client;
 pub mod client_handle;
 pub mod detect;
-mod executor;
 mod glue;
 pub mod h1;
 pub mod h2;
@@ -34,7 +33,6 @@ pub use self::{
     },
     client_handle::{ClientHandle, SetClientHandle},
     detect::DetectHttp,
-    executor::TracingExecutor,
     header_from_target::NewHeaderFromTarget,
     normalize_uri::{MarkAbsoluteForm, NewNormalizeUri},
     override_authority::{AuthorityOverride, NewOverrideAuthority},
@@ -51,6 +49,7 @@ pub use http::{
 };
 pub use hyper::body::HttpBody;
 pub use linkerd_http_box::{BoxBody, BoxRequest, BoxResponse, EraseResponse};
+pub use linkerd_http_executor::TracingExecutor;
 
 #[derive(Clone, Debug)]
 pub struct HeaderPair(pub HeaderName, pub HeaderValue);
