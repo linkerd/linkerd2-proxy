@@ -345,9 +345,9 @@ where
 
 // === impl RequestBody ===
 
-impl<B> crate::HttpBody for RequestBody<B>
+impl<B> http_body::Body for RequestBody<B>
 where
-    B: crate::HttpBody<Error = Error>,
+    B: http_body::Body<Error = Error>,
 {
     type Data = B::Data;
     type Error = Error;
@@ -405,20 +405,20 @@ where
 
 // === impl ResponseBody ===
 
-impl<B> crate::HttpBody for ResponseBody<B>
+impl<B> http_body::Body for ResponseBody<B>
 where
-    B: crate::HttpBody<Error = Error>,
+    B: http_body::Body<Error = Error>,
 {
     type Data = B::Data;
     type Error = Error;
 
-    fn poll_data(
+    fn poll_frame(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
+    ) -> Poll<Option<Result<http_body::Frame<Self::Data>, Self::Error>>> {
         let this = self.project();
 
-        if let Poll::Ready(res) = this.inner.poll_data(cx) {
+        if let Poll::Ready(res) = this.inner.poll_frame(cx) {
             if let Some(idle) = this.idle {
                 idle.reset(time::Instant::now());
             }
@@ -428,27 +428,6 @@ where
         if let Poll::Ready(e) = poll_body_timeout(this.deadline, this.idle, cx) {
             // TODO telemetry
             return Poll::Ready(Some(Err(Error::from(e))));
-        }
-
-        Poll::Pending
-    }
-
-    fn poll_trailers(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
-        let this = self.project();
-
-        if let Poll::Ready(res) = this.inner.poll_trailers(cx) {
-            if let Some(idle) = this.idle {
-                idle.reset(time::Instant::now());
-            };
-            return Poll::Ready(res);
-        }
-
-        if let Poll::Ready(e) = poll_body_timeout(this.deadline, this.idle, cx) {
-            // TODO telemetry
-            return Poll::Ready(Err(Error::from(e)));
         }
 
         Poll::Pending

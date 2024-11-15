@@ -173,20 +173,20 @@ impl<S> Service<S> {
 
 type ResponseFuture<F, B, E> = Either<F, future::Ready<Result<http::Response<B>, E>>>;
 
-impl<S, B> tower::Service<http::Request<hyper::Body>> for Service<S>
+impl<S, ReqB, RespB> tower::Service<http::Request<ReqB>> for Service<S>
 where
-    S: tower::Service<http::Request<UpgradeBody>, Response = http::Response<B>>,
-    B: Default,
+    S: tower::Service<http::Request<UpgradeBody>, Response = http::Response<RespB>>,
+    RespB: Default,
 {
     type Response = S::Response;
     type Error = S::Error;
-    type Future = ResponseFuture<S::Future, B, S::Error>;
+    type Future = ResponseFuture<S::Future, RespB, S::Error>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.service.poll_ready(cx)
     }
 
-    fn call(&mut self, mut req: http::Request<hyper::Body>) -> Self::Future {
+    fn call(&mut self, mut req: http::Request<ReqB>) -> Self::Future {
         // Should this rejection happen later in the Service stack?
         //
         // Rejecting here means telemetry doesn't record anything about it...

@@ -1,9 +1,9 @@
 use crate::upgrade::Http11Upgrade;
 use bytes::Bytes;
 use futures::TryFuture;
-use hyper::body::HttpBody;
-use hyper::client::connect as hyper_connect;
+use http_body::{Body, Frame};
 use linkerd_error::{Error, Result};
+use linkerd_http_box::BoxBody;
 use linkerd_io::{self as io, AsyncRead, AsyncWrite};
 use linkerd_stack::{MakeConnection, Service};
 use pin_project::{pin_project, pinned_drop};
@@ -15,12 +15,13 @@ use std::{
 use tracing::debug;
 
 /// Provides optional HTTP/1.1 upgrade support on the body.
+//  TODO(kate): replace this with `hyper::server::conn::http1::UpgradeableConnection`.
 #[pin_project(PinnedDrop)]
 #[derive(Debug)]
-pub struct UpgradeBody {
+pub struct UpgradeBody<B = BoxBody> {
     /// In UpgradeBody::drop, if this was an HTTP upgrade, the body is taken
     /// to be inserted into the Http11Upgrade half.
-    body: hyper::Body,
+    body: B,
     pub(super) upgrade: Option<(Http11Upgrade, hyper::upgrade::OnUpgrade)>,
 }
 
@@ -47,9 +48,13 @@ pub struct HyperConnectFuture<F> {
     inner: F,
     absolute_form: bool,
 }
+
 // === impl UpgradeBody ===
 
-impl HttpBody for UpgradeBody {
+impl<B> http_body::Body for UpgradeBody<B>
+where
+    B: http_body::Body,
+{
     type Data = Bytes;
     type Error = hyper::Error;
 
@@ -57,10 +62,10 @@ impl HttpBody for UpgradeBody {
         self.body.is_end_stream()
     }
 
-    fn poll_data(
+    fn poll_frame(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
+    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         let body = self.project().body;
         let poll = futures::ready!(Pin::new(body) // `hyper::Body` is Unpin
             .poll_data(cx));
@@ -72,33 +77,20 @@ impl HttpBody for UpgradeBody {
         }))
     }
 
-    fn poll_trailers(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
-        let body = self.project().body;
-        Pin::new(body) // `hyper::Body` is Unpin
-            .poll_trailers(cx)
-            .map_err(|e| {
-                debug!("http trailers error: {}", e);
-                e
-            })
-    }
-
     #[inline]
     fn size_hint(&self) -> http_body::SizeHint {
         self.body.size_hint()
     }
 }
 
-impl Default for UpgradeBody {
+impl<B: Default> Default for UpgradeBody<B> {
     fn default() -> Self {
-        hyper::Body::empty().into()
+        BoxBody::default().into()
     }
 }
 
-impl From<hyper::Body> for UpgradeBody {
-    fn from(body: hyper::Body) -> Self {
+impl<B: Body> From<B> for UpgradeBody<B> {
+    fn from(body: B) -> Self {
         Self {
             body,
             upgrade: None,
@@ -106,9 +98,9 @@ impl From<hyper::Body> for UpgradeBody {
     }
 }
 
-impl UpgradeBody {
+impl<B: Body> UpgradeBody<B> {
     pub(crate) fn new(
-        body: hyper::Body,
+        body: B,
         upgrade: Option<(Http11Upgrade, hyper::upgrade::OnUpgrade)>,
     ) -> Self {
         Self { body, upgrade }
@@ -180,7 +172,7 @@ where
     }
 }
 
-// === impl Connected ===
+// === impl Connection ===
 
 impl<C> AsyncRead for Connection<C>
 where
@@ -228,8 +220,8 @@ where
     }
 }
 
-impl<C> hyper_connect::Connection for Connection<C> {
-    fn connected(&self) -> hyper_connect::Connected {
-        hyper_connect::Connected::new().proxy(self.absolute_form)
+impl<C> hyper_util::client::legacy::connect::Connection for Connection<C> {
+    fn connected(&self) -> hyper_util::client::legacy::connect::Connected {
+        hyper_util::client::legacy::connect::Connected::new().proxy(self.absolute_form)
     }
 }

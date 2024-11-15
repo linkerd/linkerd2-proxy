@@ -49,7 +49,7 @@ pub use http::{
     header::{self, HeaderMap, HeaderName, HeaderValue},
     uri, Method, Request, Response, StatusCode,
 };
-pub use hyper::body::HttpBody;
+pub use http_body::Body;
 pub use linkerd_http_box::{BoxBody, BoxRequest, BoxResponse, EraseResponse};
 
 #[derive(Clone, Debug)]

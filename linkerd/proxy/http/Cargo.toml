@@ -17,18 +17,23 @@ bytes = "1"
 drain = "0.1"
 futures = { version = "0.3", default-features = false }
 h2 = "0.3"
-http = "0.2"
-http-body = "0.4"
+http = "1"
+http-body = "1"
 httparse = "1"
-hyper = { version = "0.14", features = [ # XXX(kate)
+hyper = { version = "1", features = [
     "client",
     "http1",
     "http2",
     "server",
-    "stream",
-    "runtime",
 ] }
 hyper-balance = { path = "../../../hyper-balance" }
+hyper-util = { version = "0.1", features = [
+    "client",
+    "client-legacy",
+    "http1",
+    "http2",
+    "server",
+] }
 parking_lot = "0.12"
 pin-project = "1"
 rand = "0.8"

@@ -1,10 +1,7 @@
 use crate::executor::TracingExecutor;
 use futures::prelude::*;
-use hyper::{
-    body::HttpBody,
-    client::conn::{self, SendRequest},
-};
 use linkerd_error::{Error, Result};
+use linkerd_http_box::BoxBody;
 use linkerd_stack::{MakeConnection, Service};
 use std::{
     marker::PhantomData,
@@ -26,7 +23,7 @@ pub struct Connect<C, B> {
 
 #[derive(Debug)]
 pub struct Connection<B> {
-    tx: SendRequest<B>,
+    tx: hyper::client::conn::http2::SendRequest<B>,
 }
 
 // === impl Connect ===
@@ -57,9 +54,10 @@ impl<C, B, T> Service<T> for Connect<C, B>
 where
     C: MakeConnection<(crate::Version, T)>,
     C::Connection: Send + Unpin + 'static,
+    C::Connection: hyper::rt::Read + hyper::rt::Write,
     C::Metadata: Send,
     C::Future: Send + 'static,
-    B: HttpBody + Send + 'static,
+    B: http_body::Body + Send + Unpin + 'static,
     B::Data: Send,
     B::Error: Into<Error> + Send + Sync,
 {
@@ -88,21 +86,23 @@ where
 
         Box::pin(
             async move {
+                use hyper::client::conn::http2::Builder;
+
                 let (io, _meta) = connect.err_into::<Error>().await?;
-                let mut builder = conn::Builder::new();
-                builder.executor(TracingExecutor).http2_only(true);
+                let mut builder = Builder::new(TracingExecutor);
+
                 match flow_control {
                     None => {}
                     Some(FlowControl::Adaptive) => {
-                        builder.http2_adaptive_window(true);
+                        builder.adaptive_window(true);
                     }
                     Some(FlowControl::Fixed {
                         initial_stream_window_size,
                         initial_connection_window_size,
                     }) => {
                         builder
-                            .http2_initial_stream_window_size(initial_stream_window_size)
-                            .http2_initial_connection_window_size(initial_connection_window_size);
+                            .initial_stream_window_size(initial_stream_window_size)
+                            .initial_connection_window_size(initial_connection_window_size);
                     }
                 }
 
@@ -114,17 +114,17 @@ where
                 }) = keep_alive
                 {
                     builder
-                        .http2_keep_alive_timeout(timeout)
-                        .http2_keep_alive_interval(interval)
-                        .http2_keep_alive_while_idle(while_idle);
+                        .keep_alive_timeout(timeout)
+                        .keep_alive_interval(interval)
+                        .keep_alive_while_idle(while_idle);
                 }
 
-                builder.http2_max_frame_size(max_frame_size);
+                builder.max_frame_size(max_frame_size);
                 if let Some(max) = max_concurrent_reset_streams {
-                    builder.http2_max_concurrent_reset_streams(max);
+                    builder.max_concurrent_reset_streams(max);
                 }
                 if let Some(sz) = max_send_buf_size {
-                    builder.http2_max_send_buf_size(sz);
+                    builder.max_send_buf_size(sz);
                 }
 
                 let (tx, conn) = builder
@@ -148,13 +148,13 @@ where
 
 impl<B> tower::Service<http::Request<B>> for Connection<B>
 where
-    B: HttpBody + Send + 'static,
+    B: http_body::Body + Send + 'static,
     B::Data: Send,
     B::Error: Into<Error> + Send + Sync,
 {
-    type Response = http::Response<hyper::Body>;
+    type Response = http::Response<hyper::body::Incoming>;
     type Error = hyper::Error;
-    type Future = conn::ResponseFuture;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>>>>;
 
     #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -176,6 +176,6 @@ where
             *req.version_mut() = http::Version::HTTP_11;
         }
 
-        self.tx.send_request(req)
+        Box::pin(self.tx.send_request(req))
     }
 }

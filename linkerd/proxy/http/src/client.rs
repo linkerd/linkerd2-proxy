@@ -63,7 +63,7 @@ where
     C::Connection: Unpin + Send,
     C::Metadata: Send,
     C::Future: Unpin + Send + 'static,
-    B: hyper::body::HttpBody + Send + 'static,
+    B: http_body::Body + Send + 'static,
     B::Data: Send,
     B::Error: Into<Error> + Send + Sync,
 {
@@ -123,7 +123,7 @@ where
     C::Connection: Unpin + Send,
     C::Future: Unpin + Send + 'static,
     C::Error: Into<Error>,
-    B: hyper::body::HttpBody + Send + 'static,
+    B: http_body::Body + Send + 'static,
     B::Data: Send,
     B::Error: Into<Error> + Send + Sync,
 {

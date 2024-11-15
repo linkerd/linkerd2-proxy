@@ -1,7 +1,7 @@
 use crate::{
-    client_handle::SetClientHandle, h2, upgrade, BoxBody, BoxRequest, ClientHandle,
-    TracingExecutor, Version,
+    client_handle::SetClientHandle, h2, upgrade, BoxBody, BoxRequest, ClientHandle, Version,
 };
+use hyper_util::rt::TokioExecutor;
 use linkerd_error::Error;
 use linkerd_io::{self as io, PeerAddr};
 use linkerd_stack::{layer, ExtractParam, NewService};
@@ -31,11 +31,11 @@ pub struct NewServeHttp<X, N> {
     params: X,
 }
 
-/// Serves HTTP connectionswith an inner service.
+/// Serves HTTP connections with an inner service.
 #[derive(Clone, Debug)]
 pub struct ServeHttp<N> {
     version: Version,
-    server: hyper::server::conn::Http<TracingExecutor>,
+    server: hyper::server::conn::http2::Builder<TokioExecutor>,
     inner: N,
     drain: drain::Watch,
 }
@@ -76,7 +76,9 @@ where
             max_pending_accept_reset_streams,
         } = h2;
 
-        let mut srv = hyper::server::conn::Http::new().with_executor(TracingExecutor);
+        let mut srv =
+            hyper::server::conn::http2::Builder::new(hyper_util::rt::TokioExecutor::new());
+
         match flow_control {
             None => {}
             Some(h2::FlowControl::Adaptive) => {

@@ -1,5 +1,6 @@
 use super::{ClassifyEos, ClassifyResponse};
 use futures::{prelude::*, ready};
+use http_body::Frame;
 use linkerd_error::Error;
 use linkerd_stack::{layer, ExtractParam, NewService, Service};
 use pin_project::{pin_project, pinned_drop};
@@ -207,50 +208,24 @@ where
 
 // === impl ResponseBody ===
 
-impl<C, B> hyper::body::HttpBody for ResponseBody<C, B>
+impl<C, B> http_body::Body for ResponseBody<C, B>
 where
     C: ClassifyEos + Unpin,
-    B: hyper::body::HttpBody<Error = Error>,
+    B: http_body::Body<Error = Error>,
 {
     type Data = B::Data;
     type Error = B::Error;
 
-    fn poll_data(
+    fn poll_frame(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
+    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         let this = self.project();
-        match ready!(this.inner.poll_data(cx)) {
-            None => Poll::Ready(None),
-            Some(Ok(data)) => Poll::Ready(Some(Ok(data))),
-            Some(Err(e)) => {
-                if let Some(State { classify, tx }) = this.state.take() {
-                    let _ = tx.try_send(classify.error(&e));
-                }
-                Poll::Ready(Some(Err(e)))
-            }
-        }
-    }
 
-    fn poll_trailers(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
-        let this = self.project();
-        match ready!(this.inner.poll_trailers(cx)) {
-            Ok(trls) => {
-                if let Some(State { classify, tx }) = this.state.take() {
-                    let _ = tx.try_send(classify.eos(trls.as_ref()));
-                }
-                Poll::Ready(Ok(trls))
-            }
-            Err(e) => {
-                if let Some(State { classify, tx }) = this.state.take() {
-                    let _ = tx.try_send(classify.error(&e));
-                }
-                Poll::Ready(Err(e))
-            }
-        }
+        let frame = ready!(this.inner.poll_frame(cx));
+        self.classify_frame(&frame);
+
+        Poll::Ready(frame)
     }
 
     #[inline]
@@ -261,6 +236,47 @@ where
     #[inline]
     fn size_hint(&self) -> http_body::SizeHint {
         self.inner.size_hint()
+    }
+}
+
+impl<C, B> ResponseBody<C, B>
+where
+    C: ClassifyEos,
+    B: http_body::Body,
+{
+    /// Classifies the response body, if the frame yielded represents the end of a stream.
+    fn classify_frame(
+        self: Pin<&mut Self>,
+        frame: &Option<Result<Frame<<B as http_body::Body>::Data>, <B as http_body::Body>::Error>>,
+    ) {
+        let this = self.project();
+        let state = this.state;
+
+        match frame {
+            // We have reached the end of the stream if we have received a TRAILERS frame.
+            Some(Ok(frame)) => {
+                if let Some(trailers) = frame.trailers_ref() {
+                    if let Some(State { classify, tx }) = state.take() {
+                        let c = classify.eos(Some(trailers));
+                        let _ = tx.try_send(c).ok();
+                    }
+                }
+            }
+            // We have reached the end of the stream if a `None` was yielded.
+            None => {
+                if let Some(State { classify, tx }) = state.take() {
+                    let c = classify.eos(None);
+                    let _ = tx.try_send(c).ok();
+                }
+            }
+            // We have reached the end of the stream if an error has occurred.
+            Some(Err(error)) => {
+                if let Some(State { classify, tx }) = state.take() {
+                    let c = classify.error(&error);
+                    let _ = tx.try_send(c).ok();
+                }
+            }
+        }
     }
 }
 

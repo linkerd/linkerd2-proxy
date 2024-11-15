@@ -1,6 +1,7 @@
 //! Provides a middleware that holds an inner service as long as responses are
 //! being processed.
 
+use http_body::{Body, Frame};
 use linkerd_stack::layer;
 use pin_project::pin_project;
 use std::{
@@ -96,7 +97,7 @@ impl<T, B: Default> Default for RetainBody<T, B> {
     }
 }
 
-impl<T, B: http_body::Body> http_body::Body for RetainBody<T, B> {
+impl<T, B: Body> Body for RetainBody<T, B> {
     type Data = B::Data;
     type Error = B::Error;
 
@@ -106,19 +107,11 @@ impl<T, B: http_body::Body> http_body::Body for RetainBody<T, B> {
     }
 
     #[inline]
-    fn poll_data(
+    fn poll_frame(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<B::Data, B::Error>>> {
-        self.project().inner.poll_data(cx)
-    }
-
-    #[inline]
-    fn poll_trailers(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<Option<http::HeaderMap<http::HeaderValue>>, B::Error>> {
-        self.project().inner.poll_trailers(cx)
+    ) -> Poll<Option<Result<Frame<B::Data>, B::Error>>> {
+        self.project().inner.poll_frame(cx)
     }
 
     #[inline]

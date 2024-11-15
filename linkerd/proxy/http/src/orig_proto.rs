@@ -1,7 +1,6 @@
 use super::{h1, h2, upgrade};
 use futures::prelude::*;
 use http::header::{HeaderValue, TRANSFER_ENCODING};
-use hyper::body::HttpBody;
 use linkerd_error::{Error, Result};
 use linkerd_http_box::BoxBody;
 use linkerd_stack::{layer, MakeConnection, Service};
@@ -27,11 +26,11 @@ pub struct DowngradedH2Error(h2::Reason);
 
 #[pin_project::pin_project]
 #[derive(Debug, Default)]
-pub struct UpgradeResponseBody {
-    inner: hyper::Body,
+pub struct UpgradeResponseBody<B> {
+    inner: B,
 }
 
-/// Downgrades HTTP2 requests that were previousl upgraded to their original
+/// Downgrades HTTP2 requests that were previously upgraded to their original
 /// protocol.
 #[derive(Clone, Debug)]
 pub struct Downgrade<S> {
@@ -56,7 +55,7 @@ where
     C: MakeConnection<(crate::Version, T)> + Clone + Send + Sync + 'static,
     C::Connection: Unpin + Send,
     C::Future: Unpin + Send + 'static,
-    B: hyper::body::HttpBody + Send + 'static,
+    B: http_body::Body + Send + 'static,
     B::Data: Send,
     B::Error: Into<Error> + Send + Sync,
 {
@@ -194,7 +193,7 @@ fn test_downgrade_h2_error() {
 
 // === impl UpgradeResponseBody ===
 
-impl HttpBody for UpgradeResponseBody {
+impl<B: http_body::Body> http_body::Body for UpgradeResponseBody<B> {
     type Data = bytes::Bytes;
     type Error = Error;
 
@@ -203,7 +202,7 @@ impl HttpBody for UpgradeResponseBody {
         self.inner.is_end_stream()
     }
 
-    fn poll_data(
+    fn poll_frame(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
@@ -212,18 +211,9 @@ impl HttpBody for UpgradeResponseBody {
             .map_err(downgrade_h2_error)
     }
 
-    fn poll_trailers(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
-        Pin::new(self.project().inner)
-            .poll_trailers(cx)
-            .map_err(downgrade_h2_error)
-    }
-
     #[inline]
     fn size_hint(&self) -> http_body::SizeHint {
-        HttpBody::size_hint(&self.inner)
+        self.inner.size_hint()
     }
 }
 
