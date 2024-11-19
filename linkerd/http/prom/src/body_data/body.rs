@@ -41,10 +41,7 @@ where
     ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
         let this = self.project();
         let inner = this.inner;
-        let BodyDataMetrics {
-            frames_total,
-            frames_bytes,
-        } = this.metrics;
+        let BodyDataMetrics { frame_size } = this.metrics;
 
         let data = std::task::ready!(inner.poll_data(cx));
 
@@ -53,11 +50,8 @@ where
             //
             // NB: We're careful to call `remaining()` rather than `chunk()`, which
             // "can return a shorter slice (this allows non-continuous internal representation)."
-            let bytes = <B::Data as bytes::Buf>::remaining(data)
-                .try_into()
-                .unwrap_or(u64::MAX);
-            frames_bytes.inc_by(bytes);
-            frames_total.inc();
+            let bytes = bytes::Buf::remaining(data);
+            frame_size.observe(linkerd_metrics::to_f64(bytes as u64));
         }
 
         Poll::Ready(data)
