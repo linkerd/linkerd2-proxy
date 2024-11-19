@@ -85,7 +85,12 @@ pub trait Factor {
 const MAX_PRECISE_UINT64: u64 = 0x20_0000_0000_0000;
 
 impl Factor for () {
+    #[inline]
     fn factor(n: u64) -> f64 {
-        n.wrapping_rem(MAX_PRECISE_UINT64 + 1) as f64
+        to_f64(n)
     }
+}
+
+pub fn to_f64(n: u64) -> f64 {
+    n.wrapping_rem(MAX_PRECISE_UINT64 + 1) as f64
 }
