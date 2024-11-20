@@ -98,12 +98,32 @@ mod mock_body {
             }
         }
 
-        pub fn trailers(
-            trailers: impl Future<Output = Result<Option<http::HeaderMap>>> + Send + 'static,
-        ) -> Self {
+        /// Returns a [`MockBody`] that never yields any data.
+        pub fn pending() -> Self {
+            let fut = futures::future::pending();
+            Self::new(fut)
+        }
+
+        /// Returns a [`MockBody`] that yields an error when polled.
+        pub fn error(msg: &'static str) -> Self {
+            let err = Err(msg.into());
+            let fut = futures::future::ready(err);
+            Self::new(fut)
+        }
+
+        /// Returns a [`MockBody`] that yields this gRPC code in its trailers section.
+        pub fn grpc_status(code: u8) -> Self {
+            let trailers = {
+                let mut trailers = http::HeaderMap::with_capacity(1);
+                let status = code.to_string().parse().unwrap();
+                trailers.insert("grpc-status", status);
+                trailers
+            };
+            let fut = futures::future::ready(Ok(Some(trailers)));
+
             Self {
                 data: None,
-                trailers: Some(Box::pin(trailers)),
+                trailers: Some(Box::pin(fut)),
             }
         }
     }

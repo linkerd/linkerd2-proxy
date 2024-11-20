@@ -74,9 +74,7 @@ async fn request_timeout_request_body() {
         svc.clone(),
         http::Request::builder()
             .method("POST")
-            .body(BoxBody::new(MockBody::new(async move {
-                futures::future::pending().await
-            })))
+            .body(BoxBody::new(MockBody::pending()))
             .unwrap(),
     );
 
@@ -119,9 +117,7 @@ async fn request_timeout_response_body() {
         future::ok(
             http::Response::builder()
                 .status(200)
-                .body(http::BoxBody::new(MockBody::new(async move {
-                    futures::future::pending().await
-                })))
+                .body(BoxBody::new(MockBody::pending()))
                 .unwrap(),
         ),
     )
@@ -203,9 +199,7 @@ async fn response_timeout_response_body() {
                 info!("Serving a response that never completes");
                 Ok(http::Response::builder()
                     .status(200)
-                    .body(http::BoxBody::new(MockBody::new(async move {
-                        futures::future::pending().await
-                    })))
+                    .body(http::BoxBody::new(MockBody::pending()))
                     .unwrap())
             })
             .await;
@@ -252,9 +246,7 @@ async fn response_timeout_ignores_request_body() {
         info!("Serving a response that never completes");
         Ok(http::Response::builder()
             .status(200)
-            .body(http::BoxBody::new(MockBody::new(async move {
-                futures::future::pending().await
-            })))
+            .body(http::BoxBody::new(MockBody::pending()))
             .unwrap())
     })
     .await;
@@ -286,9 +278,7 @@ async fn idle_timeout_response_body() {
         info!("Serving a response that never completes");
         Ok(http::Response::builder()
             .status(200)
-            .body(http::BoxBody::new(MockBody::new(async move {
-                futures::future::pending().await
-            })))
+            .body(http::BoxBody::new(MockBody::pending()))
             .unwrap())
     })
     .await;
