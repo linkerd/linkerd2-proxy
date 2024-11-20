@@ -50,6 +50,8 @@ linkerd-tonic-stream = { path = "../../tonic-stream" }
 linkerd-tonic-watch = { path = "../../tonic-watch" }
 
 [dev-dependencies]
+futures-util = "0.3"
+http-body = "0.4"
 hyper = { version = "0.14", features = ["http1", "http2"] }
 tokio = { version = "1", features = ["macros", "sync", "time"] }
 tokio-rustls = "0.24"

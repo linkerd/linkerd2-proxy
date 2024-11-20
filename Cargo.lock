@@ -1506,7 +1506,9 @@ dependencies = [
  "ahash",
  "bytes",
  "futures",
+ "futures-util",
  "http",
+ "http-body",
  "hyper",
  "linkerd-app-core",
  "linkerd-app-test",
@@ -1744,6 +1746,7 @@ dependencies = [
 name = "linkerd-http-prom"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "futures",
  "http",
  "http-body",
