@@ -42,15 +42,11 @@ pub(crate) mod proto {
     use super::*;
     use crate::{
         proto::{BackendSet, InvalidBackend, InvalidDistribution, InvalidMeta},
-        Backend, Meta, RouteBackend, RouteDistribution,
+        Meta, RouteBackend, RouteDistribution,
     };
     use linkerd2_proxy_api::outbound::{self, tls_route};
     use linkerd_tls_route::sni::proto::InvalidSniMatch;
-
-    use once_cell::sync::Lazy;
     use std::sync::Arc;
-
-    pub(crate) static NO_FILTERS: Lazy<Arc<[Filter]>> = Lazy::new(|| Arc::new([]));
 
     #[derive(Debug, thiserror::Error)]
     pub enum InvalidTlsRoute {
@@ -63,6 +59,9 @@ pub(crate) mod proto {
         #[error("invalid distribution: {0}")]
         Distribution(#[from] InvalidDistribution),
 
+        #[error("invalid filter: {0}")]
+        Filter(#[from] InvalidFilter),
+
         /// Note: this restriction may be removed in the future, if a way of
         /// actually matching rules for TLS routes is added.
         #[error("a TLS route must have exactly one rule, but {0} were provided")]
@@ -73,6 +72,15 @@ pub(crate) mod proto {
 
         #[error("missing {0}")]
         Missing(&'static str),
+    }
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum InvalidFilter {
+        #[error("invalid route error kind: {0}")]
+        InvalidRouteErrorKind(i32),
+
+        #[error("missing filter kind")]
+        Missing,
     }
 
     impl TryFrom<outbound::proxy_protocol::Tls> for Tls {
@@ -101,7 +109,6 @@ pub(crate) mod proto {
             rules,
             snis,
             metadata,
-            error,
         } = proto;
         let meta = Arc::new(
             metadata
@@ -123,7 +130,7 @@ pub(crate) mod proto {
 
         let policy = rules
             .into_iter()
-            .map(|rule| try_rule(&meta, rule, error.clone()))
+            .map(|rule| try_rule(&meta, rule))
             .next()
             .ok_or(InvalidTlsRoute::OnlyOneRule(0))??;
 
@@ -132,17 +139,16 @@ pub(crate) mod proto {
 
     fn try_rule(
         meta: &Arc<Meta>,
-        tls_route::Rule { backends }: tls_route::Rule,
-        route_error: Option<tls_route::RouteError>,
+        tls_route::Rule { backends, filters }: tls_route::Rule,
     ) -> Result<Policy, InvalidTlsRoute> {
         let distribution = backends
             .ok_or(InvalidTlsRoute::Missing("distribution"))?
             .try_into()?;
 
-        let filters = match route_error {
-            Some(e) => Arc::new([e.into()]),
-            None => NO_FILTERS.clone(),
-        };
+        let filters = filters
+            .into_iter()
+            .map(Filter::try_from)
+            .collect::<Result<Arc<[_]>, _>>()?;
 
         Ok(Policy {
             meta: meta.clone(),
@@ -197,30 +203,34 @@ pub(crate) mod proto {
     impl TryFrom<tls_route::RouteBackend> for RouteBackend<Filter> {
         type Error = InvalidBackend;
         fn try_from(
-            tls_route::RouteBackend { backend, invalid }: tls_route::RouteBackend,
-        ) -> Result<Self, Self::Error> {
+            tls_route::RouteBackend { backend, filters }: tls_route::RouteBackend,
+        ) -> Result<RouteBackend<Filter>, InvalidBackend> {
             let backend = backend.ok_or(InvalidBackend::Missing("backend"))?;
-
-            let backend = Backend::try_from(backend)?;
-
-            let filters = match invalid {
-                Some(invalid) => Arc::new([invalid.into()]),
-                None => NO_FILTERS.clone(),
-            };
-
-            Ok(RouteBackend { filters, backend })
+            RouteBackend::try_from_proto(backend, filters)
         }
     }
 
-    impl From<tls_route::RouteError> for Filter {
-        fn from(_: tls_route::RouteError) -> Self {
-            Self::ForbiddenRoute
-        }
-    }
+    impl TryFrom<tls_route::Filter> for Filter {
+        type Error = InvalidFilter;
 
-    impl From<tls_route::route_backend::Invalid> for Filter {
-        fn from(ib: tls_route::route_backend::Invalid) -> Self {
-            Self::InvalidBackend(ib.message.into())
+        fn try_from(filter: tls_route::Filter) -> Result<Self, Self::Error> {
+            use linkerd2_proxy_api::tls_route::{route_error, InvalidBackendError, RouteError};
+            use tls_route::filter::Kind;
+
+            match filter.kind.ok_or(InvalidFilter::Missing)? {
+                Kind::InvalidBackendError(InvalidBackendError { message }) => {
+                    Ok(Filter::InvalidBackend(message.into()))
+                }
+                Kind::RouteError(RouteError { kind })
+                    if kind == route_error::Kind::Forbidden.into() =>
+                {
+                    Ok(Filter::ForbiddenRoute)
+                }
+
+                Kind::RouteError(RouteError { kind }) => {
+                    Err(InvalidFilter::InvalidRouteErrorKind(kind))
+                }
+            }
         }
     }
 }

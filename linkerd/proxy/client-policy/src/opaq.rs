@@ -31,14 +31,10 @@ pub(crate) mod proto {
     use super::*;
     use crate::{
         proto::{BackendSet, InvalidBackend, InvalidDistribution, InvalidMeta},
-        Backend, Meta, RouteBackend, RouteDistribution,
+        Meta, RouteBackend, RouteDistribution,
     };
     use linkerd2_proxy_api::outbound::{self, opaque_route};
-
-    use once_cell::sync::Lazy;
     use std::sync::Arc;
-
-    pub(crate) static NO_FILTERS: Lazy<Arc<[Filter]>> = Lazy::new(|| Arc::new([]));
 
     #[derive(Debug, thiserror::Error)]
     pub enum InvalidOpaqueRoute {
@@ -47,6 +43,9 @@ pub(crate) mod proto {
 
         #[error("invalid distribution: {0}")]
         Distribution(#[from] InvalidDistribution),
+
+        #[error("invalid filter: {0}")]
+        Filter(#[from] InvalidFilter),
 
         /// Note: this restriction may be removed in the future, if a way of
         /// actually matching rules for opaque routes is added.
@@ -63,6 +62,15 @@ pub(crate) mod proto {
 
         #[error("missing {0}")]
         Missing(&'static str),
+    }
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum InvalidFilter {
+        #[error("invalid route error kind: {0}")]
+        InvalidRouteErrorKind(i32),
+
+        #[error("missing filter kind")]
+        Missing,
     }
 
     pub(crate) fn fill_route_backends(rts: Option<&Route>, set: &mut BackendSet) {
@@ -84,11 +92,7 @@ pub(crate) mod proto {
     }
 
     fn try_route(
-        outbound::OpaqueRoute {
-            metadata,
-            rules,
-            error,
-        }: outbound::OpaqueRoute,
+        outbound::OpaqueRoute { metadata, rules }: outbound::OpaqueRoute,
     ) -> Result<Route, InvalidOpaqueRoute> {
         let meta = Arc::new(
             metadata
@@ -104,23 +108,22 @@ pub(crate) mod proto {
         }
 
         let rule = rules.first().cloned().expect("already checked");
-        let policy = try_rule(&meta, rule, error)?;
+        let policy = try_rule(&meta, rule)?;
         Ok(Route { policy })
     }
 
     fn try_rule(
         meta: &Arc<Meta>,
-        opaque_route::Rule { backends }: opaque_route::Rule,
-        route_error: Option<opaque_route::RouteError>,
+        opaque_route::Rule { backends, filters }: opaque_route::Rule,
     ) -> Result<Policy, InvalidOpaqueRoute> {
         let distribution = backends
             .ok_or(InvalidOpaqueRoute::Missing("distribution"))?
             .try_into()?;
 
-        let filters = match route_error {
-            Some(e) => Arc::new([e.into()]),
-            None => NO_FILTERS.clone(),
-        };
+        let filters = filters
+            .into_iter()
+            .map(Filter::try_from)
+            .collect::<Result<Arc<[_]>, _>>()?;
 
         Ok(Policy {
             meta: meta.clone(),
@@ -175,30 +178,34 @@ pub(crate) mod proto {
     impl TryFrom<opaque_route::RouteBackend> for RouteBackend<Filter> {
         type Error = InvalidBackend;
         fn try_from(
-            opaque_route::RouteBackend { backend, invalid }: opaque_route::RouteBackend,
-        ) -> Result<Self, Self::Error> {
+            opaque_route::RouteBackend { backend, filters }: opaque_route::RouteBackend,
+        ) -> Result<RouteBackend<Filter>, InvalidBackend> {
             let backend = backend.ok_or(InvalidBackend::Missing("backend"))?;
-
-            let backend = Backend::try_from(backend)?;
-
-            let filters = match invalid {
-                Some(invalid) => Arc::new([invalid.into()]),
-                None => NO_FILTERS.clone(),
-            };
-
-            Ok(RouteBackend { filters, backend })
+            RouteBackend::try_from_proto(backend, filters)
         }
     }
 
-    impl From<opaque_route::RouteError> for Filter {
-        fn from(_: opaque_route::RouteError) -> Self {
-            Self::ForbiddenRoute
-        }
-    }
+    impl TryFrom<opaque_route::Filter> for Filter {
+        type Error = InvalidFilter;
 
-    impl From<opaque_route::route_backend::Invalid> for Filter {
-        fn from(ib: opaque_route::route_backend::Invalid) -> Self {
-            Self::InvalidBackend(ib.message.into())
+        fn try_from(filter: opaque_route::Filter) -> Result<Self, Self::Error> {
+            use linkerd2_proxy_api::opaque_route::{route_error, InvalidBackendError, RouteError};
+            use opaque_route::filter::Kind;
+
+            match filter.kind.ok_or(InvalidFilter::Missing)? {
+                Kind::InvalidBackendError(InvalidBackendError { message }) => {
+                    Ok(Filter::InvalidBackend(message.into()))
+                }
+                Kind::RouteError(RouteError { kind })
+                    if kind == route_error::Kind::Forbidden.into() =>
+                {
+                    Ok(Filter::ForbiddenRoute)
+                }
+
+                Kind::RouteError(RouteError { kind }) => {
+                    Err(InvalidFilter::InvalidRouteErrorKind(kind))
+                }
+            }
         }
     }
 }

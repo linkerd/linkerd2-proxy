@@ -92,4 +92,4 @@ lto = true
 
 [workspace.dependencies]
 #linkerd2-proxy-api = "0.14.0"
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api.git", branch = "main" }
+linkerd2-proxy-api = { git = 'https://github.com/linkerd/linkerd2-proxy-api', branch = 'zd/errors-to-filters' }
