@@ -1798,6 +1798,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd-http-version"
+version = "0.1.0"
+dependencies = [
+ "http",
+ "thiserror",
+]
+
+[[package]]
 name = "linkerd-identity"
 version = "0.1.0"
 dependencies = [
@@ -2158,6 +2166,7 @@ dependencies = [
  "linkerd-http-classify",
  "linkerd-http-executor",
  "linkerd-http-h2",
+ "linkerd-http-version",
  "linkerd-io",
  "linkerd-proxy-balance",
  "linkerd-stack",

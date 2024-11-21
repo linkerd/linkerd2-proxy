@@ -23,7 +23,6 @@ pub mod stream_timeouts;
 pub mod strip_header;
 pub mod timeout;
 pub mod upgrade;
-pub mod version;
 
 pub use self::{
     balance::NewBalance,
@@ -41,7 +40,6 @@ pub use self::{
     stream_timeouts::{EnforceTimeouts, StreamTimeouts},
     strip_header::StripHeader,
     timeout::{NewTimeout, ResponseTimeout, ResponseTimeoutError},
-    version::Version,
 };
 pub use http::{
     header::{self, HeaderMap, HeaderName, HeaderValue},
@@ -50,6 +48,7 @@ pub use http::{
 pub use hyper::body::HttpBody;
 pub use linkerd_http_box::{BoxBody, BoxRequest, BoxResponse, EraseResponse};
 pub use linkerd_http_executor::TracingExecutor;
+pub use linkerd_http_version::{self as version, Version};
 
 #[derive(Clone, Debug)]
 pub struct HeaderPair(pub HeaderName, pub HeaderValue);

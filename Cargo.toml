@@ -33,6 +33,7 @@ members = [
     "linkerd/http/prom",
     "linkerd/http/retry",
     "linkerd/http/route",
+    "linkerd/http/version",
     "linkerd/identity",
     "linkerd/idle-cache",
     "linkerd/io",

@@ -1,11 +1,19 @@
+//! HTTP version types.
+//!
+//! See [`Version`].
+
 use thiserror::Error;
 
+/// HTTP protocol version.
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub enum Version {
+    /// HTTP/1
     Http1,
+    /// HTTP/2
     H2,
 }
 
+/// An unsupported HTTP version error.
 #[derive(Debug, Error)]
 #[error("unsupported HTTP version {:?}", self.0)]
 pub struct Unsupported(http::Version);
