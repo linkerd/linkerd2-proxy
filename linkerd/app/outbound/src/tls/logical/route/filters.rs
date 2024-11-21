@@ -10,11 +10,11 @@ where
     let filters: &[tls::Filter] = &t.param();
     if let Some(filter) = filters.iter().next() {
         match filter {
-            tls::Filter::ForbiddenRoute => {
+            tls::Filter::Forbidden => {
                 return Err(errors::TLSForbiddenRoute.into());
             }
 
-            tls::Filter::InvalidBackend(message) => {
+            tls::Filter::Invalid(message) => {
                 return Err(errors::TLSInvalidBackend(message.clone()).into());
             }
 

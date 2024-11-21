@@ -14,8 +14,8 @@ pub struct NonIoErrors;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Filter {
-    ForbiddenRoute,
-    InvalidBackend(std::sync::Arc<str>),
+    Forbidden,
+    Invalid(std::sync::Arc<str>),
     InternalError(&'static str),
 }
 
@@ -189,22 +189,12 @@ pub(crate) mod proto {
         type Error = InvalidFilter;
 
         fn try_from(filter: opaque_route::Filter) -> Result<Self, Self::Error> {
-            use linkerd2_proxy_api::opaque_route::{route_error, InvalidBackendError, RouteError};
+            use linkerd2_proxy_api::opaque_route::Invalid;
             use opaque_route::filter::Kind;
 
             match filter.kind.ok_or(InvalidFilter::Missing)? {
-                Kind::InvalidBackendError(InvalidBackendError { message }) => {
-                    Ok(Filter::InvalidBackend(message.into()))
-                }
-                Kind::RouteError(RouteError { kind })
-                    if kind == route_error::Kind::Forbidden.into() =>
-                {
-                    Ok(Filter::ForbiddenRoute)
-                }
-
-                Kind::RouteError(RouteError { kind }) => {
-                    Err(InvalidFilter::InvalidRouteErrorKind(kind))
-                }
+                Kind::Invalid(Invalid { message }) => Ok(Filter::Invalid(message.into())),
+                Kind::Forbidden(_) => Ok(Filter::Forbidden),
             }
         }
     }
