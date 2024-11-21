@@ -10,11 +10,11 @@ where
     let filters: &[opaq::Filter] = &t.param();
     if let Some(filter) = filters.iter().next() {
         match filter {
-            opaq::Filter::ForbiddenRoute => {
+            opaq::Filter::Forbidden => {
                 return Err(errors::TCPForbiddenRoute.into());
             }
 
-            opaq::Filter::InvalidBackend(message) => {
+            opaq::Filter::Invalid(message) => {
                 return Err(errors::TCPInvalidBackend(message.clone()).into());
             }
 
