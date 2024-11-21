@@ -3,7 +3,10 @@ use linkerd_app_core::{
     metrics::prom::{self, EncodeLabelSetMut},
     svc,
 };
-use linkerd_http_prom::record_response::{self, StreamLabel};
+use linkerd_http_prom::{
+    body_data::request::{NewRecordBodyData, RequestBodyFamilies},
+    record_response::{self, StreamLabel},
+};
 
 pub use linkerd_http_prom::record_response::MkStreamLabel;
 
@@ -23,6 +26,7 @@ pub struct RouteMetrics<R: StreamLabel, B: StreamLabel> {
     pub(super) retry: retry::RouteRetryMetrics,
     pub(super) requests: RequestMetrics<R>,
     pub(super) backend: backend::RouteBackendMetrics<B>,
+    pub(super) body_data: RequestBodyFamilies<labels::Route>,
 }
 
 pub type HttpRouteMetrics = RouteMetrics<LabelHttpRouteRsp, LabelHttpRouteBackendRsp>;
@@ -56,13 +60,30 @@ pub type NewRecordDuration<T, M, N> =
 #[derive(Clone, Debug)]
 pub struct ExtractRecordDurationParams<M>(pub M);
 
-pub fn layer<T, N>(
+pub fn layer<T, N, X>(
     metrics: &RequestMetrics<T::StreamLabel>,
-) -> impl svc::Layer<N, Service = NewRecordDuration<T, RequestMetrics<T::StreamLabel>, N>> + Clone
+    mk: X,
+    body_data: &RequestBodyFamilies<labels::Route>,
+) -> impl svc::Layer<
+    N,
+    Service = NewRecordBodyData<
+        NewRecordDuration<T, RequestMetrics<T::StreamLabel>, N>,
+        X,
+        labels::RouteLabelExtract,
+        labels::Route,
+    >,
+>
 where
     T: Clone + MkStreamLabel,
+    X: Clone,
 {
-    NewRecordDuration::layer_via(ExtractRecordDurationParams(metrics.clone()))
+    let record = NewRecordDuration::layer_via(ExtractRecordDurationParams(metrics.clone()));
+    let body_data = NewRecordBodyData::new(mk, body_data.clone());
+
+    svc::layer::mk(move |inner| {
+        use svc::Layer;
+        body_data.layer(record.layer(inner))
+    })
 }
 
 // === impl RouteMetrics ===
@@ -89,6 +110,7 @@ impl<R: StreamLabel, B: StreamLabel> Default for RouteMetrics<R, B> {
             requests: Default::default(),
             backend: Default::default(),
             retry: Default::default(),
+            body_data: Default::default(),
         }
     }
 }
@@ -99,6 +121,7 @@ impl<R: StreamLabel, B: StreamLabel> Clone for RouteMetrics<R, B> {
             requests: self.requests.clone(),
             backend: self.backend.clone(),
             retry: self.retry.clone(),
+            body_data: self.body_data.clone(),
         }
     }
 }
@@ -113,11 +136,13 @@ impl<R: StreamLabel, B: StreamLabel> RouteMetrics<R, B> {
         );
 
         let retry = retry::RouteRetryMetrics::register(reg.sub_registry_with_prefix("retry"));
+        let body_data = RequestBodyFamilies::register(reg);
 
         Self {
             requests,
             backend,
             retry,
+            body_data,
         }
     }
 
