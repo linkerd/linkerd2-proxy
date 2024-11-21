@@ -124,18 +124,9 @@ where
                 .push_on_service(svc::LoadShed::layer())
                 .push(filters::NewApplyFilters::<Self, _, _>::layer())
                 .push({
-                    // TODO(kate): extracting route labels like this should ideally live somewhere
-                    // else, like e.g. the `SetExtensions` middleware.
-                    let mk_extract = |rt: &Self| {
-                        let Route {
-                            parent_ref,
-                            route_ref,
-                            ..
-                        } = &rt.params;
-                        retry::RetryLabelExtract(parent_ref.clone(), route_ref.clone())
-                    };
+                    let mk = Self::label_extractor;
                     let metrics = metrics.retry.clone();
-                    retry::NewHttpRetry::layer_via_mk(mk_extract, metrics)
+                    retry::NewHttpRetry::layer_via_mk(mk, metrics)
                 })
                 .check_new::<Self>()
                 .check_new_service::<Self, http::Request<http::BoxBody>>()
