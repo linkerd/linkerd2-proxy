@@ -211,7 +211,11 @@ where
 
     #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.inner.poll_ready(cx).map_err(Into::into)
+        self.inner.poll_ready(cx).map_err(|error| {
+            let error = error.into();
+            self.metrics.inc_closed(Some(&*error));
+            error
+        })
     }
 
     fn call(&mut self, io: I) -> Self::Future {
