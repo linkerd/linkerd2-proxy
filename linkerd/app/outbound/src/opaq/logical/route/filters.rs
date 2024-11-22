@@ -1,9 +1,8 @@
+use futures::{future, TryFutureExt};
 use linkerd_app_core::{io, svc, Error};
 use linkerd_proxy_client_policy::opaq;
 use std::{
     fmt::Debug,
-    future::Future,
-    pin::Pin,
     sync::Arc,
     task::{Context, Poll},
 };
@@ -77,7 +76,10 @@ where
 {
     type Response = S::Response;
     type Error = Error;
-    type Future = Pin<Box<dyn Future<Output = Result<S::Response, Error>> + Send + 'static>>;
+    type Future = future::Either<
+        future::ErrInto<S::Future, Error>,
+        future::Ready<Result<S::Response, Error>>,
+    >;
 
     #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -85,13 +87,10 @@ where
     }
 
     fn call(&mut self, io: I) -> Self::Future {
-        let call = self.inner.call(io);
-        let apply = self.apply_filters();
-
-        Box::pin(async move {
-            apply?;
-            call.await.map_err(Into::into)
-        })
+        if let Err(e) = self.apply_filters() {
+            return future::Either::Right(future::err(e));
+        }
+        future::Either::Left(self.inner.call(io).err_into())
     }
 }
 
