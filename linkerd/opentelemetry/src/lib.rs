@@ -257,6 +257,6 @@ fn convert_span(span: ExportSpan) -> Result<SpanData, Error> {
             TraceState::NONE,
         ),
         events: Default::default(),
-        instrumentation_lib: Default::default(),
+        instrumentation_scope: Default::default(),
     })
 }
