@@ -96,12 +96,11 @@ impl ResourceSpans {
             schema_url: resource.schema_url.clone().unwrap_or_default(),
             scope_spans: vec![ScopeSpans {
                 schema_url: source_span
-                    .instrumentation_lib
-                    .schema_url
-                    .as_ref()
+                    .instrumentation_scope
+                    .schema_url()
                     .map(ToString::to_string)
                     .unwrap_or_default(),
-                scope: Some((source_span.instrumentation_lib, None).into()),
+                scope: Some((source_span.instrumentation_scope, None).into()),
                 spans: vec![Span {
                     trace_id: source_span.span_context.trace_id().to_bytes().to_vec(),
                     span_id: source_span.span_context.span_id().to_bytes().to_vec(),
@@ -153,9 +152,8 @@ pub fn group_spans_by_resource_and_scope(
     // Group spans by their instrumentation library
     let scope_map = spans.iter().fold(
         HashMap::new(),
-        |mut scope_map: HashMap<&opentelemetry_sdk::InstrumentationLibrary, Vec<&SpanData>>,
-         span| {
-            let instrumentation = &span.instrumentation_lib;
+        |mut scope_map: HashMap<&opentelemetry::InstrumentationScope, Vec<&SpanData>>, span| {
+            let instrumentation = &span.instrumentation_scope;
             scope_map.entry(instrumentation).or_default().push(span);
             scope_map
         },
@@ -192,11 +190,10 @@ mod tests {
     use opentelemetry::trace::{
         SpanContext, SpanId, SpanKind, Status, TraceFlags, TraceId, TraceState,
     };
-    use opentelemetry::KeyValue;
+    use opentelemetry::{InstrumentationScope, KeyValue};
     use opentelemetry_sdk::export::trace::SpanData;
     use opentelemetry_sdk::resource::Resource;
     use opentelemetry_sdk::trace::{SpanEvents, SpanLinks};
-    use opentelemetry_sdk::InstrumentationLibrary;
     use std::borrow::Cow;
     use std::time::{Duration, SystemTime};
 
@@ -221,7 +218,7 @@ mod tests {
             events: SpanEvents::default(),
             links: SpanLinks::default(),
             status: Status::Unset,
-            instrumentation_lib: InstrumentationLibrary::builder(instrumentation_name).build(),
+            instrumentation_scope: InstrumentationScope::builder(instrumentation_name).build(),
         }
     }
 

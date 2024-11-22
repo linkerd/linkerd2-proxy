@@ -27,17 +27,17 @@ impl From<&opentelemetry_sdk::Resource> for ResourceAttributesWithSchema {
 
 impl
     From<(
-        opentelemetry_sdk::InstrumentationLibrary,
+        opentelemetry::InstrumentationScope,
         Option<Cow<'static, str>>,
     )> for InstrumentationScope
 {
     fn from(
         data: (
-            opentelemetry_sdk::InstrumentationLibrary,
+            opentelemetry::InstrumentationScope,
             Option<Cow<'static, str>>,
         ),
     ) -> Self {
-        let (library, target) = data;
+        let (scope, target) = data;
         if let Some(t) = target {
             InstrumentationScope {
                 name: t.to_string(),
@@ -46,10 +46,12 @@ impl
                 ..Default::default()
             }
         } else {
+            let Attributes(attributes) =
+                Attributes::from(scope.attributes().cloned().collect::<Vec<_>>());
             InstrumentationScope {
-                name: library.name.into_owned(),
-                version: library.version.map(Cow::into_owned).unwrap_or_default(),
-                attributes: Attributes::from(library.attributes).0,
+                name: scope.name().to_string(),
+                version: scope.version().map(ToString::to_string).unwrap_or_default(),
+                attributes,
                 ..Default::default()
             }
         }
@@ -58,17 +60,17 @@ impl
 
 impl
     From<(
-        &opentelemetry_sdk::InstrumentationLibrary,
+        &opentelemetry::InstrumentationScope,
         Option<Cow<'static, str>>,
     )> for InstrumentationScope
 {
     fn from(
         data: (
-            &opentelemetry_sdk::InstrumentationLibrary,
+            &opentelemetry::InstrumentationScope,
             Option<Cow<'static, str>>,
         ),
     ) -> Self {
-        let (library, target) = data;
+        let (scope, target) = data;
         if let Some(t) = target {
             InstrumentationScope {
                 name: t.to_string(),
@@ -77,14 +79,12 @@ impl
                 ..Default::default()
             }
         } else {
+            let Attributes(attributes) =
+                Attributes::from(scope.attributes().cloned().collect::<Vec<_>>());
             InstrumentationScope {
-                name: library.name.to_string(),
-                version: library
-                    .version
-                    .as_ref()
-                    .map(ToString::to_string)
-                    .unwrap_or_default(),
-                attributes: Attributes::from(library.attributes.clone()).0,
+                name: scope.name().to_string(),
+                version: scope.version().map(ToString::to_string).unwrap_or_default(),
+                attributes,
                 ..Default::default()
             }
         }
@@ -121,7 +121,9 @@ impl From<Value> for AnyValue {
                     Array::I64(vals) => array_into_proto(vals),
                     Array::F64(vals) => array_into_proto(vals),
                     Array::String(vals) => array_into_proto(vals),
+                    _ => ArrayValue::default(),
                 })),
+                _ => None,
             },
         }
     }
