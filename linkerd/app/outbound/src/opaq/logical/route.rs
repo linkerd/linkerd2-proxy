@@ -91,7 +91,7 @@ where
                 .push_map_target(|t| t)
                 .push_map_target(|b: Backend<T>| b.concrete)
                 // apply backend filters
-                .push_filter(filters::apply)
+                .push(filters::NewApplyFilters::layer())
                 .lift_new()
                 .push(NewDistribute::layer())
                 // The router does not take the backend's availability into
@@ -99,7 +99,7 @@ where
                 // leaking tasks onto the runtime.
                 .push_on_service(svc::LoadShed::layer())
                 // apply route level filters
-                .push_filter(filters::apply)
+                .push(filters::NewApplyFilters::layer())
                 .push(svc::NewMapErr::layer_with(|rt: &Self| {
                     let route = rt.params.route_ref.clone();
                     move |source| RouteError {
