@@ -1,8 +1,4 @@
-use crate::{
-    glue::HyperConnect,
-    upgrade::{Http11Upgrade, HttpConnect},
-    TracingExecutor,
-};
+use crate::TracingExecutor;
 use futures::prelude::*;
 use http::{
     header::{CONTENT_LENGTH, TRANSFER_ENCODING},
@@ -10,6 +6,10 @@ use http::{
 };
 use linkerd_error::{Error, Result};
 use linkerd_http_box::BoxBody;
+use linkerd_http_upgrade::{
+    glue::HyperConnect,
+    upgrade::{Http11Upgrade, HttpConnect},
+};
 use linkerd_stack::MakeConnection;
 use std::{pin::Pin, time::Duration};
 use tracing::{debug, trace};
@@ -161,7 +161,7 @@ where
                     upgrade.insert_half(hyper::upgrade::on(&mut rsp));
                 }
             } else {
-                crate::strip_connection_headers(rsp.headers_mut());
+                linkerd_http_upgrade::strip_connection_headers(rsp.headers_mut());
             }
 
             rsp.map(BoxBody::new)
@@ -221,39 +221,4 @@ pub(crate) fn is_absolute_form(uri: &Uri) -> bool {
     );
 
     uri.scheme().is_some()
-}
-
-/// Returns if the request target is in `origin-form`.
-///
-/// This is `origin-form`: `example.com`
-fn is_origin_form(uri: &Uri) -> bool {
-    uri.scheme().is_none() && uri.path_and_query().is_none()
-}
-
-/// Returns if the received request is definitely bad.
-///
-/// Just because a request parses doesn't mean it's correct. For examples:
-///
-/// - `GET example.com`
-/// - `CONNECT /just-a-path
-pub(crate) fn is_bad_request<B>(req: &http::Request<B>) -> bool {
-    if req.method() == http::Method::CONNECT {
-        // CONNECT is only valid over HTTP/1.1
-        if req.version() != http::Version::HTTP_11 {
-            debug!("CONNECT request not valid for HTTP/1.0: {:?}", req.uri());
-            return true;
-        }
-
-        // CONNECT requests are only valid in authority-form.
-        if !is_origin_form(req.uri()) {
-            debug!("CONNECT request with illegal URI: {:?}", req.uri());
-            return true;
-        }
-    } else if is_origin_form(req.uri()) {
-        // If not CONNECT, refuse any origin-form URIs
-        debug!("{} request with illegal URI: {:?}", req.method(), req.uri());
-        return true;
-    }
-
-    false
 }

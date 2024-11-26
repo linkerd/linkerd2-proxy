@@ -1,6 +1,5 @@
 use crate::{
-    client_handle::SetClientHandle, h2, upgrade, BoxBody, BoxRequest, ClientHandle,
-    TracingExecutor, Version,
+    client_handle::SetClientHandle, h2, BoxBody, BoxRequest, ClientHandle, TracingExecutor, Version,
 };
 use linkerd_error::Error;
 use linkerd_io::{self as io, PeerAddr};
@@ -157,7 +156,10 @@ where
                 match version {
                     Version::Http1 => {
                         // Enable support for HTTP upgrades (CONNECT and websockets).
-                        let svc = upgrade::Service::new(BoxRequest::new(svc), drain.clone());
+                        let svc = linkerd_http_upgrade::upgrade::Service::new(
+                            BoxRequest::new(svc),
+                            drain.clone(),
+                        );
                         let mut conn = server
                             .http1_only(true)
                             .serve_connection(io, svc)

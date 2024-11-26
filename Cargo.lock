@@ -1705,8 +1705,18 @@ dependencies = [
 name = "linkerd-http-classify"
 version = "0.1.0"
 dependencies = [
+ "futures",
  "http",
+ "http-body",
  "linkerd-error",
+ "linkerd-http-box",
+ "linkerd-stack",
+ "linkerd-tracing",
+ "pin-project",
+ "tokio",
+ "tokio-test",
+ "tower-test",
+ "tracing",
 ]
 
 [[package]]
@@ -1754,6 +1764,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd-http-override-authority"
+version = "0.1.0"
+dependencies = [
+ "http",
+ "linkerd-stack",
+ "tower",
+ "tracing",
+]
+
+[[package]]
 name = "linkerd-http-prom"
 version = "0.1.0"
 dependencies = [
@@ -1770,6 +1790,17 @@ dependencies = [
  "prometheus-client",
  "thiserror",
  "tokio",
+]
+
+[[package]]
+name = "linkerd-http-retain"
+version = "0.1.0"
+dependencies = [
+ "http",
+ "http-body",
+ "linkerd-stack",
+ "pin-project",
+ "tower",
 ]
 
 [[package]]
@@ -1806,6 +1837,44 @@ dependencies = [
  "thiserror",
  "tracing",
  "url",
+]
+
+[[package]]
+name = "linkerd-http-stream-timeouts"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "http",
+ "http-body",
+ "linkerd-error",
+ "linkerd-stack",
+ "parking_lot",
+ "pin-project",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "linkerd-http-upgrade"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "drain",
+ "futures",
+ "http",
+ "http-body",
+ "hyper",
+ "linkerd-duplex",
+ "linkerd-error",
+ "linkerd-http-version",
+ "linkerd-io",
+ "linkerd-stack",
+ "pin-project",
+ "tokio",
+ "tower",
+ "tracing",
+ "try-lock",
 ]
 
 [[package]]
@@ -2178,6 +2247,10 @@ dependencies = [
  "linkerd-http-executor",
  "linkerd-http-h2",
  "linkerd-http-insert",
+ "linkerd-http-override-authority",
+ "linkerd-http-retain",
+ "linkerd-http-stream-timeouts",
+ "linkerd-http-upgrade",
  "linkerd-http-version",
  "linkerd-io",
  "linkerd-proxy-balance",

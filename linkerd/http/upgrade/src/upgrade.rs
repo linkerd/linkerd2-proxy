@@ -1,6 +1,6 @@
 //! HTTP/1.1 Upgrades
 
-use crate::{glue::UpgradeBody, h1};
+use crate::glue::UpgradeBody;
 use futures::{
     future::{self, Either},
     TryFutureExt,
@@ -162,6 +162,7 @@ impl Drop for Inner {
 }
 
 // === impl Service ===
+
 impl<S> Service<S> {
     pub fn new(service: S, upgrade_drain_signal: drain::Watch) -> Self {
         Self {
@@ -193,7 +194,7 @@ where
         //
         // At the same time, this stuff is specifically HTTP1, so it feels
         // proper to not have the HTTP2 requests going through it...
-        if h1::is_bad_request(&req) {
+        if is_bad_request(&req) {
             let mut res = http::Response::default();
             *res.status_mut() = http::StatusCode::BAD_REQUEST;
             return Either::Right(future::ok(res));
@@ -219,6 +220,41 @@ where
 
         Either::Left(self.service.call(req))
     }
+}
+
+/// Returns if the received request is definitely bad.
+///
+/// Just because a request parses doesn't mean it's correct. For examples:
+///
+/// - `GET example.com`
+/// - `CONNECT /just-a-path
+pub(crate) fn is_bad_request<B>(req: &http::Request<B>) -> bool {
+    if req.method() == http::Method::CONNECT {
+        // CONNECT is only valid over HTTP/1.1
+        if req.version() != http::Version::HTTP_11 {
+            debug!("CONNECT request not valid for HTTP/1.0: {:?}", req.uri());
+            return true;
+        }
+
+        // CONNECT requests are only valid in authority-form.
+        if !is_origin_form(req.uri()) {
+            debug!("CONNECT request with illegal URI: {:?}", req.uri());
+            return true;
+        }
+    } else if is_origin_form(req.uri()) {
+        // If not CONNECT, refuse any origin-form URIs
+        debug!("{} request with illegal URI: {:?}", req.method(), req.uri());
+        return true;
+    }
+
+    false
+}
+
+/// Returns if the request target is in `origin-form`.
+///
+/// This is `origin-form`: `example.com`
+fn is_origin_form(uri: &http::uri::Uri) -> bool {
+    uri.scheme().is_none() && uri.path_and_query().is_none()
 }
 
 /// Checks requests to determine if they want to perform an HTTP upgrade.
