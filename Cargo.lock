@@ -3629,9 +3629,9 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 
 [[package]]
 name = "symbolic-common"
-version = "12.12.1"
+version = "12.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3d4d73159efebfb389d819fd479afb2dbd57dcb3e3f4b7fcfa0e675f5a46c1cb"
+checksum = "e5ba5365997a4e375660bed52f5b42766475d5bc8ceb1bb13fea09c469ea0f49"
 dependencies = [
  "debugid",
  "memmap2",
@@ -3641,9 +3641,9 @@ dependencies = [
 
 [[package]]
 name = "symbolic-demangle"
-version = "12.12.1"
+version = "12.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a767859f6549c665011970874c3f541838b4835d5aaaa493d3ee383918be9f10"
+checksum = "beff338b2788519120f38c59ff4bb15174f52a183e547bac3d6072c2c0aa48aa"
 dependencies = [
  "cpp_demangle",
  "rustc-demangle",
