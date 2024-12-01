@@ -1326,6 +1326,7 @@ dependencies = [
  "deflate",
  "futures",
  "http",
+ "http-body",
  "hyper",
  "linkerd-app-core",
  "linkerd-app-inbound",
