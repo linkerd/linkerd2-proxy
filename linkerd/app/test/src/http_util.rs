@@ -24,7 +24,12 @@ pub async fn connect_and_accept(
     server: BoxServer,
 ) -> (SendRequest<Body>, JoinSet<Result<(), Error>>) {
     tracing::info!(settings = ?client_settings, "connecting client with");
-    let (client_io, proxy) = run_proxy(server).await;
+    let (client_io, server_io) = io::duplex(4096);
+    let proxy = async move {
+        let res = server.oneshot(server_io).await;
+        tracing::info!(?res, "proxy serve task complete");
+        res
+    };
     let (client, client_bg) = connect_client(client_settings, client_io).await;
 
     let mut bg = tokio::task::JoinSet::new();
@@ -64,19 +69,6 @@ async fn connect_client(
         res.map_err(Into::into)
     });
     (client, client_bg)
-}
-
-async fn run_proxy(
-    server: BoxServer,
-) -> (io::DuplexStream, impl Future<Output = Result<(), Error>>) {
-    let (client_io, server_io) = io::duplex(4096);
-    let proxy = async move {
-        let res = server.oneshot(server_io).await;
-        tracing::info!(?res, "proxy serve task complete");
-        res
-    };
-
-    (client_io, proxy)
 }
 
 /// Collects a request or response body, returning it as a [`String`].
