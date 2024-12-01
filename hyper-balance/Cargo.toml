@@ -9,7 +9,7 @@ publish = false
 [dependencies]
 futures = { version = "0.3", default-features = false }
 http = "0.2"
-hyper = { version = "0.14", features = ["deprecated"] }
+hyper = { workspace = true, features = ["deprecated"] }
 pin-project = "1"
 tower = { version = "0.4", default-features = false, features = ["load"] }
 tokio = { version = "1", features = ["macros"] }
