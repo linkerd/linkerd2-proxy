@@ -262,9 +262,7 @@ async fn http1_connect_timeout_meshed_response_error_header() {
 
     // Build a mock connect that sleeps longer than the default inbound
     // connect timeout.
-    #[allow(deprecated)] // linkerd/linkerd2#8733
-    let server = hyper::server::conn::Http::new();
-    let connect = support::connect().endpoint(Target::addr(), connect_timeout(server));
+    let connect = support::connect().endpoint(Target::addr(), connect_timeout());
 
     // Build a client using the connect that always sleeps so that responses
     // are GATEWAY_TIMEOUT.
@@ -309,9 +307,7 @@ async fn http1_connect_timeout_unmeshed_response_error_header() {
 
     // Build a mock connect that sleeps longer than the default inbound
     // connect timeout.
-    #[allow(deprecated)] // linkerd/linkerd2#8733
-    let server = hyper::server::conn::Http::new();
-    let connect = support::connect().endpoint(Target::addr(), connect_timeout(server));
+    let connect = support::connect().endpoint(Target::addr(), connect_timeout());
 
     // Build a client using the connect that always sleeps so that responses
     // are GATEWAY_TIMEOUT.
@@ -675,10 +671,7 @@ fn connect_error() -> impl Fn(Remote<ServerAddr>) -> io::Result<io::BoxedIo> {
 }
 
 #[tracing::instrument]
-#[allow(deprecated)] // linkerd/linkerd2#8733
-fn connect_timeout(
-    http: hyper::server::conn::Http,
-) -> Box<dyn FnMut(Remote<ServerAddr>) -> ConnectFuture + Send> {
+fn connect_timeout() -> Box<dyn FnMut(Remote<ServerAddr>) -> ConnectFuture + Send> {
     Box::new(move |endpoint| {
         let span = tracing::info_span!("connect_timeout", ?endpoint);
         Box::pin(
