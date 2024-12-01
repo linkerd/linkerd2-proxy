@@ -12,7 +12,7 @@ use linkerd_app_core::{
     errors::respond::L5D_PROXY_ERROR,
     identity, io, metrics,
     proxy::http,
-    svc::{self, NewService, Param},
+    svc::{self, http::TracingExecutor, NewService, Param},
     tls,
     transport::{ClientAddr, OrigDstAddr, Remote, ServerAddr},
     NameAddr, ProxyRuntime,
@@ -47,9 +47,7 @@ where
 
 #[tokio::test(flavor = "current_thread")]
 async fn unmeshed_http1_hello_world() {
-    #[allow(deprecated)] // linkerd/linkerd2#8733
-    let mut server = hyper::server::conn::Http::new();
-    server.http1_only(true);
+    let server = hyper::server::conn::http1::Builder::new();
     #[allow(deprecated)] // linkerd/linkerd2#8733
     let mut client = hyper::client::conn::Builder::new();
     let _trace = trace_init();
@@ -88,9 +86,7 @@ async fn unmeshed_http1_hello_world() {
 #[tokio::test(flavor = "current_thread")]
 async fn downgrade_origin_form() {
     // Reproduces https://github.com/linkerd/linkerd2/issues/5298
-    #[allow(deprecated)] // linkerd/linkerd2#8733
-    let mut server = hyper::server::conn::Http::new();
-    server.http1_only(true);
+    let server = hyper::server::conn::http1::Builder::new();
     #[allow(deprecated)] // linkerd/linkerd2#8733
     let mut client = hyper::client::conn::Builder::new();
     client.http2_only(true);
@@ -131,9 +127,7 @@ async fn downgrade_origin_form() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn downgrade_absolute_form() {
-    #[allow(deprecated)] // linkerd/linkerd2#8733
-    let mut server = hyper::server::conn::Http::new();
-    server.http1_only(true);
+    let server = hyper::server::conn::http1::Builder::new();
     #[allow(deprecated)] // linkerd/linkerd2#8733
     let mut client = hyper::client::conn::Builder::new();
     client.http2_only(true);
@@ -523,9 +517,7 @@ async fn grpc_response_class() {
 
     // Build a mock connector serves a gRPC server that returns errors.
     let connect = {
-        #[allow(deprecated)] // linkerd/linkerd2#8733
-        let mut server = hyper::server::conn::Http::new();
-        server.http2_only(true);
+        let server = hyper::server::conn::http2::Builder::new(TracingExecutor);
         support::connect().endpoint_fn_boxed(
             Target::addr(),
             grpc_status_server(server, tonic::Code::Unknown),
@@ -602,9 +594,8 @@ async fn grpc_response_class() {
 }
 
 #[tracing::instrument]
-#[allow(deprecated)] // linkerd/linkerd2#8733
 fn hello_server(
-    http: hyper::server::conn::Http,
+    server: hyper::server::conn::http1::Builder,
 ) -> impl Fn(Remote<ServerAddr>) -> io::Result<io::BoxedIo> {
     move |endpoint| {
         let span = tracing::info_span!("hello_server", ?endpoint);
@@ -616,7 +607,8 @@ fn hello_server(
             Ok::<_, io::Error>(Response::new(Body::from("Hello world!")))
         });
         tokio::spawn(
-            http.serve_connection(server_io, hello_svc)
+            server
+                .serve_connection(server_io, hello_svc)
                 .in_current_span(),
         );
         Ok(io::BoxedIo::new(client_io))
@@ -626,7 +618,7 @@ fn hello_server(
 #[tracing::instrument]
 #[allow(deprecated)] // linkerd/linkerd2#8733
 fn grpc_status_server(
-    http: hyper::server::conn::Http,
+    server: hyper::server::conn::http2::Builder<TracingExecutor>,
     status: tonic::Code,
 ) -> impl Fn(Remote<ServerAddr>) -> io::Result<io::BoxedIo> {
     move |endpoint| {
@@ -635,26 +627,30 @@ fn grpc_status_server(
         tracing::info!("mock connecting");
         let (client_io, server_io) = support::io::duplex(4096);
         tokio::spawn(
-            http.serve_connection(
-                server_io,
-                hyper::service::service_fn(move |request: Request<Body>| async move {
-                    tracing::info!(?request);
-                    let (mut tx, rx) = Body::channel();
-                    tokio::spawn(async move {
-                        let mut trls = ::http::HeaderMap::new();
-                        trls.insert("grpc-status", (status as u32).to_string().parse().unwrap());
-                        tx.send_trailers(trls).await
-                    });
-                    Ok::<_, io::Error>(
-                        http::Response::builder()
-                            .version(::http::Version::HTTP_2)
-                            .header("content-type", "application/grpc")
-                            .body(rx)
-                            .unwrap(),
-                    )
-                }),
-            )
-            .in_current_span(),
+            server
+                .serve_connection(
+                    server_io,
+                    hyper::service::service_fn(move |request: Request<Body>| async move {
+                        tracing::info!(?request);
+                        let (mut tx, rx) = Body::channel();
+                        tokio::spawn(async move {
+                            let mut trls = ::http::HeaderMap::new();
+                            trls.insert(
+                                "grpc-status",
+                                (status as u32).to_string().parse().unwrap(),
+                            );
+                            tx.send_trailers(trls).await
+                        });
+                        Ok::<_, io::Error>(
+                            http::Response::builder()
+                                .version(::http::Version::HTTP_2)
+                                .header("content-type", "application/grpc")
+                                .body(rx)
+                                .unwrap(),
+                        )
+                    }),
+                )
+                .in_current_span(),
         );
         Ok(io::BoxedIo::new(client_io))
     }
