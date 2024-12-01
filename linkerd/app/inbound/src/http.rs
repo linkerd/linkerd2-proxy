@@ -227,6 +227,9 @@ pub mod fuzz {
                         kind: "server".into(),
                         name: "testsrv".into(),
                     }),
+                    local_rate_limit: Arc::new(
+                        linkerd_proxy_server_policy::LocalRateLimit::default(),
+                    ),
                 },
             );
             policy
