@@ -23,8 +23,7 @@ pub struct Connect<C, B> {
 
 #[derive(Debug)]
 pub struct Connection<B> {
-    #[allow(deprecated)] // linkerd/linkerd2#8733
-    tx: hyper::client::conn::SendRequest<B>,
+    tx: hyper::client::conn::http2::SendRequest<B>,
 }
 
 // === impl Connect ===
@@ -136,7 +135,7 @@ where
                         .instrument(trace_span!("conn").or_current()),
                 );
 
-                Ok(Connection { tx })
+                Ok(Connection { tx: tx.into() })
             }
             .instrument(debug_span!("h2").or_current()),
         )
@@ -153,7 +152,7 @@ where
 {
     type Response = http::Response<hyper::Body>;
     type Error = hyper::Error;
-    type Future = conn::ResponseFuture;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
     #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -175,6 +174,6 @@ where
             *req.version_mut() = http::Version::HTTP_11;
         }
 
-        self.tx.send_request(req)
+        self.tx.send_request(req).boxed()
     }
 }

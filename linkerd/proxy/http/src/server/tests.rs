@@ -2,6 +2,7 @@ use std::vec;
 
 use super::*;
 use bytes::Bytes;
+use futures::FutureExt;
 use http_body::Body;
 use linkerd_stack::CloneParam;
 use tokio::time;
@@ -144,8 +145,7 @@ async fn h2_stream_window_exhaustion() {
 const LOG_LEVEL: &str = "h2::proto=trace,hyper=trace,linkerd=trace,info";
 
 struct TestServer {
-    #[allow(deprecated)] // linkerd/linkerd2#8733
-    client: hyper::client::conn::SendRequest<BoxBody>,
+    client: hyper::client::conn::http2::SendRequest<BoxBody>,
     server: Handle,
 }
 
@@ -202,7 +202,10 @@ impl TestServer {
             .expect("client connect");
         tokio::spawn(task.instrument(info_span!("client")));
 
-        Self { client, server }
+        Self {
+            client: client.into(),
+            server,
+        }
     }
 
     #[allow(deprecated)] // linkerd/linkerd2#8733
@@ -228,7 +231,8 @@ impl TestServer {
         self.server.allow(1);
         let mut call0 = self
             .client
-            .send_request(http::Request::new(BoxBody::default()));
+            .send_request(http::Request::new(BoxBody::default()))
+            .boxed();
         let (_req, next) = tokio::select! {
             _ = (&mut call0) => unreachable!("client cannot receive a response"),
             next = self.server.next_request() => next.expect("server not dropped"),

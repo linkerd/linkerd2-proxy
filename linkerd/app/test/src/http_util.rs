@@ -3,7 +3,7 @@ use crate::{
     io, ContextError,
 };
 use futures::FutureExt;
-use hyper::{body::HttpBody, Body, Request, Response};
+use hyper::{body::HttpBody, client::conn::http2::SendRequest, Body, Request, Response};
 use parking_lot::Mutex;
 use std::{future::Future, sync::Arc};
 use tokio::task::JoinHandle;
@@ -11,7 +11,7 @@ use tower::{util::ServiceExt, Service};
 use tracing::Instrument;
 
 #[allow(deprecated)] // linkerd/linkerd2#8733
-use hyper::client::conn::{Builder as ClientBuilder, SendRequest};
+use hyper::client::conn::Builder as ClientBuilder;
 
 pub struct Server {
     #[allow(deprecated)] // linkerd/linkerd2#8733
@@ -72,7 +72,7 @@ pub async fn connect_client(
             res.map_err(Into::into)
         })
         .instrument(tracing::info_span!("client_bg"));
-    (client, tokio::spawn(client_bg))
+    (client.into(), tokio::spawn(client_bg))
 }
 
 #[allow(deprecated)] // linkerd/linkerd2#8733
@@ -98,19 +98,21 @@ pub async fn connect_and_accept(
 }
 
 #[tracing::instrument(skip(client))]
-#[allow(deprecated)] // linkerd/linkerd2#8733
 pub async fn http_request(
     client: &mut SendRequest<Body>,
     request: Request<Body>,
 ) -> Result<Response<Body>, Error> {
-    let rsp = client
+    // Wait for the dispatcher to be ready for a request.
+    client
         .ready()
         .await
-        .map_err(ContextError::ctx("HTTP client poll_ready failed"))?
-        .call(request)
+        .map_err(ContextError::ctx("HTTP client poll_ready failed"))?;
+
+    // Send the request, awaiting a response.
+    let rsp = client
+        .send_request(request)
         .await
         .map_err(ContextError::ctx("HTTP client request failed"))?;
-
     tracing::info!(?rsp);
 
     Ok(rsp)
