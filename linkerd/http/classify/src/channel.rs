@@ -1,5 +1,6 @@
 use super::{ClassifyEos, ClassifyResponse};
 use futures::{prelude::*, ready};
+use http_body_util::legacy::LegacyBody;
 use linkerd_error::Error;
 use linkerd_stack::{layer, ExtractParam, NewService, Service};
 use pin_project::{pin_project, pinned_drop};
@@ -207,10 +208,10 @@ where
 
 // === impl ResponseBody ===
 
-impl<C, B> http_body::Body for ResponseBody<C, B>
+impl<C, B> LegacyBody for ResponseBody<C, B>
 where
     C: ClassifyEos + Unpin,
-    B: http_body::Body<Error = Error>,
+    B: LegacyBody<Error = Error>,
 {
     type Data = B::Data;
     type Error = B::Error;

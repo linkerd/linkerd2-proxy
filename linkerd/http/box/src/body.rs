@@ -63,19 +63,11 @@ impl Body for BoxBody {
     }
 
     #[inline]
-    fn poll_data(
+    fn poll_frame(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
-        self.as_mut().inner.as_mut().poll_data(cx)
-    }
-
-    #[inline]
-    fn poll_trailers(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<Option<HeaderMap<HeaderValue>>, Self::Error>> {
-        self.as_mut().inner.as_mut().poll_trailers(cx)
+    ) -> Poll<Option<Result<http_body::Frame<Self::Data>, Self::Error>>> {
+        self.as_mut().inner.as_mut().poll_frame(cx)
     }
 
     #[inline]
@@ -116,24 +108,11 @@ where
         self.0.is_end_stream()
     }
 
-    fn poll_data(
+    fn poll_frame(
         self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
-        let opt = futures::ready!(self.project().0.poll_data(cx));
-        Poll::Ready(opt.map(|res| {
-            res.map_err(Into::into).map(|buf| Data {
-                inner: Box::new(buf),
-            })
-        }))
-    }
-
-    #[inline]
-    fn poll_trailers(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<Option<HeaderMap<HeaderValue>>, Self::Error>> {
-        Poll::Ready(futures::ready!(self.project().0.poll_trailers(cx)).map_err(Into::into))
+        _cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<http_body::Frame<Self::Data>, Self::Error>>> {
+        todo!();
     }
 
     #[inline]
@@ -156,18 +135,11 @@ impl Body for NoBody {
         true
     }
 
-    fn poll_data(
+    fn poll_frame(
         self: Pin<&mut Self>,
-        _: &mut Context<'_>,
-    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
+        _cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<http_body::Frame<Self::Data>, Self::Error>>> {
         Poll::Ready(None)
-    }
-
-    fn poll_trailers(
-        self: Pin<&mut Self>,
-        _: &mut Context<'_>,
-    ) -> Poll<Result<Option<HeaderMap<HeaderValue>>, Self::Error>> {
-        Poll::Ready(Ok(None))
     }
 
     fn size_hint(&self) -> http_body::SizeHint {

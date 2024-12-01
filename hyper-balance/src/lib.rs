@@ -2,6 +2,7 @@
 #![forbid(unsafe_code)]
 
 use http_body::Body;
+use http_body_util::legacy::LegacyBody;
 use pin_project::pin_project;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -90,9 +91,9 @@ where
     }
 }
 
-impl<T, B> Body for PendingUntilFirstDataBody<T, B>
+impl<T, B> LegacyBody for PendingUntilFirstDataBody<T, B>
 where
-    B: Body,
+    B: LegacyBody,
     T: Send + 'static,
 {
     type Data = B::Data;
@@ -138,7 +139,7 @@ where
 
 impl<T, B> Default for PendingUntilEosBody<T, B>
 where
-    B: Body + Default,
+    B: LegacyBody + Default,
 {
     fn default() -> Self {
         Self {
@@ -148,7 +149,7 @@ where
     }
 }
 
-impl<T: Send + 'static, B: Body> Body for PendingUntilEosBody<T, B> {
+impl<T: Send + 'static, B: LegacyBody> LegacyBody for PendingUntilEosBody<T, B> {
     type Data = B::Data;
     type Error = B::Error;
 
@@ -164,7 +165,7 @@ impl<T: Send + 'static, B: Body> Body for PendingUntilEosBody<T, B> {
         let mut this = self.project();
         let body = &mut this.body;
         tokio::pin!(body);
-        let ret = futures::ready!(body.poll_data(cx));
+        let ret = futures::ready!(/*XXX(kate): (body.poll_data(cx)*/ todo!());
 
         // If this was the last frame, then drop the handle immediately.
         if this.body.is_end_stream() {
@@ -199,6 +200,7 @@ mod tests {
     use super::{PendingUntilEos, PendingUntilFirstData};
     use futures::future::poll_fn;
     use http_body::Body;
+    use http_body_util::legacy::LegacyBody;
     use std::collections::VecDeque;
     use std::io::Cursor;
     use std::pin::Pin;
@@ -429,7 +431,7 @@ mod tests {
 
     #[derive(Default)]
     struct TestBody(VecDeque<&'static str>, Option<http::HeaderMap>);
-    impl Body for TestBody {
+    impl LegacyBody for TestBody {
         type Data = Cursor<&'static str>;
         type Error = &'static str;
 
@@ -456,7 +458,7 @@ mod tests {
 
     #[derive(Default)]
     struct ErrBody(Option<&'static str>);
-    impl Body for ErrBody {
+    impl LegacyBody for ErrBody {
         type Data = Cursor<&'static str>;
         type Error = &'static str;
 

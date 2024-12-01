@@ -3,6 +3,7 @@
 //! Provides a [`Retain<S, B>`] middleware that holds an inner service as long as responses are
 //! being processed. This is mostly intended to support cache eviction.
 
+use http_body_util::legacy::LegacyBody;
 use linkerd_stack::layer;
 use pin_project::pin_project;
 use std::{
@@ -98,7 +99,7 @@ impl<T, B: Default> Default for RetainBody<T, B> {
     }
 }
 
-impl<T, B: http_body::Body> http_body::Body for RetainBody<T, B> {
+impl<T, B: LegacyBody> LegacyBody for RetainBody<T, B> {
     type Data = B::Data;
     type Error = B::Error;
 

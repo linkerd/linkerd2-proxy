@@ -14,6 +14,7 @@ This is mostly intended to support cache eviction.
 [dependencies]
 http = { workspace = true }
 http-body = { workspace = true }
+http-body-util = { workspace = true }
 pin-project = "1"
 tower = { version = "0.4", default-features = false }
 

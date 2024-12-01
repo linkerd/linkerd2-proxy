@@ -349,9 +349,9 @@ where
 
 // === impl RequestBody ===
 
-impl<B> http_body::Body for RequestBody<B>
+impl<B> http_body_util::legacy::LegacyBody for RequestBody<B>
 where
-    B: http_body::Body<Error = Error>,
+    B: http_body_util::legacy::LegacyBody<Error = Error>,
 {
     type Data = B::Data;
     type Error = Error;
@@ -409,9 +409,9 @@ where
 
 // === impl ResponseBody ===
 
-impl<B> http_body::Body for ResponseBody<B>
+impl<B> http_body_util::legacy::LegacyBody for ResponseBody<B>
 where
-    B: http_body::Body<Error = Error>,
+    B: http_body_util::legacy::LegacyBody<Error = Error>,
 {
     type Data = B::Data;
     type Error = Error;
