@@ -5,6 +5,7 @@ use crate::{
 use futures::FutureExt;
 use hyper::{body::HttpBody, Body};
 use std::future::Future;
+use tokio::task::JoinSet;
 use tower::{util::ServiceExt, Service};
 use tracing::Instrument;
 
@@ -16,29 +17,30 @@ type BoxServer = svc::BoxTcp<io::DuplexStream>;
 /// Connects a client and server, running a proxy between them.
 ///
 /// Returns a tuple containing (1) a [`SendRequest`] that can be used to transmit a request and
-/// await a response, and (2) a [`Future`] representing background tasks.
-//
-//  TODO(kate): this conglomeration of background tests could be replaced with a `JoinSet`, which
-//  has been introduced to tokio since this code was originally written.
+/// await a response, and (2) a [`JoinSet<T>`] running background tasks.
 #[allow(deprecated)] // linkerd/linkerd2#8733
 pub async fn connect_and_accept(
     client_settings: &mut ClientBuilder,
     server: BoxServer,
-) -> (SendRequest<Body>, impl Future<Output = Result<(), Error>>) {
+) -> (SendRequest<Body>, JoinSet<Result<(), Error>>) {
     tracing::info!(settings = ?client_settings, "connecting client with");
     let (client_io, proxy) = run_proxy(server).await;
     let (client, client_bg) = connect_client(client_settings, client_io).await;
-    let bg = async move {
-        tokio::spawn(proxy)
+
+    let mut bg = tokio::task::JoinSet::new();
+    bg.spawn(async move {
+        proxy
             .await
-            .expect("proxy background task panicked")
-            .map_err(ContextError::ctx("proxy background task failed"))?;
-        tokio::spawn(client_bg)
+            .map_err(ContextError::ctx("proxy background task failed"))
+            .map_err(Error::from)
+    });
+    bg.spawn(async move {
+        client_bg
             .await
-            .expect("client background task panicked")
-            .map_err(ContextError::ctx("client background task failed"))?;
-        Ok(())
-    };
+            .map_err(ContextError::ctx("client background task failed"))
+            .map_err(Error::from)
+    });
+
     (client, bg)
 }
 
