@@ -1,3 +1,5 @@
+.cargo
+**/.cargo
 target
 **/target
 **/corpus
