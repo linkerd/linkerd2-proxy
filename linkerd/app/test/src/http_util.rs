@@ -34,7 +34,7 @@ pub async fn run_proxy(mut server: BoxServer) -> (io::DuplexStream, JoinHandle<R
 }
 
 #[allow(deprecated)] // linkerd/linkerd2#8733
-pub async fn connect_client(
+async fn connect_client(
     client_settings: &mut ClientBuilder,
     io: io::DuplexStream,
 ) -> (SendRequest<Body>, JoinHandle<Result<(), Error>>) {
