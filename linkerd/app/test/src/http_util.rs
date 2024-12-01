@@ -4,7 +4,6 @@ use crate::{
 };
 use futures::FutureExt;
 use hyper::{body::HttpBody, Body};
-use std::future::Future;
 use tokio::task::JoinSet;
 use tower::ServiceExt;
 use tracing::Instrument;
@@ -30,7 +29,15 @@ pub async fn connect_and_accept(
         tracing::info!(?res, "proxy serve task complete");
         res
     };
-    let (client, client_bg) = connect_client(client_settings, client_io).await;
+
+    let (client, conn) = client_settings
+        .handshake(client_io)
+        .await
+        .expect("Client must connect");
+    let client_bg = conn.map(|res| {
+        tracing::info!(?res, "Client background complete");
+        res.map_err(Error::from)
+    });
 
     let mut bg = tokio::task::JoinSet::new();
     bg.spawn(
@@ -53,22 +60,6 @@ pub async fn connect_and_accept(
     );
 
     (client, bg)
-}
-
-#[allow(deprecated)] // linkerd/linkerd2#8733
-async fn connect_client(
-    client_settings: &mut ClientBuilder,
-    io: io::DuplexStream,
-) -> (SendRequest<Body>, impl Future<Output = Result<(), Error>>) {
-    let (client, conn) = client_settings
-        .handshake(io)
-        .await
-        .expect("Client must connect");
-    let client_bg = conn.map(|res| {
-        tracing::info!(?res, "Client background complete");
-        res.map_err(Into::into)
-    });
-    (client, client_bg)
 }
 
 /// Collects a request or response body, returning it as a [`String`].
