@@ -78,7 +78,7 @@ impl<S> Store<S> {
         S: Clone + Send + Sync + 'static,
         S::Future: Send,
         S::ResponseBody:
-            http::HttpBody<Data = tonic::codegen::Bytes, Error = Error> + Default + Send + 'static,
+            http::Body<Data = tonic::codegen::Bytes, Error = Error> + Default + Send + 'static,
     {
         let opaque_default = Self::make_opaque(default.clone());
         // The initial set of policies never expire from the cache.
@@ -143,7 +143,7 @@ where
     S: Clone + Send + Sync + 'static,
     S::Future: Send,
     S::ResponseBody:
-        http::HttpBody<Data = tonic::codegen::Bytes, Error = Error> + Default + Send + 'static,
+        http::Body<Data = tonic::codegen::Bytes, Error = Error> + Default + Send + 'static,
 {
     fn get_policy(&self, dst: OrigDstAddr) -> AllowPolicy {
         // Lookup the policy for the target port in the cache. If it doesn't

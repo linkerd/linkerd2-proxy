@@ -70,7 +70,7 @@ where
     C: MakeConnection<(crate::Version, T)> + Clone + Send + Sync + 'static,
     C::Connection: Unpin + Send,
     C::Future: Unpin + Send + 'static,
-    B: hyper::body::HttpBody + Send + 'static,
+    B: crate::Body + Send + 'static,
     B::Data: Send,
     B::Error: Into<Error> + Send + Sync,
 {

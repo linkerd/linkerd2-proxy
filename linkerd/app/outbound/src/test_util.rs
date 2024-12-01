@@ -73,7 +73,7 @@ pub use self::mock_body::MockBody;
 
 mod mock_body {
     use bytes::Bytes;
-    use linkerd_app_core::proxy::http::HttpBody;
+    use linkerd_app_core::proxy::http::Body;
     use linkerd_app_core::{Error, Result};
     use std::{
         future::Future,
@@ -128,7 +128,7 @@ mod mock_body {
         }
     }
 
-    impl HttpBody for MockBody {
+    impl Body for MockBody {
         type Data = Bytes;
         type Error = Error;
 

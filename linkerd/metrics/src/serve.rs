@@ -1,5 +1,5 @@
 use deflate::{write::GzEncoder, CompressionOptions};
-use hyper::Body;
+use linkerd_http_box::BoxBody;
 use std::io::Write;
 use tracing::trace;
 
@@ -33,7 +33,7 @@ impl<M> Serve<M> {
 }
 
 impl<M: FmtMetrics> Serve<M> {
-    pub fn serve<B>(&self, req: http::Request<B>) -> std::io::Result<http::Response<Body>> {
+    pub fn serve<B>(&self, req: http::Request<B>) -> std::io::Result<http::Response<BoxBody>> {
         if Self::is_gzip(&req) {
             trace!("gzipping metrics");
             let mut writer = GzEncoder::new(Vec::<u8>::new(), CompressionOptions::fast());
@@ -41,14 +41,14 @@ impl<M: FmtMetrics> Serve<M> {
             Ok(http::Response::builder()
                 .header(http::header::CONTENT_ENCODING, "gzip")
                 .header(http::header::CONTENT_TYPE, "text/plain")
-                .body(writer.finish()?.into())
+                .body(BoxBody::new(hyper::Body::from(writer.finish()?)))
                 .expect("Response must be valid"))
         } else {
             let mut writer = Vec::<u8>::new();
             write!(&mut writer, "{}", self.metrics.as_display())?;
             Ok(http::Response::builder()
                 .header(http::header::CONTENT_TYPE, "text/plain")
-                .body(Body::from(writer))
+                .body(BoxBody::new(hyper::Body::from(writer)))
                 .expect("Response must be valid"))
         }
     }

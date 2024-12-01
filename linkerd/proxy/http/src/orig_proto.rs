@@ -1,7 +1,6 @@
-use super::{h1, h2};
+use super::{h1, h2, Body};
 use futures::prelude::*;
 use http::header::{HeaderValue, TRANSFER_ENCODING};
-use hyper::body::HttpBody;
 use linkerd_error::{Error, Result};
 use linkerd_http_box::BoxBody;
 use linkerd_stack::{layer, MakeConnection, Service};
@@ -56,7 +55,7 @@ where
     C: MakeConnection<(crate::Version, T)> + Clone + Send + Sync + 'static,
     C::Connection: Unpin + Send,
     C::Future: Unpin + Send + 'static,
-    B: hyper::body::HttpBody + Send + 'static,
+    B: crate::Body + Send + 'static,
     B::Data: Send,
     B::Error: Into<Error> + Send + Sync,
 {
@@ -198,7 +197,7 @@ fn test_downgrade_h2_error() {
 
 // === impl UpgradeResponseBody ===
 
-impl HttpBody for UpgradeResponseBody {
+impl Body for UpgradeResponseBody {
     type Data = bytes::Bytes;
     type Error = Error;
 
@@ -227,7 +226,7 @@ impl HttpBody for UpgradeResponseBody {
 
     #[inline]
     fn size_hint(&self) -> http_body::SizeHint {
-        HttpBody::size_hint(&self.inner)
+        Body::size_hint(&self.inner)
     }
 }
 

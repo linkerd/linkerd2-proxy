@@ -1,10 +1,9 @@
 use crate::server::json;
+use bytes::{Buf, Bytes};
 use futures::FutureExt;
-use hyper::{
-    body::{Buf, Bytes},
-    header, Body, StatusCode,
-};
+use hyper::{header, StatusCode};
 use linkerd_app_core::{
+    proxy::http::{Body, BoxBody},
     trace::{self},
     Error,
 };
@@ -27,9 +26,9 @@ macro_rules! recover {
 pub async fn serve<B>(
     handle: trace::Handle,
     req: http::Request<B>,
-) -> Result<http::Response<Body>, Error>
+) -> Result<http::Response<BoxBody>, Error>
 where
-    B: hyper::body::HttpBody,
+    B: Body,
     B::Error: Into<Error>,
 {
     let handle = handle.into_stream();
@@ -75,7 +74,7 @@ where
                 .status(StatusCode::METHOD_NOT_ALLOWED)
                 .header(header::ALLOW, "GET")
                 .header(header::ALLOW, "QUERY")
-                .body(Body::empty())
+                .body(BoxBody::new(hyper::Body::empty()))
                 .expect("builder with known status code must not fail"));
         }
     };
@@ -100,7 +99,7 @@ where
     // https://github.com/hawkw/thingbuf/issues/62 would allow us to avoid the
     // copy by passing the channel's pooled buffer directly to hyper, and
     // returning it to the channel to be reused when hyper is done with it.
-    let (mut tx, body) = Body::channel();
+    let (mut tx, body) = hyper::Body::channel();
     tokio::spawn(
         async move {
             // TODO(eliza): we could definitely implement some batching here.
@@ -125,7 +124,7 @@ where
         }),
     );
 
-    Ok(mk_rsp(StatusCode::OK, body))
+    Ok(mk_rsp(StatusCode::OK, BoxBody::new(body)))
 }
 
 fn parse_filter(filter_str: &str) -> Result<EnvFilter, impl std::error::Error> {
@@ -134,10 +133,10 @@ fn parse_filter(filter_str: &str) -> Result<EnvFilter, impl std::error::Error> {
     filter
 }
 
-fn mk_rsp(status: StatusCode, body: impl Into<Body>) -> http::Response<Body> {
+fn mk_rsp<B>(status: StatusCode, body: B) -> http::Response<B> {
     http::Response::builder()
         .status(status)
         .header(header::CONTENT_TYPE, json::JSON_HEADER_VAL.clone())
-        .body(body.into())
+        .body(body)
         .expect("builder with known status code must not fail")
 }

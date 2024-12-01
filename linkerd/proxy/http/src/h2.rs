@@ -1,6 +1,5 @@
-use crate::TracingExecutor;
+use crate::{Body, TracingExecutor};
 use futures::prelude::*;
-use hyper::body::HttpBody;
 use linkerd_error::{Error, Result};
 use linkerd_stack::{MakeConnection, Service};
 use std::{
@@ -56,7 +55,7 @@ where
     C::Connection: Send + Unpin + 'static,
     C::Metadata: Send,
     C::Future: Send + 'static,
-    B: HttpBody + Send + 'static,
+    B: Body + Send + 'static,
     B::Data: Send,
     B::Error: Into<Error> + Send + Sync,
 {
@@ -144,7 +143,7 @@ where
 
 impl<B> tower::Service<http::Request<B>> for Connection<B>
 where
-    B: HttpBody + Send + 'static,
+    B: Body + Send + 'static,
     B::Data: Send,
     B::Error: Into<Error> + Send + Sync,
 {

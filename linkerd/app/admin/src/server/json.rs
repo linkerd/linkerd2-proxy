@@ -3,12 +3,14 @@ pub(in crate::server) static JSON_HEADER_VAL: HeaderValue = HeaderValue::from_st
 
 use hyper::{
     header::{self, HeaderValue},
-    Body, StatusCode,
+    StatusCode,
 };
+use linkerd_app_core::proxy::http::BoxBody;
+
 pub(crate) fn json_error_rsp(
     error: impl ToString,
     status: http::StatusCode,
-) -> http::Response<Body> {
+) -> http::Response<BoxBody> {
     mk_rsp(
         status,
         &serde_json::json!({
@@ -18,11 +20,12 @@ pub(crate) fn json_error_rsp(
     )
 }
 
-pub(crate) fn json_rsp(val: &impl serde::Serialize) -> http::Response<Body> {
+pub(crate) fn json_rsp(val: &impl serde::Serialize) -> http::Response<BoxBody> {
     mk_rsp(StatusCode::OK, val)
 }
 
-pub(crate) fn accepts_json<B>(req: &http::Request<B>) -> Result<(), http::Response<Body>> {
+#[allow(clippy::result_large_err)]
+pub(crate) fn accepts_json<B>(req: &http::Request<B>) -> Result<(), http::Response<BoxBody>> {
     if let Some(accept) = req.headers().get(header::ACCEPT) {
         let accept = match std::str::from_utf8(accept.as_bytes()) {
             Ok(accept) => accept,
@@ -41,7 +44,7 @@ pub(crate) fn accepts_json<B>(req: &http::Request<B>) -> Result<(), http::Respon
             tracing::warn!(?accept, "Accept header will not accept 'application/json'");
             return Err(http::Response::builder()
                 .status(StatusCode::NOT_ACCEPTABLE)
-                .body(JSON_MIME.into())
+                .body(BoxBody::new::<String>(JSON_MIME.into()))
                 .expect("builder with known status code must not fail"));
         }
     }
@@ -49,18 +52,20 @@ pub(crate) fn accepts_json<B>(req: &http::Request<B>) -> Result<(), http::Respon
     Ok(())
 }
 
-fn mk_rsp(status: StatusCode, val: &impl serde::Serialize) -> http::Response<Body> {
+fn mk_rsp(status: StatusCode, val: &impl serde::Serialize) -> http::Response<BoxBody> {
     match serde_json::to_vec(val) {
         Ok(json) => http::Response::builder()
             .status(status)
             .header(header::CONTENT_TYPE, JSON_HEADER_VAL.clone())
-            .body(json.into())
+            .body(BoxBody::new(http_body::Full::new(bytes::Bytes::from(json))))
             .expect("builder with known status code must not fail"),
         Err(error) => {
             tracing::warn!(?error, "failed to serialize JSON value");
             http::Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
-                .body(format!("failed to serialize JSON value: {error}").into())
+                .body(BoxBody::new::<String>(format!(
+                    "failed to serialize JSON value: {error}"
+                )))
                 .expect("builder with known status code must not fail")
         }
     }

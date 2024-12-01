@@ -1,7 +1,7 @@
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
 
-use hyper::body::HttpBody;
+use http_body::Body;
 use pin_project::pin_project;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -38,7 +38,7 @@ pub struct PendingUntilEosBody<T, B> {
 
 impl<T, B> TrackCompletion<T, http::Response<B>> for PendingUntilFirstData
 where
-    B: HttpBody,
+    B: Body,
 {
     type Output = http::Response<PendingUntilFirstDataBody<T, B>>;
 
@@ -59,7 +59,7 @@ where
 
 impl<T, B> TrackCompletion<T, http::Response<B>> for PendingUntilEos
 where
-    B: HttpBody,
+    B: Body,
 {
     type Output = http::Response<PendingUntilEosBody<T, B>>;
 
@@ -80,7 +80,7 @@ where
 
 impl<T, B> Default for PendingUntilFirstDataBody<T, B>
 where
-    B: HttpBody + Default,
+    B: Body + Default,
 {
     fn default() -> Self {
         Self {
@@ -90,9 +90,9 @@ where
     }
 }
 
-impl<T, B> HttpBody for PendingUntilFirstDataBody<T, B>
+impl<T, B> Body for PendingUntilFirstDataBody<T, B>
 where
-    B: HttpBody,
+    B: Body,
     T: Send + 'static,
 {
     type Data = B::Data;
@@ -138,7 +138,7 @@ where
 
 impl<T, B> Default for PendingUntilEosBody<T, B>
 where
-    B: HttpBody + Default,
+    B: Body + Default,
 {
     fn default() -> Self {
         Self {
@@ -148,7 +148,7 @@ where
     }
 }
 
-impl<T: Send + 'static, B: HttpBody> HttpBody for PendingUntilEosBody<T, B> {
+impl<T: Send + 'static, B: Body> Body for PendingUntilEosBody<T, B> {
     type Data = B::Data;
     type Error = B::Error;
 
@@ -198,7 +198,7 @@ impl<T: Send + 'static, B: HttpBody> HttpBody for PendingUntilEosBody<T, B> {
 mod tests {
     use super::{PendingUntilEos, PendingUntilFirstData};
     use futures::future::poll_fn;
-    use hyper::body::HttpBody;
+    use http_body::Body;
     use std::collections::VecDeque;
     use std::io::Cursor;
     use std::pin::Pin;
@@ -429,7 +429,7 @@ mod tests {
 
     #[derive(Default)]
     struct TestBody(VecDeque<&'static str>, Option<http::HeaderMap>);
-    impl HttpBody for TestBody {
+    impl Body for TestBody {
         type Data = Cursor<&'static str>;
         type Error = &'static str;
 
@@ -456,7 +456,7 @@ mod tests {
 
     #[derive(Default)]
     struct ErrBody(Option<&'static str>);
-    impl HttpBody for ErrBody {
+    impl Body for ErrBody {
         type Data = Cursor<&'static str>;
         type Error = &'static str;
 

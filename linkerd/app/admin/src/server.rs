@@ -12,13 +12,9 @@
 
 use futures::future::{self, TryFutureExt};
 use http::StatusCode;
-use hyper::{
-    body::{Body, HttpBody},
-    Request, Response,
-};
 use linkerd_app_core::{
     metrics::{self as metrics, FmtMetrics},
-    proxy::http::ClientHandle,
+    proxy::http::{Body, BoxBody, ClientHandle, Request, Response},
     trace, Error, Result,
 };
 use std::{
@@ -45,7 +41,7 @@ pub struct Admin<M> {
     pprof: Option<crate::pprof::Pprof>,
 }
 
-pub type ResponseFuture = Pin<Box<dyn Future<Output = Result<Response<Body>>> + Send + 'static>>;
+pub type ResponseFuture = Pin<Box<dyn Future<Output = Result<Response<BoxBody>>> + Send + 'static>>;
 
 impl<M> Admin<M> {
     pub fn new(
@@ -73,30 +69,30 @@ impl<M> Admin<M> {
         self
     }
 
-    fn ready_rsp(&self) -> Response<Body> {
+    fn ready_rsp(&self) -> Response<BoxBody> {
         if self.ready.is_ready() {
             Response::builder()
                 .status(StatusCode::OK)
                 .header(http::header::CONTENT_TYPE, "text/plain")
-                .body("ready\n".into())
+                .body(BoxBody::new::<String>("ready\n".into()))
                 .expect("builder with known status code must not fail")
         } else {
             Response::builder()
                 .status(StatusCode::SERVICE_UNAVAILABLE)
-                .body("not ready\n".into())
+                .body(BoxBody::new::<String>("not ready\n".into()))
                 .expect("builder with known status code must not fail")
         }
     }
 
-    fn live_rsp() -> Response<Body> {
+    fn live_rsp() -> Response<BoxBody> {
         Response::builder()
             .status(StatusCode::OK)
             .header(http::header::CONTENT_TYPE, "text/plain")
-            .body("live\n".into())
+            .body(BoxBody::new::<String>("live\n".into()))
             .expect("builder with known status code must not fail")
     }
 
-    fn env_rsp<B>(req: Request<B>) -> Response<Body> {
+    fn env_rsp<B>(req: Request<B>) -> Response<BoxBody> {
         use std::{collections::HashMap, env, ffi::OsString};
 
         if req.method() != http::Method::GET {
@@ -142,56 +138,60 @@ impl<M> Admin<M> {
         json::json_rsp(&env)
     }
 
-    fn shutdown(&self) -> Response<Body> {
+    fn shutdown(&self) -> Response<BoxBody> {
         if !self.enable_shutdown {
             return Response::builder()
                 .status(StatusCode::NOT_FOUND)
                 .header(http::header::CONTENT_TYPE, "text/plain")
-                .body("shutdown endpoint is not enabled\n".into())
+                .body(BoxBody::new::<String>(
+                    "shutdown endpoint is not enabled\n".into(),
+                ))
                 .expect("builder with known status code must not fail");
         }
         if self.shutdown_tx.send(()).is_ok() {
             Response::builder()
                 .status(StatusCode::OK)
                 .header(http::header::CONTENT_TYPE, "text/plain")
-                .body("shutdown\n".into())
+                .body(BoxBody::new::<String>("shutdown\n".into()))
                 .expect("builder with known status code must not fail")
         } else {
             Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
                 .header(http::header::CONTENT_TYPE, "text/plain")
-                .body("shutdown listener dropped\n".into())
+                .body(BoxBody::new::<String>("shutdown listener dropped\n".into()))
                 .expect("builder with known status code must not fail")
         }
     }
 
-    fn internal_error_rsp(error: impl ToString) -> http::Response<Body> {
+    fn internal_error_rsp(error: impl ToString) -> http::Response<BoxBody> {
         http::Response::builder()
             .status(http::StatusCode::INTERNAL_SERVER_ERROR)
             .header(http::header::CONTENT_TYPE, "text/plain")
-            .body(error.to_string().into())
+            .body(BoxBody::new(error.to_string()))
             .expect("builder with known status code should not fail")
     }
 
-    fn not_found() -> Response<Body> {
+    fn not_found() -> Response<BoxBody> {
         Response::builder()
             .status(http::StatusCode::NOT_FOUND)
-            .body(Body::empty())
+            .body(BoxBody::new(hyper::Body::empty()))
             .expect("builder with known status code must not fail")
     }
 
-    fn method_not_allowed() -> Response<Body> {
+    fn method_not_allowed() -> Response<BoxBody> {
         Response::builder()
             .status(http::StatusCode::METHOD_NOT_ALLOWED)
-            .body(Body::empty())
+            .body(BoxBody::new(hyper::Body::empty()))
             .expect("builder with known status code must not fail")
     }
 
-    fn forbidden_not_localhost() -> Response<Body> {
+    fn forbidden_not_localhost() -> Response<BoxBody> {
         Response::builder()
             .status(http::StatusCode::FORBIDDEN)
             .header(http::header::CONTENT_TYPE, "text/plain")
-            .body("Requests are only permitted from localhost.".into())
+            .body(BoxBody::new::<String>(
+                "Requests are only permitted from localhost.".into(),
+            ))
             .expect("builder with known status code must not fail")
     }
 
@@ -215,11 +215,11 @@ impl<M> Admin<M> {
 impl<M, B> tower::Service<http::Request<B>> for Admin<M>
 where
     M: FmtMetrics,
-    B: HttpBody + Send + 'static,
+    B: Body + Send + 'static,
     B::Error: Into<Error>,
     B::Data: Send,
 {
-    type Response = http::Response<Body>;
+    type Response = http::Response<BoxBody>;
     type Error = Error;
     type Future = ResponseFuture;
 
@@ -331,7 +331,7 @@ mod tests {
                 let r = Request::builder()
                     .method(Method::GET)
                     .uri("http://0.0.0.0/ready")
-                    .body(Body::empty())
+                    .body(hyper::Body::empty())
                     .unwrap();
                 let f = admin.clone().oneshot(r);
                 timeout(TIMEOUT, f).await.expect("timeout").expect("call")

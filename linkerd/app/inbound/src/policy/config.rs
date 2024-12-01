@@ -42,7 +42,7 @@ impl Config {
     where
         C: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error>,
         C: Clone + Unpin + Send + Sync + 'static,
-        C::ResponseBody: http::HttpBody<Data = tonic::codegen::Bytes, Error = Error>,
+        C::ResponseBody: http::Body<Data = tonic::codegen::Bytes, Error = Error>,
         C::ResponseBody: Default + Send + 'static,
         C::Future: Send,
     {

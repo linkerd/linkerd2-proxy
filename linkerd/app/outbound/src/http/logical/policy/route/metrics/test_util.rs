@@ -1,6 +1,6 @@
-use hyper::body::HttpBody;
 use linkerd_app_core::{
     metrics::prom::Counter,
+    proxy::http::Body,
     svc::{self, http::BoxBody, Service, ServiceExt},
 };
 

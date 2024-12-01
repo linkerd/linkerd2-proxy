@@ -1,7 +1,7 @@
 use super::{policy, Outbound, ParentRef, Routes};
 use crate::test_util::*;
 use linkerd_app_core::{
-    proxy::http::{self, BoxBody, HttpBody, StatusCode},
+    proxy::http::{self, Body, BoxBody, StatusCode},
     svc::{self, NewService, ServiceExt},
     transport::addrs::*,
     Error, NameAddr, Result,

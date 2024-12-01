@@ -388,7 +388,7 @@ impl<R> Respond<R> {
 
 impl<B, R> respond::Respond<http::Response<B>, Error> for Respond<R>
 where
-    B: Default + hyper::body::HttpBody,
+    B: Default + linkerd_proxy_http::Body,
     R: HttpRescue<Error> + Clone,
 {
     type Response = http::Response<ResponseBody<R, B>>;
@@ -444,15 +444,15 @@ where
 
 // === impl ResponseBody ===
 
-impl<R, B: Default + hyper::body::HttpBody> Default for ResponseBody<R, B> {
+impl<R, B: Default + linkerd_proxy_http::Body> Default for ResponseBody<R, B> {
     fn default() -> Self {
         ResponseBody::Passthru(B::default())
     }
 }
 
-impl<R, B> hyper::body::HttpBody for ResponseBody<R, B>
+impl<R, B> linkerd_proxy_http::Body for ResponseBody<R, B>
 where
-    B: hyper::body::HttpBody<Error = Error>,
+    B: linkerd_proxy_http::Body<Error = Error>,
     R: HttpRescue<B::Error>,
 {
     type Data = B::Data;

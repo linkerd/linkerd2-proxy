@@ -35,7 +35,7 @@ impl<S> Api<S>
 where
     S: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error> + Clone,
     S::ResponseBody:
-        http::HttpBody<Data = tonic::codegen::Bytes, Error = Error> + Default + Send + 'static,
+        http::Body<Data = tonic::codegen::Bytes, Error = Error> + Default + Send + 'static,
 {
     pub(super) fn new(
         workload: Arc<str>,
@@ -61,7 +61,7 @@ where
     S: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error>,
     S: Clone + Send + Sync + 'static,
     S::ResponseBody:
-        http::HttpBody<Data = tonic::codegen::Bytes, Error = Error> + Default + Send + 'static,
+        http::Body<Data = tonic::codegen::Bytes, Error = Error> + Default + Send + 'static,
     S::Future: Send + 'static,
 {
     type Response =
