@@ -1,6 +1,7 @@
 static JSON_MIME: &str = "application/json";
 pub(in crate::server) static JSON_HEADER_VAL: HeaderValue = HeaderValue::from_static(JSON_MIME);
 
+use bytes::Bytes;
 use hyper::{
     header::{self, HeaderValue},
     StatusCode,
@@ -53,11 +54,17 @@ pub(crate) fn accepts_json<B>(req: &http::Request<B>) -> Result<(), http::Respon
 }
 
 fn mk_rsp(status: StatusCode, val: &impl serde::Serialize) -> http::Response<BoxBody> {
-    match serde_json::to_vec(val) {
-        Ok(json) => http::Response::builder()
+    // Serialize the value into JSON, and then place the bytes in a boxed response body.
+    let json = serde_json::to_vec(val)
+        .map(Bytes::from)
+        .map(http_body::Full::new)
+        .map(BoxBody::new);
+
+    match json {
+        Ok(body) => http::Response::builder()
             .status(status)
             .header(header::CONTENT_TYPE, JSON_HEADER_VAL.clone())
-            .body(BoxBody::new(http_body::Full::new(bytes::Bytes::from(json))))
+            .body(body)
             .expect("builder with known status code must not fail"),
         Err(error) => {
             tracing::warn!(?error, "failed to serialize JSON value");
