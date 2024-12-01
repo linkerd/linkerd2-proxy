@@ -21,6 +21,7 @@ use linkerd_app_test::connect::ConnectFuture;
 use linkerd_tracing::test::trace_init;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::time;
+use tower::{Service, ServiceExt};
 use tracing::Instrument;
 
 fn build_server<I>(
@@ -72,7 +73,14 @@ async fn unmeshed_http1_hello_world() {
         .uri("http://foo.svc.cluster.local:5550")
         .body(Body::default())
         .unwrap();
-    let rsp = http_util::http_request(&mut client, req).await.unwrap();
+    let rsp = client
+        .ready()
+        .await
+        .expect("HTTP client poll_ready failed")
+        .call(req)
+        .await
+        .expect("HTTP client request failed");
+    tracing::info!(?rsp);
     assert_eq!(rsp.status(), http::StatusCode::OK);
     let body = http_util::body_to_string(rsp.into_body()).await.unwrap();
     assert_eq!(body, "Hello world!");
@@ -113,7 +121,14 @@ async fn downgrade_origin_form() {
         .header("l5d-orig-proto", "HTTP/1.1")
         .body(Body::default())
         .unwrap();
-    let rsp = http_util::http_request(&mut client, req).await.unwrap();
+    let rsp = client
+        .ready()
+        .await
+        .expect("HTTP client poll_ready failed")
+        .call(req)
+        .await
+        .expect("HTTP client request failed");
+    tracing::info!(?rsp);
     assert_eq!(rsp.status(), http::StatusCode::OK);
     let body = http_util::body_to_string(rsp.into_body()).await.unwrap();
     assert_eq!(body, "Hello world!");
@@ -153,7 +168,14 @@ async fn downgrade_absolute_form() {
         .header("l5d-orig-proto", "HTTP/1.1; absolute-form")
         .body(Body::default())
         .unwrap();
-    let rsp = http_util::http_request(&mut client, req).await.unwrap();
+    let rsp = client
+        .ready()
+        .await
+        .expect("HTTP client poll_ready failed")
+        .call(req)
+        .await
+        .expect("HTTP client request failed");
+    tracing::info!(?rsp);
     assert_eq!(rsp.status(), http::StatusCode::OK);
     let body = http_util::body_to_string(rsp.into_body()).await.unwrap();
     assert_eq!(body, "Hello world!");
@@ -189,13 +211,20 @@ async fn http1_bad_gateway_meshed_response_error_header() {
         .uri("http://foo.svc.cluster.local:5550")
         .body(Body::default())
         .unwrap();
-    let response = http_util::http_request(&mut client, req).await.unwrap();
-    assert_eq!(response.status(), http::StatusCode::BAD_GATEWAY);
+    let rsp = client
+        .ready()
+        .await
+        .expect("HTTP client poll_ready failed")
+        .call(req)
+        .await
+        .expect("HTTP client request failed");
+    tracing::info!(?rsp);
+    assert_eq!(rsp.status(), http::StatusCode::BAD_GATEWAY);
     // NOTE: this does not include a stack error context for that endpoint
     // because we don't build a real HTTP endpoint stack, which adds error
     // context to this error, and the client rescue layer is below where the
     // logical error context is added.
-    check_error_header(response.headers(), "server is not listening");
+    check_error_header(rsp.headers(), "server is not listening");
 
     drop(client);
     bg.await.expect("background task failed");
@@ -228,10 +257,17 @@ async fn http1_bad_gateway_unmeshed_response() {
         .uri("http://foo.svc.cluster.local:5550")
         .body(Body::default())
         .unwrap();
-    let response = http_util::http_request(&mut client, req).await.unwrap();
-    assert_eq!(response.status(), http::StatusCode::BAD_GATEWAY);
+    let rsp = client
+        .ready()
+        .await
+        .expect("HTTP client poll_ready failed")
+        .call(req)
+        .await
+        .expect("HTTP client request failed");
+    tracing::info!(?rsp);
+    assert_eq!(rsp.status(), http::StatusCode::BAD_GATEWAY);
     assert!(
-        response.headers().get(L5D_PROXY_ERROR).is_none(),
+        rsp.headers().get(L5D_PROXY_ERROR).is_none(),
         "response must not contain L5D_PROXY_ERROR header"
     );
 
@@ -270,14 +306,21 @@ async fn http1_connect_timeout_meshed_response_error_header() {
         .uri("http://foo.svc.cluster.local:5550")
         .body(Body::default())
         .unwrap();
-    let response = http_util::http_request(&mut client, req).await.unwrap();
-    assert_eq!(response.status(), http::StatusCode::GATEWAY_TIMEOUT);
+    let rsp = client
+        .ready()
+        .await
+        .expect("HTTP client poll_ready failed")
+        .call(req)
+        .await
+        .expect("HTTP client request failed");
+    tracing::info!(?rsp);
+    assert_eq!(rsp.status(), http::StatusCode::GATEWAY_TIMEOUT);
 
     // NOTE: this does not include a stack error context for that endpoint
     // because we don't build a real HTTP endpoint stack, which adds error
     // context to this error, and the client rescue layer is below where the
     // logical error context is added.
-    check_error_header(response.headers(), "connect timed out after 1s");
+    check_error_header(rsp.headers(), "connect timed out after 1s");
 
     drop(client);
     bg.await.expect("background task failed");
@@ -314,10 +357,17 @@ async fn http1_connect_timeout_unmeshed_response_error_header() {
         .uri("http://foo.svc.cluster.local:5550")
         .body(Body::default())
         .unwrap();
-    let response = http_util::http_request(&mut client, req).await.unwrap();
-    assert_eq!(response.status(), http::StatusCode::GATEWAY_TIMEOUT);
+    let rsp = client
+        .ready()
+        .await
+        .expect("HTTP client poll_ready failed")
+        .call(req)
+        .await
+        .expect("HTTP client request failed");
+    tracing::info!(?rsp);
+    assert_eq!(rsp.status(), http::StatusCode::GATEWAY_TIMEOUT);
     assert!(
-        response.headers().get(L5D_PROXY_ERROR).is_none(),
+        rsp.headers().get(L5D_PROXY_ERROR).is_none(),
         "response must not contain L5D_PROXY_ERROR header"
     );
 
@@ -352,10 +402,17 @@ async fn h2_response_meshed_error_header() {
         .uri("http://foo.svc.cluster.local:5550")
         .body(Body::default())
         .unwrap();
-    let response = http_util::http_request(&mut client, req).await.unwrap();
-    assert_eq!(response.status(), http::StatusCode::GATEWAY_TIMEOUT);
+    let rsp = client
+        .ready()
+        .await
+        .expect("HTTP client poll_ready failed")
+        .call(req)
+        .await
+        .expect("HTTP client request failed");
+    tracing::info!(?rsp);
+    assert_eq!(rsp.status(), http::StatusCode::GATEWAY_TIMEOUT);
 
-    check_error_header(response.headers(), "service in fail-fast");
+    check_error_header(rsp.headers(), "service in fail-fast");
 
     // Drop the client and discard the result of awaiting the proxy background
     // task. The result is discarded because it hits an error that is related
@@ -391,10 +448,17 @@ async fn h2_response_unmeshed_error_header() {
         .uri("http://foo.svc.cluster.local:5550")
         .body(Body::default())
         .unwrap();
-    let response = http_util::http_request(&mut client, req).await.unwrap();
-    assert_eq!(response.status(), http::StatusCode::GATEWAY_TIMEOUT);
+    let rsp = client
+        .ready()
+        .await
+        .expect("HTTP client poll_ready failed")
+        .call(req)
+        .await
+        .expect("HTTP client request failed");
+    tracing::info!(?rsp);
+    assert_eq!(rsp.status(), http::StatusCode::GATEWAY_TIMEOUT);
     assert!(
-        response.headers().get(L5D_PROXY_ERROR).is_none(),
+        rsp.headers().get(L5D_PROXY_ERROR).is_none(),
         "response must not contain L5D_PROXY_ERROR header"
     );
 
@@ -433,10 +497,17 @@ async fn grpc_meshed_response_error_header() {
         .header(http::header::CONTENT_TYPE, "application/grpc")
         .body(Body::default())
         .unwrap();
-    let response = http_util::http_request(&mut client, req).await.unwrap();
-    assert_eq!(response.status(), http::StatusCode::OK);
+    let rsp = client
+        .ready()
+        .await
+        .expect("HTTP client poll_ready failed")
+        .call(req)
+        .await
+        .expect("HTTP client request failed");
+    tracing::info!(?rsp);
+    assert_eq!(rsp.status(), http::StatusCode::OK);
 
-    check_error_header(response.headers(), "service in fail-fast");
+    check_error_header(rsp.headers(), "service in fail-fast");
 
     // Drop the client and discard the result of awaiting the proxy background
     // task. The result is discarded because it hits an error that is related
@@ -473,10 +544,17 @@ async fn grpc_unmeshed_response_error_header() {
         .header(http::header::CONTENT_TYPE, "application/grpc")
         .body(Body::default())
         .unwrap();
-    let response = http_util::http_request(&mut client, req).await.unwrap();
-    assert_eq!(response.status(), http::StatusCode::OK);
+    let rsp = client
+        .ready()
+        .await
+        .expect("HTTP client poll_ready failed")
+        .call(req)
+        .await
+        .expect("HTTP client request failed");
+    tracing::info!(?rsp);
+    assert_eq!(rsp.status(), http::StatusCode::OK);
     assert!(
-        response.headers().get(L5D_PROXY_ERROR).is_none(),
+        rsp.headers().get(L5D_PROXY_ERROR).is_none(),
         "response must not contain L5D_PROXY_ERROR header"
     );
 
@@ -529,11 +607,18 @@ async fn grpc_response_class() {
         .body(Body::default())
         .unwrap();
 
-    let mut response = http_util::http_request(&mut client, req).await.unwrap();
-    assert_eq!(response.status(), http::StatusCode::OK);
+    let mut rsp = client
+        .ready()
+        .await
+        .expect("HTTP client poll_ready failed")
+        .call(req)
+        .await
+        .expect("HTTP client request failed");
+    tracing::info!(?rsp);
+    assert_eq!(rsp.status(), http::StatusCode::OK);
 
-    response.body_mut().data().await;
-    let trls = response.body_mut().trailers().await.unwrap().unwrap();
+    rsp.body_mut().data().await;
+    let trls = rsp.body_mut().trailers().await.unwrap().unwrap();
     assert_eq!(trls.get("grpc-status").unwrap().to_str().unwrap(), "2");
 
     let response_total = metrics

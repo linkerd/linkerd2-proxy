@@ -3,7 +3,7 @@ use crate::{
     io, ContextError,
 };
 use futures::FutureExt;
-use hyper::{body::HttpBody, Body, Request, Response};
+use hyper::{body::HttpBody, Body};
 use std::future::Future;
 use tokio::task::JoinHandle;
 use tower::{util::ServiceExt, Service};
@@ -71,25 +71,6 @@ pub async fn connect_and_accept(
         Ok(())
     };
     (client, bg)
-}
-
-#[tracing::instrument(skip(client))]
-#[allow(deprecated)] // linkerd/linkerd2#8733
-pub async fn http_request(
-    client: &mut SendRequest<Body>,
-    request: Request<Body>,
-) -> Result<Response<Body>, Error> {
-    let rsp = client
-        .ready()
-        .await
-        .map_err(ContextError::ctx("HTTP client poll_ready failed"))?
-        .call(request)
-        .await
-        .map_err(ContextError::ctx("HTTP client request failed"))?;
-
-    tracing::info!(?rsp);
-
-    Ok(rsp)
 }
 
 pub async fn body_to_string<T>(body: T) -> Result<String, Error>
