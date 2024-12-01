@@ -2,7 +2,6 @@ use crate::{
     app_core::{svc, Error},
     io, ContextError,
 };
-use futures::FutureExt;
 use hyper::{body::HttpBody, Body};
 use tokio::task::JoinSet;
 use tower::ServiceExt;
@@ -24,37 +23,31 @@ pub async fn connect_and_accept(
 ) -> (SendRequest<Body>, JoinSet<Result<(), Error>>) {
     tracing::info!(settings = ?client_settings, "connecting client with");
     let (client_io, server_io) = io::duplex(4096);
-    let proxy = async move {
-        let res = server.oneshot(server_io).await;
-        tracing::info!(?res, "proxy serve task complete");
-        res
-    };
 
     let (client, conn) = client_settings
         .handshake(client_io)
         .await
         .expect("Client must connect");
-    let client_bg = conn.map(|res| {
-        tracing::info!(?res, "Client background complete");
-        res.map_err(Error::from)
-    });
 
     let mut bg = tokio::task::JoinSet::new();
     bg.spawn(
         async move {
-            proxy
+            server
+                .oneshot(server_io)
                 .await
-                .map_err(ContextError::ctx("proxy background task failed"))
-                .map_err(Error::from)
+                .map_err(ContextError::ctx("proxy background task failed"))?;
+            tracing::info!("proxy serve task complete");
+            Ok(())
         }
         .instrument(tracing::info_span!("proxy")),
     );
     bg.spawn(
         async move {
-            client_bg
-                .await
+            conn.await
                 .map_err(ContextError::ctx("client background task failed"))
-                .map_err(Error::from)
+                .map_err(Error::from)?;
+            tracing::info!("client background complete");
+            Ok(())
         }
         .instrument(tracing::info_span!("client_bg")),
     );
