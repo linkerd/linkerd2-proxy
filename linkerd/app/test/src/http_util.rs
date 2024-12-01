@@ -2,13 +2,10 @@ use crate::{
     app_core::{svc, Error},
     io, ContextError,
 };
-use hyper::{body::HttpBody, Body};
+use http_body::Body;
 use tokio::task::JoinSet;
 use tower::ServiceExt;
 use tracing::Instrument;
-
-#[allow(deprecated)] // linkerd/linkerd2#8733
-use hyper::client::conn::{Builder as ClientBuilder, SendRequest};
 
 type BoxServer = svc::BoxTcp<io::DuplexStream>;
 
@@ -18,9 +15,62 @@ type BoxServer = svc::BoxTcp<io::DuplexStream>;
 /// await a response, and (2) a [`JoinSet<T>`] running background tasks.
 #[allow(deprecated)] // linkerd/linkerd2#8733
 pub async fn connect_and_accept(
-    client_settings: &mut ClientBuilder,
+    client_settings: &mut hyper::client::conn::Builder,
     server: BoxServer,
-) -> (SendRequest<Body>, JoinSet<Result<(), Error>>) {
+) -> (
+    hyper::client::conn::SendRequest<hyper::Body>,
+    JoinSet<Result<(), Error>>,
+) {
+    tracing::info!(settings = ?client_settings, "connecting client with");
+    let (client_io, server_io) = io::duplex(4096);
+
+    let (client, conn) = client_settings
+        .handshake(client_io)
+        .await
+        .expect("Client must connect");
+
+    let mut bg = tokio::task::JoinSet::new();
+    bg.spawn(
+        async move {
+            server
+                .oneshot(server_io)
+                .await
+                .map_err(ContextError::ctx("proxy background task failed"))?;
+            tracing::info!("proxy serve task complete");
+            Ok(())
+        }
+        .instrument(tracing::info_span!("proxy")),
+    );
+    bg.spawn(
+        async move {
+            conn.await
+                .map_err(ContextError::ctx("client background task failed"))
+                .map_err(Error::from)?;
+            tracing::info!("client background complete");
+            Ok(())
+        }
+        .instrument(tracing::info_span!("client_bg")),
+    );
+
+    (client, bg)
+}
+
+/// Connects a client and server, running a proxy between them.
+///
+/// Returns a tuple containing (1) a [`SendRequest`] that can be used to transmit a request and
+/// await a response, and (2) a [`JoinSet<T>`] running background tasks.
+pub async fn connect_and_accept_http2<B>(
+    client_settings: &mut hyper::client::conn::http2::Builder,
+    server: BoxServer,
+) -> (
+    hyper::client::conn::http2::SendRequest<B>,
+    JoinSet<Result<(), Error>>,
+)
+where
+    B: Body + Send + 'static,
+    B::Data: Send,
+    B::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
+{
     tracing::info!(settings = ?client_settings, "connecting client with");
     let (client_io, server_io) = io::duplex(4096);
 
@@ -58,7 +108,7 @@ pub async fn connect_and_accept(
 /// Collects a request or response body, returning it as a [`String`].
 pub async fn body_to_string<T>(body: T) -> Result<String, Error>
 where
-    T: HttpBody,
+    T: Body,
     T::Error: Into<Error>,
 {
     let bytes = body
