@@ -194,12 +194,6 @@ impl Server {
             async move {
                 tracing::info!("support server running");
                 let mut new_svc = NewSvc(Arc::new(self.routes));
-                #[allow(deprecated)] // linkerd/linkerd2#8733
-                let mut http = hyper::server::conn::Http::new().with_executor(TracingExecutor);
-                match self.version {
-                    Run::Http1 => http.http1_only(true),
-                    Run::Http2 => http.http2_only(true),
-                };
                 if let Some(delay) = delay {
                     let _ = listening_tx.take().unwrap().send(());
                     delay.await;
@@ -218,7 +212,6 @@ impl Server {
                     let sock = accept_connection(sock, tls_config.clone())
                         .instrument(span.clone())
                         .await?;
-                    let http = http.clone();
                     let srv_conn_count = srv_conn_count.clone();
                     let svc = new_svc.call(());
                     let f = async move {
@@ -229,10 +222,16 @@ impl Server {
                         let svc = svc.map_err(|e| {
                             tracing::error!("support/server new_service error: {}", e)
                         })?;
-                        let result = http
-                            .serve_connection(sock, svc)
-                            .await
-                            .map_err(|e| tracing::error!("support/server error: {}", e));
+                        let result = match self.version {
+                            Run::Http1 => hyper::server::conn::http1::Builder::new()
+                                .serve_connection(sock, svc)
+                                .await
+                                .map_err(|e| tracing::error!("support/server error: {}", e)),
+                            Run::Http2 => hyper::server::conn::http2::Builder::new(TracingExecutor)
+                                .serve_connection(sock, svc)
+                                .await
+                                .map_err(|e| tracing::error!("support/server error: {}", e)),
+                        };
                         tracing::trace!(?result, "serve done");
                         result
                     };

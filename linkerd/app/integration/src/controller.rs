@@ -372,9 +372,7 @@ where
                 let _ = listening_tx.send(());
             }
 
-            #[allow(deprecated)] // linkerd/linkerd2#8733
-            let mut http = hyper::server::conn::Http::new().with_executor(TracingExecutor);
-            http.http2_only(true);
+            let http = hyper::server::conn::http2::Builder::new(TracingExecutor);
             loop {
                 let (sock, addr) = listener.accept().await?;
                 let span = tracing::debug_span!("conn", %addr).or_current();
