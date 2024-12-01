@@ -17,12 +17,12 @@ prost = { workspace = true }
 prost-types = { workspace = true }
 
 [dependencies.tonic]
-version = "0.10"
+workspace = true
 default-features = false
 features = ["prost", "codegen"]
 
 [dev-dependencies.tonic-build]
-version = "0.10"
+workspace = true
 default-features = false
 features = ["prost"]
 
