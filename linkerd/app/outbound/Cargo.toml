@@ -19,7 +19,7 @@ prometheus-client-rust-242 = [] # TODO
 
 [dependencies]
 ahash = "0.8"
-bytes = "1"
+bytes = { workspace = true }
 http = { workspace = true }
 futures = { version = "0.3", default-features = false }
 linkerd2-proxy-api = { workspace = true, features = ["outbound"] }

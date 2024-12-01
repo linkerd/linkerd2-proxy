@@ -97,6 +97,7 @@ debug = 1
 lto = true
 
 [workspace.dependencies]
+bytes = { version = "1" }
 http = { version = "0.2" }
 http-body = { version = "0.4" }
 hyper = { version = "0.14", default-features = false }

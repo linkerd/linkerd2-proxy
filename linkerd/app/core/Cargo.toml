@@ -13,7 +13,7 @@ independently of the inbound and outbound proxy logic.
 """
 
 [dependencies]
-bytes = "1"
+bytes = { workspace = true }
 drain = { version = "0.1", features = ["retain"] }
 http = { workspace = true }
 http-body = { workspace = true }

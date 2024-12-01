@@ -12,7 +12,7 @@ Vendored from https://github.com/census-instrumentation/opencensus-proto/.
 """
 
 [dependencies]
-bytes = "1"
+bytes = { workspace = true }
 prost = { workspace = true }
 prost-types = { workspace = true }
 

@@ -8,7 +8,7 @@ publish = false
 
 [dependencies]
 async-trait = "0.1"
-bytes = "1"
+bytes = { workspace = true }
 futures = { version = "0.3", default-features = false }
 linkerd-dns-name = { path = "../dns/name" }
 linkerd-error = { path = "../error" }
