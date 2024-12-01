@@ -2,6 +2,7 @@ use std::vec;
 
 use super::*;
 use bytes::Bytes;
+use futures::FutureExt;
 use http_body::Body;
 use linkerd_stack::CloneParam;
 use tokio::time;
@@ -26,10 +27,9 @@ async fn h2_connection_window_exhaustion() {
         h2::ServerParams::default(),
         // An HTTP/2 client with constrained connection and stream windows to
         // force window exhaustion.
-        #[allow(deprecated)] // linkerd/linkerd2#8733
-        hyper::client::conn::Builder::new()
-            .http2_initial_connection_window_size(CLIENT_CONN_WINDOW)
-            .http2_initial_stream_window_size(CLIENT_STREAM_WINDOW),
+        hyper::client::conn::http2::Builder::new(TracingExecutor)
+            .initial_connection_window_size(CLIENT_CONN_WINDOW)
+            .initial_stream_window_size(CLIENT_STREAM_WINDOW),
     )
     .await;
 
@@ -100,8 +100,8 @@ async fn h2_stream_window_exhaustion() {
         // A basic HTTP/2 server configuration with no overrides.
         h2::ServerParams::default(),
         // An HTTP/2 client with stream windows to force window exhaustion.
-        #[allow(deprecated)] // linkerd/linkerd2#8733
-        hyper::client::conn::Builder::new().http2_initial_stream_window_size(CLIENT_STREAM_WINDOW),
+        hyper::client::conn::http2::Builder::new(TracingExecutor)
+            .initial_stream_window_size(CLIENT_STREAM_WINDOW),
     )
     .await;
 
@@ -144,8 +144,7 @@ async fn h2_stream_window_exhaustion() {
 const LOG_LEVEL: &str = "h2::proto=trace,hyper=trace,linkerd=trace,info";
 
 struct TestServer {
-    #[allow(deprecated)] // linkerd/linkerd2#8733
-    client: hyper::client::conn::SendRequest<BoxBody>,
+    client: hyper::client::conn::http2::SendRequest<BoxBody>,
     server: Handle,
 }
 
@@ -185,7 +184,7 @@ async fn timeout<F: Future>(inner: F) -> Result<F::Output, time::error::Elapsed>
 impl TestServer {
     #[tracing::instrument(skip_all)]
     #[allow(deprecated)] // linkerd/linkerd2#8733
-    async fn connect(params: Params, client: &mut hyper::client::conn::Builder) -> Self {
+    async fn connect(params: Params, client: &mut hyper::client::conn::http2::Builder) -> Self {
         // Build the HTTP server with a mocked inner service so that we can handle
         // requests.
         let (mock, server) = mock::pair();
@@ -196,7 +195,6 @@ impl TestServer {
 
         // Build a real HTTP/2 client using the mocked socket.
         let (client, task) = client
-            .executor(crate::TracingExecutor)
             .handshake::<_, BoxBody>(cio)
             .await
             .expect("client connect");
@@ -205,8 +203,10 @@ impl TestServer {
         Self { client, server }
     }
 
-    #[allow(deprecated)] // linkerd/linkerd2#8733
-    async fn connect_h2(h2: h2::ServerParams, client: &mut hyper::client::conn::Builder) -> Self {
+    async fn connect_h2(
+        h2: h2::ServerParams,
+        client: &mut hyper::client::conn::http2::Builder,
+    ) -> Self {
         Self::connect(
             // A basic HTTP/2 server configuration with no overrides.
             Params {
@@ -215,7 +215,7 @@ impl TestServer {
                 http2: h2,
             },
             // An HTTP/2 client with constrained connection and stream windows to accomodate
-            client.http2_only(true),
+            client,
         )
         .await
     }
@@ -228,7 +228,8 @@ impl TestServer {
         self.server.allow(1);
         let mut call0 = self
             .client
-            .send_request(http::Request::new(BoxBody::default()));
+            .send_request(http::Request::new(BoxBody::default()))
+            .boxed();
         let (_req, next) = tokio::select! {
             _ = (&mut call0) => unreachable!("client cannot receive a response"),
             next = self.server.next_request() => next.expect("server not dropped"),
