@@ -11,7 +11,7 @@ base64 = "0.13"
 bytes = "1"
 futures = { version = "0.3", default-features = false }
 hex = "0.4"
-http = "0.2"
+http = { workspace = true }
 linkerd-error = { path = "../error" }
 linkerd-stack = { path = "../stack" }
 rand = "0.8"

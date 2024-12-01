@@ -12,8 +12,8 @@ test-util = []
 [dependencies]
 bytes = "1"
 futures = { version = "0.3", default-features = false }
-http = "0.2"
-http-body = "0.4"
+http = { workspace = true }
+http-body = { workspace = true }
 hyper = { workspace = true, features = ["deprecated", "http1", "http2"] }
 parking_lot = "0.12"
 pin-project = "1"

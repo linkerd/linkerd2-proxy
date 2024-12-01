@@ -8,7 +8,7 @@ publish = false
 
 [dependencies]
 futures = { version = "0.3", default-features = false }
-http = "0.2"
+http = { workspace = true }
 hyper = { workspace = true, features = ["deprecated"] }
 pin-project = "1"
 tower = { version = "0.4", default-features = false, features = ["load"] }

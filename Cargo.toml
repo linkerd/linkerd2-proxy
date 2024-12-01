@@ -97,6 +97,8 @@ debug = 1
 lto = true
 
 [workspace.dependencies]
+http = { version = "0.2" }
+http-body = { version = "0.4" }
 hyper = { version = "0.14", default-features = false }
 linkerd2-proxy-api = "0.15.0"
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "logging"] }

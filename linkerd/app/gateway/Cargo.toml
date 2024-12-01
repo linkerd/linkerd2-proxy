@@ -7,7 +7,7 @@ edition = "2021"
 publish = false
 
 [dependencies]
-http = "0.2"
+http = { workspace = true }
 futures = { version = "0.3", default-features = false }
 linkerd-app-core = { path = "../core" }
 linkerd-app-inbound = { path = "../inbound" }
