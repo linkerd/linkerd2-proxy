@@ -64,6 +64,9 @@ skip = [
     { name = "hashbrown", version = "0.12" },
 ]
 skip-tree = [
+    # while hyper is being upgraded, accept legacy `http_body::Body` implementations.
+    { name = "http", version = "0.2" },
+    { name = "http-body", version = "0.4" },
     # thiserror v2 is still propagating through the ecosystem
     { name = "thiserror", version = "1" },
 ]
