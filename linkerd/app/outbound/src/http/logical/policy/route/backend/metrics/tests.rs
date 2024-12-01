@@ -172,6 +172,7 @@ async fn body_data_layer_records_frames() -> Result<(), Error> {
     // Create a response whose body is backed by a channel that we can send chunks to, send it.
     tracing::info!("sending response");
     let mut resp_tx = {
+        #[allow(deprecated, reason = "linkerd/linkerd2#8733")]
         let (tx, body) = hyper::Body::channel();
         let body = BoxBody::new(body);
         let resp = http::Response::builder()

@@ -99,6 +99,7 @@ where
     // https://github.com/hawkw/thingbuf/issues/62 would allow us to avoid the
     // copy by passing the channel's pooled buffer directly to hyper, and
     // returning it to the channel to be reused when hyper is done with it.
+    #[allow(deprecated, reason = "linkerd/linkerd2#8733")]
     let (mut tx, body) = hyper::Body::channel();
     tokio::spawn(
         async move {

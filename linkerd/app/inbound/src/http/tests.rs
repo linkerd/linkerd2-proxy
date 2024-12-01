@@ -711,6 +711,7 @@ fn grpc_status_server(
                     server_io,
                     hyper::service::service_fn(move |request: Request<hyper::Body>| async move {
                         tracing::info!(?request);
+                        #[allow(deprecated, reason = "linkerd/linkerd2#8733")]
                         let (mut tx, rx) = hyper::Body::channel();
                         tokio::spawn(async move {
                             let mut trls = ::http::HeaderMap::new();

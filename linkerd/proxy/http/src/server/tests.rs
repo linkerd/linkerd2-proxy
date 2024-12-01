@@ -225,6 +225,7 @@ impl TestServer {
             _ = (&mut call0) => unreachable!("client cannot receive a response"),
             next = self.server.next_request() => next.expect("server not dropped"),
         };
+        #[allow(deprecated, reason = "linkerd/linkerd2#8733")]
         let (tx, rx) = hyper::Body::channel();
         next.send_response(http::Response::new(BoxBody::new(rx)));
         let rsp = call0.await.expect("response");

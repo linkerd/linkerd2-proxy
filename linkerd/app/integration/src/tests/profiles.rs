@@ -287,6 +287,7 @@ mod cross_version {
             .await;
 
         let client = test.client;
+        #[allow(deprecated, reason = "linkerd/linkerd2#8733")]
         let (mut tx, body) = hyper::body::Body::channel();
         let req = client
             .request_builder("/0.5")
@@ -386,6 +387,7 @@ mod cross_version {
             .await;
 
         let client = test.client;
+        #[allow(deprecated, reason = "linkerd/linkerd2#8733")]
         let (mut tx, body) = hyper::body::Body::channel();
         let req = client
             .request_builder("/0.5")
@@ -661,6 +663,7 @@ mod grpc_retry {
                     let mut trailers = HeaderMap::with_capacity(1);
                     trailers.insert(GRPC_STATUS.clone(), status);
                     tracing::debug!(?trailers);
+                    #[allow(deprecated, reason = "linkerd/linkerd2#8733")]
                     let (mut tx, body) = hyper::body::Body::channel();
                     tx.send_trailers(trailers).await.unwrap();
                     Ok::<_, Error>(Response::builder().status(200).body(body).unwrap())
@@ -704,6 +707,7 @@ mod grpc_retry {
                     let mut trailers = HeaderMap::with_capacity(1);
                     trailers.insert(GRPC_STATUS.clone(), GRPC_STATUS_OK.clone());
                     tracing::debug!(?trailers);
+                    #[allow(deprecated, reason = "linkerd/linkerd2#8733")]
                     let (mut tx, body) = hyper::body::Body::channel();
                     tx.send_data("hello world".into()).await.unwrap();
                     tx.send_trailers(trailers).await.unwrap();
@@ -752,6 +756,7 @@ mod grpc_retry {
                     let mut trailers = HeaderMap::with_capacity(1);
                     trailers.insert(GRPC_STATUS.clone(), GRPC_STATUS_OK.clone());
                     tracing::debug!(?trailers);
+                    #[allow(deprecated, reason = "linkerd/linkerd2#8733")]
                     let (mut tx, body) = hyper::body::Body::channel();
                     tokio::spawn(async move {
                         tx.send_data("hello".into()).await.unwrap();

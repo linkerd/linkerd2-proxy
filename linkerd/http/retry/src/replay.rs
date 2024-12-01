@@ -829,6 +829,7 @@ mod tests {
         // initial body will complete, but the replay will immediately fail.
         let _trace = linkerd_tracing::test::with_default_filter("linkerd_http_retry=trace");
 
+        #[allow(deprecated, reason = "linkerd/linkerd2#8733")]
         let (mut tx, body) = hyper::Body::channel();
         let mut initial = ReplayBody::try_new(body, 8).expect("channel body must not be too large");
         let mut replay = initial.clone();
@@ -859,6 +860,7 @@ mod tests {
         // cap, we allow the request to continue, but stop buffering.
         let _trace = linkerd_tracing::test::with_default_filter("linkerd_http_retry=debug");
 
+        #[allow(deprecated, reason = "linkerd/linkerd2#8733")]
         let (mut tx, body) = hyper::Body::channel();
         let mut initial = ReplayBody::try_new(body, 8).expect("channel body must not be too large");
         let mut replay = initial.clone();
@@ -907,6 +909,7 @@ mod tests {
             "over-sized body is too big"
         );
 
+        #[allow(deprecated, reason = "linkerd/linkerd2#8733")]
         let (_sender, body) = hyper::Body::channel();
         assert!(
             ReplayBody::try_new(body, max_size).is_ok(),
@@ -925,6 +928,7 @@ mod tests {
 
     impl Test {
         fn new() -> Self {
+            #[allow(deprecated, reason = "linkerd/linkerd2#8733")]
             let (tx, body) = hyper::Body::channel();
             let initial = ReplayBody::try_new(body, 64 * 1024).expect("body too large");
             let replay = initial.clone();

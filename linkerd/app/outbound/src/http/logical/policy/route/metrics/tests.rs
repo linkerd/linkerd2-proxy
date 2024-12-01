@@ -277,6 +277,7 @@ async fn http_route_request_body_frames() {
     // Create a request whose body is backed by a channel that we can send chunks to.
     tracing::info!("creating request");
     let (req, tx) = {
+        #[allow(deprecated, reason = "linkerd/linkerd2#8733")]
         let (tx, body) = hyper::Body::channel();
         let body = BoxBody::new(body);
         let req = http::Request::builder()
