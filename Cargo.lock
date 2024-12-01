@@ -1859,6 +1859,7 @@ dependencies = [
  "hyper",
  "linkerd-duplex",
  "linkerd-error",
+ "linkerd-http-box",
  "linkerd-http-version",
  "linkerd-io",
  "linkerd-stack",
