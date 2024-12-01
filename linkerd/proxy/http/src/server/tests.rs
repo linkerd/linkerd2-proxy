@@ -183,8 +183,16 @@ async fn timeout<F: Future>(inner: F) -> Result<F::Output, time::error::Elapsed>
 
 impl TestServer {
     #[tracing::instrument(skip_all)]
-    #[allow(deprecated)] // linkerd/linkerd2#8733
-    async fn connect(params: Params, client: &mut hyper::client::conn::http2::Builder) -> Self {
+    async fn connect_h2(
+        h2: h2::ServerParams,
+        client: &mut hyper::client::conn::http2::Builder,
+    ) -> Self {
+        let params = Params {
+            drain: drain(),
+            version: Version::H2,
+            http2: h2,
+        };
+
         // Build the HTTP server with a mocked inner service so that we can handle
         // requests.
         let (mock, server) = mock::pair();
@@ -201,23 +209,6 @@ impl TestServer {
         tokio::spawn(task.instrument(info_span!("client")));
 
         Self { client, server }
-    }
-
-    async fn connect_h2(
-        h2: h2::ServerParams,
-        client: &mut hyper::client::conn::http2::Builder,
-    ) -> Self {
-        Self::connect(
-            // A basic HTTP/2 server configuration with no overrides.
-            Params {
-                drain: drain(),
-                version: Version::H2,
-                http2: h2,
-            },
-            // An HTTP/2 client with constrained connection and stream windows to accomodate
-            client,
-        )
-        .await
     }
 
     /// Issues a request through the client to the mocked server and processes the
