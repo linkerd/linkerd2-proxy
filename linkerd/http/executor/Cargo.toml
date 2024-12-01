@@ -10,6 +10,6 @@ HTTP runtime components for Linkerd.
 """
 
 [dependencies]
-hyper = "0.14"
+hyper = { version = "0.14", features = ["deprecated"] }
 tokio = { version = "1", features = ["rt"] }
 tracing = "0.1"

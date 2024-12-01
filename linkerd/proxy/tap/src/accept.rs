@@ -45,6 +45,7 @@ impl AcceptPermittedClients {
     {
         let svc = TapServer::new(tap);
         Box::pin(async move {
+            #[allow(deprecated)] // linkerd/linkerd2#8733
             hyper::server::conn::Http::new()
                 .with_executor(TracingExecutor)
                 .http2_only(true)

@@ -1601,6 +1601,7 @@ async fn http2_request_without_authority() {
     let io = tokio::net::TcpStream::connect(&addr)
         .await
         .expect("connect error");
+    #[allow(deprecated)] // linkerd/linkerd2#8733
     let (mut client, conn) = hyper::client::conn::Builder::new()
         .http2_only(true)
         .handshake(io)

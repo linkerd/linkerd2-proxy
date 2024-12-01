@@ -239,6 +239,7 @@ fn serve(version: ::http::Version) -> io::Result<io::BoxedIo> {
         future::ok::<_, Infallible>(rsp.body(hyper::Body::default()).unwrap())
     });
 
+    #[allow(deprecated)] // linkerd/linkerd2#8733
     let mut http = hyper::server::conn::Http::new();
     match version {
         ::http::Version::HTTP_10 | ::http::Version::HTTP_11 => http.http1_only(true),

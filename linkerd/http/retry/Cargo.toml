@@ -24,6 +24,6 @@ linkerd-metrics = { path = "../../metrics" }
 linkerd-stack = { path = "../../stack" }
 
 [dev-dependencies]
-hyper = "0.14"
+hyper = { version = "0.14", features = ["deprecated"] }
 linkerd-tracing = { path = "../../tracing", features = ["ansi"] }
 tokio = { version = "1", features = ["macros", "rt"] }

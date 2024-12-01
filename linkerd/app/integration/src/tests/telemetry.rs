@@ -1304,6 +1304,7 @@ async fn metrics_compression() {
                 );
             }
 
+            #[allow(deprecated)] // linkerd/linkerd2#8733
             let mut body = hyper::body::aggregate(resp.into_body())
                 .await
                 .expect("response body concat");

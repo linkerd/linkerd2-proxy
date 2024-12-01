@@ -481,16 +481,16 @@ mod http2 {
 
         let res = fut.await.expect("beta response");
         assert_eq!(res.status(), http::StatusCode::OK);
-        assert_eq!(
-            String::from_utf8(
-                hyper::body::to_bytes(res.into_body())
-                    .await
-                    .unwrap()
-                    .to_vec(),
-            )
-            .unwrap(),
-            "beta"
-        );
+
+        #[allow(deprecated)] // linkerd/linkerd2#8733
+        let body = String::from_utf8(
+            hyper::body::to_bytes(res.into_body())
+                .await
+                .unwrap()
+                .to_vec(),
+        )
+        .unwrap();
+        assert_eq!(body, "beta");
     }
 }
 

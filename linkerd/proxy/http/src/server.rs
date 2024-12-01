@@ -34,6 +34,7 @@ pub struct NewServeHttp<X, N> {
 #[derive(Clone, Debug)]
 pub struct ServeHttp<N> {
     version: Version,
+    #[allow(deprecated)] // linkerd/linkerd2#8733
     server: hyper::server::conn::Http<TracingExecutor>,
     inner: N,
     drain: drain::Watch,
@@ -75,6 +76,7 @@ where
             max_pending_accept_reset_streams,
         } = h2;
 
+        #[allow(deprecated)] // linkerd/linkerd2#8733
         let mut srv = hyper::server::conn::Http::new().with_executor(TracingExecutor);
         match flow_control {
             None => {}

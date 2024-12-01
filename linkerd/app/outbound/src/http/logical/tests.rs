@@ -144,6 +144,7 @@ async fn assert_rsp<T: std::fmt::Debug>(
 {
     let rsp = rsp.await.expect("response must not fail");
     assert_eq!(rsp.status(), status, "expected status code to be {status}");
+    #[allow(deprecated)] // linkerd/linkerd2#8733
     let body = hyper::body::to_bytes(rsp.into_body())
         .await
         .expect("body must not fail");

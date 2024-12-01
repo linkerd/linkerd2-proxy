@@ -3,18 +3,18 @@ use crate::{
     io, ContextError,
 };
 use futures::FutureExt;
-use hyper::{
-    body::HttpBody,
-    client::conn::{Builder as ClientBuilder, SendRequest},
-    Body, Request, Response,
-};
+use hyper::{body::HttpBody, Body, Request, Response};
 use parking_lot::Mutex;
 use std::{future::Future, sync::Arc};
 use tokio::task::JoinHandle;
 use tower::{util::ServiceExt, Service};
 use tracing::Instrument;
 
+#[allow(deprecated)] // linkerd/linkerd2#8733
+use hyper::client::conn::{Builder as ClientBuilder, SendRequest};
+
 pub struct Server {
+    #[allow(deprecated)] // linkerd/linkerd2#8733
     settings: hyper::server::conn::Http,
     f: HandleFuture,
 }
@@ -26,6 +26,7 @@ type BoxServer = svc::BoxTcp<io::DuplexStream>;
 impl Default for Server {
     fn default() -> Self {
         Self {
+            #[allow(deprecated)] // linkerd/linkerd2#8733
             settings: hyper::server::conn::Http::new(),
             f: Box::new(|_| {
                 Ok(Response::builder()
@@ -56,6 +57,7 @@ pub async fn run_proxy(mut server: BoxServer) -> (io::DuplexStream, JoinHandle<R
     (client_io, tokio::spawn(proxy))
 }
 
+#[allow(deprecated)] // linkerd/linkerd2#8733
 pub async fn connect_client(
     client_settings: &mut ClientBuilder,
     io: io::DuplexStream,
@@ -73,6 +75,7 @@ pub async fn connect_client(
     (client, tokio::spawn(client_bg))
 }
 
+#[allow(deprecated)] // linkerd/linkerd2#8733
 pub async fn connect_and_accept(
     client_settings: &mut ClientBuilder,
     server: BoxServer,
@@ -95,6 +98,7 @@ pub async fn connect_and_accept(
 }
 
 #[tracing::instrument(skip(client))]
+#[allow(deprecated)] // linkerd/linkerd2#8733
 pub async fn http_request(
     client: &mut SendRequest<Body>,
     request: Request<Body>,
@@ -117,6 +121,7 @@ where
     T: HttpBody,
     T::Error: Into<Error>,
 {
+    #[allow(deprecated)] // linkerd/linkerd2#8733
     let body = hyper::body::to_bytes(body)
         .await
         .map_err(ContextError::ctx("HTTP response body stream failed"))?;

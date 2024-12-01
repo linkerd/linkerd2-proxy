@@ -1,9 +1,6 @@
 use crate::TracingExecutor;
 use futures::prelude::*;
-use hyper::{
-    body::HttpBody,
-    client::conn::{self, SendRequest},
-};
+use hyper::{body::HttpBody, client::conn};
 use linkerd_error::{Error, Result};
 use linkerd_stack::{MakeConnection, Service};
 use std::{
@@ -26,7 +23,8 @@ pub struct Connect<C, B> {
 
 #[derive(Debug)]
 pub struct Connection<B> {
-    tx: SendRequest<B>,
+    #[allow(deprecated)] // linkerd/linkerd2#8733
+    tx: hyper::client::conn::SendRequest<B>,
 }
 
 // === impl Connect ===
@@ -89,6 +87,7 @@ where
         Box::pin(
             async move {
                 let (io, _meta) = connect.err_into::<Error>().await?;
+                #[allow(deprecated)] // linkerd/linkerd2#8733
                 let mut builder = conn::Builder::new();
                 builder.executor(TracingExecutor).http2_only(true);
                 match flow_control {

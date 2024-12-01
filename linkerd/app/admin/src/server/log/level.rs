@@ -21,6 +21,7 @@ where
         }
 
         http::Method::PUT => {
+            #[allow(deprecated)] // linkerd/linkerd2#8733
             let body = hyper::body::aggregate(req.into_body())
                 .await
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;

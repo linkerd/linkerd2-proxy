@@ -194,6 +194,7 @@ impl Server {
             async move {
                 tracing::info!("support server running");
                 let mut new_svc = NewSvc(Arc::new(self.routes));
+                #[allow(deprecated)] // linkerd/linkerd2#8733
                 let mut http = hyper::server::conn::Http::new().with_executor(TracingExecutor);
                 match self.version {
                     Run::Http1 => http.http1_only(true),
