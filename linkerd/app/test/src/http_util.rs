@@ -6,7 +6,7 @@ use futures::FutureExt;
 use hyper::{body::HttpBody, Body};
 use std::future::Future;
 use tokio::task::JoinSet;
-use tower::{util::ServiceExt, Service};
+use tower::ServiceExt;
 use tracing::Instrument;
 
 #[allow(deprecated)] // linkerd/linkerd2#8733
@@ -63,21 +63,13 @@ async fn connect_client(
 }
 
 async fn run_proxy(
-    mut server: BoxServer,
+    server: BoxServer,
 ) -> (io::DuplexStream, impl Future<Output = Result<(), Error>>) {
     let (client_io, server_io) = io::duplex(4096);
-    let f = server
-        .ready()
-        .await
-        .expect("proxy server failed to become ready")
-        .call(server_io);
-
     let proxy = async move {
-        let res = f.await.map_err(Into::into);
-        drop(server);
-        tracing::debug!("dropped server");
+        let res = server.oneshot(server_io).await;
         tracing::info!(?res, "proxy serve task complete");
-        res.map(|_| ())
+        res
     }
     .instrument(tracing::info_span!("proxy"));
 
