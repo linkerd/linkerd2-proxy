@@ -30,12 +30,12 @@ pub struct NewServeHttp<X, N> {
     params: X,
 }
 
-/// Serves HTTP connectionswith an inner service.
+/// Serves HTTP connections with an inner service.
 #[derive(Clone, Debug)]
 pub struct ServeHttp<N> {
     version: Version,
-    #[allow(deprecated)] // linkerd/linkerd2#8733
-    server: hyper::server::conn::Http<TracingExecutor>,
+    http1: hyper::server::conn::http1::Builder,
+    http2: hyper::server::conn::http2::Builder<TracingExecutor>,
     inner: N,
     drain: drain::Watch,
 }
@@ -76,36 +76,38 @@ where
             max_pending_accept_reset_streams,
         } = h2;
 
-        #[allow(deprecated)] // linkerd/linkerd2#8733
-        let mut srv = hyper::server::conn::Http::new().with_executor(TracingExecutor);
+        let mut http2 = hyper::server::conn::http2::Builder::new(TracingExecutor);
         match flow_control {
             None => {}
             Some(h2::FlowControl::Adaptive) => {
-                srv.http2_adaptive_window(true);
+                http2.adaptive_window(true);
             }
             Some(h2::FlowControl::Fixed {
                 initial_stream_window_size,
                 initial_connection_window_size,
             }) => {
-                srv.http2_initial_stream_window_size(initial_stream_window_size)
-                    .http2_initial_connection_window_size(initial_connection_window_size);
+                http2
+                    .initial_stream_window_size(initial_stream_window_size)
+                    .initial_connection_window_size(initial_connection_window_size);
             }
         }
 
         // Configure HTTP/2 PING frames
         if let Some(h2::KeepAlive { timeout, interval }) = keep_alive {
-            srv.http2_keep_alive_timeout(timeout)
-                .http2_keep_alive_interval(interval);
+            http2
+                .keep_alive_timeout(timeout)
+                .keep_alive_interval(interval);
         }
 
-        srv.http2_max_concurrent_streams(max_concurrent_streams)
-            .http2_max_frame_size(max_frame_size)
-            .http2_max_pending_accept_reset_streams(max_pending_accept_reset_streams);
+        http2
+            .max_concurrent_streams(max_concurrent_streams)
+            .max_frame_size(max_frame_size)
+            .max_pending_accept_reset_streams(max_pending_accept_reset_streams);
         if let Some(sz) = max_header_list_size {
-            srv.http2_max_header_list_size(sz);
+            http2.max_header_list_size(sz);
         }
         if let Some(sz) = max_send_buf_size {
-            srv.http2_max_send_buf_size(sz);
+            http2.max_send_buf_size(sz);
         }
 
         debug!(?version, "Creating HTTP service");
@@ -114,7 +116,8 @@ where
             inner,
             version,
             drain,
-            server: srv,
+            http1: hyper::server::conn::http1::Builder::new(),
+            http2,
         }
     }
 }
@@ -142,7 +145,8 @@ where
     fn call(&mut self, io: I) -> Self::Future {
         let version = self.version;
         let drain = self.drain.clone();
-        let mut server = self.server.clone();
+        let http1 = self.http1.clone();
+        let http2 = self.http2.clone();
 
         let res = io.peer_addr().map(|pa| {
             let (handle, closed) = ClientHandle::new(pa);
@@ -162,10 +166,7 @@ where
                             BoxRequest::new(svc),
                             drain.clone(),
                         );
-                        let mut conn = server
-                            .http1_only(true)
-                            .serve_connection(io, svc)
-                            .with_upgrades();
+                        let mut conn = http1.serve_connection(io, svc).with_upgrades();
 
                         tokio::select! {
                             res = &mut conn => {
@@ -186,9 +187,7 @@ where
                     }
 
                     Version::H2 => {
-                        let mut conn = server
-                            .http2_only(true)
-                            .serve_connection(io, BoxRequest::new(svc));
+                        let mut conn = http2.serve_connection(io, BoxRequest::new(svc));
 
                         tokio::select! {
                             res = &mut conn => {
