@@ -209,6 +209,7 @@ where
         // just can't prove it.
         let req = futures::executor::block_on(async move {
             let (parts, body) = req.into_parts();
+            #[allow(deprecated)] // linkerd/linkerd2#8733
             let body = match hyper::body::to_bytes(body).await {
                 Ok(body) => body,
                 Err(_) => unreachable!("body should not fail"),

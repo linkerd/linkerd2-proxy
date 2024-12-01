@@ -6,7 +6,7 @@ use crate::{
     },
     Config, Inbound,
 };
-use hyper::{body::HttpBody, client::conn::Builder as ClientBuilder, Body, Request, Response};
+use hyper::{body::HttpBody, Body, Request, Response};
 use linkerd_app_core::{
     classify,
     errors::respond::L5D_PROXY_ERROR,
@@ -46,9 +46,11 @@ where
 
 #[tokio::test(flavor = "current_thread")]
 async fn unmeshed_http1_hello_world() {
+    #[allow(deprecated)] // linkerd/linkerd2#8733
     let mut server = hyper::server::conn::Http::new();
     server.http1_only(true);
-    let mut client = ClientBuilder::new();
+    #[allow(deprecated)] // linkerd/linkerd2#8733
+    let mut client = hyper::client::conn::Builder::new();
     let _trace = trace_init();
 
     // Build a mock "connector" that returns the upstream "server" IO.
@@ -82,9 +84,11 @@ async fn unmeshed_http1_hello_world() {
 #[tokio::test(flavor = "current_thread")]
 async fn downgrade_origin_form() {
     // Reproduces https://github.com/linkerd/linkerd2/issues/5298
+    #[allow(deprecated)] // linkerd/linkerd2#8733
     let mut server = hyper::server::conn::Http::new();
     server.http1_only(true);
-    let mut client = ClientBuilder::new();
+    #[allow(deprecated)] // linkerd/linkerd2#8733
+    let mut client = hyper::client::conn::Builder::new();
     client.http2_only(true);
     let _trace = trace_init();
 
@@ -120,9 +124,11 @@ async fn downgrade_origin_form() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn downgrade_absolute_form() {
+    #[allow(deprecated)] // linkerd/linkerd2#8733
     let mut server = hyper::server::conn::Http::new();
     server.http1_only(true);
-    let mut client = ClientBuilder::new();
+    #[allow(deprecated)] // linkerd/linkerd2#8733
+    let mut client = hyper::client::conn::Builder::new();
     client.http2_only(true);
     let _trace = trace_init();
 
@@ -165,7 +171,8 @@ async fn http1_bad_gateway_meshed_response_error_header() {
 
     // Build a client using the connect that always errors so that responses
     // are BAD_GATEWAY.
-    let mut client = ClientBuilder::new();
+    #[allow(deprecated)] // linkerd/linkerd2#8733
+    let mut client = hyper::client::conn::Builder::new();
     let profiles = profile::resolver();
     let profile_tx =
         profiles.profile_tx(NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap());
@@ -203,7 +210,8 @@ async fn http1_bad_gateway_unmeshed_response() {
 
     // Build a client using the connect that always errors so that responses
     // are BAD_GATEWAY.
-    let mut client = ClientBuilder::new();
+    #[allow(deprecated)] // linkerd/linkerd2#8733
+    let mut client = hyper::client::conn::Builder::new();
     let profiles = profile::resolver();
     let profile_tx =
         profiles.profile_tx(NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap());
@@ -238,12 +246,14 @@ async fn http1_connect_timeout_meshed_response_error_header() {
 
     // Build a mock connect that sleeps longer than the default inbound
     // connect timeout.
+    #[allow(deprecated)] // linkerd/linkerd2#8733
     let server = hyper::server::conn::Http::new();
     let connect = support::connect().endpoint(Target::addr(), connect_timeout(server));
 
     // Build a client using the connect that always sleeps so that responses
     // are GATEWAY_TIMEOUT.
-    let mut client = ClientBuilder::new();
+    #[allow(deprecated)] // linkerd/linkerd2#8733
+    let mut client = hyper::client::conn::Builder::new();
     let profiles = profile::resolver();
     let profile_tx =
         profiles.profile_tx(NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap());
@@ -280,12 +290,14 @@ async fn http1_connect_timeout_unmeshed_response_error_header() {
 
     // Build a mock connect that sleeps longer than the default inbound
     // connect timeout.
+    #[allow(deprecated)] // linkerd/linkerd2#8733
     let server = hyper::server::conn::Http::new();
     let connect = support::connect().endpoint(Target::addr(), connect_timeout(server));
 
     // Build a client using the connect that always sleeps so that responses
     // are GATEWAY_TIMEOUT.
-    let mut client = ClientBuilder::new();
+    #[allow(deprecated)] // linkerd/linkerd2#8733
+    let mut client = hyper::client::conn::Builder::new();
     let profiles = profile::resolver();
     let profile_tx =
         profiles.profile_tx(NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap());
@@ -321,7 +333,8 @@ async fn h2_response_meshed_error_header() {
     let connect = support::connect().endpoint_fn_boxed(Target::addr(), connect_error());
 
     // Build a client using the connect that always errors.
-    let mut client = ClientBuilder::new();
+    #[allow(deprecated)] // linkerd/linkerd2#8733
+    let mut client = hyper::client::conn::Builder::new();
     client.http2_only(true);
     let profiles = profile::resolver();
     let profile_tx =
@@ -359,7 +372,8 @@ async fn h2_response_unmeshed_error_header() {
     let connect = support::connect().endpoint_fn_boxed(Target::addr(), connect_error());
 
     // Build a client using the connect that always errors.
-    let mut client = ClientBuilder::new();
+    #[allow(deprecated)] // linkerd/linkerd2#8733
+    let mut client = hyper::client::conn::Builder::new();
     client.http2_only(true);
     let profiles = profile::resolver();
     let profile_tx =
@@ -399,7 +413,8 @@ async fn grpc_meshed_response_error_header() {
     let connect = support::connect().endpoint_fn_boxed(Target::addr(), connect_error());
 
     // Build a client using the connect that always errors.
-    let mut client = ClientBuilder::new();
+    #[allow(deprecated)] // linkerd/linkerd2#8733
+    let mut client = hyper::client::conn::Builder::new();
     client.http2_only(true);
     let profiles = profile::resolver();
     let profile_tx =
@@ -438,7 +453,8 @@ async fn grpc_unmeshed_response_error_header() {
     let connect = support::connect().endpoint_fn_boxed(Target::addr(), connect_error());
 
     // Build a client using the connect that always errors.
-    let mut client = ClientBuilder::new();
+    #[allow(deprecated)] // linkerd/linkerd2#8733
+    let mut client = hyper::client::conn::Builder::new();
     client.http2_only(true);
     let profiles = profile::resolver();
     let profile_tx =
@@ -477,6 +493,7 @@ async fn grpc_response_class() {
 
     // Build a mock connector serves a gRPC server that returns errors.
     let connect = {
+        #[allow(deprecated)] // linkerd/linkerd2#8733
         let mut server = hyper::server::conn::Http::new();
         server.http2_only(true);
         support::connect().endpoint_fn_boxed(
@@ -486,7 +503,8 @@ async fn grpc_response_class() {
     };
 
     // Build a client using the connect that always errors.
-    let mut client = ClientBuilder::new();
+    #[allow(deprecated)] // linkerd/linkerd2#8733
+    let mut client = hyper::client::conn::Builder::new();
     client.http2_only(true);
     let profiles = profile::resolver();
     let profile_tx =
@@ -550,6 +568,7 @@ async fn grpc_response_class() {
 }
 
 #[tracing::instrument]
+#[allow(deprecated)] // linkerd/linkerd2#8733
 fn hello_server(
     http: hyper::server::conn::Http,
 ) -> impl Fn(Remote<ServerAddr>) -> io::Result<io::BoxedIo> {
@@ -571,6 +590,7 @@ fn hello_server(
 }
 
 #[tracing::instrument]
+#[allow(deprecated)] // linkerd/linkerd2#8733
 fn grpc_status_server(
     http: hyper::server::conn::Http,
     status: tonic::Code,
@@ -617,6 +637,7 @@ fn connect_error() -> impl Fn(Remote<ServerAddr>) -> io::Result<io::BoxedIo> {
 }
 
 #[tracing::instrument]
+#[allow(deprecated)] // linkerd/linkerd2#8733
 fn connect_timeout(
     http: hyper::server::conn::Http,
 ) -> Box<dyn FnMut(Remote<ServerAddr>) -> ConnectFuture + Send> {

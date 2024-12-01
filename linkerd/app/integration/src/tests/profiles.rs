@@ -129,6 +129,7 @@ impl TestBuilder {
             async move {
                 // Read the entire body before responding, so that the
                 // client doesn't fail when writing it out.
+                #[allow(deprecated)] // linkerd/linkerd2#8733
                 let _body = hyper::body::to_bytes(req.into_body()).await;
                 tracing::debug!(body = ?_body.as_ref().map(|body| body.len()), "recieved body");
                 Ok::<_, Error>(if fail {

@@ -22,6 +22,7 @@ http-body = "0.4"
 httparse = "1"
 hyper = { version = "0.14", features = [
     "client",
+    "deprecated",
     "http1",
     "http2",
     "server",

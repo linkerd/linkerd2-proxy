@@ -26,6 +26,7 @@ async fn h2_connection_window_exhaustion() {
         h2::ServerParams::default(),
         // An HTTP/2 client with constrained connection and stream windows to
         // force window exhaustion.
+        #[allow(deprecated)] // linkerd/linkerd2#8733
         hyper::client::conn::Builder::new()
             .http2_initial_connection_window_size(CLIENT_CONN_WINDOW)
             .http2_initial_stream_window_size(CLIENT_STREAM_WINDOW),
@@ -99,6 +100,7 @@ async fn h2_stream_window_exhaustion() {
         // A basic HTTP/2 server configuration with no overrides.
         h2::ServerParams::default(),
         // An HTTP/2 client with stream windows to force window exhaustion.
+        #[allow(deprecated)] // linkerd/linkerd2#8733
         hyper::client::conn::Builder::new().http2_initial_stream_window_size(CLIENT_STREAM_WINDOW),
     )
     .await;
@@ -142,6 +144,7 @@ async fn h2_stream_window_exhaustion() {
 const LOG_LEVEL: &str = "h2::proto=trace,hyper=trace,linkerd=trace,info";
 
 struct TestServer {
+    #[allow(deprecated)] // linkerd/linkerd2#8733
     client: hyper::client::conn::SendRequest<BoxBody>,
     server: Handle,
 }
@@ -181,6 +184,7 @@ async fn timeout<F: Future>(inner: F) -> Result<F::Output, time::error::Elapsed>
 
 impl TestServer {
     #[tracing::instrument(skip_all)]
+    #[allow(deprecated)] // linkerd/linkerd2#8733
     async fn connect(params: Params, client: &mut hyper::client::conn::Builder) -> Self {
         // Build the HTTP server with a mocked inner service so that we can handle
         // requests.
@@ -201,6 +205,7 @@ impl TestServer {
         Self { client, server }
     }
 
+    #[allow(deprecated)] // linkerd/linkerd2#8733
     async fn connect_h2(h2: h2::ServerParams, client: &mut hyper::client::conn::Builder) -> Self {
         Self::connect(
             // A basic HTTP/2 server configuration with no overrides.

@@ -372,6 +372,7 @@ where
                 let _ = listening_tx.send(());
             }
 
+            #[allow(deprecated)] // linkerd/linkerd2#8733
             let mut http = hyper::server::conn::Http::new().with_executor(TracingExecutor);
             http.http2_only(true);
             loop {
