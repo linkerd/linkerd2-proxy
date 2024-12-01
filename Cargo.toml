@@ -99,3 +99,6 @@ lto = true
 [workspace.dependencies]
 linkerd2-proxy-api = "0.15.0"
 # linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api.git", branch = "main" }
+
+[patch.crates-io]
+hyper = { git = "https://github.com/cratelyn/hyper", branch = "kate/send-request-legacy-glue" }
