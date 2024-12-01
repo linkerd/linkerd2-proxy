@@ -14,7 +14,7 @@ use hyper::client::conn::{Builder as ClientBuilder, SendRequest};
 
 type BoxServer = svc::BoxTcp<io::DuplexStream>;
 
-pub async fn run_proxy(mut server: BoxServer) -> (io::DuplexStream, JoinHandle<Result<(), Error>>) {
+async fn run_proxy(mut server: BoxServer) -> (io::DuplexStream, JoinHandle<Result<(), Error>>) {
     let (client_io, server_io) = io::duplex(4096);
     let f = server
         .ready()
