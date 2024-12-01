@@ -14,43 +14,13 @@ use hyper::client::conn::{Builder as ClientBuilder, SendRequest};
 
 type BoxServer = svc::BoxTcp<io::DuplexStream>;
 
-async fn run_proxy(mut server: BoxServer) -> (io::DuplexStream, JoinHandle<Result<(), Error>>) {
-    let (client_io, server_io) = io::duplex(4096);
-    let f = server
-        .ready()
-        .await
-        .expect("proxy server failed to become ready")
-        .call(server_io);
-
-    let proxy = async move {
-        let res = f.await.map_err(Into::into);
-        drop(server);
-        tracing::debug!("dropped server");
-        tracing::info!(?res, "proxy serve task complete");
-        res.map(|_| ())
-    }
-    .instrument(tracing::info_span!("proxy"));
-    (client_io, tokio::spawn(proxy))
-}
-
-#[allow(deprecated)] // linkerd/linkerd2#8733
-async fn connect_client(
-    client_settings: &mut ClientBuilder,
-    io: io::DuplexStream,
-) -> (SendRequest<Body>, JoinHandle<Result<(), Error>>) {
-    let (client, conn) = client_settings
-        .handshake(io)
-        .await
-        .expect("Client must connect");
-    let client_bg = conn
-        .map(|res| {
-            tracing::info!(?res, "Client background complete");
-            res.map_err(Into::into)
-        })
-        .instrument(tracing::info_span!("client_bg"));
-    (client, tokio::spawn(client_bg))
-}
-
+/// Connects a client and server, running a proxy between them.
+///
+/// Returns a tuple containing (1) a [`SendRequest`] that can be used to transmit a request and
+/// await a response, and (2) a [`Future`] representing background tasks.
+//
+//  TODO(kate): this conglomeration of background tests could be replaced with a `JoinSet`, which
+//  has been introduced to tokio since this code was originally written.
 #[allow(deprecated)] // linkerd/linkerd2#8733
 pub async fn connect_and_accept(
     client_settings: &mut ClientBuilder,
@@ -71,6 +41,43 @@ pub async fn connect_and_accept(
         Ok(())
     };
     (client, bg)
+}
+
+#[allow(deprecated)] // linkerd/linkerd2#8733
+async fn connect_client(
+    client_settings: &mut ClientBuilder,
+    io: io::DuplexStream,
+) -> (SendRequest<Body>, JoinHandle<Result<(), Error>>) {
+    let (client, conn) = client_settings
+        .handshake(io)
+        .await
+        .expect("Client must connect");
+    let client_bg = conn
+        .map(|res| {
+            tracing::info!(?res, "Client background complete");
+            res.map_err(Into::into)
+        })
+        .instrument(tracing::info_span!("client_bg"));
+    (client, tokio::spawn(client_bg))
+}
+
+async fn run_proxy(mut server: BoxServer) -> (io::DuplexStream, JoinHandle<Result<(), Error>>) {
+    let (client_io, server_io) = io::duplex(4096);
+    let f = server
+        .ready()
+        .await
+        .expect("proxy server failed to become ready")
+        .call(server_io);
+
+    let proxy = async move {
+        let res = f.await.map_err(Into::into);
+        drop(server);
+        tracing::debug!("dropped server");
+        tracing::info!(?res, "proxy serve task complete");
+        res.map(|_| ())
+    }
+    .instrument(tracing::info_span!("proxy"));
+    (client_io, tokio::spawn(proxy))
 }
 
 /// Collects a request or response body, returning it as a [`String`].
