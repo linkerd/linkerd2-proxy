@@ -19,7 +19,7 @@ flakey = []
 [dependencies]
 bytes = { workspace = true }
 futures = { version = "0.3", default-features = false, features = ["executor"] }
-h2 = "0.3"
+h2 = { workspace = true }
 http = { workspace = true }
 http-body = { workspace = true }
 hyper = { workspace = true, features = [
