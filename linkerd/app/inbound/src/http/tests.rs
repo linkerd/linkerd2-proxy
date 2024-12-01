@@ -21,7 +21,7 @@ use linkerd_app_test::connect::ConnectFuture;
 use linkerd_tracing::test::trace_init;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::time;
-use tower::{Service, ServiceExt};
+use tower::ServiceExt;
 use tracing::Instrument;
 
 fn build_server<I>(
@@ -66,7 +66,7 @@ async fn unmeshed_http1_hello_world() {
     let cfg = default_config();
     let (rt, _shutdown) = runtime();
     let server = build_server(cfg, rt, profiles, connect).new_service(Target::UNMESHED_HTTP1);
-    let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;
+    let (client, bg) = http_util::connect_and_accept(&mut client, server).await;
 
     let req = Request::builder()
         .method(http::Method::GET)
@@ -74,10 +74,7 @@ async fn unmeshed_http1_hello_world() {
         .body(Body::default())
         .unwrap();
     let rsp = client
-        .ready()
-        .await
-        .expect("HTTP client poll_ready failed")
-        .call(req)
+        .oneshot(req)
         .await
         .expect("HTTP client request failed");
     tracing::info!(?rsp);
@@ -85,7 +82,6 @@ async fn unmeshed_http1_hello_world() {
     let body = http_util::body_to_string(rsp.into_body()).await.unwrap();
     assert_eq!(body, "Hello world!");
 
-    drop(client);
     bg.await.expect("background task failed");
 }
 
@@ -112,7 +108,7 @@ async fn downgrade_origin_form() {
     let cfg = default_config();
     let (rt, _shutdown) = runtime();
     let server = build_server(cfg, rt, profiles, connect).new_service(Target::UNMESHED_H2);
-    let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;
+    let (client, bg) = http_util::connect_and_accept(&mut client, server).await;
 
     let req = Request::builder()
         .method(http::Method::GET)
@@ -122,10 +118,7 @@ async fn downgrade_origin_form() {
         .body(Body::default())
         .unwrap();
     let rsp = client
-        .ready()
-        .await
-        .expect("HTTP client poll_ready failed")
-        .call(req)
+        .oneshot(req)
         .await
         .expect("HTTP client request failed");
     tracing::info!(?rsp);
@@ -133,7 +126,6 @@ async fn downgrade_origin_form() {
     let body = http_util::body_to_string(rsp.into_body()).await.unwrap();
     assert_eq!(body, "Hello world!");
 
-    drop(client);
     bg.await.expect("background task failed");
 }
 
@@ -159,7 +151,7 @@ async fn downgrade_absolute_form() {
     let cfg = default_config();
     let (rt, _shutdown) = runtime();
     let server = build_server(cfg, rt, profiles, connect).new_service(Target::UNMESHED_H2);
-    let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;
+    let (client, bg) = http_util::connect_and_accept(&mut client, server).await;
 
     let req = Request::builder()
         .method(http::Method::GET)
@@ -169,10 +161,7 @@ async fn downgrade_absolute_form() {
         .body(Body::default())
         .unwrap();
     let rsp = client
-        .ready()
-        .await
-        .expect("HTTP client poll_ready failed")
-        .call(req)
+        .oneshot(req)
         .await
         .expect("HTTP client request failed");
     tracing::info!(?rsp);
@@ -180,7 +169,6 @@ async fn downgrade_absolute_form() {
     let body = http_util::body_to_string(rsp.into_body()).await.unwrap();
     assert_eq!(body, "Hello world!");
 
-    drop(client);
     bg.await.expect("background task failed");
 }
 
@@ -202,7 +190,7 @@ async fn http1_bad_gateway_meshed_response_error_header() {
     let cfg = default_config();
     let (rt, _shutdown) = runtime();
     let server = build_server(cfg, rt, profiles, connect).new_service(Target::meshed_http1());
-    let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;
+    let (client, bg) = http_util::connect_and_accept(&mut client, server).await;
 
     // Send a request and assert that it is a BAD_GATEWAY with the expected
     // header message.
@@ -212,10 +200,7 @@ async fn http1_bad_gateway_meshed_response_error_header() {
         .body(Body::default())
         .unwrap();
     let rsp = client
-        .ready()
-        .await
-        .expect("HTTP client poll_ready failed")
-        .call(req)
+        .oneshot(req)
         .await
         .expect("HTTP client request failed");
     tracing::info!(?rsp);
@@ -226,7 +211,6 @@ async fn http1_bad_gateway_meshed_response_error_header() {
     // logical error context is added.
     check_error_header(rsp.headers(), "server is not listening");
 
-    drop(client);
     bg.await.expect("background task failed");
 }
 
@@ -248,7 +232,7 @@ async fn http1_bad_gateway_unmeshed_response() {
     let cfg = default_config();
     let (rt, _shutdown) = runtime();
     let server = build_server(cfg, rt, profiles, connect).new_service(Target::UNMESHED_HTTP1);
-    let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;
+    let (client, bg) = http_util::connect_and_accept(&mut client, server).await;
 
     // Send a request and assert that it is a BAD_GATEWAY with the expected
     // header message.
@@ -258,10 +242,7 @@ async fn http1_bad_gateway_unmeshed_response() {
         .body(Body::default())
         .unwrap();
     let rsp = client
-        .ready()
-        .await
-        .expect("HTTP client poll_ready failed")
-        .call(req)
+        .oneshot(req)
         .await
         .expect("HTTP client request failed");
     tracing::info!(?rsp);
@@ -271,7 +252,6 @@ async fn http1_bad_gateway_unmeshed_response() {
         "response must not contain L5D_PROXY_ERROR header"
     );
 
-    drop(client);
     bg.await.expect("background task failed");
 }
 
@@ -297,7 +277,7 @@ async fn http1_connect_timeout_meshed_response_error_header() {
     let cfg = default_config();
     let (rt, _shutdown) = runtime();
     let server = build_server(cfg, rt, profiles, connect).new_service(Target::meshed_http1());
-    let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;
+    let (client, bg) = http_util::connect_and_accept(&mut client, server).await;
 
     // Send a request and assert that it is a GATEWAY_TIMEOUT with the
     // expected header message.
@@ -307,10 +287,7 @@ async fn http1_connect_timeout_meshed_response_error_header() {
         .body(Body::default())
         .unwrap();
     let rsp = client
-        .ready()
-        .await
-        .expect("HTTP client poll_ready failed")
-        .call(req)
+        .oneshot(req)
         .await
         .expect("HTTP client request failed");
     tracing::info!(?rsp);
@@ -322,7 +299,6 @@ async fn http1_connect_timeout_meshed_response_error_header() {
     // logical error context is added.
     check_error_header(rsp.headers(), "connect timed out after 1s");
 
-    drop(client);
     bg.await.expect("background task failed");
 }
 
@@ -348,7 +324,7 @@ async fn http1_connect_timeout_unmeshed_response_error_header() {
     let cfg = default_config();
     let (rt, _shutdown) = runtime();
     let server = build_server(cfg, rt, profiles, connect).new_service(Target::UNMESHED_HTTP1);
-    let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;
+    let (client, bg) = http_util::connect_and_accept(&mut client, server).await;
 
     // Send a request and assert that it is a GATEWAY_TIMEOUT with the
     // expected header message.
@@ -358,10 +334,7 @@ async fn http1_connect_timeout_unmeshed_response_error_header() {
         .body(Body::default())
         .unwrap();
     let rsp = client
-        .ready()
-        .await
-        .expect("HTTP client poll_ready failed")
-        .call(req)
+        .oneshot(req)
         .await
         .expect("HTTP client request failed");
     tracing::info!(?rsp);
@@ -371,7 +344,6 @@ async fn http1_connect_timeout_unmeshed_response_error_header() {
         "response must not contain L5D_PROXY_ERROR header"
     );
 
-    drop(client);
     bg.await.expect("background task failed");
 }
 
@@ -393,7 +365,7 @@ async fn h2_response_meshed_error_header() {
     let cfg = default_config();
     let (rt, _shutdown) = runtime();
     let server = build_server(cfg, rt, profiles, connect).new_service(Target::meshed_h2());
-    let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;
+    let (client, bg) = http_util::connect_and_accept(&mut client, server).await;
 
     // Send a request and assert that it is SERVICE_UNAVAILABLE with the
     // expected header message.
@@ -403,10 +375,7 @@ async fn h2_response_meshed_error_header() {
         .body(Body::default())
         .unwrap();
     let rsp = client
-        .ready()
-        .await
-        .expect("HTTP client poll_ready failed")
-        .call(req)
+        .oneshot(req)
         .await
         .expect("HTTP client request failed");
     tracing::info!(?rsp);
@@ -417,7 +386,6 @@ async fn h2_response_meshed_error_header() {
     // Drop the client and discard the result of awaiting the proxy background
     // task. The result is discarded because it hits an error that is related
     // to the mock implementation and has no significance to the test.
-    drop(client);
     let _ = bg.await;
 }
 
@@ -439,7 +407,7 @@ async fn h2_response_unmeshed_error_header() {
     let cfg = default_config();
     let (rt, _shutdown) = runtime();
     let server = build_server(cfg, rt, profiles, connect).new_service(Target::UNMESHED_H2);
-    let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;
+    let (client, bg) = http_util::connect_and_accept(&mut client, server).await;
 
     // Send a request and assert that it is SERVICE_UNAVAILABLE with the
     // expected header message.
@@ -449,10 +417,7 @@ async fn h2_response_unmeshed_error_header() {
         .body(Body::default())
         .unwrap();
     let rsp = client
-        .ready()
-        .await
-        .expect("HTTP client poll_ready failed")
-        .call(req)
+        .oneshot(req)
         .await
         .expect("HTTP client request failed");
     tracing::info!(?rsp);
@@ -465,7 +430,6 @@ async fn h2_response_unmeshed_error_header() {
     // Drop the client and discard the result of awaiting the proxy background
     // task. The result is discarded because it hits an error that is related
     // to the mock implementation and has no significance to the test.
-    drop(client);
     let _ = bg.await;
 }
 
@@ -487,7 +451,7 @@ async fn grpc_meshed_response_error_header() {
     let cfg = default_config();
     let (rt, _shutdown) = runtime();
     let server = build_server(cfg, rt, profiles, connect).new_service(Target::meshed_h2());
-    let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;
+    let (client, bg) = http_util::connect_and_accept(&mut client, server).await;
 
     // Send a request and assert that it is OK with the expected header
     // message.
@@ -498,10 +462,7 @@ async fn grpc_meshed_response_error_header() {
         .body(Body::default())
         .unwrap();
     let rsp = client
-        .ready()
-        .await
-        .expect("HTTP client poll_ready failed")
-        .call(req)
+        .oneshot(req)
         .await
         .expect("HTTP client request failed");
     tracing::info!(?rsp);
@@ -512,7 +473,6 @@ async fn grpc_meshed_response_error_header() {
     // Drop the client and discard the result of awaiting the proxy background
     // task. The result is discarded because it hits an error that is related
     // to the mock implementation and has no significance to the test.
-    drop(client);
     let _ = bg.await;
 }
 
@@ -534,7 +494,7 @@ async fn grpc_unmeshed_response_error_header() {
     let cfg = default_config();
     let (rt, _shutdown) = runtime();
     let server = build_server(cfg, rt, profiles, connect).new_service(Target::UNMESHED_H2);
-    let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;
+    let (client, bg) = http_util::connect_and_accept(&mut client, server).await;
 
     // Send a request and assert that it is OK with the expected header
     // message.
@@ -545,10 +505,7 @@ async fn grpc_unmeshed_response_error_header() {
         .body(Body::default())
         .unwrap();
     let rsp = client
-        .ready()
-        .await
-        .expect("HTTP client poll_ready failed")
-        .call(req)
+        .oneshot(req)
         .await
         .expect("HTTP client request failed");
     tracing::info!(?rsp);
@@ -561,7 +518,6 @@ async fn grpc_unmeshed_response_error_header() {
     // Drop the client and discard the result of awaiting the proxy background
     // task. The result is discarded because it hits an error that is related
     // to the mock implementation and has no significance to the test.
-    drop(client);
     let _ = bg.await;
 }
 
@@ -596,7 +552,7 @@ async fn grpc_response_class() {
         .http_endpoint
         .into_report(time::Duration::from_secs(3600));
     let server = build_server(cfg, rt, profiles, connect).new_service(Target::meshed_h2());
-    let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;
+    let (client, bg) = http_util::connect_and_accept(&mut client, server).await;
 
     // Send a request and assert that it is OK with the expected header
     // message.
@@ -608,10 +564,7 @@ async fn grpc_response_class() {
         .unwrap();
 
     let mut rsp = client
-        .ready()
-        .await
-        .expect("HTTP client poll_ready failed")
-        .call(req)
+        .oneshot(req)
         .await
         .expect("HTTP client request failed");
     tracing::info!(?rsp);
@@ -649,7 +602,7 @@ async fn grpc_response_class() {
         .expect("response_total not found");
     assert_eq!(response_total, 1.0);
 
-    drop((client, bg));
+    drop(bg);
 }
 
 #[tracing::instrument]
