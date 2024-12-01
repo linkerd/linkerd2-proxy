@@ -5,7 +5,6 @@ use crate::{
 use futures::FutureExt;
 use hyper::{body::HttpBody, Body};
 use std::future::Future;
-use tokio::task::JoinHandle;
 use tower::{util::ServiceExt, Service};
 use tracing::Instrument;
 
@@ -30,11 +29,11 @@ pub async fn connect_and_accept(
     let (client_io, proxy) = run_proxy(server).await;
     let (client, client_bg) = connect_client(client_settings, client_io).await;
     let bg = async move {
-        proxy
+        tokio::spawn(proxy)
             .await
             .expect("proxy background task panicked")
             .map_err(ContextError::ctx("proxy background task failed"))?;
-        client_bg
+        tokio::spawn(client_bg)
             .await
             .expect("client background task panicked")
             .map_err(ContextError::ctx("client background task failed"))?;
@@ -47,7 +46,7 @@ pub async fn connect_and_accept(
 async fn connect_client(
     client_settings: &mut ClientBuilder,
     io: io::DuplexStream,
-) -> (SendRequest<Body>, JoinHandle<Result<(), Error>>) {
+) -> (SendRequest<Body>, impl Future<Output = Result<(), Error>>) {
     let (client, conn) = client_settings
         .handshake(io)
         .await
@@ -58,10 +57,12 @@ async fn connect_client(
             res.map_err(Into::into)
         })
         .instrument(tracing::info_span!("client_bg"));
-    (client, tokio::spawn(client_bg))
+    (client, client_bg)
 }
 
-async fn run_proxy(mut server: BoxServer) -> (io::DuplexStream, JoinHandle<Result<(), Error>>) {
+async fn run_proxy(
+    mut server: BoxServer,
+) -> (io::DuplexStream, impl Future<Output = Result<(), Error>>) {
     let (client_io, server_io) = io::duplex(4096);
     let f = server
         .ready()
@@ -77,7 +78,8 @@ async fn run_proxy(mut server: BoxServer) -> (io::DuplexStream, JoinHandle<Resul
         res.map(|_| ())
     }
     .instrument(tracing::info_span!("proxy"));
-    (client_io, tokio::spawn(proxy))
+
+    (client_io, proxy)
 }
 
 /// Collects a request or response body, returning it as a [`String`].
