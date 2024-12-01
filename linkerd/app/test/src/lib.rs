@@ -14,6 +14,10 @@ pub use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 pub use tokio::sync::oneshot;
 pub use tower::Service;
 pub use tracing::*;
+
+/// I/O facilities for tests.
+///
+/// Provides [`AsyncRead`] and [`AsyncWrite`] types via [`tokio_test`], and via [`linkerd_io`].
 pub mod io {
     pub use linkerd_app_core::io::*;
     pub use tokio_test::io::*;
