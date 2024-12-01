@@ -73,18 +73,20 @@ pub async fn connect_and_accept(
     (client, bg)
 }
 
+/// Collects a request or response body, returning it as a [`String`].
 pub async fn body_to_string<T>(body: T) -> Result<String, Error>
 where
     T: HttpBody,
     T::Error: Into<Error>,
 {
-    let body = body
+    let bytes = body
         .collect()
         .await
         .map(http_body::Collected::to_bytes)
-        .map_err(ContextError::ctx("HTTP response body stream failed"))?;
-    let body = std::str::from_utf8(&body[..])
-        .map_err(ContextError::ctx("converting body to string failed"))?
-        .to_owned();
-    Ok(body)
+        .map_err(ContextError::ctx("HTTP response body stream failed"))?
+        .to_vec();
+
+    String::from_utf8(bytes)
+        .map_err(ContextError::ctx("converting body to string failed"))
+        .map_err(Into::into)
 }
