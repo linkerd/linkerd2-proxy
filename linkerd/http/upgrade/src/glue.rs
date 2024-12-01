@@ -53,7 +53,7 @@ pub struct HyperConnectFuture<F> {
 
 impl<B> Body for UpgradeBody<B>
 where
-    B: Body + Unpin,
+    B: Body,
     B::Error: std::fmt::Display,
 {
     type Data = B::Data;
