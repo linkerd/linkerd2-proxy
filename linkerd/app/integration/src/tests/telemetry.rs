@@ -1304,10 +1304,13 @@ async fn metrics_compression() {
                 );
             }
 
-            #[allow(deprecated)] // linkerd/linkerd2#8733
-            let mut body = hyper::body::aggregate(resp.into_body())
-                .await
-                .expect("response body concat");
+            let mut body = {
+                let body = resp.into_body();
+                http_body::Body::collect(body)
+                    .await
+                    .expect("response body concat")
+                    .aggregate()
+            };
             let mut decoder = flate2::read::GzDecoder::new(std::io::Cursor::new(
                 body.copy_to_bytes(body.remaining()),
             ));

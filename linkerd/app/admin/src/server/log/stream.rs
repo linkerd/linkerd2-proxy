@@ -52,11 +52,11 @@ where
         // If the request is a QUERY, use the request body
         method if method.as_str() == "QUERY" => {
             // TODO(eliza): validate that the request has a content-length...
-            #[allow(deprecated)] // linkerd/linkerd2#8733
             let body = recover!(
-                hyper::body::aggregate(req.into_body())
+                http_body::Body::collect(req.into_body())
                     .await
-                    .map_err(Into::into),
+                    .map_err(Into::into)
+                    .map(http_body::Collected::aggregate),
                 "Reading log stream request body",
                 StatusCode::BAD_REQUEST
             );
