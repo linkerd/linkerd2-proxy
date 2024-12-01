@@ -28,18 +28,24 @@ pub async fn connect_and_accept(
     let (client, client_bg) = connect_client(client_settings, client_io).await;
 
     let mut bg = tokio::task::JoinSet::new();
-    bg.spawn(async move {
-        proxy
-            .await
-            .map_err(ContextError::ctx("proxy background task failed"))
-            .map_err(Error::from)
-    });
-    bg.spawn(async move {
-        client_bg
-            .await
-            .map_err(ContextError::ctx("client background task failed"))
-            .map_err(Error::from)
-    });
+    bg.spawn(
+        async move {
+            proxy
+                .await
+                .map_err(ContextError::ctx("proxy background task failed"))
+                .map_err(Error::from)
+        }
+        .instrument(tracing::info_span!("proxy")),
+    );
+    bg.spawn(
+        async move {
+            client_bg
+                .await
+                .map_err(ContextError::ctx("client background task failed"))
+                .map_err(Error::from)
+        }
+        .instrument(tracing::info_span!("client_bg")),
+    );
 
     (client, bg)
 }
@@ -53,12 +59,10 @@ async fn connect_client(
         .handshake(io)
         .await
         .expect("Client must connect");
-    let client_bg = conn
-        .map(|res| {
-            tracing::info!(?res, "Client background complete");
-            res.map_err(Into::into)
-        })
-        .instrument(tracing::info_span!("client_bg"));
+    let client_bg = conn.map(|res| {
+        tracing::info!(?res, "Client background complete");
+        res.map_err(Into::into)
+    });
     (client, client_bg)
 }
 
@@ -70,8 +74,7 @@ async fn run_proxy(
         let res = server.oneshot(server_io).await;
         tracing::info!(?res, "proxy serve task complete");
         res
-    }
-    .instrument(tracing::info_span!("proxy"));
+    };
 
     (client_io, proxy)
 }
