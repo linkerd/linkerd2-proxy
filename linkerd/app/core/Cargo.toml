@@ -17,7 +17,7 @@ bytes = "1"
 drain = { version = "0.1", features = ["retain"] }
 http = { workspace = true }
 http-body = { workspace = true }
-hyper = { workspace = true, features = ["deprecated", "http1", "http2"] }
+hyper = { workspace = true, features = ["http1", "http2"] }
 futures = { version = "0.3", default-features = false }
 ipnet = "2.10"
 prometheus-client = "0.22"

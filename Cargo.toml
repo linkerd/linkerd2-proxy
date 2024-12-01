@@ -98,12 +98,14 @@ debug = 1
 lto = true
 
 [workspace.dependencies]
-http = { version = "0.2" }
+http = { version = "1.2" }
 http-body = { version = "0.4" }
-hyper = { version = "0.14", default-features = false }
-linkerd2-proxy-api = "0.15.0"
+hyper = { version = "1.5", default-features = false }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "logging"] }
-# linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api.git", branch = "main" }
+
+[workspace.dependencies.linkerd2-proxy-api]
+git = "https://github.com/linkerd/linkerd2-proxy-api.git"
+rev = "f70b2fc"
 
 # NB: hyperium/hyper#3796 backports the server connection builder's
 # `max_pending_accept_reset_streams()` method. once released, we can depend on
