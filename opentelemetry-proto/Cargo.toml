@@ -12,14 +12,14 @@ Vendored from https://github.com/open-telemetry/opentelemetry-rust/.
 """
 
 [dependencies]
-tonic = { version = "0.10", features = ["codegen", "prost", "transport"] }
+tonic = { workspace = true, features = ["codegen", "prost", "transport"] }
 prost = { workspace = true }
 opentelemetry = { version = "0.27", default-features = false, features = ["trace"] }
 opentelemetry_sdk = { version = "0.27", default-features = false, features = ["trace"] }
 
 [dev-dependencies]
 opentelemetry = { version = "0.27", default-features = false, features = ["trace", "testing"] }
-tonic-build = { version = "0.10", default-features = false, features = ["prost"] }
+tonic-build = { workspace = true, default-features = false, features = ["prost"] }
 
 [lib]
 doctest = false

@@ -29,7 +29,7 @@ pin-project = "1"
 prometheus-client = "0.22"
 thiserror = "2"
 tokio = { version = "1", features = ["sync"] }
-tonic = { version = "0.10", default-features = false }
+tonic = { workspace = true, default-features = false }
 tower = { version = "0.4", features = ["util"] }
 tracing = "0.1"
 

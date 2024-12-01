@@ -21,7 +21,7 @@ ipnet = "2"
 http = { workspace = true }
 once_cell = { version = "1" }
 prost-types = { workspace = true, optional = true }
-tonic = { version = "0.10", default-features = false }
+tonic = { workspace = true, default-features = false }
 thiserror = { version = "2", optional = true }
 
 linkerd-error = { path = "../../error" }

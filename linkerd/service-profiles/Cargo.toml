@@ -20,7 +20,7 @@ prost-types = { workspace = true }
 regex = "1"
 tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
-tonic = { version = "0.10", default-features = false }
+tonic = { workspace = true, default-features = false }
 tower = { version = "0.4.13", features = ["retry", "util"] }
 thiserror = "2"
 tracing = "0.1"
