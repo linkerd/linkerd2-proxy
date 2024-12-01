@@ -684,7 +684,7 @@ fn hello_server(
         let (client_io, server_io) = support::io::duplex(4096);
         let hello_svc = hyper::service::service_fn(|request: Request<hyper::Body>| async move {
             tracing::info!(?request);
-            Ok::<_, io::Error>(Response::new(BoxBody::new("Hello world!".to_string())))
+            Ok::<_, io::Error>(Response::new(BoxBody::from_static("Hello world!")))
         });
         tokio::spawn(
             server

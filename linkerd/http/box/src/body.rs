@@ -46,6 +46,11 @@ impl BoxBody {
     pub fn empty() -> Self {
         Self::default()
     }
+
+    /// Returns a [`BoxBody`] with the contents of a static string.
+    pub fn from_static(body: &'static str) -> Self {
+        Self::new(body.to_string())
+    }
 }
 
 impl Body for BoxBody {

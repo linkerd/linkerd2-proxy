@@ -44,7 +44,7 @@ pub(crate) fn accepts_json<B>(req: &http::Request<B>) -> Result<(), http::Respon
             tracing::warn!(?accept, "Accept header will not accept 'application/json'");
             return Err(http::Response::builder()
                 .status(StatusCode::NOT_ACCEPTABLE)
-                .body(BoxBody::new::<String>(JSON_MIME.into()))
+                .body(BoxBody::from_static(JSON_MIME))
                 .expect("builder with known status code must not fail"));
         }
     }
@@ -63,7 +63,7 @@ fn mk_rsp(status: StatusCode, val: &impl serde::Serialize) -> http::Response<Box
             tracing::warn!(?error, "failed to serialize JSON value");
             http::Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
-                .body(BoxBody::new::<String>(format!(
+                .body(BoxBody::new(format!(
                     "failed to serialize JSON value: {error}"
                 )))
                 .expect("builder with known status code must not fail")

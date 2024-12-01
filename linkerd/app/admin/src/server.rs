@@ -74,12 +74,12 @@ impl<M> Admin<M> {
             Response::builder()
                 .status(StatusCode::OK)
                 .header(http::header::CONTENT_TYPE, "text/plain")
-                .body(BoxBody::new::<String>("ready\n".into()))
+                .body(BoxBody::from_static("ready\n"))
                 .expect("builder with known status code must not fail")
         } else {
             Response::builder()
                 .status(StatusCode::SERVICE_UNAVAILABLE)
-                .body(BoxBody::new::<String>("not ready\n".into()))
+                .body(BoxBody::from_static("not ready\n"))
                 .expect("builder with known status code must not fail")
         }
     }
@@ -88,7 +88,7 @@ impl<M> Admin<M> {
         Response::builder()
             .status(StatusCode::OK)
             .header(http::header::CONTENT_TYPE, "text/plain")
-            .body(BoxBody::new::<String>("live\n".into()))
+            .body(BoxBody::from_static("live\n"))
             .expect("builder with known status code must not fail")
     }
 
@@ -143,22 +143,20 @@ impl<M> Admin<M> {
             return Response::builder()
                 .status(StatusCode::NOT_FOUND)
                 .header(http::header::CONTENT_TYPE, "text/plain")
-                .body(BoxBody::new::<String>(
-                    "shutdown endpoint is not enabled\n".into(),
-                ))
+                .body(BoxBody::from_static("shutdown endpoint is not enabled\n"))
                 .expect("builder with known status code must not fail");
         }
         if self.shutdown_tx.send(()).is_ok() {
             Response::builder()
                 .status(StatusCode::OK)
                 .header(http::header::CONTENT_TYPE, "text/plain")
-                .body(BoxBody::new::<String>("shutdown\n".into()))
+                .body(BoxBody::from_static("shutdown\n"))
                 .expect("builder with known status code must not fail")
         } else {
             Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
                 .header(http::header::CONTENT_TYPE, "text/plain")
-                .body(BoxBody::new::<String>("shutdown listener dropped\n".into()))
+                .body(BoxBody::from_static("shutdown listener dropped\n"))
                 .expect("builder with known status code must not fail")
         }
     }
