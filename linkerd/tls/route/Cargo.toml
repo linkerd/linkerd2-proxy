@@ -11,7 +11,7 @@ proto = ["linkerd2-proxy-api"]
 [dependencies]
 regex = "1"
 rand = "0.8"
-thiserror = "1"
+thiserror = "2"
 tracing = "0.1"
 linkerd-tls = { path = "../" }
 linkerd-dns = { path = "../../dns" }

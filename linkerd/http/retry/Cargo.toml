@@ -15,7 +15,7 @@ parking_lot = "0.12"
 tokio = { version = "1", features = ["macros", "rt"] }
 tower = { version = "0.4", features = ["retry"] }
 tracing = "0.1"
-thiserror = "1"
+thiserror = "2"
 
 linkerd-http-box = { path = "../box" }
 linkerd-error = { path = "../../error" }

@@ -87,7 +87,7 @@ dependencies = [
  "nom",
  "num-traits",
  "rusticata-macros",
- "thiserror",
+ "thiserror 1.0.69",
  "time",
 ]
 
@@ -861,7 +861,7 @@ dependencies = [
  "ipnet",
  "once_cell",
  "rand",
- "thiserror",
+ "thiserror 1.0.69",
  "tinyvec",
  "tokio",
  "tracing",
@@ -884,7 +884,7 @@ dependencies = [
  "rand",
  "resolv-conf",
  "smallvec",
- "thiserror",
+ "thiserror 1.0.69",
  "tokio",
  "tracing",
 ]
@@ -1292,7 +1292,7 @@ dependencies = [
  "http",
  "ipnet",
  "linkerd-dns-name",
- "thiserror",
+ "thiserror 2.0.3",
 ]
 
 [[package]]
@@ -1311,7 +1311,7 @@ dependencies = [
  "linkerd-tonic-stream",
  "rangemap",
  "regex",
- "thiserror",
+ "thiserror 2.0.3",
  "tokio",
  "tokio-stream",
  "tonic",
@@ -1333,7 +1333,7 @@ dependencies = [
  "pprof",
  "serde",
  "serde_json",
- "thiserror",
+ "thiserror 2.0.3",
  "tokio",
  "tower",
  "tracing",
@@ -1399,7 +1399,7 @@ dependencies = [
  "regex",
  "semver",
  "serde_json",
- "thiserror",
+ "thiserror 2.0.3",
  "tokio",
  "tokio-stream",
  "tonic",
@@ -1420,7 +1420,7 @@ dependencies = [
  "linkerd-proxy-client-policy",
  "linkerd-proxy-server-policy",
  "once_cell",
- "thiserror",
+ "thiserror 2.0.3",
  "tokio",
  "tokio-test",
  "tonic",
@@ -1456,7 +1456,7 @@ dependencies = [
  "once_cell",
  "parking_lot",
  "rangemap",
- "thiserror",
+ "thiserror 2.0.3",
  "tokio",
  "tokio-test",
  "tonic",
@@ -1534,7 +1534,7 @@ dependencies = [
  "parking_lot",
  "pin-project",
  "prometheus-client",
- "thiserror",
+ "thiserror 2.0.3",
  "tokio",
  "tokio-rustls",
  "tokio-test",
@@ -1561,7 +1561,7 @@ dependencies = [
  "parking_lot",
  "pin-project",
  "regex",
- "thiserror",
+ "thiserror 2.0.3",
  "tokio",
  "tokio-stream",
  "tokio-test",
@@ -1584,7 +1584,7 @@ dependencies = [
  "linkerd-error",
  "linkerd-io",
  "linkerd-stack",
- "thiserror",
+ "thiserror 2.0.3",
  "tokio",
  "tower",
  "tracing",
@@ -1612,7 +1612,7 @@ dependencies = [
  "hickory-resolver",
  "linkerd-dns-name",
  "linkerd-error",
- "thiserror",
+ "thiserror 2.0.3",
  "tokio",
  "tracing",
 ]
@@ -1621,7 +1621,7 @@ dependencies = [
 name = "linkerd-dns-name"
 version = "0.1.0"
 dependencies = [
- "thiserror",
+ "thiserror 2.0.3",
  "untrusted",
 ]
 
@@ -1646,7 +1646,7 @@ name = "linkerd-error"
 version = "0.1.0"
 dependencies = [
  "futures",
- "thiserror",
+ "thiserror 2.0.3",
 ]
 
 [[package]]
@@ -1667,7 +1667,7 @@ dependencies = [
  "pin-project",
  "quickcheck",
  "rand",
- "thiserror",
+ "thiserror 2.0.3",
  "tokio",
 ]
 
@@ -1788,7 +1788,7 @@ dependencies = [
  "parking_lot",
  "pin-project",
  "prometheus-client",
- "thiserror",
+ "thiserror 2.0.3",
  "tokio",
 ]
 
@@ -1819,7 +1819,7 @@ dependencies = [
  "linkerd-stack",
  "linkerd-tracing",
  "parking_lot",
- "thiserror",
+ "thiserror 2.0.3",
  "tokio",
  "tower",
  "tracing",
@@ -1834,7 +1834,7 @@ dependencies = [
  "maplit",
  "rand",
  "regex",
- "thiserror",
+ "thiserror 2.0.3",
  "tracing",
  "url",
 ]
@@ -1850,7 +1850,7 @@ dependencies = [
  "linkerd-stack",
  "parking_lot",
  "pin-project",
- "thiserror",
+ "thiserror 2.0.3",
  "tokio",
  "tracing",
 ]
@@ -1882,7 +1882,7 @@ name = "linkerd-http-version"
 version = "0.1.0"
 dependencies = [
  "http",
- "thiserror",
+ "thiserror 2.0.3",
 ]
 
 [[package]]
@@ -1893,7 +1893,7 @@ dependencies = [
  "linkerd-error",
  "linkerd-metrics",
  "prometheus-client",
- "thiserror",
+ "thiserror 2.0.3",
  "tracing",
  "url",
 ]
@@ -1986,7 +1986,7 @@ dependencies = [
  "ring",
  "rustls-pemfile",
  "rustls-webpki",
- "thiserror",
+ "thiserror 2.0.3",
  "tokio",
  "tokio-rustls",
  "tracing",
@@ -2074,7 +2074,7 @@ dependencies = [
  "linkerd-pool",
  "linkerd-stack",
  "parking_lot",
- "thiserror",
+ "thiserror 2.0.3",
  "tokio",
  "tower-test",
  "tracing",
@@ -2168,7 +2168,7 @@ dependencies = [
  "parking_lot",
  "pin-project",
  "prometheus-client",
- "thiserror",
+ "thiserror 2.0.3",
  "tokio",
  "tokio-stream",
  "tokio-test",
@@ -2196,7 +2196,7 @@ dependencies = [
  "once_cell",
  "prost-types",
  "quickcheck",
- "thiserror",
+ "thiserror 2.0.3",
  "tonic",
 ]
 
@@ -2259,7 +2259,7 @@ dependencies = [
  "parking_lot",
  "pin-project",
  "rand",
- "thiserror",
+ "thiserror 2.0.3",
  "tokio",
  "tokio-test",
  "tower",
@@ -2282,7 +2282,7 @@ dependencies = [
  "linkerd2-proxy-api",
  "parking_lot",
  "pin-project",
- "thiserror",
+ "thiserror 2.0.3",
  "tokio",
  "tonic",
  "tracing",
@@ -2296,7 +2296,7 @@ dependencies = [
  "linkerd-error",
  "linkerd-proxy-core",
  "pin-project",
- "thiserror",
+ "thiserror 2.0.3",
  "tower",
  "tracing",
 ]
@@ -2314,7 +2314,7 @@ dependencies = [
  "maplit",
  "prost-types",
  "quickcheck",
- "thiserror",
+ "thiserror 2.0.3",
  "tokio",
 ]
 
@@ -2332,7 +2332,7 @@ dependencies = [
  "rcgen",
  "simple_asn1",
  "spiffe-proto",
- "thiserror",
+ "thiserror 2.0.3",
  "tokio",
  "tokio-test",
  "tonic",
@@ -2362,7 +2362,7 @@ dependencies = [
  "prost-types",
  "quickcheck",
  "rand",
- "thiserror",
+ "thiserror 2.0.3",
  "tokio",
  "tonic",
  "tower",
@@ -2394,7 +2394,7 @@ dependencies = [
  "linkerd-io",
  "linkerd-stack",
  "socket2",
- "thiserror",
+ "thiserror 2.0.3",
  "tokio",
  "tokio-stream",
  "tracing",
@@ -2437,7 +2437,7 @@ dependencies = [
  "linkerd-error",
  "linkerd-stack",
  "parking_lot",
- "thiserror",
+ "thiserror 2.0.3",
  "tracing",
 ]
 
@@ -2462,7 +2462,7 @@ dependencies = [
  "prost-types",
  "quickcheck",
  "regex",
- "thiserror",
+ "thiserror 2.0.3",
  "tokio",
  "tokio-stream",
  "tonic",
@@ -2487,7 +2487,7 @@ dependencies = [
  "linkerd-tracing",
  "parking_lot",
  "pin-project",
- "thiserror",
+ "thiserror 2.0.3",
  "tokio",
  "tokio-test",
  "tokio-util",
@@ -2543,7 +2543,7 @@ dependencies = [
  "linkerd-stack",
  "linkerd-tracing",
  "pin-project",
- "thiserror",
+ "thiserror 2.0.3",
  "tokio",
  "tower",
  "tracing",
@@ -2559,7 +2559,7 @@ dependencies = [
  "linkerd2-proxy-api",
  "rand",
  "regex",
- "thiserror",
+ "thiserror 2.0.3",
  "tracing",
 ]
 
@@ -2610,7 +2610,7 @@ dependencies = [
  "linkerd-error",
  "linkerd-stack",
  "rand",
- "thiserror",
+ "thiserror 1.0.69",
  "tower",
  "tracing",
 ]
@@ -2691,7 +2691,7 @@ dependencies = [
  "prost",
  "prost-types",
  "quickcheck",
- "thiserror",
+ "thiserror 1.0.69",
  "tonic",
 ]
 
@@ -2954,7 +2954,7 @@ dependencies = [
  "futures-sink",
  "js-sys",
  "pin-project-lite",
- "thiserror",
+ "thiserror 1.0.69",
  "tracing",
 ]
 
@@ -2981,7 +2981,7 @@ dependencies = [
  "opentelemetry",
  "percent-encoding",
  "rand",
- "thiserror",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -3111,7 +3111,7 @@ dependencies = [
  "smallvec",
  "symbolic-demangle",
  "tempfile",
- "thiserror",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -3564,7 +3564,7 @@ checksum = "adc4e5204eb1910f40f9cfa375f6f05b68c3abac4b6fd879c8ff5e7ae8a0a085"
 dependencies = [
  "num-bigint",
  "num-traits",
- "thiserror",
+ "thiserror 1.0.69",
  "time",
 ]
 
@@ -3701,18 +3701,38 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "1.0.68"
+version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "02dd99dc800bbb97186339685293e1cc5d9df1f8fae2d0aecd9ff1c77efea892"
+checksum = "b6aaf5339b578ea85b50e080feb250a3e8ae8cfcdff9a461c9ec2904bc923f52"
 dependencies = [
- "thiserror-impl",
+ "thiserror-impl 1.0.69",
+]
+
+[[package]]
+name = "thiserror"
+version = "2.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c006c85c7651b3cf2ada4584faa36773bd07bac24acfb39f3c431b36d7e667aa"
+dependencies = [
+ "thiserror-impl 2.0.3",
 ]
 
 [[package]]
 name = "thiserror-impl"
-version = "1.0.68"
+version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7c61ec9a6f64d2793d8a45faba21efbe3ced62a886d44c36a009b2b519b4c7e"
+checksum = "4fee6c4efc90059e10f81e6d42c60a18f76588c3d74cb83a0b242a2b6c7504c1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "thiserror-impl"
+version = "2.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f077553d607adc1caf65430528a576c757a71ed73944b66ebb58ef2bbd243568"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4409,7 +4429,7 @@ dependencies = [
  "nom",
  "oid-registry",
  "rusticata-macros",
- "thiserror",
+ "thiserror 1.0.69",
  "time",
 ]
 

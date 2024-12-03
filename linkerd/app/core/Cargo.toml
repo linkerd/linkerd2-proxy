@@ -23,7 +23,7 @@ ipnet = "2.10"
 prometheus-client = "0.22"
 regex = "1"
 serde_json = "1"
-thiserror = "1"
+thiserror = "2"
 tokio = { version = "1", features = ["macros", "sync", "parking_lot"] }
 tokio-stream = { version = "0.1", features = ["time"] }
 tonic = { version = "0.10", default-features = false, features = ["prost"] }
