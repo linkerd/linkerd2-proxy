@@ -1,11 +1,10 @@
 use crate::{
-    app_core::{svc, tls, Error},
+    app_core::{svc, Error},
     io, ContextError,
 };
 use futures::FutureExt;
 use hyper::{body::HttpBody, Body, Request, Response};
-use parking_lot::Mutex;
-use std::{future::Future, sync::Arc};
+use std::future::Future;
 use tokio::task::JoinHandle;
 use tower::{util::ServiceExt, Service};
 use tracing::Instrument;
@@ -13,30 +12,7 @@ use tracing::Instrument;
 #[allow(deprecated)] // linkerd/linkerd2#8733
 use hyper::client::conn::{Builder as ClientBuilder, SendRequest};
 
-pub struct Server {
-    #[allow(deprecated)] // linkerd/linkerd2#8733
-    settings: hyper::server::conn::Http,
-    f: HandleFuture,
-}
-
-type HandleFuture = Box<dyn (FnMut(Request<Body>) -> Result<Response<Body>, Error>) + Send>;
-
 type BoxServer = svc::BoxTcp<io::DuplexStream>;
-
-impl Default for Server {
-    fn default() -> Self {
-        Self {
-            #[allow(deprecated)] // linkerd/linkerd2#8733
-            settings: hyper::server::conn::Http::new(),
-            f: Box::new(|_| {
-                Ok(Response::builder()
-                    .status(http::status::StatusCode::NOT_FOUND)
-                    .body(Body::empty())
-                    .expect("known status code is fine"))
-            }),
-        }
-    }
-}
 
 pub async fn run_proxy(mut server: BoxServer) -> (io::DuplexStream, JoinHandle<Result<(), Error>>) {
     let (client_io, server_io) = io::duplex(4096);
@@ -130,47 +106,4 @@ where
         .map_err(ContextError::ctx("converting body to string failed"))?
         .to_owned();
     Ok(body)
-}
-
-impl Server {
-    pub fn http1(mut self) -> Self {
-        self.settings.http1_only(true);
-        self
-    }
-
-    pub fn http2(mut self) -> Self {
-        self.settings.http2_only(true);
-        self
-    }
-
-    pub fn new(mut f: impl (FnMut(Request<Body>) -> Response<Body>) + Send + 'static) -> Self {
-        Self {
-            f: Box::new(move |req| Ok::<_, Error>(f(req))),
-            ..Default::default()
-        }
-    }
-
-    pub fn run<E>(self) -> impl (FnMut(E) -> io::Result<io::BoxedIo>) + Send + 'static
-    where
-        E: std::fmt::Debug,
-        E: svc::Param<tls::ConditionalClientTls>,
-    {
-        let Self { f, settings } = self;
-        let f = Arc::new(Mutex::new(f));
-        move |endpoint| {
-            let span = tracing::debug_span!("server::run", ?endpoint).or_current();
-            let _e = span.enter();
-            let f = f.clone();
-            let (client_io, server_io) = crate::io::duplex(4096);
-            let svc = hyper::service::service_fn(move |request: Request<Body>| {
-                let f = f.clone();
-                async move {
-                    tracing::info!(?request);
-                    f.lock()(request)
-                }
-            });
-            tokio::spawn(settings.serve_connection(server_io, svc).in_current_span());
-            Ok(io::BoxedIo::new(client_io))
-        }
-    }
 }
