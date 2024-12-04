@@ -127,6 +127,8 @@ jobs:
     if: needs.meta.outputs.cargo_changed == 'true' || needs.meta.outputs.rust_changed == 'true'
     timeout-minutes: 20
     runs-on: ubuntu-latest
+    env:
+      WAIT_TIMOUT: 2m
     steps:
       - uses: linkerd/dev/actions/setup-tools@v43
       - name: scurl https://run.linkerd.io/install-edge | sh
