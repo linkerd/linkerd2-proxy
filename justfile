@@ -57,6 +57,8 @@ _features := if features == "all" {
         "--no-default-features --features=" + features
     } else { "" }
 
+wait-timeout := env_var_or_default("WAIT_TIMEOUT", "1m")
+
 export CXX := 'clang++-14'
 
 #
@@ -272,7 +274,7 @@ _linkerd-crds-install: _k3d-ready
         | {{ _kubectl }} apply -f -
     {{ _kubectl }} wait crd --for condition=established \
         --selector='linkerd.io/control-plane-ns' \
-        --timeout=1m
+        --timeout={{ wait-timeout }}
 
 # Install linkerd on the test cluster using test images.
 linkerd-install *args='': _tag-set k3d-load-linkerd _linkerd-crds-install && _linkerd-ready
@@ -313,7 +315,7 @@ linkerd-check-control-plane-proxy:
 _linkerd-ready:
     {{ _kubectl }} wait pod --for=condition=ready \
         --namespace=linkerd --selector='linkerd.io/control-plane-component' \
-        --timeout=1m
+        --timeout={{ wait-timeout }}
 
 #
 # Dev Container
