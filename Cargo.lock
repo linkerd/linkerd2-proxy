@@ -943,8 +943,7 @@ checksum = "9a3a5bfb195931eeb336b2a7b4d761daec841b97f947d34394601737a7bba5e4"
 [[package]]
 name = "hyper"
 version = "0.14.31"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8c08302e8fa335b151b788c775ff56e7a03ae64ff85c548ee820fecb70356e85"
+source = "git+https://github.com/cratelyn/hyper?branch=kate/send-request-legacy-glue#de82efbe8a6a61dbda3cb53b4cf91a60c44724da"
 dependencies = [
  "bytes",
  "futures-channel",
