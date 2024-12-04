@@ -128,7 +128,7 @@ jobs:
     timeout-minutes: 20
     runs-on: ubuntu-latest
     env:
-      WAIT_TIMOUT: 2m
+      WAIT_TIMEOUT: 2m
     steps:
       - uses: linkerd/dev/actions/setup-tools@v43
       - name: scurl https://run.linkerd.io/install-edge | sh
