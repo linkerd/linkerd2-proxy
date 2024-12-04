@@ -8,7 +8,7 @@ use std::{
 };
 
 use linkerd2_proxy_api::identity as pb;
-use tokio_rustls::rustls;
+use tokio_rustls::rustls::{self, pki_types::CertificateDer, server::WebPkiClientVerifier};
 use tonic as grpc;
 
 pub struct Identity {
@@ -36,7 +36,7 @@ type Certify = Box<
 
 static TLS_VERSIONS: &[&rustls::SupportedProtocolVersion] = &[&rustls::version::TLS13];
 static TLS_SUPPORTED_CIPHERSUITES: &[rustls::SupportedCipherSuite] =
-    &[rustls::cipher_suite::TLS13_CHACHA20_POLY1305_SHA256];
+    &[rustls::crypto::ring::cipher_suite::TLS13_CHACHA20_POLY1305_SHA256];
 
 struct Certificates {
     pub leaf: Vec<u8>,
@@ -50,11 +50,17 @@ impl Certificates {
     {
         let f = fs::File::open(p)?;
         let mut r = io::BufReader::new(f);
-        let mut certs = rustls_pemfile::certs(&mut r)
+        let mut certs = rustls_pemfile::certs(&mut r);
+        let leaf = certs
+            .next()
+            .expect("no leaf cert in pemfile")
+            .map_err(|_| io::Error::new(io::ErrorKind::Other, "rustls error reading certs"))?
+            .as_ref()
+            .to_vec();
+        let intermediates = certs
+            .map(|cert| cert.map(|cert| cert.as_ref().to_vec()))
+            .collect::<Result<Vec<_>, _>>()
             .map_err(|_| io::Error::new(io::ErrorKind::Other, "rustls error reading certs"))?;
-        let mut certs = certs.drain(..);
-        let leaf = certs.next().expect("no leaf cert in pemfile");
-        let intermediates = certs.collect();
 
         Ok(Certificates {
             leaf,
@@ -62,11 +68,14 @@ impl Certificates {
         })
     }
 
-    pub fn chain(&self) -> Vec<rustls::Certificate> {
+    pub fn chain(&self) -> Vec<rustls::pki_types::CertificateDer<'static>> {
         let mut chain = Vec::with_capacity(self.intermediates.len() + 1);
         chain.push(self.leaf.clone());
         chain.extend(self.intermediates.clone());
-        chain.into_iter().map(rustls::Certificate).collect()
+        chain
+            .into_iter()
+            .map(rustls::pki_types::CertificateDer::from)
+            .collect()
     }
 
     pub fn response(&self) -> pb::CertifyResponse {
@@ -79,43 +88,49 @@ impl Certificates {
 }
 
 impl Identity {
-    fn load_key<P>(p: P) -> rustls::PrivateKey
+    fn load_key<P>(p: P) -> rustls::pki_types::PrivateKeyDer<'static>
     where
         P: AsRef<Path>,
     {
         let p8 = fs::read(&p).expect("read key");
-        rustls::PrivateKey(p8)
+        rustls::pki_types::PrivateKeyDer::try_from(p8).expect("decode key")
     }
 
     fn configs(
         trust_anchors: &str,
         certs: &Certificates,
-        key: rustls::PrivateKey,
+        key: rustls::pki_types::PrivateKeyDer<'static>,
     ) -> (Arc<rustls::ClientConfig>, Arc<rustls::ServerConfig>) {
         use std::io::Cursor;
         let mut roots = rustls::RootCertStore::empty();
-        let trust_anchors =
-            rustls_pemfile::certs(&mut Cursor::new(trust_anchors)).expect("error parsing pemfile");
-        let (added, skipped) = roots.add_parsable_certificates(&trust_anchors[..]);
+        let trust_anchors = rustls_pemfile::certs(&mut Cursor::new(trust_anchors))
+            .map(|bytes| bytes.map(CertificateDer::from))
+            .collect::<Result<Vec<_>, _>>()
+            .expect("error parsing pemfile");
+        let (added, skipped) = roots.add_parsable_certificates(trust_anchors);
         assert_ne!(added, 0, "trust anchors must include at least one cert");
         assert_eq!(skipped, 0, "no certs in pemfile should be invalid");
 
-        let client_config = rustls::ClientConfig::builder()
-            .with_cipher_suites(TLS_SUPPORTED_CIPHERSUITES)
-            .with_safe_default_kx_groups()
+        let mut provider = rustls::crypto::ring::default_provider();
+        provider.cipher_suites = TLS_SUPPORTED_CIPHERSUITES.to_vec();
+        let provider = Arc::new(provider);
+
+        let client_config = rustls::ClientConfig::builder_with_provider(provider.clone())
             .with_protocol_versions(TLS_VERSIONS)
             .expect("client config must be valid")
             .with_root_certificates(roots.clone())
             .with_no_client_auth();
 
-        let server_config = rustls::ServerConfig::builder()
-            .with_cipher_suites(TLS_SUPPORTED_CIPHERSUITES)
-            .with_safe_default_kx_groups()
+        let client_cert_verifier =
+            WebPkiClientVerifier::builder_with_provider(Arc::new(roots), provider.clone())
+                .allow_unauthenticated()
+                .build()
+                .expect("server verifier must be valid");
+
+        let server_config = rustls::ServerConfig::builder_with_provider(provider)
             .with_protocol_versions(TLS_VERSIONS)
             .expect("server config must be valid")
-            .with_client_cert_verifier(Arc::new(
-                rustls::server::AllowAnyAnonymousOrAuthenticatedClient::new(roots),
-            ))
+            .with_client_cert_verifier(client_cert_verifier)
             .with_single_cert(certs.chain(), key)
             .unwrap();
 
