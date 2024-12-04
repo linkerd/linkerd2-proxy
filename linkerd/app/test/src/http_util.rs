@@ -121,9 +121,10 @@ where
     T: HttpBody,
     T::Error: Into<Error>,
 {
-    #[allow(deprecated)] // linkerd/linkerd2#8733
-    let body = hyper::body::to_bytes(body)
+    let body = body
+        .collect()
         .await
+        .map(http_body::Collected::to_bytes)
         .map_err(ContextError::ctx("HTTP response body stream failed"))?;
     let body = std::str::from_utf8(&body[..])
         .map_err(ContextError::ctx("converting body to string failed"))?

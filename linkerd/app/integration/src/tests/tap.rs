@@ -253,8 +253,12 @@ async fn grpc_headers_end() {
         .unwrap();
     assert_eq!(res.status(), 200);
     assert_eq!(res.headers()["grpc-status"], "1");
-    #[allow(deprecated)] // linkerd/linkerd2#8733
-    let bytes = hyper::body::to_bytes(res.into_body()).await.unwrap().len();
+    let body = res.into_body();
+    let bytes = http_body::Body::collect(body)
+        .await
+        .unwrap()
+        .to_bytes()
+        .len();
     assert_eq!(bytes, 0);
 
     let event = events.skip(2).next().await.expect("2nd").expect("stream");

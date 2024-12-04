@@ -21,10 +21,12 @@ where
         }
 
         http::Method::PUT => {
-            #[allow(deprecated)] // linkerd/linkerd2#8733
-            let body = hyper::body::aggregate(req.into_body())
+            let body = req
+                .into_body()
+                .collect()
                 .await
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?
+                .aggregate();
             match level.set_from(body.chunk()) {
                 Ok(_) => mk_rsp(StatusCode::NO_CONTENT, Body::empty()),
                 Err(error) => {

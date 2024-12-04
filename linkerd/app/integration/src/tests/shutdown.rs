@@ -48,14 +48,13 @@ async fn h2_exercise_goaways_connections() {
 
     let bodies = resps
         .into_iter()
-        .map(
-            #[allow(deprecated)] // linkerd/linkerd2#8733
-            |resp| {
-                hyper::body::aggregate(resp.into_body())
-                    // Make sure the bodies weren't cut off
-                    .map_ok(|buf| assert_eq!(buf.remaining(), RESPONSE_SIZE))
-            },
-        )
+        .map(Response::into_body)
+        .map(|body| {
+            http_body::Body::collect(body)
+                .map_ok(http_body::Collected::aggregate)
+                // Make sure the bodies weren't cut off
+                .map_ok(|buf| assert_eq!(buf.remaining(), RESPONSE_SIZE))
+        })
         .collect::<Vec<_>>();
 
     // See that the proxy gives us all the bodies.
