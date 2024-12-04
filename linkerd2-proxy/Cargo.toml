@@ -31,3 +31,6 @@ tracing = "0.1"
 
 [target.x86_64-unknown-linux-gnu.dependencies]
 jemallocator = { version = "0.5" }
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tokio_unstable)'] }

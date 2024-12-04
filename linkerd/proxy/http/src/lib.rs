@@ -53,7 +53,7 @@ pub trait HasH2Reason {
     fn h2_reason(&self) -> Option<::h2::Reason>;
 }
 
-impl<'a> HasH2Reason for &'a (dyn std::error::Error + 'static) {
+impl HasH2Reason for &(dyn std::error::Error + 'static) {
     fn h2_reason(&self) -> Option<::h2::Reason> {
         if let Some(err) = self.downcast_ref::<::h2::Error>() {
             return err.h2_reason();

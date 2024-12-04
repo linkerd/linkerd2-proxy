@@ -133,7 +133,7 @@ jobs:
     continue-on-error: ${{ needs.meta.outputs.publish != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 40
-    container: docker://ghcr.io/linkerd/dev:v43-rust-musl
+    container: docker://ghcr.io/linkerd/dev:v44-rust-musl
     env:
       LINKERD2_PROXY_VENDOR: ${{ github.repository_owner }}
       LINKERD2_PROXY_VERSION: ${{ needs.meta.outputs.version }}

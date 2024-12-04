@@ -251,7 +251,7 @@ where
 
 // === impl Line ===
 
-impl<'a> io::Write for Line<'a> {
+impl io::Write for Line<'_> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         if let Some(ref mut line) = self.0 {
             line.extend_from_slice(buf)

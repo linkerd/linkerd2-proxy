@@ -86,7 +86,7 @@ impl<C, R> Conditional<C, R> {
     }
 }
 
-impl<'a, C, R> Conditional<&'a C, R>
+impl<C, R> Conditional<&C, R>
 where
     C: Clone,
 {

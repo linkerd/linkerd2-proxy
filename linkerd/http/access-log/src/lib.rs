@@ -202,8 +202,8 @@ where
             .map(|x| span.record("response_bytes", x));
 
         span.record("status", response.status().as_u16());
-        span.record("total_ns", &field::display(total_ns));
-        span.record("processing_ns", &field::display(processing_ns));
+        span.record("total_ns", field::display(total_ns));
+        span.record("processing_ns", field::display(processing_ns));
 
         Poll::Ready(Ok(response))
     }

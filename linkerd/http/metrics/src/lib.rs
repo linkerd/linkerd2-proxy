@@ -93,7 +93,7 @@ where
     }
 }
 
-impl<'p, N: fmt::Display> fmt::Display for Prefixed<'p, N> {
+impl<N: fmt::Display> fmt::Display for Prefixed<'_, N> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.prefix.is_empty() {
             return self.name.fmt(f);
