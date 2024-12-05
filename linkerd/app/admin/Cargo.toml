@@ -16,7 +16,7 @@ log-streaming = ["linkerd-tracing/stream"]
 
 [dependencies]
 deflate = { version = "1", optional = true, features = ["gzip"] }
-http = "0.2"
+http = "1.2"
 http-body = "0.4"
 hyper = { version = "0.14", features = ["deprecated", "http1", "http2"] }
 futures = { version = "0.3", default-features = false }

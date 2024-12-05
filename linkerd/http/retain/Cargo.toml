@@ -12,7 +12,7 @@ This is mostly intended to support cache eviction.
 """
 
 [dependencies]
-http = "0.2"
+http = "1.2"
 http-body = "0.4"
 pin-project = "1"
 tower = { version = "0.4", default-features = false }

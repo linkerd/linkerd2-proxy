@@ -10,5 +10,5 @@ HTTP version types.
 """
 
 [dependencies]
-http = "0.2"
+http = "1.2"
 thiserror = "1"

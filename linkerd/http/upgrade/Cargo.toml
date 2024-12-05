@@ -13,7 +13,7 @@ Facilities for HTTP/1 upgrades.
 bytes = "1"
 drain = "0.1"
 futures = { version = "0.3", default-features = false }
-http = "0.2"
+http = "1.2"
 http-body = "0.4"
 hyper = { version = "0.14", default-features = false, features = ["deprecated", "client"] }
 pin-project = "1"

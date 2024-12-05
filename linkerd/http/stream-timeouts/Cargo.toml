@@ -11,7 +11,7 @@ Tower middleware to express deadlines on streams.
 
 [dependencies]
 futures = { version = "0.3", default-features = false }
-http = "0.2"
+http = "1.2"
 http-body = "0.4"
 parking_lot = "0.12"
 pin-project = "1"

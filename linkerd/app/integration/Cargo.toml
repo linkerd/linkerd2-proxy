@@ -20,7 +20,7 @@ flakey = []
 bytes = "1"
 futures = { version = "0.3", default-features = false, features = ["executor"] }
 h2 = "0.3"
-http = "0.2"
+http = "1.2"
 http-body = "0.4"
 hyper = { version = "0.14", features = [
     "deprecated",
