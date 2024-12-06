@@ -11,7 +11,7 @@ futures = { version = "0.3", default-features = false }
 parking_lot = "0.12"
 pin-project = "1"
 prometheus-client = "0.22"
-thiserror = "1"
+thiserror = "2"
 tokio = { version = "1", features = ["rt", "sync", "time"] }
 tokio-util = "0.7"
 tracing = "0.1"
