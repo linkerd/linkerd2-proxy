@@ -3,7 +3,7 @@ use crate::{
     io, ContextError,
 };
 use futures::FutureExt;
-use hyper::{body::HttpBody, Body, Request, Response};
+use hyper::{body::HttpBody, Body};
 use std::future::Future;
 use tokio::task::JoinHandle;
 use tower::{util::ServiceExt, Service};
@@ -14,7 +14,7 @@ use hyper::client::conn::{Builder as ClientBuilder, SendRequest};
 
 type BoxServer = svc::BoxTcp<io::DuplexStream>;
 
-pub async fn run_proxy(mut server: BoxServer) -> (io::DuplexStream, JoinHandle<Result<(), Error>>) {
+async fn run_proxy(mut server: BoxServer) -> (io::DuplexStream, JoinHandle<Result<(), Error>>) {
     let (client_io, server_io) = io::duplex(4096);
     let f = server
         .ready()
@@ -34,7 +34,7 @@ pub async fn run_proxy(mut server: BoxServer) -> (io::DuplexStream, JoinHandle<R
 }
 
 #[allow(deprecated)] // linkerd/linkerd2#8733
-pub async fn connect_client(
+async fn connect_client(
     client_settings: &mut ClientBuilder,
     io: io::DuplexStream,
 ) -> (SendRequest<Body>, JoinHandle<Result<(), Error>>) {
@@ -73,37 +73,20 @@ pub async fn connect_and_accept(
     (client, bg)
 }
 
-#[tracing::instrument(skip(client))]
-#[allow(deprecated)] // linkerd/linkerd2#8733
-pub async fn http_request(
-    client: &mut SendRequest<Body>,
-    request: Request<Body>,
-) -> Result<Response<Body>, Error> {
-    let rsp = client
-        .ready()
-        .await
-        .map_err(ContextError::ctx("HTTP client poll_ready failed"))?
-        .call(request)
-        .await
-        .map_err(ContextError::ctx("HTTP client request failed"))?;
-
-    tracing::info!(?rsp);
-
-    Ok(rsp)
-}
-
+/// Collects a request or response body, returning it as a [`String`].
 pub async fn body_to_string<T>(body: T) -> Result<String, Error>
 where
     T: HttpBody,
     T::Error: Into<Error>,
 {
-    let body = body
+    let bytes = body
         .collect()
         .await
         .map(http_body::Collected::to_bytes)
-        .map_err(ContextError::ctx("HTTP response body stream failed"))?;
-    let body = std::str::from_utf8(&body[..])
-        .map_err(ContextError::ctx("converting body to string failed"))?
-        .to_owned();
-    Ok(body)
+        .map_err(ContextError::ctx("HTTP response body stream failed"))?
+        .to_vec();
+
+    String::from_utf8(bytes)
+        .map_err(ContextError::ctx("converting body to string failed"))
+        .map_err(Into::into)
 }

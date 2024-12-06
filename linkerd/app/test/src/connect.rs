@@ -1,3 +1,4 @@
+use crate::io;
 use linkerd_app_core::{
     svc::{Param, Service},
     transport::{ClientAddr, Local, Remote, ServerAddr},
@@ -13,11 +14,6 @@ use std::{
     task::{Context, Poll},
 };
 use tracing::instrument::{Instrument, Instrumented};
-
-mod io {
-    pub use linkerd_app_core::io::*;
-    pub use tokio_test::io::*;
-}
 
 type ConnectFn<T> = Box<dyn FnMut(T) -> ConnectFuture + Send>;
 
