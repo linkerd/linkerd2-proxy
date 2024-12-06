@@ -10,7 +10,7 @@ publish = false
 http = "0.2"
 ipnet = "2.10"
 linkerd-dns-name = { path = "../dns/name" }
-thiserror = "1"
+thiserror = "2"
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(fuzzing)'] }

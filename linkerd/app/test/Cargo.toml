@@ -32,7 +32,7 @@ tokio-stream = { version = "0.1", features = ["sync"] }
 tonic = { version = "0.10", default-features = false, optional = true }
 tower = { version = "0.4", default-features = false }
 tracing = "0.1"
-thiserror = "1"
+thiserror = "2"
 
 [dependencies.tracing-subscriber]
 version = "0.3"

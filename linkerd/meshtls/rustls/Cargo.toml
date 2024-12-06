@@ -14,7 +14,7 @@ futures = { version = "0.3", default-features = false }
 ring = { version = "0.17", features = ["std"] }
 rustls-pemfile = "1.0"
 rustls-webpki = { version = "0.101.5", features = ["std"] }
-thiserror = "1"
+thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt", "sync"] }
 tokio-rustls = { version = "0.24", features = ["dangerous_configuration"] }
 tracing = "0.1"

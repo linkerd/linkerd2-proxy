@@ -31,7 +31,7 @@ pub trait Detect<I>: Clone + Send + Sync + 'static {
 pub type Result<P> = StdResult<Option<P>, DetectTimeoutError<P>>;
 
 #[derive(Error)]
-#[error("{} protocol detection timed out after {0:?}", std::any::type_name::<P>())]
+#[error("{typ} protocol detection timed out after {0:?}", typ=std::any::type_name::<P>())]
 pub struct DetectTimeoutError<P>(time::Duration, std::marker::PhantomData<P>);
 
 #[derive(Copy, Clone, Debug)]

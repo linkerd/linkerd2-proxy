@@ -22,7 +22,7 @@ tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 tonic = { version = "0.10", default-features = false }
 tower = { version = "0.4.13", features = ["retry", "util"] }
-thiserror = "1"
+thiserror = "2"
 tracing = "0.1"
 
 linkerd-addr = { path = "../addr" }

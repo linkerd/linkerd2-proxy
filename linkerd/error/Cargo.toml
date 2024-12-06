@@ -10,4 +10,4 @@ publish = false
 futures = { version = "0.3", default-features = false }
 
 [dev-dependencies]
-thiserror = "1"
+thiserror = "2"

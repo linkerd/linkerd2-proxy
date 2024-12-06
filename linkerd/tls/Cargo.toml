@@ -17,7 +17,7 @@ linkerd-identity = { path = "../identity" }
 linkerd-io = { path = "../io" }
 linkerd-stack = { path = "../stack" }
 pin-project = "1"
-thiserror = "1"
+thiserror = "2"
 tokio = { version = "1", features = ["macros", "time"] }
 tower = "0.4"
 tracing = "0.1"
