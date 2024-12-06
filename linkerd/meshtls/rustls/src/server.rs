@@ -7,7 +7,7 @@ use linkerd_tls::{ClientId, NegotiatedProtocol, NegotiatedProtocolRef, ServerNam
 use std::{pin::Pin, sync::Arc, task::Context};
 use thiserror::Error;
 use tokio::sync::watch;
-use tokio_rustls::rustls::{Certificate, ServerConfig};
+use tokio_rustls::rustls::{pki_types::CertificateDer, ServerConfig};
 use tracing::debug;
 
 /// A Service that terminates TLS connections using a dynamically updated server configuration.
@@ -129,7 +129,7 @@ where
 fn client_identity<I>(tls: &tokio_rustls::server::TlsStream<I>) -> Option<ClientId> {
     let (_io, session) = tls.get_ref();
     let certs = session.peer_certificates()?;
-    let c = certs.first().map(Certificate::as_ref)?;
+    let c = certs.first().map(CertificateDer::as_ref)?;
 
     verifier::client_identity(c).map(ClientId)
 }

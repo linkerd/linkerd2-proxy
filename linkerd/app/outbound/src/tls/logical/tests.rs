@@ -17,6 +17,7 @@ use std::{
     time::Duration,
 };
 use tokio::sync::watch;
+use tokio_rustls::rustls::pki_types::DnsName;
 
 mod basic;
 
@@ -171,28 +172,37 @@ fn generate_client_hello(sni: &str) -> Vec<u8> {
     use tokio_rustls::rustls::{
         internal::msgs::{
             base::Payload,
+            codec::{Codec, Reader},
             enums::Compression,
             handshake::{
                 ClientExtension, ClientHelloPayload, HandshakeMessagePayload, HandshakePayload,
-                Random, SessionId,
+                Random, ServerName, SessionId,
             },
             message::{MessagePayload, PlainMessage},
         },
-        server::DnsName,
         CipherSuite, ContentType, HandshakeType, ProtocolVersion,
     };
 
     let sni = DnsName::try_from(sni.to_string()).unwrap();
+    let sni = trim_hostname_trailing_dot_for_sni(&sni);
+
+    let mut server_name_bytes = vec![];
+    0u8.encode(&mut server_name_bytes); // encode the type first
+    (sni.as_ref().len() as u16).encode(&mut server_name_bytes); // then the length as u16
+    server_name_bytes.extend_from_slice(sni.as_ref().as_bytes()); // then the server name itself
+
+    let server_name =
+        ServerName::read(&mut Reader::init(&server_name_bytes)).expect("Server name is valid");
 
     let hs_payload = HandshakeMessagePayload {
         typ: HandshakeType::ClientHello,
         payload: HandshakePayload::ClientHello(ClientHelloPayload {
             client_version: ProtocolVersion::TLSv1_2,
             random: Random::from([0; 32]),
-            session_id: SessionId::empty(),
+            session_id: SessionId::read(&mut Reader::init(&[0])).unwrap(),
             cipher_suites: vec![CipherSuite::TLS_NULL_WITH_NULL_NULL],
             compression_methods: vec![Compression::Null],
-            extensions: vec![ClientExtension::make_sni(sni.borrow())],
+            extensions: vec![ClientExtension::ServerName(vec![server_name])],
         }),
     };
 
@@ -202,8 +212,21 @@ fn generate_client_hello(sni: &str) -> Vec<u8> {
     let message = PlainMessage {
         typ: ContentType::Handshake,
         version: ProtocolVersion::TLSv1_2,
-        payload: Payload(hs_payload_bytes),
+        payload: Payload::Owned(hs_payload_bytes),
     };
 
     message.into_unencrypted_opaque().encode()
+}
+
+fn trim_hostname_trailing_dot_for_sni(dns_name: &DnsName<'_>) -> DnsName<'static> {
+    let dns_name_str = dns_name.as_ref();
+
+    // RFC6066: "The hostname is represented as a byte string using
+    // ASCII encoding without a trailing dot"
+    if dns_name_str.ends_with('.') {
+        let trimmed = &dns_name_str[0..dns_name_str.len() - 1];
+        DnsName::try_from(trimmed).unwrap().to_owned()
+    } else {
+        dns_name.to_owned()
+    }
 }

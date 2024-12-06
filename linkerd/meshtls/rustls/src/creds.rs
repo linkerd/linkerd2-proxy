@@ -27,19 +27,22 @@ pub fn watch(
     roots_pem: &str,
 ) -> Result<(Store, Receiver)> {
     let mut roots = rustls::RootCertStore::empty();
-    let certs = match rustls_pemfile::certs(&mut std::io::Cursor::new(roots_pem)) {
-        Err(error) => {
-            warn!(%error, "invalid trust anchors file");
-            return Err(error.into());
-        }
-        Ok(certs) if certs.is_empty() => {
-            warn!("no valid certs in trust anchors file");
-            return Err("no trust roots in PEM file".into());
-        }
-        Ok(certs) => certs,
-    };
+    let mut certs = vec![];
+    for cert in rustls_pemfile::certs(&mut std::io::Cursor::new(roots_pem)) {
+        match cert {
+            Err(error) => {
+                warn!(%error, "invalid trust anchors file");
+                return Err(error.into());
+            }
+            Ok(cert) => certs.push(cert),
+        };
+    }
+    if certs.is_empty() {
+        warn!("no valid certs in trust anchors file");
+        return Err("no trust roots in PEM file".into());
+    }
 
-    let (added, skipped) = roots.add_parsable_certificates(&certs[..]);
+    let (added, skipped) = roots.add_parsable_certificates(certs);
     if skipped != 0 {
         warn!("Skipped {} invalid trust anchors", skipped);
     }
@@ -115,5 +118,5 @@ mod params {
         rustls::SignatureAlgorithm::ECDSA;
     pub static TLS_VERSIONS: &[&rustls::SupportedProtocolVersion] = &[&rustls::version::TLS13];
     pub static TLS_SUPPORTED_CIPHERSUITES: &[rustls::SupportedCipherSuite] =
-        &[rustls::cipher_suite::TLS13_CHACHA20_POLY1305_SHA256];
+        &[rustls::crypto::ring::cipher_suite::TLS13_CHACHA20_POLY1305_SHA256];
 }
