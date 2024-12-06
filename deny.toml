@@ -66,6 +66,8 @@ skip = [
     { name = "hashbrown", version = "0.12" },
 ]
 skip-tree = [
+    # thiserror v2 is still propagating through the ecosystem
+    { name = "thiserror", version = "1" },
 ]
 
 [sources]
