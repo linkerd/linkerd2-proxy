@@ -121,9 +121,8 @@ impl ClientPolicies {
             .endpoints
             .lock()
             .remove(&addr)
-            .map(|x| {
+            .inspect(|_| {
                 tracing::trace!("found policy for addr");
-                x
             })
             .ok_or_else(|| {
                 tracing::debug!(?addr, "no policy configured for");

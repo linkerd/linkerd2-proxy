@@ -114,7 +114,7 @@ impl ApacheCommon {
     ];
 }
 
-impl<'writer> FormatFields<'writer> for ApacheCommon {
+impl FormatFields<'_> for ApacheCommon {
     fn format_fields<R: RecordFields>(&self, writer: format::Writer<'_>, fields: R) -> fmt::Result {
         let mut visitor = ApacheCommonVisitor {
             writer,

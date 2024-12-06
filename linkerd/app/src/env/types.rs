@@ -113,9 +113,8 @@ pub(super) fn parse_port_range_set(s: &str) -> Result<RangeInclusiveSet<u16>, Pa
             let low = parse_number::<u16>(low)?;
             if let Some(high) = parts.next() {
                 let high = high.trim();
-                let high = parse_number::<u16>(high).map_err(|e| {
+                let high = parse_number::<u16>(high).inspect_err(|_| {
                     error!("Not a valid port range: {part}");
-                    e
                 })?;
                 if high < low {
                     error!("Not a valid port range: {part}; {high} is greater than {low}");

@@ -21,6 +21,7 @@ http = "0.2"
 http-body = "0.4"
 httparse = "1"
 hyper = { version = "0.14", features = [
+    "backports",
     "client",
     "deprecated",
     "http1",
@@ -56,10 +57,13 @@ linkerd-io = { path = "../../io" }
 linkerd-proxy-balance = { path = "../balance" }
 linkerd-stack = { path = "../../stack" }
 
-[target.'cfg(fuzzing)'.dependencies]
-tokio-test = "0.4"
-
 [dev-dependencies]
 tokio-test = "0.4"
 tower-test = "0.4"
 linkerd-tracing = { path = "../../tracing", features = ["ansi"] }
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(fuzzing)'] }
+
+[target.'cfg(fuzzing)'.dependencies]
+tokio-test = "0.4"

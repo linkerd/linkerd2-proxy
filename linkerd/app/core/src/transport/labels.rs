@@ -120,7 +120,7 @@ impl<'t> From<&'t tls::ConditionalServerTls> for TlsAccept<'t> {
     }
 }
 
-impl<'t> FmtLabels for TlsAccept<'t> {
+impl FmtLabels for TlsAccept<'_> {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
             Conditional::None(tls::NoServerTls::Disabled) => {
@@ -148,7 +148,7 @@ impl<'t> From<&'t tls::ConditionalClientTls> for TlsConnect<'t> {
     }
 }
 
-impl<'t> FmtLabels for TlsConnect<'t> {
+impl FmtLabels for TlsConnect<'_> {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
             Conditional::None(tls::NoClientTls::Disabled) => {

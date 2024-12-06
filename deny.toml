@@ -1,3 +1,4 @@
+[graph]
 targets = [
     { triple = "x86_64-unknown-linux-gnu" },
     { triple = "aarch64-unknown-linux-gnu" },
@@ -7,10 +8,6 @@ targets = [
 [advisories]
 db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/rustsec/advisory-db"]
-vulnerability = "deny"
-unmaintained = "warn"
-yanked = "deny"
-notice = "warn"
 ignore = []
 
 [licenses]
@@ -21,12 +18,7 @@ allow = [
     "ISC",
     "MIT",
     "Unicode-3.0",
-    "Unicode-DFS-2016",
 ]
-deny = []
-copyleft = "deny"
-allow-osi-fsf-free = "neither"
-default = "deny"
 # Ignore local workspace license values for unpublished crates.
 private = { ignore = true }
 confidence-threshold = 0.8
@@ -60,18 +52,10 @@ deny = [
     { name = "webpki" },
 ]
 skip = [
-    # The proc-macro ecosystem is in the middle of a migration from `syn` v1 to
-    # `syn` v2. Allow both versions to coexist peacefully for now.
-    #
-    # Since `syn` is used by proc-macros (executed at compile time), duplicate
-    # versions won't have an impact on the final binary size.
-    { name = "syn" },
-    # `tonic` v0.6 depends on `bitflags` v1.x, while `boring-sys` depends on
-    # `bitflags` v2.x. Allow both versions to coexist peacefully for now.
-    { name = "bitflags", version = "1" },
     # `linkerd-trace-context`, `rustls-pemfile` and `tonic` depend on `base64`
     # v0.13.1 while `rcgen` depends on v0.21.5
     { name = "base64" },
+    { name = "bitflags", version = "1" },
     # https://github.com/hawkw/matchers/pull/4
     { name = "regex-automata", version = "0.1" },
     { name = "regex-syntax", version = "0.6" },
@@ -82,17 +66,9 @@ skip = [
     { name = "hashbrown", version = "0.12" },
 ]
 skip-tree = [
-    # right now we have a mix of versions of this crate in the ecosystem
-    # procfs uses 0.36.14, tempfile uses 0.37.4
-    { name = "rustix" },
-    # Hyper v0.14 depends on an older socket2 version.
-    { name = "socket2" },
 ]
 
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-
-[sources.allow-org]
-github = ["linkerd"]

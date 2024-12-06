@@ -94,6 +94,7 @@ where
         // If the routes have been updated, update the cache.
         if let Poll::Ready(Some(Profile { http_routes, .. })) = self.rx.poll_next_unpin(cx) {
             debug!(routes = %http_routes.len(), "Updating HTTP routes");
+            #[allow(clippy::mutable_key_type)]
             let routes = http_routes
                 .iter()
                 .map(|(_, r)| r.clone())

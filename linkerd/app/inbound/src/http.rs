@@ -74,7 +74,14 @@ pub mod fuzz {
                             .header(header_name, header_value)
                             .body(Body::default())
                         {
-                            let rsp = http_util::http_request(&mut client, req).await;
+                            let rsp = client
+                                .ready()
+                                .await
+                                .expect("HTTP client poll_ready failed")
+                                .call(req)
+                                .await
+                                .expect("HTTP client request failed");
+                            tracing::info!(?rsp);
                             tracing::info!(?rsp);
                             if let Ok(rsp) = rsp {
                                 let body = http_util::body_to_string(rsp.into_body()).await;

@@ -184,12 +184,8 @@ fn to_http2_client_params(pb: Http2ClientParams) -> linkerd_http_h2::ClientParam
             })
         }),
         keep_alive: pb.keep_alive.and_then(|pb| {
-            let Some(interval) = pb.interval.and_then(|pb| Duration::try_from(pb).ok()) else {
-                return None;
-            };
-            let Some(timeout) = pb.timeout.and_then(|pb| Duration::try_from(pb).ok()) else {
-                return None;
-            };
+            let interval = pb.interval.and_then(|pb| Duration::try_from(pb).ok())?;
+            let timeout = pb.timeout.and_then(|pb| Duration::try_from(pb).ok())?;
             Some(h2::ClientKeepAlive {
                 interval,
                 timeout,

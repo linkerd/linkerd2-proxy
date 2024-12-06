@@ -41,7 +41,7 @@ pub struct Name(Arc<str>);
 /// allowed.
 ///
 /// [RFC 5280 Section 7.2]: https://tools.ietf.org/html/rfc5280#section-7.2
-#[derive(Clone, Copy, Debug, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Eq)]
 pub struct NameRef<'a>(&'a str);
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Error)]

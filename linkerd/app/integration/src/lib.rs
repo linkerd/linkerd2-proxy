@@ -73,7 +73,7 @@ pub type Error = Box<dyn std::error::Error + Send + Sync + 'static>;
 macro_rules! assert_eventually {
     ($cond:expr, retries: $retries:expr, $($arg:tt)+) => {
         {
-            use std::{env, u64};
+            use std::{env};
             use std::str::FromStr;
             use tokio::time::{Instant, Duration};
             use tracing::Instrument as _;

@@ -211,12 +211,8 @@ where
     debug!(sz, "Peeked bytes from TCP stream");
     // Peek may return 0 bytes if the socket is not peekable.
     if sz > 0 {
-        match client_hello::parse_sni(buf.as_ref()) {
-            Ok(sni) => {
-                return Ok((sni, EitherIo::Left(io)));
-            }
-
-            Err(client_hello::Incomplete) => {}
+        if let Ok(sni) = client_hello::parse_sni(buf.as_ref()) {
+            return Ok((sni, EitherIo::Left(io)));
         }
     }
 

@@ -1,11 +1,10 @@
 use crate::{
-    app_core::{svc, tls, Error},
+    app_core::{svc, Error},
     io, ContextError,
 };
 use futures::FutureExt;
-use hyper::{body::HttpBody, Body, Request, Response};
-use parking_lot::Mutex;
-use std::{future::Future, sync::Arc};
+use hyper::{body::HttpBody, Body};
+use std::future::Future;
 use tokio::task::JoinHandle;
 use tower::{util::ServiceExt, Service};
 use tracing::Instrument;
@@ -13,32 +12,9 @@ use tracing::Instrument;
 #[allow(deprecated)] // linkerd/linkerd2#8733
 use hyper::client::conn::{Builder as ClientBuilder, SendRequest};
 
-pub struct Server {
-    #[allow(deprecated)] // linkerd/linkerd2#8733
-    settings: hyper::server::conn::Http,
-    f: HandleFuture,
-}
-
-type HandleFuture = Box<dyn (FnMut(Request<Body>) -> Result<Response<Body>, Error>) + Send>;
-
 type BoxServer = svc::BoxTcp<io::DuplexStream>;
 
-impl Default for Server {
-    fn default() -> Self {
-        Self {
-            #[allow(deprecated)] // linkerd/linkerd2#8733
-            settings: hyper::server::conn::Http::new(),
-            f: Box::new(|_| {
-                Ok(Response::builder()
-                    .status(http::status::StatusCode::NOT_FOUND)
-                    .body(Body::empty())
-                    .expect("known status code is fine"))
-            }),
-        }
-    }
-}
-
-pub async fn run_proxy(mut server: BoxServer) -> (io::DuplexStream, JoinHandle<Result<(), Error>>) {
+async fn run_proxy(mut server: BoxServer) -> (io::DuplexStream, JoinHandle<Result<(), Error>>) {
     let (client_io, server_io) = io::duplex(4096);
     let f = server
         .ready()
@@ -58,7 +34,7 @@ pub async fn run_proxy(mut server: BoxServer) -> (io::DuplexStream, JoinHandle<R
 }
 
 #[allow(deprecated)] // linkerd/linkerd2#8733
-pub async fn connect_client(
+async fn connect_client(
     client_settings: &mut ClientBuilder,
     io: io::DuplexStream,
 ) -> (SendRequest<Body>, JoinHandle<Result<(), Error>>) {
@@ -97,80 +73,20 @@ pub async fn connect_and_accept(
     (client, bg)
 }
 
-#[tracing::instrument(skip(client))]
-#[allow(deprecated)] // linkerd/linkerd2#8733
-pub async fn http_request(
-    client: &mut SendRequest<Body>,
-    request: Request<Body>,
-) -> Result<Response<Body>, Error> {
-    let rsp = client
-        .ready()
-        .await
-        .map_err(ContextError::ctx("HTTP client poll_ready failed"))?
-        .call(request)
-        .await
-        .map_err(ContextError::ctx("HTTP client request failed"))?;
-
-    tracing::info!(?rsp);
-
-    Ok(rsp)
-}
-
+/// Collects a request or response body, returning it as a [`String`].
 pub async fn body_to_string<T>(body: T) -> Result<String, Error>
 where
     T: HttpBody,
     T::Error: Into<Error>,
 {
-    let body = body
+    let bytes = body
         .collect()
         .await
         .map(http_body::Collected::to_bytes)
-        .map_err(ContextError::ctx("HTTP response body stream failed"))?;
-    let body = std::str::from_utf8(&body[..])
-        .map_err(ContextError::ctx("converting body to string failed"))?
-        .to_owned();
-    Ok(body)
-}
+        .map_err(ContextError::ctx("HTTP response body stream failed"))?
+        .to_vec();
 
-impl Server {
-    pub fn http1(mut self) -> Self {
-        self.settings.http1_only(true);
-        self
-    }
-
-    pub fn http2(mut self) -> Self {
-        self.settings.http2_only(true);
-        self
-    }
-
-    pub fn new(mut f: impl (FnMut(Request<Body>) -> Response<Body>) + Send + 'static) -> Self {
-        Self {
-            f: Box::new(move |req| Ok::<_, Error>(f(req))),
-            ..Default::default()
-        }
-    }
-
-    pub fn run<E>(self) -> impl (FnMut(E) -> io::Result<io::BoxedIo>) + Send + 'static
-    where
-        E: std::fmt::Debug,
-        E: svc::Param<tls::ConditionalClientTls>,
-    {
-        let Self { f, settings } = self;
-        let f = Arc::new(Mutex::new(f));
-        move |endpoint| {
-            let span = tracing::debug_span!("server::run", ?endpoint).or_current();
-            let _e = span.enter();
-            let f = f.clone();
-            let (client_io, server_io) = crate::io::duplex(4096);
-            let svc = hyper::service::service_fn(move |request: Request<Body>| {
-                let f = f.clone();
-                async move {
-                    tracing::info!(?request);
-                    f.lock()(request)
-                }
-            });
-            tokio::spawn(settings.serve_connection(server_io, svc).in_current_span());
-            Ok(io::BoxedIo::new(client_io))
-        }
-    }
+    String::from_utf8(bytes)
+        .map_err(ContextError::ctx("converting body to string failed"))
+        .map_err(Into::into)
 }
