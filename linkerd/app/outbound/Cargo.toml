@@ -15,6 +15,8 @@ allow-loopback = []
 test-subscriber = []
 test-util = ["linkerd-app-test", "linkerd-meshtls-rustls/test-util"]
 
+prometheus-client-rust-242 = [] # TODO
+
 [dependencies]
 ahash = "0.8"
 bytes = "1"
@@ -67,3 +69,6 @@ linkerd-meshtls-rustls = { path = "../../meshtls/rustls", features = [
 ] }
 linkerd-stack = { path = "../../stack", features = ["test-util"] }
 linkerd-tracing = { path = "../../tracing", features = ["ansi"] }
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(fuzzing)'] }

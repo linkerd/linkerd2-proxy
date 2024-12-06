@@ -26,3 +26,6 @@ libfuzzer-sys = { version = "0.4", features = ["arbitrary-derive"] }
 prost-build = { version = "0.12", default-features = false }
 tokio = { version = "1", features = ["macros"] }
 tokio-test = "0.4"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(fuzzing)'] }

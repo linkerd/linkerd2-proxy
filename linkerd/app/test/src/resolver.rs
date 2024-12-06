@@ -136,9 +136,8 @@ impl<T: Param<ConcreteAddr>, E> tower::Service<T> for Dst<E> {
             .endpoints
             .lock()
             .remove(&addr)
-            .map(|x| {
+            .inspect(|_| {
                 tracing::trace!("found endpoint for target");
-                x
             })
             .unwrap_or_else(|| {
                 tracing::debug!(?addr, "no endpoint configured for");
@@ -188,9 +187,8 @@ impl Profiles {
             .endpoints
             .lock()
             .remove(&addr)
-            .map(|x| {
+            .inspect(|_| {
                 tracing::trace!("found endpoint for addr");
-                x
             })
             .unwrap_or_else(|| {
                 tracing::debug!(?addr, "no endpoint configured for");

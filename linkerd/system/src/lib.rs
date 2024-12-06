@@ -1,11 +1,6 @@
 //! Unsafe code for accessing system-level counters for memory & CPU usage.
 
-#![deny(
-    rust_2018_idioms,
-    rust_2018_idioms,
-    clippy::disallowed_methods,
-    unsafe_code
-)]
+#![deny(rust_2018_idioms, clippy::disallowed_methods, unsafe_code)]
 
 #[cfg(target_os = "linux")]
 mod linux;

@@ -423,7 +423,7 @@ impl FmtLabels for Direction {
     }
 }
 
-impl<'a> FmtLabels for Authority<'a> {
+impl FmtLabels for Authority<'_> {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "authority=\"{}\"", self.0)
     }

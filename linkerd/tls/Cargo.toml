@@ -26,3 +26,6 @@ untrusted = "0.9"
 [dev-dependencies]
 linkerd-tracing = { path = "../tracing", features = ["ansi"] }
 tokio = { version = "1", features = ["rt-multi-thread"] }
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(fuzzing)'] }

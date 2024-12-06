@@ -15,10 +15,6 @@ use linkerd_http_retry::{self as retry, peek_trailers::PeekTrailersBody};
 use linkerd_proxy_client_policy as policy;
 use tokio::time;
 
-// A request extension that marks that a request is a retry.
-#[derive(Copy, Clone, Debug)]
-pub struct IsRetry(());
-
 pub type NewHttpRetry<F, N> =
     retry::NewHttpRetry<RetryPolicy, RouteLabels, F, RouteLabelExtract, N>;
 
