@@ -15,7 +15,7 @@ use linkerd_app_core::{
     svc::{self, http::TracingExecutor, NewService, Param},
     tls,
     transport::{ClientAddr, OrigDstAddr, Remote, ServerAddr},
-    NameAddr, ProxyRuntime,
+    Error, NameAddr, ProxyRuntime,
 };
 use linkerd_app_test::connect::ConnectFuture;
 use linkerd_tracing::test::trace_init;
@@ -80,7 +80,12 @@ async fn unmeshed_http1_hello_world() {
     let body = http_util::body_to_string(rsp.into_body()).await.unwrap();
     assert_eq!(body, "Hello world!");
 
-    bg.await.expect("background task failed");
+    // Wait for all of the background tasks to complete, panicking if any returned an error.
+    bg.join_all()
+        .await
+        .into_iter()
+        .collect::<Result<Vec<()>, Error>>()
+        .expect("background task failed");
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -122,7 +127,12 @@ async fn downgrade_origin_form() {
     let body = http_util::body_to_string(rsp.into_body()).await.unwrap();
     assert_eq!(body, "Hello world!");
 
-    bg.await.expect("background task failed");
+    // Wait for all of the background tasks to complete, panicking if any returned an error.
+    bg.join_all()
+        .await
+        .into_iter()
+        .collect::<Result<Vec<()>, Error>>()
+        .expect("background task failed");
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -163,7 +173,12 @@ async fn downgrade_absolute_form() {
     let body = http_util::body_to_string(rsp.into_body()).await.unwrap();
     assert_eq!(body, "Hello world!");
 
-    bg.await.expect("background task failed");
+    // Wait for all of the background tasks to complete, panicking if any returned an error.
+    bg.join_all()
+        .await
+        .into_iter()
+        .collect::<Result<Vec<()>, Error>>()
+        .expect("background task failed");
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -205,7 +220,12 @@ async fn http1_bad_gateway_meshed_response_error_header() {
     // logical error context is added.
     check_error_header(rsp.headers(), "server is not listening");
 
-    bg.await.expect("background task failed");
+    // Wait for all of the background tasks to complete, panicking if any returned an error.
+    bg.join_all()
+        .await
+        .into_iter()
+        .collect::<Result<Vec<()>, Error>>()
+        .expect("background task failed");
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -246,7 +266,12 @@ async fn http1_bad_gateway_unmeshed_response() {
         "response must not contain L5D_PROXY_ERROR header"
     );
 
-    bg.await.expect("background task failed");
+    // Wait for all of the background tasks to complete, panicking if any returned an error.
+    bg.join_all()
+        .await
+        .into_iter()
+        .collect::<Result<Vec<()>, Error>>()
+        .expect("background task failed");
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -291,7 +316,12 @@ async fn http1_connect_timeout_meshed_response_error_header() {
     // logical error context is added.
     check_error_header(rsp.headers(), "connect timed out after 1s");
 
-    bg.await.expect("background task failed");
+    // Wait for all of the background tasks to complete, panicking if any returned an error.
+    bg.join_all()
+        .await
+        .into_iter()
+        .collect::<Result<Vec<()>, Error>>()
+        .expect("background task failed");
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -334,7 +364,12 @@ async fn http1_connect_timeout_unmeshed_response_error_header() {
         "response must not contain L5D_PROXY_ERROR header"
     );
 
-    bg.await.expect("background task failed");
+    // Wait for all of the background tasks to complete, panicking if any returned an error.
+    bg.join_all()
+        .await
+        .into_iter()
+        .collect::<Result<Vec<()>, Error>>()
+        .expect("background task failed");
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -376,7 +411,7 @@ async fn h2_response_meshed_error_header() {
     // Drop the client and discard the result of awaiting the proxy background
     // task. The result is discarded because it hits an error that is related
     // to the mock implementation and has no significance to the test.
-    let _ = bg.await;
+    let _ = bg.join_all().await;
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -420,7 +455,7 @@ async fn h2_response_unmeshed_error_header() {
     // Drop the client and discard the result of awaiting the proxy background
     // task. The result is discarded because it hits an error that is related
     // to the mock implementation and has no significance to the test.
-    let _ = bg.await;
+    let _ = bg.join_all().await;
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -463,7 +498,7 @@ async fn grpc_meshed_response_error_header() {
     // Drop the client and discard the result of awaiting the proxy background
     // task. The result is discarded because it hits an error that is related
     // to the mock implementation and has no significance to the test.
-    let _ = bg.await;
+    let _ = bg.join_all().await;
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -508,7 +543,7 @@ async fn grpc_unmeshed_response_error_header() {
     // Drop the client and discard the result of awaiting the proxy background
     // task. The result is discarded because it hits an error that is related
     // to the mock implementation and has no significance to the test.
-    let _ = bg.await;
+    let _ = bg.join_all().await;
 }
 
 #[tokio::test(flavor = "current_thread")]
