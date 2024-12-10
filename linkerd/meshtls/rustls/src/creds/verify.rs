@@ -1,3 +1,4 @@
+use crate::creds::params::SUPPORTED_SIG_ALGS;
 use std::{convert::TryFrom, sync::Arc};
 use tokio_rustls::rustls::{
     self,
@@ -5,7 +6,6 @@ use tokio_rustls::rustls::{
         self,
         danger::{ServerCertVerified, ServerCertVerifier},
     },
-    crypto::WebPkiSupportedAlgorithms,
     pki_types::{CertificateDer, ServerName, UnixTime},
     server::ParsedCertificate,
     RootCertStore,
@@ -15,14 +15,12 @@ use tracing::trace;
 #[derive(Debug)]
 pub(crate) struct AnySanVerifier {
     roots: Arc<RootCertStore>,
-    supported: WebPkiSupportedAlgorithms,
 }
 
 impl AnySanVerifier {
     pub(crate) fn new(roots: impl Into<Arc<RootCertStore>>) -> Self {
         Self {
             roots: roots.into(),
-            supported: rustls::crypto::ring::default_provider().signature_verification_algorithms,
         }
     }
 }
@@ -30,7 +28,7 @@ impl AnySanVerifier {
 // This is derived from `rustls::client::WebPkiServerVerifier`.
 //
 //   Copyright (c) 2016, Joseph Birr-Pixton <jpixton@gmail.com>
-// https://github.com/rustls/rustls/blob/ccb79947a4811412ee7dcddcd0f51ea56bccf101/rustls/src/webpki/server_verifier.rs#L239
+// https://github.com/rustls/rustls/blob/v/0.23.15/rustls/src/webpki/server_verifier.rs#L134
 //
 // The only difference is that we omit the step that performs
 // DNS SAN validation. The reason for that stems from the fact that
@@ -55,7 +53,7 @@ impl ServerCertVerifier for AnySanVerifier {
             &self.roots,
             intermediates,
             now,
-            self.supported.all,
+            SUPPORTED_SIG_ALGS.all,
         )?;
 
         if !ocsp_response.is_empty() {
@@ -71,7 +69,7 @@ impl ServerCertVerifier for AnySanVerifier {
         cert: &CertificateDer<'_>,
         dss: &rustls::DigitallySignedStruct,
     ) -> Result<client::danger::HandshakeSignatureValid, rustls::Error> {
-        tokio_rustls::rustls::crypto::verify_tls12_signature(message, cert, dss, &self.supported)
+        tokio_rustls::rustls::crypto::verify_tls12_signature(message, cert, dss, SUPPORTED_SIG_ALGS)
     }
 
     fn verify_tls13_signature(
@@ -80,10 +78,10 @@ impl ServerCertVerifier for AnySanVerifier {
         cert: &CertificateDer<'_>,
         dss: &rustls::DigitallySignedStruct,
     ) -> Result<client::danger::HandshakeSignatureValid, rustls::Error> {
-        tokio_rustls::rustls::crypto::verify_tls13_signature(message, cert, dss, &self.supported)
+        tokio_rustls::rustls::crypto::verify_tls13_signature(message, cert, dss, SUPPORTED_SIG_ALGS)
     }
 
     fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
-        self.supported.supported_schemes()
+        SUPPORTED_SIG_ALGS.supported_schemes()
     }
 }

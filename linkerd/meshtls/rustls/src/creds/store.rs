@@ -1,4 +1,4 @@
-use super::{params::*, InvalidKey};
+use super::{default_provider, params::*, InvalidKey};
 use linkerd_dns_name as dns;
 use linkerd_error::Result;
 use linkerd_identity as id;
@@ -28,10 +28,7 @@ struct CertResolver(Arc<rustls::sign::CertifiedKey>);
 pub(super) fn client_config_builder(
     cert_verifier: Arc<dyn rustls::client::danger::ServerCertVerifier>,
 ) -> rustls::ConfigBuilder<rustls::ClientConfig, rustls::client::WantsClientCert> {
-    let mut provider = rustls::crypto::ring::default_provider();
-    provider.cipher_suites = TLS_SUPPORTED_CIPHERSUITES.to_vec();
-
-    rustls::ClientConfig::builder_with_provider(provider.into())
+    rustls::ClientConfig::builder_with_provider(Arc::new(default_provider()))
         .with_protocol_versions(TLS_VERSIONS)
         .expect("client config must be valid")
         // XXX: Rustls's built-in verifiers don't let us tweak things as fully
@@ -58,9 +55,7 @@ pub(super) fn server_config(
     // controlling the set of trusted signature algorithms), but they provide good enough
     // defaults for now.
     // TODO: lock down the verification further.
-    let mut provider = rustls::crypto::ring::default_provider();
-    provider.cipher_suites = TLS_SUPPORTED_CIPHERSUITES.to_vec();
-    let provider = Arc::new(provider);
+    let provider = Arc::new(default_provider());
 
     let client_cert_verifier =
         WebPkiClientVerifier::builder_with_provider(Arc::new(roots), provider.clone())
