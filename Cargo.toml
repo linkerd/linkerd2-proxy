@@ -98,5 +98,5 @@ lto = true
 
 [workspace.dependencies]
 linkerd2-proxy-api = "0.15.0"
-tokio-rustls = { version = "0.26", default_features = false, features = ["ring", "logging"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "logging"] }
 # linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api.git", branch = "main" }
