@@ -15,7 +15,7 @@ governor = { version = "0.7", default-features = false, features = ["std"] }
 ipnet = "2"
 http = "0.2"
 prost-types = { version = "0.12", optional = true }
-thiserror = "1"
+thiserror = "2"
 
 linkerd-http-route = { path = "../../http/route" }
 linkerd-identity = { path = "../../identity" }

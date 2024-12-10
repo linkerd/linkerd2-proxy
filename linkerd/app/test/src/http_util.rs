@@ -2,11 +2,9 @@ use crate::{
     app_core::{svc, Error},
     io, ContextError,
 };
-use futures::FutureExt;
 use hyper::{body::HttpBody, Body};
-use std::future::Future;
-use tokio::task::JoinHandle;
-use tower::{util::ServiceExt, Service};
+use tokio::task::JoinSet;
+use tower::ServiceExt;
 use tracing::Instrument;
 
 #[allow(deprecated)] // linkerd/linkerd2#8733
@@ -14,62 +12,46 @@ use hyper::client::conn::{Builder as ClientBuilder, SendRequest};
 
 type BoxServer = svc::BoxTcp<io::DuplexStream>;
 
-async fn run_proxy(mut server: BoxServer) -> (io::DuplexStream, JoinHandle<Result<(), Error>>) {
-    let (client_io, server_io) = io::duplex(4096);
-    let f = server
-        .ready()
-        .await
-        .expect("proxy server failed to become ready")
-        .call(server_io);
-
-    let proxy = async move {
-        let res = f.await.map_err(Into::into);
-        drop(server);
-        tracing::debug!("dropped server");
-        tracing::info!(?res, "proxy serve task complete");
-        res.map(|_| ())
-    }
-    .instrument(tracing::info_span!("proxy"));
-    (client_io, tokio::spawn(proxy))
-}
-
-#[allow(deprecated)] // linkerd/linkerd2#8733
-async fn connect_client(
-    client_settings: &mut ClientBuilder,
-    io: io::DuplexStream,
-) -> (SendRequest<Body>, JoinHandle<Result<(), Error>>) {
-    let (client, conn) = client_settings
-        .handshake(io)
-        .await
-        .expect("Client must connect");
-    let client_bg = conn
-        .map(|res| {
-            tracing::info!(?res, "Client background complete");
-            res.map_err(Into::into)
-        })
-        .instrument(tracing::info_span!("client_bg"));
-    (client, tokio::spawn(client_bg))
-}
-
+/// Connects a client and server, running a proxy between them.
+///
+/// Returns a tuple containing (1) a [`SendRequest`] that can be used to transmit a request and
+/// await a response, and (2) a [`JoinSet<T>`] running background tasks.
 #[allow(deprecated)] // linkerd/linkerd2#8733
 pub async fn connect_and_accept(
     client_settings: &mut ClientBuilder,
     server: BoxServer,
-) -> (SendRequest<Body>, impl Future<Output = Result<(), Error>>) {
+) -> (SendRequest<Body>, JoinSet<Result<(), Error>>) {
     tracing::info!(settings = ?client_settings, "connecting client with");
-    let (client_io, proxy) = run_proxy(server).await;
-    let (client, client_bg) = connect_client(client_settings, client_io).await;
-    let bg = async move {
-        proxy
-            .await
-            .expect("proxy background task panicked")
-            .map_err(ContextError::ctx("proxy background task failed"))?;
-        client_bg
-            .await
-            .expect("client background task panicked")
-            .map_err(ContextError::ctx("client background task failed"))?;
-        Ok(())
-    };
+    let (client_io, server_io) = io::duplex(4096);
+
+    let (client, conn) = client_settings
+        .handshake(client_io)
+        .await
+        .expect("Client must connect");
+
+    let mut bg = tokio::task::JoinSet::new();
+    bg.spawn(
+        async move {
+            server
+                .oneshot(server_io)
+                .await
+                .map_err(ContextError::ctx("proxy background task failed"))?;
+            tracing::info!("proxy serve task complete");
+            Ok(())
+        }
+        .instrument(tracing::info_span!("proxy")),
+    );
+    bg.spawn(
+        async move {
+            conn.await
+                .map_err(ContextError::ctx("client background task failed"))
+                .map_err(Error::from)?;
+            tracing::info!("client background complete");
+            Ok(())
+        }
+        .instrument(tracing::info_span!("client_bg")),
+    );
+
     (client, bg)
 }
 
