@@ -5,7 +5,7 @@ use linkerd_app_core::metrics::OutboundZoneLocality;
 use linkerd_app_core::{
     io,
     proxy::api_resolve::ProtocolHint,
-    svc::{NewService, ServiceExt},
+    svc::{http::TracingExecutor, NewService, ServiceExt},
     Infallible,
 };
 use std::net::SocketAddr;
@@ -239,16 +239,21 @@ fn serve(version: ::http::Version) -> io::Result<io::BoxedIo> {
         future::ok::<_, Infallible>(rsp.body(hyper::Body::default()).unwrap())
     });
 
-    #[allow(deprecated)] // linkerd/linkerd2#8733
-    let mut http = hyper::server::conn::Http::new();
+    let (client_io, server_io) = io::duplex(4096);
     match version {
-        ::http::Version::HTTP_10 | ::http::Version::HTTP_11 => http.http1_only(true),
-        ::http::Version::HTTP_2 => http.http2_only(true),
+        ::http::Version::HTTP_10 | ::http::Version::HTTP_11 => {
+            let http = hyper::server::conn::http1::Builder::new();
+            let fut = http.serve_connection(server_io, svc);
+            tokio::spawn(fut);
+        }
+        ::http::Version::HTTP_2 => {
+            let http = hyper::server::conn::http2::Builder::new(TracingExecutor);
+            let fut = http.serve_connection(server_io, svc);
+            tokio::spawn(fut);
+        }
         _ => unreachable!("unsupported HTTP version {:?}", version),
     };
 
-    let (client_io, server_io) = io::duplex(4096);
-    tokio::spawn(http.serve_connection(server_io, svc));
     Ok(io::BoxedIo::new(client_io))
 }
 

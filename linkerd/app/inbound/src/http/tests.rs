@@ -651,7 +651,6 @@ fn hello_server(
 }
 
 #[tracing::instrument]
-#[allow(deprecated)] // linkerd/linkerd2#8733
 fn grpc_status_server(
     server: hyper::server::conn::http2::Builder<TracingExecutor>,
     status: tonic::Code,
