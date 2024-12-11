@@ -48,8 +48,7 @@ where
 #[tokio::test(flavor = "current_thread")]
 async fn unmeshed_http1_hello_world() {
     let server = hyper::server::conn::http1::Builder::new();
-    #[allow(deprecated)] // linkerd/linkerd2#8733
-    let mut client = hyper::client::conn::Builder::new();
+    let mut client = hyper::client::conn::http1::Builder::new();
     let _trace = trace_init();
 
     // Build a mock "connector" that returns the upstream "server" IO.
@@ -64,7 +63,7 @@ async fn unmeshed_http1_hello_world() {
     let cfg = default_config();
     let (rt, _shutdown) = runtime();
     let server = build_server(cfg, rt, profiles, connect).new_service(Target::UNMESHED_HTTP1);
-    let (client, bg) = http_util::connect_and_accept(&mut client, server).await;
+    let (mut client, bg) = http_util::connect_and_accept_http1(&mut client, server).await;
 
     let req = Request::builder()
         .method(http::Method::GET)
@@ -72,7 +71,7 @@ async fn unmeshed_http1_hello_world() {
         .body(Body::default())
         .unwrap();
     let rsp = client
-        .oneshot(req)
+        .send_request(req)
         .await
         .expect("HTTP client request failed");
     tracing::info!(?rsp);
