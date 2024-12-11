@@ -199,7 +199,7 @@ async fn http1_bad_gateway_meshed_response_error_header() {
     let cfg = default_config();
     let (rt, _shutdown) = runtime();
     let server = build_server(cfg, rt, profiles, connect).new_service(Target::meshed_http1());
-    let (client, bg) = http_util::connect_and_accept(&mut client, server).await;
+    let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;
 
     // Send a request and assert that it is a BAD_GATEWAY with the expected
     // header message.
@@ -209,7 +209,7 @@ async fn http1_bad_gateway_meshed_response_error_header() {
         .body(Body::default())
         .unwrap();
     let rsp = client
-        .oneshot(req)
+        .send_request(req)
         .await
         .expect("HTTP client request failed");
     tracing::info!(?rsp);
@@ -380,9 +380,7 @@ async fn h2_response_meshed_error_header() {
     let connect = support::connect().endpoint_fn_boxed(Target::addr(), connect_error());
 
     // Build a client using the connect that always errors.
-    #[allow(deprecated)] // linkerd/linkerd2#8733
-    let mut client = hyper::client::conn::Builder::new();
-    client.http2_only(true);
+    let mut client = hyper::client::conn::http2::Builder::new(TracingExecutor);
     let profiles = profile::resolver();
     let profile_tx =
         profiles.profile_tx(NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap());
@@ -390,7 +388,7 @@ async fn h2_response_meshed_error_header() {
     let cfg = default_config();
     let (rt, _shutdown) = runtime();
     let server = build_server(cfg, rt, profiles, connect).new_service(Target::meshed_h2());
-    let (client, bg) = http_util::connect_and_accept(&mut client, server).await;
+    let (mut client, bg) = http_util::connect_and_accept_http2(&mut client, server).await;
 
     // Send a request and assert that it is SERVICE_UNAVAILABLE with the
     // expected header message.
@@ -400,7 +398,7 @@ async fn h2_response_meshed_error_header() {
         .body(Body::default())
         .unwrap();
     let rsp = client
-        .oneshot(req)
+        .send_request(req)
         .await
         .expect("HTTP client request failed");
     tracing::info!(?rsp);
@@ -422,9 +420,7 @@ async fn h2_response_unmeshed_error_header() {
     let connect = support::connect().endpoint_fn_boxed(Target::addr(), connect_error());
 
     // Build a client using the connect that always errors.
-    #[allow(deprecated)] // linkerd/linkerd2#8733
-    let mut client = hyper::client::conn::Builder::new();
-    client.http2_only(true);
+    let mut client = hyper::client::conn::http2::Builder::new(TracingExecutor);
     let profiles = profile::resolver();
     let profile_tx =
         profiles.profile_tx(NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap());
@@ -432,7 +428,7 @@ async fn h2_response_unmeshed_error_header() {
     let cfg = default_config();
     let (rt, _shutdown) = runtime();
     let server = build_server(cfg, rt, profiles, connect).new_service(Target::UNMESHED_H2);
-    let (client, bg) = http_util::connect_and_accept(&mut client, server).await;
+    let (mut client, bg) = http_util::connect_and_accept_http2(&mut client, server).await;
 
     // Send a request and assert that it is SERVICE_UNAVAILABLE with the
     // expected header message.
@@ -442,7 +438,7 @@ async fn h2_response_unmeshed_error_header() {
         .body(Body::default())
         .unwrap();
     let rsp = client
-        .oneshot(req)
+        .send_request(req)
         .await
         .expect("HTTP client request failed");
     tracing::info!(?rsp);
@@ -466,9 +462,7 @@ async fn grpc_meshed_response_error_header() {
     let connect = support::connect().endpoint_fn_boxed(Target::addr(), connect_error());
 
     // Build a client using the connect that always errors.
-    #[allow(deprecated)] // linkerd/linkerd2#8733
-    let mut client = hyper::client::conn::Builder::new();
-    client.http2_only(true);
+    let mut client = hyper::client::conn::http2::Builder::new(TracingExecutor);
     let profiles = profile::resolver();
     let profile_tx =
         profiles.profile_tx(NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap());
@@ -476,7 +470,7 @@ async fn grpc_meshed_response_error_header() {
     let cfg = default_config();
     let (rt, _shutdown) = runtime();
     let server = build_server(cfg, rt, profiles, connect).new_service(Target::meshed_h2());
-    let (client, bg) = http_util::connect_and_accept(&mut client, server).await;
+    let (mut client, bg) = http_util::connect_and_accept_http2(&mut client, server).await;
 
     // Send a request and assert that it is OK with the expected header
     // message.
@@ -487,7 +481,7 @@ async fn grpc_meshed_response_error_header() {
         .body(Body::default())
         .unwrap();
     let rsp = client
-        .oneshot(req)
+        .send_request(req)
         .await
         .expect("HTTP client request failed");
     tracing::info!(?rsp);
@@ -509,9 +503,7 @@ async fn grpc_unmeshed_response_error_header() {
     let connect = support::connect().endpoint_fn_boxed(Target::addr(), connect_error());
 
     // Build a client using the connect that always errors.
-    #[allow(deprecated)] // linkerd/linkerd2#8733
-    let mut client = hyper::client::conn::Builder::new();
-    client.http2_only(true);
+    let mut client = hyper::client::conn::http2::Builder::new(TracingExecutor);
     let profiles = profile::resolver();
     let profile_tx =
         profiles.profile_tx(NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap());
@@ -519,7 +511,7 @@ async fn grpc_unmeshed_response_error_header() {
     let cfg = default_config();
     let (rt, _shutdown) = runtime();
     let server = build_server(cfg, rt, profiles, connect).new_service(Target::UNMESHED_H2);
-    let (client, bg) = http_util::connect_and_accept(&mut client, server).await;
+    let (mut client, bg) = http_util::connect_and_accept_http2(&mut client, server).await;
 
     // Send a request and assert that it is OK with the expected header
     // message.
@@ -530,7 +522,7 @@ async fn grpc_unmeshed_response_error_header() {
         .body(Body::default())
         .unwrap();
     let rsp = client
-        .oneshot(req)
+        .send_request(req)
         .await
         .expect("HTTP client request failed");
     tracing::info!(?rsp);
@@ -560,9 +552,7 @@ async fn grpc_response_class() {
     };
 
     // Build a client using the connect that always errors.
-    #[allow(deprecated)] // linkerd/linkerd2#8733
-    let mut client = hyper::client::conn::Builder::new();
-    client.http2_only(true);
+    let mut client = hyper::client::conn::http2::Builder::new(TracingExecutor);
     let profiles = profile::resolver();
     let profile_tx =
         profiles.profile_tx(NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap());
@@ -575,7 +565,7 @@ async fn grpc_response_class() {
         .http_endpoint
         .into_report(time::Duration::from_secs(3600));
     let server = build_server(cfg, rt, profiles, connect).new_service(Target::meshed_h2());
-    let (client, bg) = http_util::connect_and_accept(&mut client, server).await;
+    let (mut client, bg) = http_util::connect_and_accept_http2(&mut client, server).await;
 
     // Send a request and assert that it is OK with the expected header
     // message.
@@ -587,7 +577,7 @@ async fn grpc_response_class() {
         .unwrap();
 
     let mut rsp = client
-        .oneshot(req)
+        .send_request(req)
         .await
         .expect("HTTP client request failed");
     tracing::info!(?rsp);
