@@ -59,6 +59,51 @@ pub async fn connect_and_accept(
 ///
 /// Returns a tuple containing (1) a [`SendRequest`] that can be used to transmit a request and
 /// await a response, and (2) a [`JoinSet<T>`] running background tasks.
+pub async fn connect_and_accept_http1(
+    client_settings: &mut hyper::client::conn::http1::Builder,
+    server: BoxServer,
+) -> (
+    hyper::client::conn::http1::SendRequest<hyper::Body>,
+    JoinSet<Result<(), Error>>,
+) {
+    tracing::info!(settings = ?client_settings, "connecting client with");
+    let (client_io, server_io) = io::duplex(4096);
+
+    let (client, conn) = client_settings
+        .handshake(client_io)
+        .await
+        .expect("Client must connect");
+
+    let mut bg = tokio::task::JoinSet::new();
+    bg.spawn(
+        async move {
+            server
+                .oneshot(server_io)
+                .await
+                .map_err(ContextError::ctx("proxy background task failed"))?;
+            tracing::info!("proxy serve task complete");
+            Ok(())
+        }
+        .instrument(tracing::info_span!("proxy")),
+    );
+    bg.spawn(
+        async move {
+            conn.await
+                .map_err(ContextError::ctx("client background task failed"))
+                .map_err(Error::from)?;
+            tracing::info!("client background complete");
+            Ok(())
+        }
+        .instrument(tracing::info_span!("client_bg")),
+    );
+
+    (client, bg)
+}
+
+/// Connects a client and server, running a proxy between them.
+///
+/// Returns a tuple containing (1) a [`SendRequest`] that can be used to transmit a request and
+/// await a response, and (2) a [`JoinSet<T>`] running background tasks.
 pub async fn connect_and_accept_http2<B>(
     client_settings: &mut hyper::client::conn::http2::Builder,
     server: BoxServer,
