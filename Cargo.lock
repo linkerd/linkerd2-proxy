@@ -770,9 +770,9 @@ checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
 
 [[package]]
 name = "governor"
-version = "0.7.0"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0746aa765db78b521451ef74221663b57ba595bf83f75d0ce23cc09447c8139f"
+checksum = "842dc78579ce01e6a1576ad896edc92fca002dd60c9c3746b7fc2bec6fb429d0"
 dependencies = [
  "cfg-if",
  "futures-sink",
@@ -846,9 +846,9 @@ checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
 name = "hickory-proto"
-version = "0.24.1"
+version = "0.24.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07698b8420e2f0d6447a436ba999ec85d8fbf2a398bbd737b82cac4a2e96e512"
+checksum = "447afdcdb8afb9d0a852af6dc65d9b285ce720ed7a59e42a8bf2e931c67bc1b5"
 dependencies = [
  "async-trait",
  "cfg-if",
@@ -857,7 +857,7 @@ dependencies = [
  "futures-channel",
  "futures-io",
  "futures-util",
- "idna 0.4.0",
+ "idna",
  "ipnet",
  "once_cell",
  "rand",
@@ -870,9 +870,9 @@ dependencies = [
 
 [[package]]
 name = "hickory-resolver"
-version = "0.24.1"
+version = "0.24.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "28757f23aa75c98f254cf0405e6d8c25b831b32921b050a66692427679b1f243"
+checksum = "0a2e2aba9c389ce5267d31cf1e4dace82390ae276b0b364ea55630b1fa1b44b4"
 dependencies = [
  "cfg-if",
  "futures-util",
@@ -1109,16 +1109,6 @@ dependencies = [
 
 [[package]]
 name = "idna"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d20d6b07bfbc108882d88ed8e37d39636dcc260e15e30c45e6ba089610b917c"
-dependencies = [
- "unicode-bidi",
- "unicode-normalization",
-]
-
-[[package]]
-name = "idna"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "686f825264d630750a544639377bae737628043f20d38bbc029e8f29ea968a7e"
@@ -1292,7 +1282,7 @@ dependencies = [
  "http",
  "ipnet",
  "linkerd-dns-name",
- "thiserror 2.0.4",
+ "thiserror 2.0.6",
 ]
 
 [[package]]
@@ -1311,7 +1301,7 @@ dependencies = [
  "linkerd-tonic-stream",
  "rangemap",
  "regex",
- "thiserror 2.0.4",
+ "thiserror 2.0.6",
  "tokio",
  "tokio-stream",
  "tonic",
@@ -1334,7 +1324,7 @@ dependencies = [
  "pprof",
  "serde",
  "serde_json",
- "thiserror 2.0.4",
+ "thiserror 2.0.6",
  "tokio",
  "tower",
  "tracing",
@@ -1400,7 +1390,7 @@ dependencies = [
  "regex",
  "semver",
  "serde_json",
- "thiserror 2.0.4",
+ "thiserror 2.0.6",
  "tokio",
  "tokio-stream",
  "tonic",
@@ -1421,7 +1411,7 @@ dependencies = [
  "linkerd-proxy-client-policy",
  "linkerd-proxy-server-policy",
  "once_cell",
- "thiserror 2.0.4",
+ "thiserror 2.0.6",
  "tokio",
  "tokio-test",
  "tonic",
@@ -1457,7 +1447,7 @@ dependencies = [
  "once_cell",
  "parking_lot",
  "rangemap",
- "thiserror 2.0.4",
+ "thiserror 2.0.6",
  "tokio",
  "tokio-test",
  "tonic",
@@ -1535,7 +1525,7 @@ dependencies = [
  "parking_lot",
  "pin-project",
  "prometheus-client",
- "thiserror 2.0.4",
+ "thiserror 2.0.6",
  "tokio",
  "tokio-rustls",
  "tokio-test",
@@ -1562,7 +1552,7 @@ dependencies = [
  "parking_lot",
  "pin-project",
  "regex",
- "thiserror 2.0.4",
+ "thiserror 2.0.6",
  "tokio",
  "tokio-stream",
  "tokio-test",
@@ -1585,7 +1575,7 @@ dependencies = [
  "linkerd-error",
  "linkerd-io",
  "linkerd-stack",
- "thiserror 2.0.4",
+ "thiserror 2.0.6",
  "tokio",
  "tower",
  "tracing",
@@ -1613,7 +1603,7 @@ dependencies = [
  "hickory-resolver",
  "linkerd-dns-name",
  "linkerd-error",
- "thiserror 2.0.4",
+ "thiserror 2.0.6",
  "tokio",
  "tracing",
 ]
@@ -1622,7 +1612,7 @@ dependencies = [
 name = "linkerd-dns-name"
 version = "0.1.0"
 dependencies = [
- "thiserror 2.0.4",
+ "thiserror 2.0.6",
  "untrusted",
 ]
 
@@ -1647,7 +1637,7 @@ name = "linkerd-error"
 version = "0.1.0"
 dependencies = [
  "futures",
- "thiserror 2.0.4",
+ "thiserror 2.0.6",
 ]
 
 [[package]]
@@ -1668,7 +1658,7 @@ dependencies = [
  "pin-project",
  "quickcheck",
  "rand",
- "thiserror 2.0.4",
+ "thiserror 2.0.6",
  "tokio",
 ]
 
@@ -1789,7 +1779,7 @@ dependencies = [
  "parking_lot",
  "pin-project",
  "prometheus-client",
- "thiserror 2.0.4",
+ "thiserror 2.0.6",
  "tokio",
 ]
 
@@ -1820,7 +1810,7 @@ dependencies = [
  "linkerd-stack",
  "linkerd-tracing",
  "parking_lot",
- "thiserror 2.0.4",
+ "thiserror 2.0.6",
  "tokio",
  "tower",
  "tracing",
@@ -1835,7 +1825,7 @@ dependencies = [
  "maplit",
  "rand",
  "regex",
- "thiserror 2.0.4",
+ "thiserror 2.0.6",
  "tracing",
  "url",
 ]
@@ -1851,7 +1841,7 @@ dependencies = [
  "linkerd-stack",
  "parking_lot",
  "pin-project",
- "thiserror 2.0.4",
+ "thiserror 2.0.6",
  "tokio",
  "tracing",
 ]
@@ -1883,7 +1873,7 @@ name = "linkerd-http-version"
 version = "0.1.0"
 dependencies = [
  "http",
- "thiserror 2.0.4",
+ "thiserror 2.0.6",
 ]
 
 [[package]]
@@ -1894,7 +1884,7 @@ dependencies = [
  "linkerd-error",
  "linkerd-metrics",
  "prometheus-client",
- "thiserror 2.0.4",
+ "thiserror 2.0.6",
  "tracing",
  "url",
 ]
@@ -1987,7 +1977,7 @@ dependencies = [
  "ring",
  "rustls-pemfile",
  "rustls-webpki",
- "thiserror 2.0.4",
+ "thiserror 2.0.6",
  "tokio",
  "tokio-rustls",
  "tracing",
@@ -2075,7 +2065,7 @@ dependencies = [
  "linkerd-pool",
  "linkerd-stack",
  "parking_lot",
- "thiserror 2.0.4",
+ "thiserror 2.0.6",
  "tokio",
  "tower-test",
  "tracing",
@@ -2169,7 +2159,7 @@ dependencies = [
  "parking_lot",
  "pin-project",
  "prometheus-client",
- "thiserror 2.0.4",
+ "thiserror 2.0.6",
  "tokio",
  "tokio-stream",
  "tokio-test",
@@ -2197,7 +2187,7 @@ dependencies = [
  "once_cell",
  "prost-types",
  "quickcheck",
- "thiserror 2.0.4",
+ "thiserror 2.0.6",
  "tonic",
 ]
 
@@ -2260,7 +2250,7 @@ dependencies = [
  "parking_lot",
  "pin-project",
  "rand",
- "thiserror 2.0.4",
+ "thiserror 2.0.6",
  "tokio",
  "tokio-test",
  "tower",
@@ -2283,7 +2273,7 @@ dependencies = [
  "linkerd2-proxy-api",
  "parking_lot",
  "pin-project",
- "thiserror 2.0.4",
+ "thiserror 2.0.6",
  "tokio",
  "tonic",
  "tracing",
@@ -2297,7 +2287,7 @@ dependencies = [
  "linkerd-error",
  "linkerd-proxy-core",
  "pin-project",
- "thiserror 2.0.4",
+ "thiserror 2.0.6",
  "tower",
  "tracing",
 ]
@@ -2315,7 +2305,7 @@ dependencies = [
  "maplit",
  "prost-types",
  "quickcheck",
- "thiserror 2.0.4",
+ "thiserror 2.0.6",
  "tokio",
 ]
 
@@ -2333,7 +2323,7 @@ dependencies = [
  "rcgen",
  "simple_asn1",
  "spiffe-proto",
- "thiserror 2.0.4",
+ "thiserror 2.0.6",
  "tokio",
  "tokio-test",
  "tonic",
@@ -2363,7 +2353,7 @@ dependencies = [
  "prost-types",
  "quickcheck",
  "rand",
- "thiserror 2.0.4",
+ "thiserror 2.0.6",
  "tokio",
  "tonic",
  "tower",
@@ -2395,7 +2385,7 @@ dependencies = [
  "linkerd-io",
  "linkerd-stack",
  "socket2",
- "thiserror 2.0.4",
+ "thiserror 2.0.6",
  "tokio",
  "tokio-stream",
  "tracing",
@@ -2438,7 +2428,7 @@ dependencies = [
  "linkerd-error",
  "linkerd-stack",
  "parking_lot",
- "thiserror 2.0.4",
+ "thiserror 2.0.6",
  "tracing",
 ]
 
@@ -2463,7 +2453,7 @@ dependencies = [
  "prost-types",
  "quickcheck",
  "regex",
- "thiserror 2.0.4",
+ "thiserror 2.0.6",
  "tokio",
  "tokio-stream",
  "tonic",
@@ -2488,7 +2478,7 @@ dependencies = [
  "linkerd-tracing",
  "parking_lot",
  "pin-project",
- "thiserror 2.0.4",
+ "thiserror 2.0.6",
  "tokio",
  "tokio-test",
  "tokio-util",
@@ -2544,7 +2534,7 @@ dependencies = [
  "linkerd-stack",
  "linkerd-tracing",
  "pin-project",
- "thiserror 2.0.4",
+ "thiserror 2.0.6",
  "tokio",
  "tower",
  "tracing",
@@ -2560,7 +2550,7 @@ dependencies = [
  "linkerd2-proxy-api",
  "rand",
  "regex",
- "thiserror 2.0.4",
+ "thiserror 2.0.6",
  "tracing",
 ]
 
@@ -3413,9 +3403,9 @@ dependencies = [
 
 [[package]]
 name = "rustix"
-version = "0.38.40"
+version = "0.38.42"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "99e4ea3e1cdc4b559b8e5650f9c8e5998e3e5c1343b4eaf034565f32318d63c0"
+checksum = "f93dc38ecbab2eb790ff964bb77fa94faf256fd3e73285fd7ba0903b76bedb85"
 dependencies = [
  "bitflags 2.4.2",
  "errno",
@@ -3491,18 +3481,18 @@ checksum = "61697e0a1c7e512e84a621326239844a24d8207b4669b41bc18b32ea5cbf988b"
 
 [[package]]
 name = "serde"
-version = "1.0.215"
+version = "1.0.216"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6513c1ad0b11a9376da888e3e0baa0077f1aed55c17f50e7b2397136129fb88f"
+checksum = "0b9781016e935a97e8beecf0c933758c97a5520d32930e460142b4cd80c6338e"
 dependencies = [
  "serde_derive",
 ]
 
 [[package]]
 name = "serde_derive"
-version = "1.0.215"
+version = "1.0.216"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ad1e866f866923f252f05c889987993144fb74e722403468a4ebd70c3cd756c0"
+checksum = "46f859dbbf73865c6627ed570e78961cd3ac92407a2d117204c49232485da55e"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3716,11 +3706,11 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "2.0.4"
+version = "2.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2f49a1853cf82743e3b7950f77e0f4d622ca36cf4317cba00c767838bac8d490"
+checksum = "8fec2a1820ebd077e2b90c4df007bebf344cd394098a13c563957d0afc83ea47"
 dependencies = [
- "thiserror-impl 2.0.4",
+ "thiserror-impl 2.0.6",
 ]
 
 [[package]]
@@ -3736,9 +3726,9 @@ dependencies = [
 
 [[package]]
 name = "thiserror-impl"
-version = "2.0.4"
+version = "2.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8381894bb3efe0c4acac3ded651301ceee58a15d47c2e34885ed1908ad667061"
+checksum = "d65750cab40f4ff1929fb1ba509e9914eb756131cef4210da8d5d700d26f6312"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4103,25 +4093,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42ff0bf0c66b8238c6f3b578df37d0b7848e55df8577b3f74f92a69acceeb825"
 
 [[package]]
-name = "unicode-bidi"
-version = "0.3.17"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ab17db44d7388991a428b2ee655ce0c212e862eff1768a455c58f9aad6e7893"
-
-[[package]]
 name = "unicode-ident"
 version = "1.0.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "adb9e6ca4f869e1180728b7950e35922a7fc6397f7b641499e8f3ef06e50dc83"
-
-[[package]]
-name = "unicode-normalization"
-version = "0.1.24"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5033c97c4262335cded6d6fc3e5c18ab755e1a3dc96376350f3d8e9f009ad956"
-dependencies = [
- "tinyvec",
-]
 
 [[package]]
 name = "untrusted"
@@ -4136,7 +4111,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32f8b686cadd1473f4bd0117a5d28d36b1ade384ea9b5069a1c40aefed7fda60"
 dependencies = [
  "form_urlencoded",
- "idna 1.0.3",
+ "idna",
  "percent-encoding",
 ]
 

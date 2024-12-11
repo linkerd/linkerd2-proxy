@@ -1,4 +1,5 @@
 use crate::*;
+use linkerd_app_core::svc::http::TracingExecutor;
 use std::error::Error as _;
 use tokio::time::timeout;
 
@@ -1601,9 +1602,7 @@ async fn http2_request_without_authority() {
     let io = tokio::net::TcpStream::connect(&addr)
         .await
         .expect("connect error");
-    #[allow(deprecated)] // linkerd/linkerd2#8733
-    let (mut client, conn) = hyper::client::conn::Builder::new()
-        .http2_only(true)
+    let (mut client, conn) = hyper::client::conn::http2::Builder::new(TracingExecutor)
         .handshake(io)
         .await
         .expect("handshake error");
