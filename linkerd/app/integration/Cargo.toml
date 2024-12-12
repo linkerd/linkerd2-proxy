@@ -49,7 +49,7 @@ tokio = { version = "1", features = ["io-util", "net", "rt", "macros"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 tokio-rustls = { workspace = true }
 rustls-pemfile = "2.2"
-tower = { version = "0.4", default-features = false }
+tower = { version = "0.5", default-features = false }
 tonic = { version = "0.10", features = ["transport"], default-features = false }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", default-features = false, features = [

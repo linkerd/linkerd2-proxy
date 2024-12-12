@@ -20,7 +20,7 @@ pin-project = "1"
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
 tokio-util = { version = "0.7" }
-tower = { version = "0.4", features = ["buffer", "filter", "spawn-ready", "util"] }
+tower = { version = "0.5", features = ["buffer", "filter", "spawn-ready", "util"] }
 tracing = "0.1"
 
 [dev-dependencies]
@@ -28,4 +28,4 @@ linkerd-tracing = { path = "../tracing", features = ["ansi"] }
 tower-test = "0.4"
 tokio-test = "0.4"
 tokio = { version = "1", features = ["rt-multi-thread", "time", "macros"] }
-tower = { version = "0.4", features = ["buffer", "filter", "util"] }
+tower = { version = "0.5", features = ["buffer", "filter", "util"] }
