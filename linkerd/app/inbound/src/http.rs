@@ -18,7 +18,7 @@ pub mod fuzz {
         test_util::{support::connect::Connect, *},
         Config, Inbound,
     };
-    use hyper::{client::conn::Builder as ClientBuilder, Body, Request, Response};
+    use hyper::{Body, Request, Response};
     use libfuzzer_sys::arbitrary::Arbitrary;
     use linkerd_app_core::{
         identity, io,
@@ -41,9 +41,8 @@ pub mod fuzz {
     }
 
     pub async fn fuzz_entry_raw(requests: Vec<HttpRequestSpec>) {
-        let mut server = hyper::server::conn::Http::new();
-        server.http1_only(true);
-        let mut client = ClientBuilder::new();
+        let server = hyper::server::conn::http1::Builder::new();
+        let mut client = hyper::client::conn::http1::Builder::new();
         let connect =
             support::connect().endpoint_fn_boxed(Target::addr(), hello_fuzz_server(server));
         let profiles = profile::resolver();
@@ -55,7 +54,7 @@ pub mod fuzz {
         let cfg = default_config();
         let (rt, _shutdown) = runtime();
         let server = build_fuzz_server(cfg, rt, profiles, connect).new_service(Target::HTTP1);
-        let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;
+        let (mut client, bg) = http_util::connect_and_accept_http1(&mut client, server).await;
 
         // Now send all of the requests
         for inp in requests.iter() {
@@ -74,14 +73,7 @@ pub mod fuzz {
                             .header(header_name, header_value)
                             .body(Body::default())
                         {
-                            let rsp = client
-                                .ready()
-                                .await
-                                .expect("HTTP client poll_ready failed")
-                                .call(req)
-                                .await
-                                .expect("HTTP client request failed");
-                            tracing::info!(?rsp);
+                            let rsp = client.send_request(req).await;
                             tracing::info!(?rsp);
                             if let Ok(rsp) = rsp {
                                 let body = http_util::body_to_string(rsp.into_body()).await;
@@ -93,18 +85,18 @@ pub mod fuzz {
             }
         }
 
-        drop(client);
         // It's okay if the background task returns an error, as this would
         // indicate that the proxy closed the connection --- which it will do on
         // invalid inputs. We want to ensure that the proxy doesn't crash in the
         // face of these inputs, and the background task will panic in this
         // case.
-        let res = bg.await;
+        drop(client);
+        let res = bg.join_all().await;
         tracing::info!(?res, "background tasks completed")
     }
 
     fn hello_fuzz_server(
-        http: hyper::server::conn::Http,
+        http: hyper::server::conn::http1::Builder,
     ) -> impl Fn(Remote<ServerAddr>) -> io::Result<io::BoxedIo> {
         move |_endpoint| {
             let (client_io, server_io) = support::io::duplex(4096);
@@ -235,6 +227,9 @@ pub mod fuzz {
                         kind: "server".into(),
                         name: "testsrv".into(),
                     }),
+                    local_rate_limit: Arc::new(
+                        linkerd_proxy_server_policy::LocalRateLimit::default(),
+                    ),
                 },
             );
             policy

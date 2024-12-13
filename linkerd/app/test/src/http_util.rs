@@ -13,12 +13,11 @@ type BoxServer = svc::BoxTcp<io::DuplexStream>;
 ///
 /// Returns a tuple containing (1) a [`SendRequest`] that can be used to transmit a request and
 /// await a response, and (2) a [`JoinSet<T>`] running background tasks.
-#[allow(deprecated)] // linkerd/linkerd2#8733
-pub async fn connect_and_accept(
-    client_settings: &mut hyper::client::conn::Builder,
+pub async fn connect_and_accept_http1(
+    client_settings: &mut hyper::client::conn::http1::Builder,
     server: BoxServer,
 ) -> (
-    hyper::client::conn::SendRequest<hyper::Body>,
+    hyper::client::conn::http1::SendRequest<hyper::Body>,
     JoinSet<Result<(), Error>>,
 ) {
     tracing::info!(settings = ?client_settings, "connecting client with");
