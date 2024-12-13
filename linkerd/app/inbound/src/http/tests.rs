@@ -48,8 +48,7 @@ where
 #[tokio::test(flavor = "current_thread")]
 async fn unmeshed_http1_hello_world() {
     let server = hyper::server::conn::http1::Builder::new();
-    #[allow(deprecated)] // linkerd/linkerd2#8733
-    let mut client = hyper::client::conn::Builder::new();
+    let mut client = hyper::client::conn::http1::Builder::new();
     let _trace = trace_init();
 
     // Build a mock "connector" that returns the upstream "server" IO.
@@ -64,7 +63,7 @@ async fn unmeshed_http1_hello_world() {
     let cfg = default_config();
     let (rt, _shutdown) = runtime();
     let server = build_server(cfg, rt, profiles, connect).new_service(Target::UNMESHED_HTTP1);
-    let (client, bg) = http_util::connect_and_accept(&mut client, server).await;
+    let (mut client, bg) = http_util::connect_and_accept_http1(&mut client, server).await;
 
     let req = Request::builder()
         .method(http::Method::GET)
@@ -72,7 +71,7 @@ async fn unmeshed_http1_hello_world() {
         .body(Body::default())
         .unwrap();
     let rsp = client
-        .oneshot(req)
+        .send_request(req)
         .await
         .expect("HTTP client request failed");
     tracing::info!(?rsp);
@@ -81,6 +80,7 @@ async fn unmeshed_http1_hello_world() {
     assert_eq!(body, "Hello world!");
 
     // Wait for all of the background tasks to complete, panicking if any returned an error.
+    drop(client);
     bg.join_all()
         .await
         .into_iter()
@@ -92,9 +92,7 @@ async fn unmeshed_http1_hello_world() {
 async fn downgrade_origin_form() {
     // Reproduces https://github.com/linkerd/linkerd2/issues/5298
     let server = hyper::server::conn::http1::Builder::new();
-    #[allow(deprecated)] // linkerd/linkerd2#8733
-    let mut client = hyper::client::conn::Builder::new();
-    client.http2_only(true);
+    let client = hyper::client::conn::http2::Builder::new(TracingExecutor);
     let _trace = trace_init();
 
     // Build a mock "connector" that returns the upstream "server" IO.
@@ -109,7 +107,35 @@ async fn downgrade_origin_form() {
     let cfg = default_config();
     let (rt, _shutdown) = runtime();
     let server = build_server(cfg, rt, profiles, connect).new_service(Target::UNMESHED_H2);
-    let (client, bg) = http_util::connect_and_accept(&mut client, server).await;
+    let (mut client, bg) = {
+        tracing::info!(settings = ?client, "connecting client with");
+        let (client_io, server_io) = io::duplex(4096);
+
+        let (client, conn) = client
+            .handshake(client_io)
+            .await
+            .expect("Client must connect");
+
+        let mut bg = tokio::task::JoinSet::new();
+        bg.spawn(
+            async move {
+                server.oneshot(server_io).await?;
+                tracing::info!("proxy serve task complete");
+                Ok(())
+            }
+            .instrument(tracing::info_span!("proxy")),
+        );
+        bg.spawn(
+            async move {
+                conn.await?;
+                tracing::info!("client background complete");
+                Ok(())
+            }
+            .instrument(tracing::info_span!("client_bg")),
+        );
+
+        (client, bg)
+    };
 
     let req = Request::builder()
         .method(http::Method::GET)
@@ -119,7 +145,7 @@ async fn downgrade_origin_form() {
         .body(Body::default())
         .unwrap();
     let rsp = client
-        .oneshot(req)
+        .send_request(req)
         .await
         .expect("HTTP client request failed");
     tracing::info!(?rsp);
@@ -128,6 +154,7 @@ async fn downgrade_origin_form() {
     assert_eq!(body, "Hello world!");
 
     // Wait for all of the background tasks to complete, panicking if any returned an error.
+    drop(client);
     bg.join_all()
         .await
         .into_iter()
@@ -137,10 +164,8 @@ async fn downgrade_origin_form() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn downgrade_absolute_form() {
+    let client = hyper::client::conn::http2::Builder::new(TracingExecutor);
     let server = hyper::server::conn::http1::Builder::new();
-    #[allow(deprecated)] // linkerd/linkerd2#8733
-    let mut client = hyper::client::conn::Builder::new();
-    client.http2_only(true);
     let _trace = trace_init();
 
     // Build a mock "connector" that returns the upstream "server" IO.
@@ -155,7 +180,36 @@ async fn downgrade_absolute_form() {
     let cfg = default_config();
     let (rt, _shutdown) = runtime();
     let server = build_server(cfg, rt, profiles, connect).new_service(Target::UNMESHED_H2);
-    let (client, bg) = http_util::connect_and_accept(&mut client, server).await;
+
+    let (mut client, bg) = {
+        tracing::info!(settings = ?client, "connecting client with");
+        let (client_io, server_io) = io::duplex(4096);
+
+        let (client, conn) = client
+            .handshake(client_io)
+            .await
+            .expect("Client must connect");
+
+        let mut bg = tokio::task::JoinSet::new();
+        bg.spawn(
+            async move {
+                server.oneshot(server_io).await?;
+                tracing::info!("proxy serve task complete");
+                Ok(())
+            }
+            .instrument(tracing::info_span!("proxy")),
+        );
+        bg.spawn(
+            async move {
+                conn.await?;
+                tracing::info!("client background complete");
+                Ok(())
+            }
+            .instrument(tracing::info_span!("client_bg")),
+        );
+
+        (client, bg)
+    };
 
     let req = Request::builder()
         .method(http::Method::GET)
@@ -165,7 +219,7 @@ async fn downgrade_absolute_form() {
         .body(Body::default())
         .unwrap();
     let rsp = client
-        .oneshot(req)
+        .send_request(req)
         .await
         .expect("HTTP client request failed");
     tracing::info!(?rsp);
@@ -174,6 +228,7 @@ async fn downgrade_absolute_form() {
     assert_eq!(body, "Hello world!");
 
     // Wait for all of the background tasks to complete, panicking if any returned an error.
+    drop(client);
     bg.join_all()
         .await
         .into_iter()
@@ -190,8 +245,7 @@ async fn http1_bad_gateway_meshed_response_error_header() {
 
     // Build a client using the connect that always errors so that responses
     // are BAD_GATEWAY.
-    #[allow(deprecated)] // linkerd/linkerd2#8733
-    let mut client = hyper::client::conn::Builder::new();
+    let mut client = hyper::client::conn::http1::Builder::new();
     let profiles = profile::resolver();
     let profile_tx =
         profiles.profile_tx(NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap());
@@ -199,7 +253,7 @@ async fn http1_bad_gateway_meshed_response_error_header() {
     let cfg = default_config();
     let (rt, _shutdown) = runtime();
     let server = build_server(cfg, rt, profiles, connect).new_service(Target::meshed_http1());
-    let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;
+    let (mut client, bg) = http_util::connect_and_accept_http1(&mut client, server).await;
 
     // Send a request and assert that it is a BAD_GATEWAY with the expected
     // header message.
@@ -221,6 +275,7 @@ async fn http1_bad_gateway_meshed_response_error_header() {
     check_error_header(rsp.headers(), "server is not listening");
 
     // Wait for all of the background tasks to complete, panicking if any returned an error.
+    drop(client);
     bg.join_all()
         .await
         .into_iter()
@@ -237,8 +292,7 @@ async fn http1_bad_gateway_unmeshed_response() {
 
     // Build a client using the connect that always errors so that responses
     // are BAD_GATEWAY.
-    #[allow(deprecated)] // linkerd/linkerd2#8733
-    let mut client = hyper::client::conn::Builder::new();
+    let mut client = hyper::client::conn::http1::Builder::new();
     let profiles = profile::resolver();
     let profile_tx =
         profiles.profile_tx(NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap());
@@ -246,7 +300,7 @@ async fn http1_bad_gateway_unmeshed_response() {
     let cfg = default_config();
     let (rt, _shutdown) = runtime();
     let server = build_server(cfg, rt, profiles, connect).new_service(Target::UNMESHED_HTTP1);
-    let (client, bg) = http_util::connect_and_accept(&mut client, server).await;
+    let (mut client, bg) = http_util::connect_and_accept_http1(&mut client, server).await;
 
     // Send a request and assert that it is a BAD_GATEWAY with the expected
     // header message.
@@ -256,7 +310,7 @@ async fn http1_bad_gateway_unmeshed_response() {
         .body(Body::default())
         .unwrap();
     let rsp = client
-        .oneshot(req)
+        .send_request(req)
         .await
         .expect("HTTP client request failed");
     tracing::info!(?rsp);
@@ -267,6 +321,7 @@ async fn http1_bad_gateway_unmeshed_response() {
     );
 
     // Wait for all of the background tasks to complete, panicking if any returned an error.
+    drop(client);
     bg.join_all()
         .await
         .into_iter()
@@ -285,8 +340,7 @@ async fn http1_connect_timeout_meshed_response_error_header() {
 
     // Build a client using the connect that always sleeps so that responses
     // are GATEWAY_TIMEOUT.
-    #[allow(deprecated)] // linkerd/linkerd2#8733
-    let mut client = hyper::client::conn::Builder::new();
+    let mut client = hyper::client::conn::http1::Builder::new();
     let profiles = profile::resolver();
     let profile_tx =
         profiles.profile_tx(NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap());
@@ -294,7 +348,7 @@ async fn http1_connect_timeout_meshed_response_error_header() {
     let cfg = default_config();
     let (rt, _shutdown) = runtime();
     let server = build_server(cfg, rt, profiles, connect).new_service(Target::meshed_http1());
-    let (client, bg) = http_util::connect_and_accept(&mut client, server).await;
+    let (mut client, bg) = http_util::connect_and_accept_http1(&mut client, server).await;
 
     // Send a request and assert that it is a GATEWAY_TIMEOUT with the
     // expected header message.
@@ -304,7 +358,7 @@ async fn http1_connect_timeout_meshed_response_error_header() {
         .body(Body::default())
         .unwrap();
     let rsp = client
-        .oneshot(req)
+        .send_request(req)
         .await
         .expect("HTTP client request failed");
     tracing::info!(?rsp);
@@ -317,6 +371,7 @@ async fn http1_connect_timeout_meshed_response_error_header() {
     check_error_header(rsp.headers(), "connect timed out after 1s");
 
     // Wait for all of the background tasks to complete, panicking if any returned an error.
+    drop(client);
     bg.join_all()
         .await
         .into_iter()
@@ -335,8 +390,7 @@ async fn http1_connect_timeout_unmeshed_response_error_header() {
 
     // Build a client using the connect that always sleeps so that responses
     // are GATEWAY_TIMEOUT.
-    #[allow(deprecated)] // linkerd/linkerd2#8733
-    let mut client = hyper::client::conn::Builder::new();
+    let mut client = hyper::client::conn::http1::Builder::new();
     let profiles = profile::resolver();
     let profile_tx =
         profiles.profile_tx(NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap());
@@ -344,7 +398,7 @@ async fn http1_connect_timeout_unmeshed_response_error_header() {
     let cfg = default_config();
     let (rt, _shutdown) = runtime();
     let server = build_server(cfg, rt, profiles, connect).new_service(Target::UNMESHED_HTTP1);
-    let (client, bg) = http_util::connect_and_accept(&mut client, server).await;
+    let (mut client, bg) = http_util::connect_and_accept_http1(&mut client, server).await;
 
     // Send a request and assert that it is a GATEWAY_TIMEOUT with the
     // expected header message.
@@ -354,7 +408,7 @@ async fn http1_connect_timeout_unmeshed_response_error_header() {
         .body(Body::default())
         .unwrap();
     let rsp = client
-        .oneshot(req)
+        .send_request(req)
         .await
         .expect("HTTP client request failed");
     tracing::info!(?rsp);
@@ -365,6 +419,7 @@ async fn http1_connect_timeout_unmeshed_response_error_header() {
     );
 
     // Wait for all of the background tasks to complete, panicking if any returned an error.
+    drop(client);
     bg.join_all()
         .await
         .into_iter()
