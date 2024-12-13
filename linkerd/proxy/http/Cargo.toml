@@ -20,7 +20,7 @@ h2 = "0.3"
 http = "0.2"
 http-body = "0.4"
 httparse = "1"
-hyper = { version = "0.14", features = [
+hyper = { workspace = true, features = [
     "backports",
     "client",
     "deprecated",
