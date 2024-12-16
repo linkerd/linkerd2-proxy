@@ -11,8 +11,10 @@ type BoxServer = svc::BoxTcp<io::DuplexStream>;
 
 /// Connects a client and server, running a proxy between them.
 ///
-/// Returns a tuple containing (1) a [`SendRequest`] that can be used to transmit a request and
-/// await a response, and (2) a [`JoinSet<T>`] running background tasks.
+/// Returns a tuple containing (1) a [`SendRequest<B>`][send] that can be used to transmit a
+/// request and await a response, and (2) a [`JoinSet<T>`] running background tasks.
+///
+/// [send]: hyper::client::conn::http1::SendRequest
 pub async fn connect_and_accept_http1(
     client_settings: &mut hyper::client::conn::http1::Builder,
     server: BoxServer,
@@ -56,8 +58,10 @@ pub async fn connect_and_accept_http1(
 
 /// Connects a client and server, running a proxy between them.
 ///
-/// Returns a tuple containing (1) a [`SendRequest`] that can be used to transmit a request and
-/// await a response, and (2) a [`JoinSet<T>`] running background tasks.
+/// Returns a tuple containing (1) a [`SendRequest<B>`][send] that can be used to transmit a
+/// request and await a response, and (2) a [`JoinSet<T>`] running background tasks.
+///
+/// [send]: hyper::client::conn::http2::SendRequest
 pub async fn connect_and_accept_http2<B>(
     client_settings: &mut hyper::client::conn::http2::Builder,
     server: BoxServer,
