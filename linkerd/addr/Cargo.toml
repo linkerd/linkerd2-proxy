@@ -7,7 +7,7 @@ edition = "2021"
 publish = false
 
 [dependencies]
-http = "0.2"
+http = { workspace = true }
 ipnet = "2.10"
 linkerd-dns-name = { path = "../dns/name" }
 thiserror = "2"

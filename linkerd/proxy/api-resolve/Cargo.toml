@@ -20,8 +20,8 @@ linkerd-stack = { path = "../../stack" }
 linkerd-tonic-stream = { path = "../../tonic-stream" }
 linkerd-tls = { path = "../../tls" }
 linkerd-identity = { path = "../../identity" }
-http = "0.2"
-http-body = "0.4"
+http = { workspace = true }
+http-body = { workspace = true }
 pin-project = "1"
 prost = "0.12"
 tonic = { version = "0.10", default-features = false }

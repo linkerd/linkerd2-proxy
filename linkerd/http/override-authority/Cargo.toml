@@ -10,7 +10,7 @@ Tower middleware to override request authorities.
 """
 
 [dependencies]
-http = "0.2"
+http = { workspace = true }
 tower = { version = "0.4", default-features = false }
 tracing = "0.1"
 

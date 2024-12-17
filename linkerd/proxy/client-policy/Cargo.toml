@@ -18,7 +18,7 @@ proto = [
 [dependencies]
 ahash = "0.8"
 ipnet = "2"
-http = "0.2"
+http = { workspace = true }
 once_cell = { version = "1" }
 prost-types = { version = "0.12", optional = true }
 tonic = { version = "0.10", default-features = false }

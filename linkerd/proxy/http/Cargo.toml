@@ -17,8 +17,8 @@ bytes = "1"
 drain = "0.1"
 futures = { version = "0.3", default-features = false }
 h2 = "0.3"
-http = "0.2"
-http-body = "0.4"
+http = { workspace = true }
+http-body = { workspace = true }
 httparse = "1"
 hyper = { workspace = true, features = [
     "backports",

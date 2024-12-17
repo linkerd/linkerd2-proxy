@@ -9,7 +9,7 @@ publish = false
 proto = ["linkerd2-proxy-api"]
 
 [dependencies]
-http = "0.2"
+http = { workspace = true }
 regex = "1"
 rand = "0.8"
 thiserror = "2"

@@ -15,8 +15,8 @@ client-policy = ["linkerd-proxy-client-policy", "tonic", "linkerd-http-route"]
 [dependencies]
 futures = { version = "0.3", default-features = false }
 h2 = "0.3"
-http = "0.2"
-http-body = "0.4"
+http = { workspace = true }
+http-body = { workspace = true }
 hyper = { workspace = true, features = ["deprecated", "http1", "http2"] }
 linkerd-app-core = { path = "../core" }
 linkerd-http-route = { path = "../../http/route", optional = true }
