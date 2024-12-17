@@ -4,7 +4,7 @@ use linkerd_app_core::{
     http_metrics::retries::Handle,
     metrics::{self, ProfileRouteLabels},
     profiles::{self, http::Route},
-    proxy::http::{ClientHandle, EraseResponse, HttpBody},
+    proxy::http::{Body, ClientHandle, EraseResponse},
     svc::{layer, Either, Param},
     Error, Result,
 };
@@ -71,9 +71,9 @@ impl<ReqB, RspB>
     retry::Policy<http::Request<ReplayBody<ReqB>>, http::Response<PeekTrailersBody<RspB>>, Error>
     for RetryPolicy
 where
-    ReqB: HttpBody + Unpin,
+    ReqB: Body + Unpin,
     ReqB::Error: Into<Error>,
-    RspB: HttpBody + Unpin,
+    RspB: Body + Unpin,
 {
     type Future = future::Ready<Self>;
 
@@ -150,9 +150,9 @@ where
 
 impl<ReqB, RspB> retry::PrepareRetry<http::Request<ReqB>, http::Response<RspB>> for RetryPolicy
 where
-    ReqB: HttpBody + Unpin,
+    ReqB: Body + Unpin,
     ReqB::Error: Into<Error>,
-    RspB: HttpBody + Unpin + Send + 'static,
+    RspB: Body + Unpin + Send + 'static,
     RspB::Data: Unpin + Send,
     RspB::Error: Unpin + Send,
 {

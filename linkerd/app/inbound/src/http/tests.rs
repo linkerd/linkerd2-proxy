@@ -6,12 +6,12 @@ use crate::{
     },
     Config, Inbound,
 };
-use hyper::{body::HttpBody, Body, Request, Response};
+use hyper::{Request, Response};
 use linkerd_app_core::{
     classify,
     errors::respond::L5D_PROXY_ERROR,
     identity, io, metrics,
-    proxy::http,
+    proxy::http::{self, Body as _, BoxBody},
     svc::{self, http::TracingExecutor, NewService, Param},
     tls,
     transport::{ClientAddr, OrigDstAddr, Remote, ServerAddr},
@@ -68,7 +68,7 @@ async fn unmeshed_http1_hello_world() {
     let req = Request::builder()
         .method(http::Method::GET)
         .uri("http://foo.svc.cluster.local:5550")
-        .body(Body::default())
+        .body(hyper::Body::default())
         .unwrap();
     let rsp = client
         .send_request(req)
@@ -142,7 +142,7 @@ async fn downgrade_origin_form() {
         .uri("/")
         .header(http::header::HOST, "foo.svc.cluster.local")
         .header("l5d-orig-proto", "HTTP/1.1")
-        .body(Body::default())
+        .body(hyper::Body::default())
         .unwrap();
     let rsp = client
         .send_request(req)
@@ -216,7 +216,7 @@ async fn downgrade_absolute_form() {
         .uri("http://foo.svc.cluster.local:5550/")
         .header(http::header::HOST, "foo.svc.cluster.local")
         .header("l5d-orig-proto", "HTTP/1.1; absolute-form")
-        .body(Body::default())
+        .body(hyper::Body::default())
         .unwrap();
     let rsp = client
         .send_request(req)
@@ -260,7 +260,7 @@ async fn http1_bad_gateway_meshed_response_error_header() {
     let req = Request::builder()
         .method(http::Method::GET)
         .uri("http://foo.svc.cluster.local:5550")
-        .body(Body::default())
+        .body(hyper::Body::default())
         .unwrap();
     let rsp = client
         .send_request(req)
@@ -307,7 +307,7 @@ async fn http1_bad_gateway_unmeshed_response() {
     let req = Request::builder()
         .method(http::Method::GET)
         .uri("http://foo.svc.cluster.local:5550")
-        .body(Body::default())
+        .body(hyper::Body::default())
         .unwrap();
     let rsp = client
         .send_request(req)
@@ -355,7 +355,7 @@ async fn http1_connect_timeout_meshed_response_error_header() {
     let req = Request::builder()
         .method(http::Method::GET)
         .uri("http://foo.svc.cluster.local:5550")
-        .body(Body::default())
+        .body(hyper::Body::default())
         .unwrap();
     let rsp = client
         .send_request(req)
@@ -405,7 +405,7 @@ async fn http1_connect_timeout_unmeshed_response_error_header() {
     let req = Request::builder()
         .method(http::Method::GET)
         .uri("http://foo.svc.cluster.local:5550")
-        .body(Body::default())
+        .body(hyper::Body::default())
         .unwrap();
     let rsp = client
         .send_request(req)
@@ -450,7 +450,7 @@ async fn h2_response_meshed_error_header() {
     let req = Request::builder()
         .method(http::Method::GET)
         .uri("http://foo.svc.cluster.local:5550")
-        .body(Body::default())
+        .body(hyper::Body::default())
         .unwrap();
     let rsp = client
         .send_request(req)
@@ -490,7 +490,7 @@ async fn h2_response_unmeshed_error_header() {
     let req = Request::builder()
         .method(http::Method::GET)
         .uri("http://foo.svc.cluster.local:5550")
-        .body(Body::default())
+        .body(hyper::Body::default())
         .unwrap();
     let rsp = client
         .send_request(req)
@@ -533,7 +533,7 @@ async fn grpc_meshed_response_error_header() {
         .method(http::Method::GET)
         .uri("http://foo.svc.cluster.local:5550")
         .header(http::header::CONTENT_TYPE, "application/grpc")
-        .body(Body::default())
+        .body(hyper::Body::default())
         .unwrap();
     let rsp = client
         .send_request(req)
@@ -574,7 +574,7 @@ async fn grpc_unmeshed_response_error_header() {
         .method(http::Method::GET)
         .uri("http://foo.svc.cluster.local:5550")
         .header(http::header::CONTENT_TYPE, "application/grpc")
-        .body(Body::default())
+        .body(hyper::Body::default())
         .unwrap();
     let rsp = client
         .send_request(req)
@@ -628,7 +628,7 @@ async fn grpc_response_class() {
         .method(http::Method::POST)
         .uri("http://foo.svc.cluster.local:5550")
         .header(http::header::CONTENT_TYPE, "application/grpc")
-        .body(Body::default())
+        .body(hyper::Body::default())
         .unwrap();
 
     let mut rsp = client
@@ -682,9 +682,9 @@ fn hello_server(
         let _e = span.enter();
         tracing::info!("mock connecting");
         let (client_io, server_io) = support::io::duplex(4096);
-        let hello_svc = hyper::service::service_fn(|request: Request<Body>| async move {
+        let hello_svc = hyper::service::service_fn(|request: Request<hyper::Body>| async move {
             tracing::info!(?request);
-            Ok::<_, io::Error>(Response::new(Body::from("Hello world!")))
+            Ok::<_, io::Error>(Response::new(BoxBody::from_static("Hello world!")))
         });
         tokio::spawn(
             server
@@ -709,9 +709,9 @@ fn grpc_status_server(
             server
                 .serve_connection(
                     server_io,
-                    hyper::service::service_fn(move |request: Request<Body>| async move {
+                    hyper::service::service_fn(move |request: Request<hyper::Body>| async move {
                         tracing::info!(?request);
-                        let (mut tx, rx) = Body::channel();
+                        let (mut tx, rx) = hyper::Body::channel();
                         tokio::spawn(async move {
                             let mut trls = ::http::HeaderMap::new();
                             trls.insert(

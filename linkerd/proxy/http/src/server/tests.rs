@@ -1,9 +1,9 @@
 use std::vec;
 
 use super::*;
+use crate::Body;
 use bytes::Bytes;
 use futures::FutureExt;
-use http_body::Body;
 use linkerd_stack::CloneParam;
 use tokio::time;
 use tower::ServiceExt;

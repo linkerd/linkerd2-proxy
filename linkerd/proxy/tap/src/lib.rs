@@ -72,7 +72,7 @@ pub trait Inspect {
 /// for Registry/Layer/grpc, but need not be implemented outside of the `tap`
 /// module.
 mod iface {
-    use hyper::body::{Buf, HttpBody};
+    use bytes::Buf;
     use linkerd_proxy_http::HasH2Reason;
 
     pub trait Tap: Clone {
@@ -87,7 +87,7 @@ mod iface {
         ///
         /// If the tap cannot be initialized, for instance because the tap has
         /// completed or been canceled, then `None` is returned.
-        fn tap<B: HttpBody, I: super::Inspect>(
+        fn tap<B: http_body::Body, I: super::Inspect>(
             &mut self,
             req: &http::Request<B>,
             inspect: &I,
@@ -106,7 +106,7 @@ mod iface {
         type TapPayload: TapPayload;
 
         /// Record a response and obtain a handle to tap its body.
-        fn tap<B: HttpBody>(self, rsp: &http::Response<B>) -> Self::TapPayload;
+        fn tap<B: http_body::Body>(self, rsp: &http::Response<B>) -> Self::TapPayload;
 
         /// Record a service failure.
         fn fail<E: HasH2Reason>(self, error: &E);

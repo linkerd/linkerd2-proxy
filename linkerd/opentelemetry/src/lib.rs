@@ -4,7 +4,7 @@
 pub mod metrics;
 
 use futures::stream::{Stream, StreamExt};
-use http_body::Body as HttpBody;
+use http_body::Body;
 use linkerd_error::Error;
 use linkerd_trace_context as trace_context;
 use metrics::Registry;
@@ -35,8 +35,8 @@ pub async fn export_spans<T, S>(
 ) where
     T: GrpcService<BoxBody> + Clone,
     T::Error: Into<Error>,
-    T::ResponseBody: Default + HttpBody<Data = tonic::codegen::Bytes> + Send + 'static,
-    <T::ResponseBody as HttpBody>::Error: Into<Error> + Send,
+    T::ResponseBody: Default + Body<Data = tonic::codegen::Bytes> + Send + 'static,
+    <T::ResponseBody as Body>::Error: Into<Error> + Send,
     S: Stream<Item = ExportSpan> + Unpin,
 {
     debug!("Span exporter running");
@@ -62,8 +62,8 @@ impl<T, S> SpanExporter<T, S>
 where
     T: GrpcService<BoxBody> + Clone,
     T::Error: Into<Error>,
-    T::ResponseBody: Default + HttpBody<Data = tonic::codegen::Bytes> + Send + 'static,
-    <T::ResponseBody as HttpBody>::Error: Into<Error> + Send,
+    T::ResponseBody: Default + Body<Data = tonic::codegen::Bytes> + Send + 'static,
+    <T::ResponseBody as Body>::Error: Into<Error> + Send,
     S: Stream<Item = ExportSpan> + Unpin,
 {
     const MAX_BATCH_SIZE: usize = 1000;

@@ -44,7 +44,7 @@ impl<C> Outbound<C> {
         T: svc::Param<http::client::Params>,
         T: Clone + Send + Sync + 'static,
         // Http endpoint body.
-        B: http::HttpBody<Error = Error> + std::fmt::Debug + Default + Send + 'static,
+        B: http::Body<Error = Error> + std::fmt::Debug + Default + Send + 'static,
         B::Data: Send + 'static,
         // TCP endpoint stack.
         C: svc::MakeConnection<Connect<T>> + Clone + Send + Sync + Unpin + 'static,
@@ -81,7 +81,7 @@ impl<T> Outbound<svc::ArcNewHttp<T, http::BoxBody>> {
         T: tap::Inspect,
         T: Clone + Send + Sync + 'static,
         // Http endpoint body.
-        B: http::HttpBody<Error = Error> + std::fmt::Debug + Default + Send + 'static,
+        B: http::Body<Error = Error> + std::fmt::Debug + Default + Send + 'static,
         B::Data: Send + 'static,
     {
         self.map_stack(|config, rt, inner| {

@@ -1,17 +1,18 @@
+use bytes::Buf;
 use http::{header, StatusCode};
-use hyper::{
-    body::{Buf, HttpBody},
-    Body,
+use linkerd_app_core::{
+    proxy::http::{Body, BoxBody},
+    trace::level,
+    Error,
 };
-use linkerd_app_core::{trace::level, Error};
 use std::io;
 
 pub async fn serve<B>(
     level: level::Handle,
     req: http::Request<B>,
-) -> Result<http::Response<Body>, Error>
+) -> Result<http::Response<BoxBody>, Error>
 where
-    B: HttpBody,
+    B: Body,
     B::Error: Into<Error>,
 {
     Ok(match *req.method() {
@@ -28,7 +29,7 @@ where
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?
                 .aggregate();
             match level.set_from(body.chunk()) {
-                Ok(_) => mk_rsp(StatusCode::NO_CONTENT, Body::empty()),
+                Ok(_) => mk_rsp(StatusCode::NO_CONTENT, hyper::Body::empty()),
                 Err(error) => {
                     tracing::warn!(%error, "Setting log level failed");
                     mk_rsp(StatusCode::BAD_REQUEST, error)
@@ -40,14 +41,19 @@ where
             .status(StatusCode::METHOD_NOT_ALLOWED)
             .header(header::ALLOW, "GET")
             .header(header::ALLOW, "PUT")
-            .body(Body::empty())
+            .body(BoxBody::new(hyper::Body::empty()))
             .expect("builder with known status code must not fail"),
     })
 }
 
-fn mk_rsp(status: StatusCode, body: impl Into<Body>) -> http::Response<Body> {
+fn mk_rsp<B>(status: StatusCode, body: B) -> http::Response<BoxBody>
+where
+    B: Body + Send + 'static,
+    B::Data: Send + 'static,
+    B::Error: Into<Error>,
+{
     http::Response::builder()
         .status(status)
-        .body(body.into())
+        .body(BoxBody::new(body))
         .expect("builder with known status code must not fail")
 }

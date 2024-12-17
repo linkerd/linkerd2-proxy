@@ -2,7 +2,6 @@ use super::iface::{Tap, TapPayload, TapResponse};
 use super::registry::Registry;
 use super::Inspect;
 use futures::ready;
-use hyper::body::HttpBody;
 use linkerd_proxy_http::HasH2Reason;
 use linkerd_stack::{layer, NewService};
 use pin_project::{pin_project, pinned_drop};
@@ -30,7 +29,7 @@ pub struct TapHttp<S, I, T> {
 #[derive(Debug)]
 pub struct Body<B, T>
 where
-    B: HttpBody,
+    B: linkerd_proxy_http::Body,
     B::Error: HasH2Reason,
     T: TapPayload,
 {
@@ -79,9 +78,9 @@ where
     T::TapResponse: Send + 'static,
     T::TapRequestPayload: Send + 'static,
     T::TapResponsePayload: Send + 'static,
-    A: HttpBody,
+    A: linkerd_proxy_http::Body,
     A::Error: HasH2Reason,
-    B: HttpBody,
+    B: linkerd_proxy_http::Body,
     B::Error: HasH2Reason,
 {
     type Response = http::Response<Body<B, T::TapResponsePayload>>;
@@ -119,6 +118,7 @@ where
                     // body taps to decorate the response body.
                     let taps = rsp_taps.drain(..).map(|t| t.tap(&rsp)).collect();
                     let rsp = rsp.map(move |inner| {
+                        use linkerd_proxy_http::Body as _;
                         let mut body = Body { inner, taps };
                         if body.is_end_stream() {
                             eos(&mut body.taps, None);
@@ -143,7 +143,7 @@ where
 // `T` need not implement Default.
 impl<B, T> Default for Body<B, T>
 where
-    B: HttpBody + Default,
+    B: linkerd_proxy_http::Body + Default,
     B::Error: HasH2Reason,
     T: TapPayload,
 {
@@ -155,9 +155,9 @@ where
     }
 }
 
-impl<B, T> HttpBody for Body<B, T>
+impl<B, T> linkerd_proxy_http::Body for Body<B, T>
 where
-    B: HttpBody,
+    B: linkerd_proxy_http::Body,
     B::Error: HasH2Reason,
     T: TapPayload + Send + 'static,
 {
@@ -208,7 +208,7 @@ where
 
 impl<B, T> BodyProj<'_, B, T>
 where
-    B: HttpBody,
+    B: linkerd_proxy_http::Body,
     B::Error: HasH2Reason,
     T: TapPayload,
 {
@@ -240,7 +240,7 @@ where
 #[pinned_drop]
 impl<B, T> PinnedDrop for Body<B, T>
 where
-    B: HttpBody,
+    B: linkerd_proxy_http::Body,
     B::Error: HasH2Reason,
     T: TapPayload,
 {

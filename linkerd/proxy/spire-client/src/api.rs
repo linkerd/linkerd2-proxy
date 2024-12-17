@@ -116,8 +116,8 @@ impl<S> Api<S>
 where
     S: tonic::client::GrpcService<tonic::body::BoxBody> + Clone,
     S::Error: Into<Error>,
-    S::ResponseBody: Default + http::HttpBody<Data = tonic::codegen::Bytes> + Send + 'static,
-    <S::ResponseBody as http::HttpBody>::Error: Into<Error> + Send,
+    S::ResponseBody: Default + http::Body<Data = tonic::codegen::Bytes> + Send + 'static,
+    <S::ResponseBody as http::Body>::Error: Into<Error> + Send,
 {
     pub fn watch(client: S, backoff: ExponentialBackoff) -> Watch<S> {
         let client = Client::new(client);
@@ -129,8 +129,8 @@ impl<S> Service<()> for Api<S>
 where
     S: tonic::client::GrpcService<tonic::body::BoxBody> + Clone,
     S: Clone + Send + Sync + 'static,
-    S::ResponseBody: Default + http::HttpBody<Data = tonic::codegen::Bytes> + Send + 'static,
-    <S::ResponseBody as http::HttpBody>::Error: Into<Error> + Send,
+    S::ResponseBody: Default + http::Body<Data = tonic::codegen::Bytes> + Send + 'static,
+    <S::ResponseBody as http::Body>::Error: Into<Error> + Send,
     S::Future: Send + 'static,
 {
     type Response =

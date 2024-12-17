@@ -66,7 +66,7 @@ where
 
 impl<B, S> tower::Service<http::Request<B>> for HttpGateway<S>
 where
-    B: http::HttpBody + 'static,
+    B: http::Body + 'static,
     S: tower::Service<http::Request<B>, Response = http::Response<http::BoxBody>>,
     S::Error: Into<Error> + 'static,
     S::Future: Send + 'static,

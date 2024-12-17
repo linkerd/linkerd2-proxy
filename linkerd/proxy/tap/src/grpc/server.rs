@@ -1,8 +1,9 @@
 use super::match_::Match;
 use crate::{iface, Inspect, Registry};
+use bytes::Buf;
 use futures::ready;
 use futures::stream::Stream;
-use hyper::body::{Buf, HttpBody};
+use http_body::Body;
 use linkerd2_proxy_api::{http_types, tap as api};
 use linkerd_conditional::Conditional;
 use linkerd_proxy_http::HasH2Reason;
@@ -236,7 +237,7 @@ impl iface::Tap for Tap {
         inspect: &I,
     ) -> Option<(TapRequestPayload, TapResponse)>
     where
-        B: HttpBody,
+        B: Body,
         I: Inspect,
     {
         let shared = self.shared.upgrade()?;
@@ -346,7 +347,7 @@ impl iface::Tap for Tap {
 impl iface::TapResponse for TapResponse {
     type TapPayload = TapResponsePayload;
 
-    fn tap<B: HttpBody>(self, rsp: &http::Response<B>) -> TapResponsePayload {
+    fn tap<B: Body>(self, rsp: &http::Response<B>) -> TapResponsePayload {
         let response_init_at = Instant::now();
 
         let headers = if self.extract_headers {

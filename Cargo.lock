@@ -969,6 +969,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "http",
+ "http-body",
  "hyper",
  "pin-project",
  "tokio",
@@ -1312,6 +1313,7 @@ dependencies = [
 name = "linkerd-app-admin"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "deflate",
  "futures",
  "http",
@@ -1999,7 +2001,9 @@ version = "0.1.0"
 dependencies = [
  "deflate",
  "http",
+ "http-body",
  "hyper",
+ "linkerd-http-box",
  "linkerd-stack",
  "linkerd-system",
  "parking_lot",
@@ -2335,8 +2339,10 @@ dependencies = [
 name = "linkerd-proxy-tap"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "futures",
  "http",
+ "http-body",
  "hyper",
  "ipnet",
  "linkerd-conditional",

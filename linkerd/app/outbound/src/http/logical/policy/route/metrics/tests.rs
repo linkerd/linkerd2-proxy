@@ -317,7 +317,7 @@ async fn http_route_request_body_frames() {
     tracing::info!("sending request to service");
     let resp = {
         use http::{Response, StatusCode};
-        let body = BoxBody::new("earl grey".to_owned());
+        let body = BoxBody::from_static("earl grey");
         let resp = Response::builder()
             .status(StatusCode::IM_A_TEAPOT)
             .body(body)

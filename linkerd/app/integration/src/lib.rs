@@ -26,7 +26,7 @@ pub use bytes::{Buf, BufMut, Bytes};
 pub use futures::stream::{Stream, StreamExt};
 pub use futures::{future, FutureExt, TryFuture, TryFutureExt};
 pub use http::{HeaderMap, Request, Response, StatusCode};
-pub use http_body::Body as HttpBody;
+pub use http_body::Body;
 pub use linkerd_app as app;
 pub use linkerd_app_core::{drain, Addr};
 pub use linkerd_app_test::*;

@@ -1,7 +1,7 @@
 use crate::upgrade::Http11Upgrade;
 use bytes::Bytes;
 use futures::TryFuture;
-use hyper::body::HttpBody;
+use http_body::Body;
 use hyper::client::connect as hyper_connect;
 use linkerd_error::{Error, Result};
 use linkerd_io::{self as io, AsyncRead, AsyncWrite};
@@ -50,7 +50,7 @@ pub struct HyperConnectFuture<F> {
 
 // === impl UpgradeBody ===
 
-impl HttpBody for UpgradeBody {
+impl Body for UpgradeBody {
     type Data = Bytes;
     type Error = hyper::Error;
 

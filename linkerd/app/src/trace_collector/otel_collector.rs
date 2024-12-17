@@ -1,6 +1,6 @@
 use super::EnabledCollector;
 use linkerd_app_core::{
-    control::ControlAddr, http_tracing::CollectorProtocol, proxy::http::HttpBody, Error,
+    control::ControlAddr, http_tracing::CollectorProtocol, proxy::http::Body, Error,
 };
 use linkerd_opentelemetry::{
     self as opentelemetry, metrics,
@@ -25,8 +25,8 @@ where
     S: GrpcService<BoxBody> + Clone + Send + 'static,
     S::Error: Into<Error>,
     S::Future: Send,
-    S::ResponseBody: Default + HttpBody<Data = tonic::codegen::Bytes> + Send + 'static,
-    <S::ResponseBody as HttpBody>::Error: Into<Error> + Send,
+    S::ResponseBody: Default + Body<Data = tonic::codegen::Bytes> + Send + 'static,
+    <S::ResponseBody as Body>::Error: Into<Error> + Send,
 {
     let (span_sink, spans_rx) = mpsc::channel(crate::trace_collector::SPAN_BUFFER_CAPACITY);
     let spans_rx = ReceiverStream::new(spans_rx);

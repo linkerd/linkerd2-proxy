@@ -1,8 +1,7 @@
 use super::*;
-use hyper::body::HttpBody;
 use linkerd_app_core::{
     errors,
-    proxy::http::{self, StatusCode},
+    proxy::http::{self, Body, StatusCode},
     svc::http::stream_timeouts::StreamDeadlineError,
     trace,
 };

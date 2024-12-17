@@ -4,7 +4,7 @@ use linkerd_app_core::{
     proxy::http::{
         self,
         stream_timeouts::{BodyTimeoutError, ResponseTimeoutError},
-        BoxBody, HttpBody,
+        Body, BoxBody,
     },
     trace,
 };
