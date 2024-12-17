@@ -39,6 +39,13 @@ impl BoxBody {
             inner: Box::pin(Inner(inner)),
         }
     }
+
+    /// Returns an empty [`BoxBody`].
+    ///
+    /// This is an alias for [`BoxBody::default()`].
+    pub fn empty() -> Self {
+        Self::default()
+    }
 }
 
 impl Body for BoxBody {
