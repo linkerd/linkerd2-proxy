@@ -10,8 +10,8 @@ use tokio::sync::mpsc;
 
 #[derive(Debug, Copy, Clone, Default)]
 pub enum CollectorProtocol {
-    #[default]
     OpenCensus,
+    #[default]
     OpenTelemetry,
 }
 
