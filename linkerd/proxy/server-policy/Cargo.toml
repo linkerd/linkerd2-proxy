@@ -14,7 +14,7 @@ test-util = []
 governor = { version = "0.8", default-features = false, features = ["std"] }
 ipnet = "2"
 http = { workspace = true }
-prost-types = { version = "0.12", optional = true }
+prost-types = { workspace = true, optional = true }
 thiserror = "2"
 
 linkerd-http-route = { path = "../../http/route" }

@@ -17,9 +17,9 @@ default = []
 flakey = []
 
 [dependencies]
-bytes = "1"
+bytes = { workspace = true }
 futures = { version = "0.3", default-features = false, features = ["executor"] }
-h2 = "0.3"
+h2 = { workspace = true }
 http = { workspace = true }
 http-body = { workspace = true }
 hyper = { workspace = true, features = [
@@ -50,7 +50,7 @@ tokio-stream = { version = "0.1", features = ["sync"] }
 tokio-rustls = { workspace = true }
 rustls-pemfile = "2.2"
 tower = { version = "0.4", default-features = false }
-tonic = { version = "0.10", features = ["transport"], default-features = false }
+tonic = { workspace = true, features = ["transport"], default-features = false }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", default-features = false, features = [
     "fmt",

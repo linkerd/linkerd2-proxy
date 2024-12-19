@@ -15,7 +15,7 @@ pprof = ["deflate", "dep:pprof"]
 log-streaming = ["linkerd-tracing/stream"]
 
 [dependencies]
-bytes = "1"
+bytes = { workspace = true }
 deflate = { version = "1", optional = true, features = ["gzip"] }
 http = { workspace = true }
 http-body = { workspace = true }

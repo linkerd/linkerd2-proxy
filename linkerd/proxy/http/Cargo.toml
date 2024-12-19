@@ -13,10 +13,10 @@ This should probably be decomposed into smaller, decoupled crates.
 
 [dependencies]
 async-trait = "0.1"
-bytes = "1"
+bytes = { workspace = true }
 drain = "0.1"
 futures = { version = "0.3", default-features = false }
-h2 = "0.3"
+h2 = { workspace = true }
 http = { workspace = true }
 http-body = { workspace = true }
 httparse = "1"

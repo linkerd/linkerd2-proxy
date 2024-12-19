@@ -14,7 +14,7 @@ client-policy = ["linkerd-proxy-client-policy", "tonic", "linkerd-http-route"]
 
 [dependencies]
 futures = { version = "0.3", default-features = false }
-h2 = "0.3"
+h2 = { workspace = true }
 http = { workspace = true }
 http-body = { workspace = true }
 hyper = { workspace = true, features = ["deprecated", "http1", "http2"] }
@@ -29,7 +29,7 @@ regex = "1"
 tokio = { version = "1", features = ["io-util", "net", "rt", "sync"] }
 tokio-test = "0.4"
 tokio-stream = { version = "0.1", features = ["sync"] }
-tonic = { version = "0.10", default-features = false, optional = true }
+tonic = { workspace = true, default-features = false, optional = true }
 tower = { version = "0.4", default-features = false }
 tracing = "0.1"
 thiserror = "2"

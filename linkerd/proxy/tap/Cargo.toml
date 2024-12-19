@@ -7,7 +7,7 @@ edition = "2021"
 publish = false
 
 [dependencies]
-bytes = "1"
+bytes = { workspace = true }
 http = { workspace = true }
 http-body = { workspace = true }
 hyper = { workspace = true, features = ["backports", "deprecated", "http1", "http2"] }
@@ -22,12 +22,12 @@ linkerd-proxy-http = { path = "../http" }
 linkerd-stack = { path = "../../stack" }
 linkerd-tls = { path = "../../tls" }
 parking_lot = "0.12"
-prost-types = "0.12"
+prost-types = { workspace = true }
 rand = { version = "0.8" }
 thiserror = "2"
 tokio = { version = "1", features = ["time"] }
 tower = { version = "0.4", default-features = false }
-tonic = { version = "0.10", default-features = false }
+tonic = { workspace = true, default-features = false }
 tracing = "0.1"
 pin-project = "1"
 

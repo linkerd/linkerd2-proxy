@@ -10,7 +10,7 @@ Facilities for HTTP/1 upgrades.
 """
 
 [dependencies]
-bytes = "1"
+bytes = { workspace = true }
 drain = "0.1"
 futures = { version = "0.3", default-features = false }
 http = { workspace = true }

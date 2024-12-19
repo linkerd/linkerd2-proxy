@@ -10,7 +10,7 @@ publish = false
 test-util = []
 
 [dependencies]
-bytes = "1"
+bytes = { workspace = true }
 futures = { version = "0.3", default-features = false }
 http = { workspace = true }
 http-body = { workspace = true }

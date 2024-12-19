@@ -8,7 +8,7 @@ publish = false
 
 [dependencies]
 base64 = "0.13"
-bytes = "1"
+bytes = { workspace = true }
 futures = { version = "0.3", default-features = false }
 hex = "0.4"
 http = { workspace = true }

@@ -32,6 +32,6 @@ regex = "1"
 thiserror = "2"
 tokio = { version = "1", features = ["rt"] }
 tokio-stream = { version = "0.1", features = ["time", "sync"] }
-tonic = { version = "0.10", default-features = false, features = ["prost"] }
+tonic = { workspace = true, default-features = false, features = ["prost"] }
 tower = "0.4"
 tracing = "0.1"
