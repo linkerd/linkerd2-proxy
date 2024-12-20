@@ -14,8 +14,8 @@ fn set_env(name: &str, cmd: &mut Command) {
 fn version() -> String {
     if let Ok(v) = std::env::var("LINKERD2_PROXY_VERSION") {
         if !v.is_empty() {
-            if semver::Version::parse(&v).is_err() {
-                panic!("LINKERD2_PROXY_VERSION must be semver");
+            if let Err(err) = semver::Version::parse(&v) {
+                panic!("LINKERD2_PROXY_VERSION must be semver: version='{v}' error='{err}'");
             }
             return v;
         }
