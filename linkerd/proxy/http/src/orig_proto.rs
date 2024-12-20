@@ -26,8 +26,9 @@ pub struct DowngradedH2Error(h2::Reason);
 
 #[pin_project::pin_project]
 #[derive(Debug, Default)]
-pub struct UpgradeResponseBody {
-    inner: hyper::Body,
+pub struct UpgradeResponseBody<B> {
+    #[pin]
+    inner: B,
 }
 
 /// Downgrades HTTP2 requests that were previousl upgraded to their original
@@ -197,8 +198,12 @@ fn test_downgrade_h2_error() {
 
 // === impl UpgradeResponseBody ===
 
-impl Body for UpgradeResponseBody {
-    type Data = bytes::Bytes;
+impl<B> Body for UpgradeResponseBody<B>
+where
+    B: Body + Unpin,
+    B::Error: std::error::Error + Send + Sync + 'static,
+{
+    type Data = B::Data;
     type Error = Error;
 
     #[inline]
@@ -210,7 +215,8 @@ impl Body for UpgradeResponseBody {
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
-        Pin::new(self.project().inner)
+        self.project()
+            .inner
             .poll_data(cx)
             .map_err(downgrade_h2_error)
     }
@@ -219,7 +225,8 @@ impl Body for UpgradeResponseBody {
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
-        Pin::new(self.project().inner)
+        self.project()
+            .inner
             .poll_trailers(cx)
             .map_err(downgrade_h2_error)
     }
