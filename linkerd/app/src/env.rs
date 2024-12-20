@@ -266,6 +266,9 @@ const ENV_OUTBOUND_HTTP1_CONNECTION_POOL_IDLE_TIMEOUT: &str =
 
 const ENV_SHUTDOWN_GRACE_PERIOD: &str = "LINKERD2_PROXY_SHUTDOWN_GRACE_PERIOD";
 
+const ENV_POD_UID: &str = "_pod_uid";
+const ENV_POD_CONTAINER_NAME: &str = "_pod_containerName";
+
 // Default values for various configuration fields
 const DEFAULT_OUTBOUND_LISTEN_ADDR: &str = "127.0.0.1:4140";
 pub const DEFAULT_INBOUND_LISTEN_ADDR: &str = "0.0.0.0:4143";
@@ -394,6 +397,9 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         parse(strings, ENV_OUTBOUND_CONNECT_USER_TIMEOUT, parse_duration);
 
     let shutdown_grace_period = parse(strings, ENV_SHUTDOWN_GRACE_PERIOD, parse_duration);
+
+    let pod_uid = strings.get(ENV_POD_UID);
+    let container_name = strings.get(ENV_POD_CONTAINER_NAME);
 
     let inbound_discovery_idle_timeout =
         parse(strings, ENV_INBOUND_DISCOVERY_IDLE_TIMEOUT, parse_duration);
@@ -845,10 +851,14 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 .unwrap_or_default();
 
             let trace_service_name = trace_service_name.ok().flatten();
+            let pod_uid = pod_uid.ok().flatten();
+            let container_name = container_name.ok().flatten();
 
             trace_collector::Config::Enabled(Box::new(trace_collector::EnabledConfig {
                 attributes,
                 hostname: hostname?,
+                pod_uid,
+                container_name,
                 service_name: trace_service_name,
                 control: ControlConfig {
                     addr,
