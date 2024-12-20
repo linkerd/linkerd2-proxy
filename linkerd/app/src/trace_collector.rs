@@ -1,11 +1,13 @@
-use linkerd_app_core::http_tracing::{CollectorProtocol, SpanSink};
-use linkerd_app_core::metrics::ControlHttp as HttpMetrics;
-use linkerd_app_core::svc::NewService;
-use linkerd_app_core::{control, dns, identity, opencensus, opentelemetry};
+use linkerd_app_core::{
+    control, dns,
+    http_tracing::{CollectorProtocol, SpanSink},
+    identity,
+    metrics::ControlHttp as HttpMetrics,
+    opencensus, opentelemetry,
+    svc::NewService,
+};
 use linkerd_error::Error;
-use std::collections::HashMap;
-use std::future::Future;
-use std::pin::Pin;
+use std::{collections::HashMap, future::Future, pin::Pin};
 
 pub mod oc_collector;
 pub mod otel_collector;
@@ -24,6 +26,8 @@ pub struct EnabledConfig {
     pub control: control::Config,
     pub attributes: HashMap<String, String>,
     pub hostname: Option<String>,
+    pub pod_uid: Option<String>,
+    pub container_name: Option<String>,
     pub service_name: Option<String>,
     pub kind: CollectorProtocol,
 }
@@ -95,6 +99,8 @@ impl Config {
                     CollectorProtocol::OpenTelemetry => otel_collector::create_collector(
                         addr.clone(),
                         inner.hostname,
+                        inner.pod_uid,
+                        inner.container_name,
                         svc_name,
                         inner.attributes,
                         svc,

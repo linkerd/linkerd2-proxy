@@ -4,10 +4,15 @@ use linkerd_app_core::{
 };
 use linkerd_opentelemetry::{
     self as opentelemetry, metrics,
-    proto::proto::common::v1::{any_value, AnyValue, KeyValue},
-    proto::transform::common::ResourceAttributesWithSchema,
+    proto::{
+        proto::common::v1::{any_value, AnyValue, KeyValue},
+        transform::common::ResourceAttributesWithSchema,
+    },
 };
-use std::{collections::HashMap, time::SystemTime, time::UNIX_EPOCH};
+use std::{
+    collections::HashMap,
+    time::{SystemTime, UNIX_EPOCH},
+};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{body::BoxBody, client::GrpcService};
@@ -16,6 +21,8 @@ use tracing::Instrument;
 pub(super) fn create_collector<S>(
     addr: ControlAddr,
     hostname: Option<String>,
+    pod_uid: Option<String>,
+    container_name: Option<String>,
     service_name: String,
     attributes: HashMap<String, String>,
     svc: S,
@@ -53,6 +60,15 @@ where
         .attributes
         .0
         .push(hostname.unwrap_or_default().with_key("host.name"));
+    if let Some(pod_uid) = pod_uid {
+        resources.attributes.0.push(pod_uid.with_key("k8s.pod.uid"));
+    }
+    if let Some(container_name) = container_name {
+        resources
+            .attributes
+            .0
+            .push(container_name.with_key("k8s.container.name"));
+    }
 
     resources.attributes.0.extend(
         attributes
