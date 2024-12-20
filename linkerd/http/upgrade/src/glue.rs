@@ -1,9 +1,9 @@
 use crate::upgrade::Http11Upgrade;
-use bytes::Bytes;
-use futures::TryFuture;
+use futures::{ready, TryFuture};
 use http_body::Body;
 use hyper::client::connect as hyper_connect;
 use linkerd_error::{Error, Result};
+use linkerd_http_box::BoxBody;
 use linkerd_io::{self as io, AsyncRead, AsyncWrite};
 use linkerd_stack::{MakeConnection, Service};
 use pin_project::{pin_project, pinned_drop};
@@ -17,10 +17,11 @@ use tracing::debug;
 /// Provides optional HTTP/1.1 upgrade support on the body.
 #[pin_project(PinnedDrop)]
 #[derive(Debug)]
-pub struct UpgradeBody {
+pub struct UpgradeBody<B = BoxBody> {
     /// In UpgradeBody::drop, if this was an HTTP upgrade, the body is taken
     /// to be inserted into the Http11Upgrade half.
-    body: hyper::Body,
+    #[pin]
+    body: B,
     pub(super) upgrade: Option<(Http11Upgrade, hyper::upgrade::OnUpgrade)>,
 }
 
@@ -50,9 +51,13 @@ pub struct HyperConnectFuture<F> {
 
 // === impl UpgradeBody ===
 
-impl Body for UpgradeBody {
-    type Data = Bytes;
-    type Error = hyper::Error;
+impl<B> Body for UpgradeBody<B>
+where
+    B: Body,
+    B::Error: std::fmt::Display,
+{
+    type Data = B::Data;
+    type Error = B::Error;
 
     fn is_end_stream(&self) -> bool {
         self.body.is_end_stream()
@@ -62,28 +67,34 @@ impl Body for UpgradeBody {
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
-        let body = self.project().body;
-        let poll = futures::ready!(Pin::new(body) // `hyper::Body` is Unpin
-            .poll_data(cx));
-        Poll::Ready(poll.map(|x| {
-            x.map_err(|e| {
-                debug!("http body error: {}", e);
-                e
-            })
-        }))
+        // Poll the next chunk from the body.
+        let this = self.project();
+        let body = this.body;
+        let data = ready!(body.poll_data(cx));
+
+        // Log errors.
+        if let Some(Err(e)) = &data {
+            debug!("http body error: {}", e);
+        }
+
+        Poll::Ready(data)
     }
 
     fn poll_trailers(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
-        let body = self.project().body;
-        Pin::new(body) // `hyper::Body` is Unpin
-            .poll_trailers(cx)
-            .map_err(|e| {
-                debug!("http trailers error: {}", e);
-                e
-            })
+        // Poll the trailers from the body.
+        let this = self.project();
+        let body = this.body;
+        let trailers = ready!(body.poll_trailers(cx));
+
+        // Log errors.
+        if let Err(e) = &trailers {
+            debug!("http trailers error: {}", e);
+        }
+
+        Poll::Ready(trailers)
     }
 
     #[inline]
@@ -92,32 +103,23 @@ impl Body for UpgradeBody {
     }
 }
 
-impl Default for UpgradeBody {
+impl<B: Default> Default for UpgradeBody<B> {
     fn default() -> Self {
-        hyper::Body::empty().into()
-    }
-}
-
-impl From<hyper::Body> for UpgradeBody {
-    fn from(body: hyper::Body) -> Self {
         Self {
-            body,
+            body: B::default(),
             upgrade: None,
         }
     }
 }
 
-impl UpgradeBody {
-    pub fn new(
-        body: hyper::Body,
-        upgrade: Option<(Http11Upgrade, hyper::upgrade::OnUpgrade)>,
-    ) -> Self {
+impl<B> UpgradeBody<B> {
+    pub fn new(body: B, upgrade: Option<(Http11Upgrade, hyper::upgrade::OnUpgrade)>) -> Self {
         Self { body, upgrade }
     }
 }
 
 #[pinned_drop]
-impl PinnedDrop for UpgradeBody {
+impl<B> PinnedDrop for UpgradeBody<B> {
     fn drop(self: Pin<&mut Self>) {
         let this = self.project();
         // If an HTTP/1 upgrade was wanted, send the upgrade future.
@@ -164,6 +166,8 @@ where
     }
 }
 
+// === impl HyperConnectFuture ===
+
 impl<F, I, M> Future for HyperConnectFuture<F>
 where
     F: TryFuture<Ok = (I, M)> + 'static,
@@ -181,7 +185,7 @@ where
     }
 }
 
-// === impl Connected ===
+// === impl Connection ===
 
 impl<C> AsyncRead for Connection<C>
 where

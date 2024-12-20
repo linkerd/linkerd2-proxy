@@ -24,6 +24,7 @@ try-lock = "0.2"
 
 linkerd-duplex = { path = "../../duplex" }
 linkerd-error = { path = "../../error" }
+linkerd-http-box = { path = "../box" }
 linkerd-http-version = { path = "../version" }
 linkerd-io = { path = "../../io" }
 linkerd-stack = { path = "../../stack" }
