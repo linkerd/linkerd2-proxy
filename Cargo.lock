@@ -1931,6 +1931,7 @@ dependencies = [
  "http",
  "http-body",
  "hyper",
+ "hyper-util",
  "linkerd-duplex",
  "linkerd-error",
  "linkerd-http-box",
