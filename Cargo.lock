@@ -1938,6 +1938,7 @@ dependencies = [
  "http 1.2.0",
  "http-body",
  "hyper",
+ "hyper-util",
  "linkerd-duplex",
  "linkerd-error",
  "linkerd-http-box",

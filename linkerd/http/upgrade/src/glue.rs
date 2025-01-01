@@ -1,7 +1,6 @@
 use crate::upgrade::Http11Upgrade;
 use futures::{ready, TryFuture};
-use http_body::Body;
-use hyper::client::connect as hyper_connect;
+use http_body::{Body, Frame};
 use linkerd_error::{Error, Result};
 use linkerd_http_box::BoxBody;
 use linkerd_io::{self as io, AsyncRead, AsyncWrite};
@@ -62,38 +61,21 @@ where
         self.body.is_end_stream()
     }
 
-    fn poll_data(
+    fn poll_frame(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
-        // Poll the next chunk from the body.
+    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
+        // Poll the next frame from the body.
         let this = self.project();
         let body = this.body;
-        let data = ready!(body.poll_data(cx));
+        let frame = ready!(body.poll_frame(cx));
 
         // Log errors.
-        if let Some(Err(e)) = &data {
+        if let Some(Err(e)) = &frame {
             debug!("http body error: {}", e);
         }
 
-        Poll::Ready(data)
-    }
-
-    fn poll_trailers(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
-        // Poll the trailers from the body.
-        let this = self.project();
-        let body = this.body;
-        let trailers = ready!(body.poll_trailers(cx));
-
-        // Log errors.
-        if let Err(e) = &trailers {
-            debug!("http trailers error: {}", e);
-        }
-
-        Poll::Ready(trailers)
+        Poll::Ready(frame)
     }
 
     #[inline]
@@ -155,7 +137,7 @@ where
     C::Future: Unpin + Send + 'static,
     T: Clone + Send + Sync,
 {
-    type Response = Connection<C::Connection>;
+    type Response = hyper_util::rt::TokioIo<Connection<C::Connection>>;
     type Error = Error;
     type Future = HyperConnectFuture<C::Future>;
 
@@ -180,15 +162,15 @@ where
     F: TryFuture<Ok = (I, M)> + 'static,
     F::Error: Into<Error>,
 {
-    type Output = Result<Connection<I>>;
+    type Output = Result<hyper_util::rt::TokioIo<Connection<I>>>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
         let (transport, _) = futures::ready!(this.inner.try_poll(cx)).map_err(Into::into)?;
-        Poll::Ready(Ok(Connection {
+        Poll::Ready(Ok(hyper_util::rt::TokioIo::new(Connection {
             transport,
             absolute_form: *this.absolute_form,
-        }))
+        })))
     }
 }
 
@@ -240,8 +222,54 @@ where
     }
 }
 
-impl<C> hyper_connect::Connection for Connection<C> {
-    fn connected(&self) -> hyper_connect::Connected {
-        hyper_connect::Connected::new().proxy(self.absolute_form)
+impl<C: hyper::rt::Read> hyper::rt::Read for Connection<C> {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: hyper::rt::ReadBufCursor<'_>,
+    ) -> Poll<Result<(), std::io::Error>> {
+        self.project().transport.poll_read(cx, buf)
+    }
+}
+
+impl<C: hyper::rt::Write> hyper::rt::Write for Connection<C> {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<std::result::Result<usize, std::io::Error>> {
+        self.project().transport.poll_write(cx, buf)
+    }
+
+    fn poll_flush(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<std::result::Result<(), std::io::Error>> {
+        self.project().transport.poll_flush(cx)
+    }
+
+    fn poll_shutdown(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<std::result::Result<(), std::io::Error>> {
+        self.project().transport.poll_shutdown(cx)
+    }
+
+    fn is_write_vectored(&self) -> bool {
+        self.transport.is_write_vectored()
+    }
+
+    fn poll_write_vectored(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: &[std::io::IoSlice<'_>],
+    ) -> Poll<std::result::Result<usize, std::io::Error>> {
+        self.project().transport.poll_write_vectored(cx, bufs)
+    }
+}
+
+impl<C> hyper_util::client::legacy::connect::Connection for Connection<C> {
+    fn connected(&self) -> hyper_util::client::legacy::connect::Connected {
+        hyper_util::client::legacy::connect::Connected::new().proxy(self.absolute_form)
     }
 }
