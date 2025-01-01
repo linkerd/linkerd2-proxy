@@ -10,7 +10,7 @@ publish = false
 bytes = { workspace = true }
 http = { workspace = true }
 http-body = { workspace = true }
-hyper = { workspace = true, features = ["backports", "deprecated", "http1", "http2"] }
+hyper = { workspace = true, features = ["http1", "http2"] }
 futures = { version = "0.3", default-features = false }
 ipnet = "2.10"
 linkerd2-proxy-api = { workspace = true, features = ["tap"] }
