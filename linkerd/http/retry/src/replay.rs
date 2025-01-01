@@ -196,6 +196,13 @@ where
                 return Poll::Ready(Some(Err(Capped.into())));
             }
         }
+        if this.replay_trailers {
+            this.replay_trailers = false;
+            if let Some(ref trailers) = state.trailers {
+                tracing::trace!("Replaying trailers");
+                return Poll::Ready(Some(Ok(Frame::trailers(trailers.clone()))));
+            }
+        }
 
         // If the inner body has previously ended, don't poll it again.
         //
