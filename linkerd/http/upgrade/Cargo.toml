@@ -15,10 +15,7 @@ drain = { workspace = true }
 futures = { version = "0.3", default-features = false }
 http = { workspace = true }
 http-body = { workspace = true }
-hyper = { workspace = true, default-features = false, features = [
-    "deprecated",
-    "client",
-] }
+hyper = { workspace = true, default-features = false, features = ["client"] }
 pin-project = "1"
 thiserror = "2"
 tokio = { version = "1", default-features = false }
