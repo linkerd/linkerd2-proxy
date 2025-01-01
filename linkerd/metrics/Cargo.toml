@@ -16,7 +16,7 @@ test_util = []
 deflate = { version = "1", features = ["gzip"] }
 http = { workspace = true }
 http-body = { workspace = true }
-hyper = { workspace = true, features = ["deprecated", "http1", "http2"] }
+hyper = { workspace = true, features = ["http1", "http2"] }
 linkerd-http-box = { path = "../http/box" }
 linkerd-stack = { path = "../stack", optional = true }
 linkerd-system = { path = "../system", optional = true }
