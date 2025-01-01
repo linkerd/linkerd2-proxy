@@ -22,8 +22,9 @@ use try_lock::TryLock;
 /// inserted into the `Request::extensions()`. If the HTTP1 client service
 /// also detects an upgrade, the two `OnUpgrade` futures will be joined
 /// together with the glue in this type.
-// Note: this relies on there only having been 2 Inner clones, so don't
-// implement `Clone` for this type.
+// XXX(kate): to satisfy new trait bounds when upgrading to hyper 1.x, this type must now be
+// Clone'able.
+#[derive(Clone)]
 pub struct Http11Upgrade {
     half: Half,
     inner: Arc<Inner>,
@@ -41,7 +42,9 @@ struct Http11UpgradeHalves {
 
 /// A marker type inserted into Extensions to signal it was an HTTP CONNECT
 /// request.
-#[derive(Debug)]
+// XXX(kate): to satisfy new trait bounds when upgrading to hyper 1.x, this type must now be
+// Clone'able.
+#[derive(Clone, Debug)]
 pub struct HttpConnect;
 
 struct Inner {
@@ -50,7 +53,9 @@ struct Inner {
     upgrade_drain_signal: Option<drain::Watch>,
 }
 
-#[derive(Debug)]
+// XXX(kate): to satisfy new trait bounds when upgrading to hyper 1.x, this type must now be
+// Clone'able.
+#[derive(Clone, Debug)]
 enum Half {
     Server,
     Client,
@@ -139,6 +144,9 @@ impl Drop for Inner {
             let both_upgrades = async move {
                 let (server_conn, client_conn) = tokio::try_join!(server_upgrade, client_upgrade)?;
                 trace!("HTTP upgrade successful");
+                use hyper_util::rt::TokioIo;
+                let client_conn = TokioIo::new(client_conn);
+                let server_conn = TokioIo::new(server_conn);
                 if let Err(e) = Duplex::new(client_conn, server_conn).await {
                     info!("tcp duplex error: {}", e)
                 }
@@ -168,6 +176,15 @@ impl<S> Service<S> {
         Self {
             service,
             upgrade_drain_signal,
+        }
+    }
+}
+
+impl<S: Clone> Clone for Service<S> {
+    fn clone(&self) -> Self {
+        Self {
+            service: self.service.clone(),
+            upgrade_drain_signal: self.upgrade_drain_signal.clone(),
         }
     }
 }
