@@ -114,6 +114,6 @@ tonic = { version = "0.12", default-features = false }
 tonic-build = { version = "0.12", default-features = false }
 
 [workspace.dependencies.linkerd2-proxy-api]
-version = "0.15.0"
-# git = "https://github.com/linkerd/linkerd2-proxy-api.git"
-# branch = "main"
+git = "https://github.com/linkerd/linkerd2-proxy-api.git"
+rev = "981369a18918ce5570b2d49c329eca55ae831e87"
+# https://github.com/linkerd/linkerd2-proxy-api/commit/981369a18918ce5570b2d49c329eca55ae831e87
