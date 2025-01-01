@@ -1,5 +1,6 @@
 use super::{ClassifyEos, ClassifyResponse};
 use futures::{prelude::*, ready};
+use http_body::Frame;
 use linkerd_error::Error;
 use linkerd_stack::{layer, ExtractParam, NewService, Service};
 use pin_project::{pin_project, pinned_drop};
@@ -215,40 +216,34 @@ where
     type Data = B::Data;
     type Error = B::Error;
 
-    fn poll_data(
+    fn poll_frame(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
+    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         let this = self.project();
-        match ready!(this.inner.poll_data(cx)) {
-            None => Poll::Ready(None),
-            Some(Ok(data)) => Poll::Ready(Some(Ok(data))),
+        match ready!(this.inner.poll_frame(cx)) {
+            None => {
+                // Classify the stream if it has reached a `None`.
+                if let Some(State { classify, tx }) = this.state.take() {
+                    let _ = tx.try_send(classify.eos(None));
+                }
+                Poll::Ready(None)
+            }
+            Some(Ok(data)) => {
+                // Classify the stream if this is a trailers frame.
+                if let trls @ Some(_) = data.trailers_ref() {
+                    if let Some(State { classify, tx }) = this.state.take() {
+                        let _ = tx.try_send(classify.eos(trls));
+                    }
+                }
+                Poll::Ready(Some(Ok(data)))
+            }
             Some(Err(e)) => {
+                // Classify the stream if an error has been encountered.
                 if let Some(State { classify, tx }) = this.state.take() {
                     let _ = tx.try_send(classify.error(&e));
                 }
                 Poll::Ready(Some(Err(e)))
-            }
-        }
-    }
-
-    fn poll_trailers(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
-        let this = self.project();
-        match ready!(this.inner.poll_trailers(cx)) {
-            Ok(trls) => {
-                if let Some(State { classify, tx }) = this.state.take() {
-                    let _ = tx.try_send(classify.eos(trls.as_ref()));
-                }
-                Poll::Ready(Ok(trls))
-            }
-            Err(e) => {
-                if let Some(State { classify, tx }) = this.state.take() {
-                    let _ = tx.try_send(classify.error(&e));
-                }
-                Poll::Ready(Err(e))
             }
         }
     }
