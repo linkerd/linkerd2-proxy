@@ -102,6 +102,7 @@ h2 = { version = "0.4" }
 http = { version = "1" }
 http-body = { version = "1" }
 hyper = { version = "1", default-features = false }
+hyper-util = { version = "0.1", default-features = false }
 prost = { version = "0.13" }
 prost-types = { version = "0.13" }
 tokio-rustls = { version = "0.26", default-features = false, features = [
