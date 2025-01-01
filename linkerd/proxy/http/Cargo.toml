@@ -21,14 +21,10 @@ http = { workspace = true }
 http-body = { workspace = true }
 httparse = "1"
 hyper = { workspace = true, features = [
-    "backports",
     "client",
-    "deprecated",
     "http1",
     "http2",
     "server",
-    "stream",
-    "runtime",
 ] }
 hyper-balance = { path = "../../../hyper-balance" }
 parking_lot = "0.12"
