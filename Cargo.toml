@@ -100,20 +100,35 @@ lto = true
 
 [workspace.dependencies]
 bytes = { version = "1" }
-h2 = { version = "0.3" }
-http = { version = "0.2" }
-http-body = { version = "0.4" }
-hyper = { version = "0.14.32", default-features = false }
-prost = { version = "0.12" }
-prost-types = { version = "0.12" }
+h2 = { version = "0.4" }
+http = { version = "1" }
+http-body = { version = "1" }
+hyper = { version = "1", default-features = false }
+hyper-util = { version = "0.1", default-features = false }
+prost = { version = "0.13" }
+prost-types = { version = "0.13" }
 tokio-rustls = { version = "0.26", default-features = false, features = [
     "ring",
     "logging",
 ] }
-tonic = { version = "0.10", default-features = false }
-tonic-build = { version = "0.10", default-features = false }
+tonic = { version = "0.12", default-features = false }
+tonic-build = { version = "0.12", default-features = false }
+
+[workspace.dependencies.http-body-util]
+version = "0.1"
+# git = "https://github.com/hyperium/http-body.git"
+# rev = "981369a18918ce5570b2d49c329eca55ae831e87"
+default-features = false
+features = ["channel"]
+
+[patch.crates-io.http-body]
+git = "https://github.com/hyperium/http-body.git"
+rev = "86fdf00ff9f5758a42f76a4d06f82e7887a990d8"
+[patch.crates-io.http-body-util]
+git = "https://github.com/hyperium/http-body.git"
+rev = "86fdf00ff9f5758a42f76a4d06f82e7887a990d8"
 
 [workspace.dependencies.linkerd2-proxy-api]
-version = "0.15.0"
-# git = "https://github.com/linkerd/linkerd2-proxy-api.git"
-# branch = "main"
+git = "https://github.com/linkerd/linkerd2-proxy-api.git"
+rev = "981369a18918ce5570b2d49c329eca55ae831e87"
+# https://github.com/linkerd/linkerd2-proxy-api/commit/981369a18918ce5570b2d49c329eca55ae831e87
