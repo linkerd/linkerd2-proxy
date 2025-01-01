@@ -1,5 +1,4 @@
-use http::{HeaderMap, HeaderValue};
-use http_body::Body;
+use http_body::{Body, Frame};
 use linkerd_error::Error;
 use pin_project::pin_project;
 use std::pin::Pin;
@@ -63,24 +62,27 @@ impl Body for BoxBody {
     }
 
     #[inline]
-    fn poll_data(
+    fn poll_frame(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
-        self.as_mut().inner.as_mut().poll_data(cx)
-    }
-
-    #[inline]
-    fn poll_trailers(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<Option<HeaderMap<HeaderValue>>, Self::Error>> {
-        self.as_mut().inner.as_mut().poll_trailers(cx)
+    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
+        self.as_mut().inner.as_mut().poll_frame(cx)
     }
 
     #[inline]
     fn size_hint(&self) -> http_body::SizeHint {
         self.inner.size_hint()
+    }
+}
+
+impl Data {
+    fn new<B>(buf: B) -> Self
+    where
+        B: bytes::Buf + Send + 'static,
+    {
+        Self {
+            inner: Box::new(buf),
+        }
     }
 }
 
@@ -116,29 +118,35 @@ where
         self.0.is_end_stream()
     }
 
-    fn poll_data(
+    fn poll_frame(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
-        let opt = futures::ready!(self.project().0.poll_data(cx));
-        Poll::Ready(opt.map(|res| {
-            res.map_err(Into::into).map(|buf| Data {
-                inner: Box::new(buf),
-            })
-        }))
-    }
+    ) -> Poll<Option<Result<http_body::Frame<Self::Data>, Self::Error>>> {
+        // Poll the inner body `B` for the next frame.
+        let body = self.project().0;
+        let frame = futures::ready!(body.poll_frame(cx));
+        let frame = frame.map(Self::map_frame);
 
-    #[inline]
-    fn poll_trailers(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<Option<HeaderMap<HeaderValue>>, Self::Error>> {
-        Poll::Ready(futures::ready!(self.project().0.poll_trailers(cx)).map_err(Into::into))
+        Poll::Ready(frame)
     }
 
     #[inline]
     fn size_hint(&self) -> http_body::SizeHint {
         self.0.size_hint()
+    }
+}
+
+impl<B> Inner<B>
+where
+    B: Body,
+    B::Data: Send + 'static,
+    B::Error: Into<Error>,
+{
+    fn map_frame(frame: Result<Frame<B::Data>, B::Error>) -> Result<Frame<Data>, Error> {
+        match frame {
+            Ok(f) => Ok(f.map_data(Data::new)),
+            Err(e) => Err(e.into()),
+        }
     }
 }
 
@@ -156,18 +164,11 @@ impl Body for NoBody {
         true
     }
 
-    fn poll_data(
+    fn poll_frame(
         self: Pin<&mut Self>,
         _: &mut Context<'_>,
-    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
+    ) -> Poll<Option<Result<http_body::Frame<Self::Data>, Self::Error>>> {
         Poll::Ready(None)
-    }
-
-    fn poll_trailers(
-        self: Pin<&mut Self>,
-        _: &mut Context<'_>,
-    ) -> Poll<Result<Option<HeaderMap<HeaderValue>>, Self::Error>> {
-        Poll::Ready(Ok(None))
     }
 
     fn size_hint(&self) -> http_body::SizeHint {
