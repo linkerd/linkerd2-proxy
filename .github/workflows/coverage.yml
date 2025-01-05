@@ -21,7 +21,7 @@ env:
 jobs:
   meta:
     timeout-minutes: 5
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - id: changed
@@ -40,13 +40,13 @@ jobs:
   codecov:
     needs: meta
     if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || needs.meta.outputs.any_changed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     container:
-      image: docker://ghcr.io/linkerd/dev:v44-rust
+      image: docker://ghcr.io/linkerd/dev:v45-rust
       options: --security-opt seccomp=unconfined # 🤷
     env:
-      CXX: "/usr/bin/clang++-14"
+      CXX: "/usr/bin/clang++-19"
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - uses: Swatinem/rust-cache@f0deed1e0edfc6a9be95417288c0e1099b1eeec3

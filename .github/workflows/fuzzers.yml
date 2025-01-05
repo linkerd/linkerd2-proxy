@@ -26,7 +26,7 @@ permissions:
 jobs:
   list-changed:
     timeout-minutes: 3
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     container: docker://rust:1.83.0
     steps:
       - run: apt update && apt install -y jo
@@ -47,7 +47,7 @@ jobs:
   build:
     needs: [list-changed]
     timeout-minutes: 40
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     container: docker://rust:1.83.0
     strategy:
       matrix:

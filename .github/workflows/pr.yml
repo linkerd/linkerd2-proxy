@@ -14,7 +14,7 @@ concurrency:
 jobs:
   meta:
     timeout-minutes: 5
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - id: build
@@ -57,7 +57,7 @@ jobs:
   info:
     timeout-minutes: 3
     needs: meta
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Info
         run: |
@@ -74,9 +74,9 @@ jobs:
   actions:
     needs: meta
     if: needs.meta.outputs.actions_changed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: linkerd/dev/actions/setup-tools@v44
+      - uses: linkerd/dev/actions/setup-tools@v45
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - run: just action-lint
       - run: just action-dev-check
@@ -84,8 +84,8 @@ jobs:
   rust:
     needs: meta
     if: needs.meta.outputs.cargo_changed == 'true' || needs.meta.outputs.rust_changed == 'true'
-    runs-on: ubuntu-latest
-    container: ghcr.io/linkerd/dev:v44-rust
+    runs-on: ubuntu-24.04
+    container: ghcr.io/linkerd/dev:v45-rust
     permissions:
       contents: read
     timeout-minutes: 20
@@ -110,8 +110,8 @@ jobs:
     needs: meta
     if: needs.meta.outputs.cargo_changed == 'true'
     timeout-minutes: 20
-    runs-on: ubuntu-latest
-    container: ghcr.io/linkerd/dev:v44-rust
+    runs-on: ubuntu-24.04
+    container: ghcr.io/linkerd/dev:v45-rust
     strategy:
       matrix:
         crate: ${{ fromJson(needs.meta.outputs.cargo_crates) }}
@@ -126,11 +126,11 @@ jobs:
     needs: meta
     if: needs.meta.outputs.cargo_changed == 'true' || needs.meta.outputs.rust_changed == 'true'
     timeout-minutes: 20
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       WAIT_TIMEOUT: 2m
     steps:
-      - uses: linkerd/dev/actions/setup-tools@v44
+      - uses: linkerd/dev/actions/setup-tools@v45
       - name: scurl https://run.linkerd.io/install-edge | sh
         run: |
           scurl https://run.linkerd.io/install-edge | sh
@@ -152,7 +152,7 @@ jobs:
     timeout-minutes: 3
     needs: [meta, actions, rust, rust-crates, linkerd-install]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     permissions:
       contents: write
