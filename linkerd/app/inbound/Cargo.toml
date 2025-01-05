@@ -18,7 +18,7 @@ test-util = [
 ]
 
 [dependencies]
-bytes = "1"
+bytes = { workspace = true }
 http = { workspace = true }
 futures = { version = "0.3", default-features = false }
 linkerd-app-core = { path = "../core" }
@@ -36,7 +36,7 @@ parking_lot = "0.12"
 rangemap = "1"
 thiserror = "2"
 tokio = { version = "1", features = ["sync"] }
-tonic = { version = "0.10", default-features = false }
+tonic = { workspace = true, default-features = false }
 tower = { version = "0.4", features = ["util"] }
 tracing = "0.1"
 

@@ -23,7 +23,7 @@ linkerd-identity = { path = "../../identity" }
 http = { workspace = true }
 http-body = { workspace = true }
 pin-project = "1"
-prost = "0.12"
-tonic = { version = "0.10", default-features = false }
+prost = { workspace = true }
+tonic = { workspace = true, default-features = false }
 tower = { version = "0.4", default-features = false }
 tracing = "0.1"

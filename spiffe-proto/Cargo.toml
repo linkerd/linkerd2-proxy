@@ -7,17 +7,17 @@ edition = "2021"
 publish = false
 
 [dependencies]
-bytes = "1"
-prost = "0.12"
-prost-types = "0.12"
+bytes = { workspace = true }
+prost = { workspace = true }
+prost-types = { workspace = true }
 
 [dependencies.tonic]
-version = "0.10"
+workspace = true
 default-features = false
 features = ["prost", "codegen"]
 
 [dev-dependencies.tonic-build]
-version = "0.10"
+workspace = true
 default-features = false
 features = ["prost"]
 

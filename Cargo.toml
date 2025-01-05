@@ -97,9 +97,21 @@ debug = 1
 lto = true
 
 [workspace.dependencies]
+bytes = { version = "1" }
+h2 = { version = "0.3" }
 http = { version = "0.2" }
 http-body = { version = "0.4" }
 hyper = { version = "0.14.32", default-features = false }
-linkerd2-proxy-api = "0.15.0"
-tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "logging"] }
-# linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api.git", branch = "main" }
+prost = { version = "0.12" }
+prost-types = { version = "0.12" }
+tokio-rustls = { version = "0.26", default-features = false, features = [
+    "ring",
+    "logging",
+] }
+tonic = { version = "0.10", default-features = false }
+tonic-build = { version = "0.10", default-features = false }
+
+[workspace.dependencies.linkerd2-proxy-api]
+version = "0.15.0"
+# git = "https://github.com/linkerd/linkerd2-proxy-api.git"
+# branch = "main"
