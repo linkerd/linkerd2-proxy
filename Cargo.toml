@@ -101,10 +101,13 @@ bytes = { version = "1" }
 h2 = { version = "0.3" }
 http = { version = "0.2" }
 http-body = { version = "0.4" }
-hyper = { version = "0.14", default-features = false }
+hyper = { version = "0.14.32", default-features = false }
 prost = { version = "0.12" }
 prost-types = { version = "0.12" }
-tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "logging"] }
+tokio-rustls = { version = "0.26", default-features = false, features = [
+    "ring",
+    "logging",
+] }
 tonic = { version = "0.10", default-features = false }
 tonic-build = { version = "0.10", default-features = false }
 
@@ -112,11 +115,3 @@ tonic-build = { version = "0.10", default-features = false }
 version = "0.15.0"
 # git = "https://github.com/linkerd/linkerd2-proxy-api.git"
 # branch = "main"
-
-# NB: hyperium/hyper#3796 backports the server connection builder's
-# `max_pending_accept_reset_streams()` method. once released, we can depend on
-# 0.14.32 or later, but until then will point our hyper dependency to the
-# commit in the 0.14 branch.
-[patch.'crates-io'.hyper]
-git = "https://github.com/hyperium/hyper.git"
-rev = "a24f0c0a"
