@@ -3,7 +3,7 @@
 	"build": {
 		"dockerfile": "Dockerfile",
 		"args": {
-			"DEV_VERSION": "v44",
+			"DEV_VERSION": "v45",
 			"http_proxy": "${localEnv:http_proxy}",
 			"https_proxy": "${localEnv:https_proxy}"
 		}
@@ -42,7 +42,7 @@
 	"overrideCommand": false,
 	"remoteUser": "code",
 	"containerEnv": {
-		"CXX": "clang++-14",
+		"CXX": "clang++-19",
 		"RUSTFLAGS": "--cfg tokio_unstable"
 	},
 	"mounts": [

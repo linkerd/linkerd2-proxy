@@ -13,7 +13,7 @@ concurrency:
 jobs:
   last-release:
     if: github.repository == 'linkerd/linkerd2-proxy' # Don't run this in forks.
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     env:
       GH_REPO: ${{ github.repository }}
@@ -41,7 +41,7 @@ jobs:
 
   last-commit:
     needs: last-release
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -62,7 +62,7 @@ jobs:
   trigger-release:
     needs: [last-release, last-commit]
     if: needs.last-release.outputs.recent == 'false' && needs.last-commit.outputs.after-release == 'true'
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       actions: write

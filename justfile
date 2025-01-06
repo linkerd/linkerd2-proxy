@@ -59,7 +59,7 @@ _features := if features == "all" {
 
 wait-timeout := env_var_or_default("WAIT_TIMEOUT", "1m")
 
-export CXX := 'clang++-14'
+export CXX := 'clang++-19'
 
 #
 # Recipes

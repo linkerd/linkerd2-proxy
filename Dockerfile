@@ -3,7 +3,7 @@
 # This is intended **DEVELOPMENT ONLY**, i.e. so that proxy developers can
 # easily test the proxy in the context of the larger `linkerd2` project.
 
-ARG RUST_IMAGE=ghcr.io/linkerd/dev:v44-rust
+ARG RUST_IMAGE=ghcr.io/linkerd/dev:v45-rust
 
 # Use an arbitrary ~recent edge release image to get the proxy
 # identity-initializing and linkerd-await wrappers.
