@@ -1,5 +1,6 @@
 use crate::{propagation, Span, SpanSink};
 use futures::{future::Either, prelude::*};
+use http::Uri;
 use linkerd_stack::layer;
 use std::{
     collections::HashMap,
@@ -34,21 +35,41 @@ impl<K: Clone, S> TraceContext<K, S> {
         })
     }
 
+    /// Returns labels for the provided request.
+    ///
+    /// The OpenTelemetry spec defines the semantic conventions that HTTP
+    /// services should use for the labels included in traces:
+    /// https://opentelemetry.io/docs/specs/semconv/http/http-spans/
     fn request_labels<B>(req: &http::Request<B>) -> HashMap<&'static str, String> {
-        let mut labels = HashMap::with_capacity(5);
-        labels.insert("http.method", format!("{}", req.method()));
-        let path = req
-            .uri()
-            .path_and_query()
-            .map(|pq| pq.as_str().to_owned())
-            .unwrap_or_default();
-        labels.insert("http.path", path);
-        if let Some(authority) = req.uri().authority() {
-            labels.insert("http.authority", authority.as_str().to_string());
+        let mut labels = HashMap::with_capacity(7);
+        labels.insert("http.request.method", format!("{}", req.method()));
+        let url = req.uri();
+        if let Some(scheme) = url.scheme_str() {
+            labels.insert("url.scheme", scheme.to_string());
         }
-        if let Some(host) = req.headers().get("host") {
+        labels.insert("url.path", url.path().to_string());
+        if let Some(query) = url.query() {
+            labels.insert("url.query", query.to_string());
+        }
+
+        // This is the order of precendence for host headers,
+        // see https://opentelemetry.io/docs/specs/semconv/http/http-spans/
+        let host_header = req
+            .headers()
+            .get("X-Forwarded-Host")
+            .or_else(|| req.headers().get(":authority"))
+            .or_else(|| req.headers().get("host"));
+
+        if let Some(host) = host_header {
             if let Ok(host) = host.to_str() {
-                labels.insert("http.host", host.to_string());
+                if let Ok(uri) = host.parse::<Uri>() {
+                    if let Some(host) = uri.host() {
+                        labels.insert("server.address", host.to_string());
+                    }
+                    if let Some(port) = uri.port() {
+                        labels.insert("server.port", port.to_string());
+                    }
+                }
             }
         }
         labels
@@ -58,7 +79,10 @@ impl<K: Clone, S> TraceContext<K, S> {
         mut labels: HashMap<&'static str, String>,
         rsp: &http::Response<B>,
     ) -> HashMap<&'static str, String> {
-        labels.insert("http.status_code", rsp.status().as_str().to_string());
+        labels.insert(
+            "http.response.status_code",
+            rsp.status().as_str().to_string(),
+        );
         labels
     }
 }
