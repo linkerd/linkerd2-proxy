@@ -70,13 +70,11 @@ mod tests {
     /// incoming handshakes, but that doesn't matter for these tests, where we
     /// don't actually do any TLS.
     fn empty_server_config() -> rustls::ServerConfig {
-        rustls::ServerConfig::builder_with_provider(Arc::new(
-            rustls::crypto::ring::default_provider(),
-        ))
-        .with_protocol_versions(rustls::ALL_VERSIONS)
-        .expect("client config must be valid")
-        .with_client_cert_verifier(Arc::new(rustls::server::NoClientAuth))
-        .with_cert_resolver(Arc::new(rustls::server::ResolvesServerCertUsingSni::new()))
+        rustls::ServerConfig::builder_with_provider(Arc::new(crate::backend::default_provider()))
+            .with_protocol_versions(rustls::ALL_VERSIONS)
+            .expect("client config must be valid")
+            .with_client_cert_verifier(Arc::new(rustls::server::NoClientAuth))
+            .with_cert_resolver(Arc::new(rustls::server::ResolvesServerCertUsingSni::new()))
     }
 
     /// Returns the simplest default rustls client config.
@@ -85,13 +83,11 @@ mod tests {
     /// it doesn't trust any root certificates. However, that doesn't actually
     /// matter for these tests, which don't actually do TLS.
     fn empty_client_config() -> rustls::ClientConfig {
-        rustls::ClientConfig::builder_with_provider(Arc::new(
-            rustls::crypto::ring::default_provider(),
-        ))
-        .with_protocol_versions(rustls::ALL_VERSIONS)
-        .expect("client config must be valid")
-        .with_root_certificates(rustls::RootCertStore::empty())
-        .with_no_client_auth()
+        rustls::ClientConfig::builder_with_provider(Arc::new(crate::backend::default_provider()))
+            .with_protocol_versions(rustls::ALL_VERSIONS)
+            .expect("client config must be valid")
+            .with_root_certificates(rustls::RootCertStore::empty())
+            .with_no_client_auth()
     }
 
     #[tokio::test]

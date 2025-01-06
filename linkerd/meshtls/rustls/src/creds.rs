@@ -2,6 +2,8 @@ mod receiver;
 mod store;
 pub(crate) mod verify;
 
+use crate::backend;
+
 pub use self::{receiver::Receiver, store::Store};
 use linkerd_dns_name as dns;
 use linkerd_error::Result;
@@ -91,7 +93,7 @@ pub fn watch(
 }
 
 fn default_provider() -> CryptoProvider {
-    let mut provider = rustls::crypto::ring::default_provider();
+    let mut provider = backend::default_provider();
     provider.cipher_suites = params::TLS_SUPPORTED_CIPHERSUITES.to_vec();
     provider
 }
@@ -111,7 +113,8 @@ pub fn default_for_test() -> (Store, Receiver) {
     for_test(&linkerd_tls_test_util::FOO_NS1)
 }
 
-mod params {
+pub(crate) mod params {
+    use crate::backend;
     use tokio_rustls::rustls::{self, crypto::WebPkiSupportedAlgorithms};
 
     // These must be kept in sync:
@@ -121,14 +124,8 @@ mod params {
         rustls::SignatureScheme::ECDSA_NISTP256_SHA256;
     pub const SIGNATURE_ALG_RUSTLS_ALGORITHM: rustls::SignatureAlgorithm =
         rustls::SignatureAlgorithm::ECDSA;
-    pub static SUPPORTED_SIG_ALGS: &WebPkiSupportedAlgorithms = &WebPkiSupportedAlgorithms {
-        all: &[webpki::ring::ECDSA_P256_SHA256],
-        mapping: &[(
-            SIGNATURE_ALG_RUSTLS_SCHEME,
-            &[webpki::ring::ECDSA_P256_SHA256],
-        )],
-    };
+    pub static SUPPORTED_SIG_ALGS: &WebPkiSupportedAlgorithms = backend::SUPPORTED_SIG_ALGS;
     pub static TLS_VERSIONS: &[&rustls::SupportedProtocolVersion] = &[&rustls::version::TLS13];
     pub static TLS_SUPPORTED_CIPHERSUITES: &[rustls::SupportedCipherSuite] =
-        &[rustls::crypto::ring::cipher_suite::TLS13_CHACHA20_POLY1305_SHA256];
+        backend::TLS_SUPPORTED_CIPHERSUITES;
 }
