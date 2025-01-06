@@ -14,6 +14,10 @@ pub(super) fn read_trace_attributes(path: &std::path::Path) -> HashMap<String, S
     }
 }
 
+pub(super) fn parse_env_trace_attributes(attrs: &str) -> HashMap<String, String> {
+    parse_attrs(attrs)
+}
+
 fn parse_attrs(attrs: &str) -> HashMap<String, String> {
     attrs
         .lines()
