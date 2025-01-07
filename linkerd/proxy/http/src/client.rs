@@ -60,10 +60,10 @@ where
     T: Clone + Send + Sync + 'static,
     X: ExtractParam<Params, T>,
     C: MakeConnection<(crate::Version, T)> + Clone + Unpin + Send + Sync + 'static,
-    C::Connection: Unpin + Send,
+    C::Connection: hyper::rt::Read + hyper::rt::Write + Send + Unpin,
     C::Metadata: Send,
     C::Future: Unpin + Send + 'static,
-    B: crate::Body + Send + 'static,
+    B: crate::Body + Unpin + Send + 'static,
     B::Data: Send,
     B::Error: Into<Error> + Send + Sync,
 {
@@ -120,12 +120,12 @@ impl<C, T, B> Service<http::Request<B>> for Client<C, T, B>
 where
     T: Clone + Send + Sync + 'static,
     C: MakeConnection<(crate::Version, T)> + Clone + Send + Sync + 'static,
-    C::Connection: Unpin + Send,
+    C::Connection: hyper::rt::Read + hyper::rt::Write + Unpin + Send,
     C::Future: Unpin + Send + 'static,
     C::Error: Into<Error>,
-    B: crate::Body + Send + 'static,
+    B: crate::Body + Unpin + Send + 'static,
     B::Data: Send,
-    B::Error: Into<Error> + Send + Sync,
+    B::Error: std::error::Error + Send + Sync + 'static,
 {
     type Response = http::Response<BoxBody>;
     type Error = Error;

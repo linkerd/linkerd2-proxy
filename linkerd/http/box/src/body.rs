@@ -32,7 +32,7 @@ impl BoxBody {
     where
         B: Body + Send + 'static,
         B::Data: Send + 'static,
-        B::Error: Into<Error>,
+        B::Error: std::error::Error + Send + Sync + 'static,
     {
         Self {
             inner: Box::pin(Inner(inner)),
@@ -108,7 +108,7 @@ impl<B> Body for Inner<B>
 where
     B: Body,
     B::Data: Send + 'static,
-    B::Error: Into<Error>,
+    B::Error: std::error::Error + Send + Sync + 'static,
 {
     type Data = Data;
     type Error = Error;
@@ -140,7 +140,7 @@ impl<B> Inner<B>
 where
     B: Body,
     B::Data: Send + 'static,
-    B::Error: Into<Error>,
+    B::Error: std::error::Error + Send + Sync + 'static,
 {
     fn map_frame(frame: Result<Frame<B::Data>, B::Error>) -> Result<Frame<Data>, Error> {
         match frame {

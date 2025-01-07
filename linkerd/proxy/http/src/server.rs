@@ -6,6 +6,7 @@ use linkerd_io::{self as io, PeerAddr};
 use linkerd_stack::{layer, ExtractParam, NewService};
 use std::{
     future::Future,
+    marker::PhantomData,
     pin::Pin,
     task::{Context, Poll},
 };
@@ -32,12 +33,13 @@ pub struct NewServeHttp<X, N> {
 
 /// Serves HTTP connections with an inner service.
 #[derive(Clone, Debug)]
-pub struct ServeHttp<N> {
+pub struct ServeHttp<N, ReqB = BoxBody> {
     version: Version,
     http1: hyper::server::conn::http1::Builder,
     http2: hyper::server::conn::http2::Builder<TracingExecutor>,
     inner: N,
     drain: drain::Watch,
+    marker: PhantomData<ReqB>,
 }
 
 // === impl NewServeHttp ===
@@ -118,21 +120,33 @@ where
             drain,
             http1: hyper::server::conn::http1::Builder::new(),
             http2,
+            marker: PhantomData,
         }
     }
 }
 
 // === impl ServeHttp ===
 
-impl<I, N, S> Service<I> for ServeHttp<N>
+impl<I, N, S, ReqB> Service<I> for ServeHttp<N, ReqB>
 where
-    I: io::AsyncRead + io::AsyncWrite + PeerAddr + Send + Unpin + 'static,
+    I: hyper::rt::Read + hyper::rt::Write + PeerAddr + Send + Unpin + 'static,
     N: NewService<ClientHandle, Service = S> + Send + 'static,
-    S: Service<http::Request<BoxBody>, Response = http::Response<BoxBody>, Error = Error>
+    S: Service<
+            http::Request<linkerd_http_upgrade::glue::UpgradeBody<hyper::body::Incoming>>,
+            Response = http::Response<BoxBody>,
+            Error = Error,
+        > + Service<
+            http::Request<hyper::body::Incoming>,
+            Response = http::Response<BoxBody>,
+            Error = Error,
+        > + Clone
         + Unpin
         + Send
         + 'static,
-    S::Future: Send + 'static,
+    <S as Service<
+        http::Request<linkerd_http_upgrade::glue::UpgradeBody<hyper::body::Incoming>>,
+    >>::Future: Send + 'static,
+    <S as Service<http::Request<hyper::body::Incoming>>>::Future: Send + 'static,
 {
     type Response = ();
     type Error = Error;
@@ -157,16 +171,17 @@ where
 
         Box::pin(
             async move {
+                use hyper_util::service::TowerToHyperService;
                 let (svc, closed) = res?;
                 debug!(?version, "Handling as HTTP");
+
                 match version {
                     Version::Http1 => {
                         // Enable support for HTTP upgrades (CONNECT and websockets).
-                        let svc = linkerd_http_upgrade::upgrade::Service::new(
-                            BoxRequest::new(svc),
-                            drain.clone(),
-                        );
-                        let mut conn = http1.serve_connection(io, svc).with_upgrades();
+                        let svc = linkerd_http_upgrade::upgrade::Service::new(svc, drain.clone());
+                        let mut conn = http1
+                            .serve_connection(io, TowerToHyperService::new(svc))
+                            .with_upgrades();
 
                         tokio::select! {
                             res = &mut conn => {
@@ -187,7 +202,8 @@ where
                     }
 
                     Version::H2 => {
-                        let mut conn = http2.serve_connection(io, BoxRequest::new(svc));
+                        let svc = TowerToHyperService::new(svc);
+                        let mut conn = http2.serve_connection(io, svc);
 
                         tokio::select! {
                             res = &mut conn => {

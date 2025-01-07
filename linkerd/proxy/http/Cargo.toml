@@ -26,6 +26,7 @@ hyper = { workspace = true, features = [
     "http2",
     "server",
 ] }
+hyper-util = { workspace = true, features = ["client", "client-legacy", "http1", "service"] }
 hyper-balance = { path = "../../../hyper-balance" }
 parking_lot = "0.12"
 pin-project = "1"

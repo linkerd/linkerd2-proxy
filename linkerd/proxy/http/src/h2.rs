@@ -1,6 +1,7 @@
 use crate::{Body, TracingExecutor};
 use futures::prelude::*;
 use linkerd_error::{Error, Result};
+use linkerd_http_box::BoxBody;
 use linkerd_stack::{MakeConnection, Service};
 use std::{
     marker::PhantomData,
@@ -52,10 +53,10 @@ type ConnectFuture<B> = Pin<Box<dyn Future<Output = Result<Connection<B>>> + Sen
 impl<C, B, T> Service<T> for Connect<C, B>
 where
     C: MakeConnection<(crate::Version, T)>,
-    C::Connection: Send + Unpin + 'static,
+    C::Connection: hyper::rt::Read + hyper::rt::Write + Send + Unpin + 'static,
     C::Metadata: Send,
     C::Future: Send + 'static,
-    B: Body + Send + 'static,
+    B: Body + Unpin + Send + 'static,
     B::Data: Send,
     B::Error: Into<Error> + Send + Sync,
 {
@@ -147,7 +148,7 @@ where
     B::Data: Send,
     B::Error: Into<Error> + Send + Sync,
 {
-    type Response = http::Response<hyper::Body>;
+    type Response = http::Response<BoxBody>;
     type Error = hyper::Error;
     type Future = Pin<Box<dyn Send + Future<Output = Result<Self::Response, Self::Error>>>>;
 
@@ -171,6 +172,9 @@ where
             *req.version_mut() = http::Version::HTTP_11;
         }
 
-        self.tx.send_request(req).boxed()
+        self.tx
+            .send_request(req)
+            .map_ok(|rsp| rsp.map(BoxBody::new))
+            .boxed()
     }
 }

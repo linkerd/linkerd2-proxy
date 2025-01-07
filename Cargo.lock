@@ -2278,6 +2278,7 @@ dependencies = [
  "httparse",
  "hyper",
  "hyper-balance",
+ "hyper-util",
  "linkerd-detect",
  "linkerd-duplex",
  "linkerd-error",

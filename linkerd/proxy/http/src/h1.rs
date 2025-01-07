@@ -33,8 +33,8 @@ pub struct PoolSettings {
 pub struct Client<C, T, B> {
     connect: C,
     target: T,
-    absolute_form: Option<hyper::Client<HyperConnect<C, T>, B>>,
-    origin_form: Option<hyper::Client<HyperConnect<C, T>, B>>,
+    absolute_form: Option<hyper_util::client::legacy::Client<HyperConnect<C, T>, B>>,
+    origin_form: Option<hyper_util::client::legacy::Client<HyperConnect<C, T>, B>>,
     pool: PoolSettings,
 }
 
@@ -68,9 +68,9 @@ impl<C, T, B> Client<C, T, B>
 where
     T: Clone + Send + Sync + 'static,
     C: MakeConnection<(crate::Version, T)> + Clone + Send + Sync + 'static,
-    C::Connection: Unpin + Send,
+    C::Connection: hyper::rt::Read + hyper::rt::Write + Unpin + Send,
     C::Future: Unpin + Send + 'static,
-    B: crate::Body + Send + 'static,
+    B: crate::Body + Unpin + Send + 'static,
     B::Data: Send,
     B::Error: Into<Error> + Send + Sync,
 {
@@ -94,10 +94,9 @@ where
             // ish, so we just build a one-off client for the connection.
             // There's no real reason to hold the client for re-use.
             debug!(use_absolute_form, is_missing_host, "Using one-off client");
-            hyper::Client::builder()
+            hyper_util::client::legacy::Client::builder(TracingExecutor)
                 .pool_max_idle_per_host(0)
                 .set_host(use_absolute_form)
-                .executor(TracingExecutor)
                 .build(HyperConnect::new(
                     self.connect.clone(),
                     self.target.clone(),
@@ -120,11 +119,10 @@ where
             if client.is_none() {
                 debug!(use_absolute_form, "Caching new client");
                 *client = Some(
-                    hyper::Client::builder()
+                    hyper_util::client::legacy::Client::builder(TracingExecutor)
                         .pool_max_idle_per_host(self.pool.max_idle)
                         .pool_idle_timeout(self.pool.idle_timeout)
                         .set_host(use_absolute_form)
-                        .executor(TracingExecutor)
                         .build(HyperConnect::new(
                             self.connect.clone(),
                             self.target.clone(),
