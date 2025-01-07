@@ -1,6 +1,5 @@
 use super::metrics::BodyDataMetrics;
-use http::HeaderMap;
-use http_body::SizeHint;
+use http_body::{Frame, SizeHint};
 use pin_project::pin_project;
 use std::{
     pin::Pin,
@@ -35,34 +34,28 @@ where
     type Error = B::Error;
 
     /// Attempt to pull out the next data buffer of this stream.
-    fn poll_data(
+    fn poll_frame(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
+    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         let this = self.project();
         let inner = this.inner;
         let BodyDataMetrics { frame_size } = this.metrics;
 
-        let data = std::task::ready!(inner.poll_data(cx));
+        let frame = std::task::ready!(inner.poll_frame(cx));
 
-        if let Some(Ok(data)) = data.as_ref() {
-            // We've polled and yielded a new chunk! Increment our telemetry.
-            //
-            // NB: We're careful to call `remaining()` rather than `chunk()`, which
-            // "can return a shorter slice (this allows non-continuous internal representation)."
-            let bytes = bytes::Buf::remaining(data);
-            frame_size.observe(linkerd_metrics::to_f64(bytes as u64));
+        if let Some(Ok(frame)) = &frame {
+            if let Some(data) = frame.data_ref() {
+                // We've polled and yielded a new chunk! Increment our telemetry.
+                //
+                // NB: We're careful to call `remaining()` rather than `chunk()`, which
+                // "can return a shorter slice (this allows non-continuous internal representation)."
+                let bytes = bytes::Buf::remaining(data);
+                frame_size.observe(linkerd_metrics::to_f64(bytes as u64));
+            }
         }
 
-        Poll::Ready(data)
-    }
-
-    #[inline]
-    fn poll_trailers(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<Option<HeaderMap>, Self::Error>> {
-        self.project().inner.poll_trailers(cx)
+        Poll::Ready(frame)
     }
 
     #[inline]
