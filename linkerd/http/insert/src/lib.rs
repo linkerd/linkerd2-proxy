@@ -279,7 +279,7 @@ impl<F, L, V, B> Future for ResponseInsertFuture<F, L, V, B>
 where
     F: TryFuture<Ok = http::Response<B>>,
     L: Lazy<V>,
-    V: Send + Sync + 'static,
+    V: Clone + Send + Sync + 'static,
 {
     type Output = Result<F::Ok, F::Error>;
 
