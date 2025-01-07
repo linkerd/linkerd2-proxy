@@ -26,7 +26,7 @@ pub struct PeekTrailersBody<B: Body = BoxBody> {
     first_data: Option<Result<B::Data, B::Error>>,
 
     /// The inner body's trailers, if it was terminated by a `TRAILERS` frame
-    /// after 0-1 DATA frames, or an error if polling for trailers failed.
+    /// after 0 DATA frames, or an error if polling for trailers failed.
     ///
     /// Yes, this is a bit of a complex type, so let's break it down:
     /// - the outer `Option` indicates whether any trailers were received by
@@ -98,16 +98,6 @@ impl<B: Body> PeekTrailersBody<B> {
         if let Some(data) = body.inner.data().await {
             // The body has data; stop waiting for trailers.
             body.first_data = Some(data);
-
-            // Peek to see if there's immediately a trailers frame, and grab
-            // it if so. Otherwise, bail.
-            // XXX(eliza): the documentation for the `http::Body` trait says
-            // that `poll_trailers` should only be called after `poll_data`
-            // returns `None`...but, in practice, I'm fairly sure that this just
-            // means that it *will not return `Ready`* until there are no data
-            // frames left, which is fine for us here, because we `now_or_never`
-            // it.
-            body.trailers = body.inner.trailers().now_or_never();
         } else {
             // Okay, `poll_data` has returned `None`, so there are no data
             // frames left. Let's see if there's trailers...
