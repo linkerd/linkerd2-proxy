@@ -975,8 +975,7 @@ dependencies = [
 [[package]]
 name = "http-body"
 version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1efedce1fb8e6913f23e0c92de8e62cd5b772a67e7b3946df930a62566c93184"
+source = "git+https://github.com/hyperium/http-body.git?rev=86fdf00ff9f5758a42f76a4d06f82e7887a990d8#86fdf00ff9f5758a42f76a4d06f82e7887a990d8"
 dependencies = [
  "bytes",
  "http 1.2.0",
@@ -985,11 +984,10 @@ dependencies = [
 [[package]]
 name = "http-body-util"
 version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "793429d76616a256bcb62c2a2ec2bed781c8307e797e2598c50010f2bee2544f"
+source = "git+https://github.com/hyperium/http-body.git?rev=86fdf00ff9f5758a42f76a4d06f82e7887a990d8#86fdf00ff9f5758a42f76a4d06f82e7887a990d8"
 dependencies = [
  "bytes",
- "futures-util",
+ "futures-core",
  "http 1.2.0",
  "http-body 1.0.1",
  "pin-project-lite",
