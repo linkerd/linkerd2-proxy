@@ -254,29 +254,27 @@ where
     type Data = <BoxBody as http_body::Body>::Data;
     type Error = Error;
 
-    fn poll_data(
+    fn poll_frame(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Self::Data, Error>>> {
+    ) -> Poll<Option<Result<http_body::Frame<Self::Data>, Self::Error>>> {
         let mut this = self.project();
-        let res =
-            futures::ready!(this.inner.as_mut().poll_data(cx)).map(|res| res.map_err(Into::into));
-        if let Some(Err(error)) = res.as_ref() {
-            end_stream(this.state, Err(error));
-        } else if (*this.inner).is_end_stream() {
-            end_stream(this.state, Ok(None));
-        }
-        Poll::Ready(res)
-    }
 
-    fn poll_trailers(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<Option<http::HeaderMap>, Error>> {
-        let this = self.project();
-        let res = futures::ready!(this.inner.poll_trailers(cx)).map_err(Into::into);
-        end_stream(this.state, res.as_ref().map(Option::as_ref));
-        Poll::Ready(res)
+        // Poll the inner body for the next frame.
+        let poll = this.inner.as_mut().poll_frame(cx);
+        let frame = futures::ready!(poll).map(|res| res.map_err(Error::from));
+
+        match &frame {
+            Some(Ok(frame)) => {
+                if let trls @ Some(_) = frame.trailers_ref() {
+                    end_stream(this.state, Ok(trls));
+                }
+            }
+            Some(Err(error)) => end_stream(this.state, Err(error)),
+            None => end_stream(this.state, Ok(None)),
+        }
+
+        Poll::Ready(frame)
     }
 
     fn is_end_stream(&self) -> bool {
