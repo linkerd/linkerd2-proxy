@@ -220,18 +220,19 @@ where
 #[cfg(test)]
 mod tests {
     use crate::api::Svid;
-    use rcgen::{Certificate, CertificateParams, SanType};
+    use rcgen::{CertificateParams, KeyPair, SanType};
     use spiffe_proto::client as api;
 
     fn gen_svid_pb(id: String, subject_alt_names: Vec<SanType>) -> api::X509svid {
         let mut params = CertificateParams::default();
         params.subject_alt_names = subject_alt_names;
-        let cert = Certificate::from_params(params).expect("should generate cert");
+        let key = KeyPair::generate().expect("should generate key");
+        let cert = params.self_signed(&key).expect("should generate cert");
 
         api::X509svid {
             spiffe_id: id,
-            x509_svid: cert.serialize_der().expect("should serialize"),
-            x509_svid_key: cert.serialize_private_key_der(),
+            x509_svid: cert.der().to_vec(),
+            x509_svid_key: key.serialize_der(),
             bundle: Vec::default(),
         }
     }
@@ -239,21 +240,21 @@ mod tests {
     #[test]
     fn can_parse_valid_proto() {
         let id = "spiffe://some-domain/some-workload";
-        let svid_pb = gen_svid_pb(id.into(), vec![SanType::URI(id.into())]);
+        let svid_pb = gen_svid_pb(id.into(), vec![SanType::URI(id.parse().unwrap())]);
         assert!(Svid::try_from(svid_pb).is_ok());
     }
 
     #[test]
     fn cannot_parse_non_spiffe_id() {
         let id = "some-domain.some-workload";
-        let svid_pb = gen_svid_pb(id.into(), vec![SanType::DnsName(id.into())]);
+        let svid_pb = gen_svid_pb(id.into(), vec![SanType::DnsName(id.parse().unwrap())]);
         assert!(Svid::try_from(svid_pb).is_err());
     }
 
     #[test]
     fn cannot_parse_empty_cert() {
         let id = "spiffe://some-domain/some-workload";
-        let mut svid_pb = gen_svid_pb(id.into(), vec![SanType::URI(id.into())]);
+        let mut svid_pb = gen_svid_pb(id.into(), vec![SanType::URI(id.parse().unwrap())]);
         svid_pb.x509_svid = Vec::default();
         assert!(Svid::try_from(svid_pb).is_err());
     }
@@ -261,7 +262,7 @@ mod tests {
     #[test]
     fn cannot_parse_empty_key() {
         let id = "spiffe://some-domain/some-workload";
-        let mut svid_pb = gen_svid_pb(id.into(), vec![SanType::URI(id.into())]);
+        let mut svid_pb = gen_svid_pb(id.into(), vec![SanType::URI(id.parse().unwrap())]);
         svid_pb.x509_svid_key = Vec::default();
         assert!(Svid::try_from(svid_pb).is_err());
     }
