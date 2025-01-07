@@ -18,7 +18,7 @@ use linkerd_stack::{
 };
 use linkerd_tls as tls;
 use linkerd_tls_test_util as test_util;
-use rcgen::{BasicConstraints, Certificate, CertificateParams, IsCa, SanType};
+use rcgen::{BasicConstraints, CertificateParams, IsCa, KeyPair, SanType};
 use std::str::FromStr;
 use std::{
     net::SocketAddr,
@@ -29,20 +29,25 @@ use tokio::net::TcpStream;
 use tracing::Instrument;
 
 fn generate_cert_with_name(subject_alt_names: Vec<SanType>) -> (Vec<u8>, Vec<u8>, String) {
+    let root_key = KeyPair::generate().unwrap();
     let mut root_params = CertificateParams::default();
     root_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
-    let root_cert = Certificate::from_params(root_params).expect("should generate root");
 
+    let root_cert = root_params
+        .self_signed(&root_key)
+        .expect("should generate root");
+
+    let issuer_key = KeyPair::generate().unwrap();
     let mut params = CertificateParams::default();
     params.subject_alt_names = subject_alt_names;
-
-    let cert = Certificate::from_params(params).expect("should generate cert");
+    let cert = params
+        .signed_by(&issuer_key, &root_cert, &root_key)
+        .expect("should generate cert");
 
     (
-        cert.serialize_der_with_signer(&root_cert)
-            .expect("should serialize"),
-        cert.serialize_private_key_der(),
-        root_cert.serialize_pem().expect("should serialize"),
+        cert.der().to_vec(),
+        issuer_key.serialize_der(),
+        root_cert.pem(),
     )
 }
 
@@ -51,7 +56,7 @@ pub fn fails_processing_cert_when_wrong_id_configured(mode: meshtls::Mode) {
     let id = Id::Dns(server_name.clone());
 
     let (cert, key, roots) =
-        generate_cert_with_name(vec![SanType::URI("spiffe://system/local".into())]);
+        generate_cert_with_name(vec![SanType::URI("spiffe://system/local".parse().unwrap())]);
     let (mut store, _) = mode
         .watch(id, server_name.clone(), &roots)
         .expect("should construct");

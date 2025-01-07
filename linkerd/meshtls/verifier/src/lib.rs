@@ -61,22 +61,24 @@ mod tests {
     use crate::client_identity;
     use crate::verify_id;
     use linkerd_identity::Id;
-    use rcgen::{Certificate, CertificateParams, SanType};
+    use rcgen::{CertificateParams, KeyPair, SanType};
 
     fn generate_cert_with_names(subject_alt_names: Vec<SanType>) -> Vec<u8> {
+        let key = KeyPair::generate().expect("should generate key");
         let mut params = CertificateParams::default();
         params.subject_alt_names = subject_alt_names;
 
-        Certificate::from_params(params)
+        params
+            .self_signed(&key)
             .expect("should generate cert")
-            .serialize_der()
-            .expect("should serialize")
+            .der()
+            .to_vec()
     }
 
     #[test]
     pub fn cert_with_dns_san_matches_dns_id() {
         let dns_name = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
-        let cert = generate_cert_with_names(vec![SanType::DnsName(dns_name.into())]);
+        let cert = generate_cert_with_names(vec![SanType::DnsName(dns_name.parse().unwrap())]);
         let id = Id::parse_dns_name(dns_name).expect("should parse DNS id");
         assert!(verify_id(&cert, &id).is_ok());
     }
@@ -84,7 +86,7 @@ mod tests {
     #[test]
     fn cert_with_spiffe_san_matches_spiffe_id() {
         let spiffe_uri = "spiffe://identity.linkerd.cluster.local/ns/ns1/sa/foo";
-        let cert = generate_cert_with_names(vec![SanType::URI(spiffe_uri.into())]);
+        let cert = generate_cert_with_names(vec![SanType::URI(spiffe_uri.parse().unwrap())]);
         let id = Id::parse_uri(spiffe_uri).expect("should parse SPIFFE id");
         assert!(verify_id(&cert, &id).is_ok());
     }
@@ -92,7 +94,9 @@ mod tests {
     #[test]
     pub fn cert_with_dns_san_does_not_match_dns_id() {
         let dns_name_cert = vec![SanType::DnsName(
-            "foo.ns1.serviceaccount.identity.linkerd.cluster.local".into(),
+            "foo.ns1.serviceaccount.identity.linkerd.cluster.local"
+                .parse()
+                .unwrap(),
         )];
         let dns_name = "bar.ns1.serviceaccount.identity.linkerd.cluster.local";
 
@@ -104,7 +108,9 @@ mod tests {
     #[test]
     fn cert_with_dns_san_does_not_match_spiffe_id() {
         let dns_name_cert = vec![SanType::DnsName(
-            "bar.ns1.serviceaccount.identity.linkerd.cluster.local".into(),
+            "bar.ns1.serviceaccount.identity.linkerd.cluster.local"
+                .parse()
+                .unwrap(),
         )];
         let spiffe_uri = "spiffe://some-trust-comain/some-system/some-component";
 
@@ -136,9 +142,9 @@ mod tests {
         let spiffe_id = "spiffe://some-trust-comain/some-system/some-component";
 
         let cert = generate_cert_with_names(vec![
-            SanType::DnsName(foo_dns_id.into()),
-            SanType::DnsName(bar_dns_id.into()),
-            SanType::URI(spiffe_id.into()),
+            SanType::DnsName(foo_dns_id.parse().unwrap()),
+            SanType::DnsName(bar_dns_id.parse().unwrap()),
+            SanType::URI(spiffe_id.parse().unwrap()),
         ]);
         let id = Id::parse_dns_name(foo_dns_id).expect("should parse DNS id");
         assert!(verify_id(&cert, &id).is_ok());
@@ -151,9 +157,9 @@ mod tests {
         let spiffe_id = "spiffe://some-trust-comain/some-system/some-component";
 
         let cert = generate_cert_with_names(vec![
-            SanType::DnsName(foo_dns_id.into()),
-            SanType::DnsName(bar_dns_id.into()),
-            SanType::URI(spiffe_id.into()),
+            SanType::DnsName(foo_dns_id.parse().unwrap()),
+            SanType::DnsName(bar_dns_id.parse().unwrap()),
+            SanType::URI(spiffe_id.parse().unwrap()),
         ]);
         let id = Id::parse_uri(spiffe_id).expect("should parse SPIFFE id");
         assert!(verify_id(&cert, &id).is_ok());
@@ -167,9 +173,9 @@ mod tests {
         let spiffe_id = "spiffe://some-trust-comain/some-system/some-component";
 
         let cert = generate_cert_with_names(vec![
-            SanType::DnsName(foo_dns_id.into()),
-            SanType::DnsName(bar_dns_id.into()),
-            SanType::URI(spiffe_id.into()),
+            SanType::DnsName(foo_dns_id.parse().unwrap()),
+            SanType::DnsName(bar_dns_id.parse().unwrap()),
+            SanType::URI(spiffe_id.parse().unwrap()),
         ]);
         let id = Id::parse_dns_name(nar_dns_id).expect("should parse DNS id");
         assert!(verify_id(&cert, &id).is_err());
@@ -183,9 +189,9 @@ mod tests {
         let spiffe_id = "spiffe://some-trust-comain/some-system/some-component";
 
         let cert = generate_cert_with_names(vec![
-            SanType::DnsName(foo_dns_id.into()),
-            SanType::DnsName(bar_dns_id.into()),
-            SanType::DnsName(nar_dns_id.into()),
+            SanType::DnsName(foo_dns_id.parse().unwrap()),
+            SanType::DnsName(bar_dns_id.parse().unwrap()),
+            SanType::DnsName(nar_dns_id.parse().unwrap()),
         ]);
         let id = Id::parse_uri(spiffe_id).expect("should parse SPIFFE id");
         assert!(verify_id(&cert, &id).is_err());
@@ -195,7 +201,7 @@ mod tests {
     fn can_extract_spiffe_client_identity_one_san() {
         let spiffe_id = "spiffe://some-trust-comain/some-system/some-component";
 
-        let cert = generate_cert_with_names(vec![SanType::URI(spiffe_id.into())]);
+        let cert = generate_cert_with_names(vec![SanType::URI(spiffe_id.parse().unwrap())]);
         let id = Id::parse_uri(spiffe_id).expect("should parse SPIFFE id");
         let client_id = client_identity(&cert);
         assert_eq!(client_id, Some(id));
@@ -208,9 +214,9 @@ mod tests {
         let nar_dns_id = "nar.ns1.serviceaccount.identity.linkerd.cluster.local";
 
         let cert = generate_cert_with_names(vec![
-            SanType::URI(spiffe_id.into()),
-            SanType::DnsName(bar_dns_id.into()),
-            SanType::DnsName(nar_dns_id.into()),
+            SanType::URI(spiffe_id.parse().unwrap()),
+            SanType::DnsName(bar_dns_id.parse().unwrap()),
+            SanType::DnsName(nar_dns_id.parse().unwrap()),
         ]);
         let id = Id::parse_uri(spiffe_id).expect("should parse SPIFFE id");
         let client_id = client_identity(&cert);
@@ -221,7 +227,7 @@ mod tests {
     fn can_extract_dns_client_identity_one_san() {
         let dns_id = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
 
-        let cert = generate_cert_with_names(vec![SanType::DnsName(dns_id.into())]);
+        let cert = generate_cert_with_names(vec![SanType::DnsName(dns_id.parse().unwrap())]);
         let id = Id::parse_dns_name(dns_id).expect("should parse DNS id");
         let client_id = client_identity(&cert);
         assert_eq!(client_id, Some(id));
@@ -235,10 +241,10 @@ mod tests {
         let spiffe_id = "spiffe://some-trust-comain/some-system/some-component";
 
         let cert = generate_cert_with_names(vec![
-            SanType::DnsName(dns_id.into()),
-            SanType::DnsName(bar_dns_id.into()),
-            SanType::DnsName(nar_dns_id.into()),
-            SanType::URI(spiffe_id.into()),
+            SanType::DnsName(dns_id.parse().unwrap()),
+            SanType::DnsName(bar_dns_id.parse().unwrap()),
+            SanType::DnsName(nar_dns_id.parse().unwrap()),
+            SanType::URI(spiffe_id.parse().unwrap()),
         ]);
         let id = Id::parse_dns_name(dns_id).expect("should parse DNS id");
         let client_id = client_identity(&cert);
@@ -252,9 +258,9 @@ mod tests {
         let email_san_2 = "bar@bar.com";
 
         let cert = generate_cert_with_names(vec![
-            SanType::DnsName(dns_id.into()),
-            SanType::Rfc822Name(email_san_1.into()),
-            SanType::Rfc822Name(email_san_2.into()),
+            SanType::DnsName(dns_id.parse().unwrap()),
+            SanType::Rfc822Name(email_san_1.parse().unwrap()),
+            SanType::Rfc822Name(email_san_2.parse().unwrap()),
         ]);
         let id = Id::parse_dns_name(dns_id).expect("should parse DNS id");
         let client_id = client_identity(&cert);
@@ -268,9 +274,9 @@ mod tests {
         let email_san_2 = "bar@bar.com";
 
         let cert = generate_cert_with_names(vec![
-            SanType::URI(spiffe_id.into()),
-            SanType::Rfc822Name(email_san_1.into()),
-            SanType::Rfc822Name(email_san_2.into()),
+            SanType::URI(spiffe_id.parse().unwrap()),
+            SanType::Rfc822Name(email_san_1.parse().unwrap()),
+            SanType::Rfc822Name(email_san_2.parse().unwrap()),
         ]);
         let id = Id::parse_uri(spiffe_id).expect("should parse SPIFFE id");
         let client_id = client_identity(&cert);
@@ -281,7 +287,7 @@ mod tests {
     fn skips_dns_san_with_trailing_dot() {
         let dns_id = "foo.ns1.serviceaccount.identity.linkerd.cluster.local.";
 
-        let cert = generate_cert_with_names(vec![SanType::DnsName(dns_id.into())]);
+        let cert = generate_cert_with_names(vec![SanType::DnsName(dns_id.parse().unwrap())]);
         let client_id = client_identity(&cert);
         assert_eq!(client_id, None);
     }

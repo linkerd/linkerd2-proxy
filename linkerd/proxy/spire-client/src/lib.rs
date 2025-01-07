@@ -62,10 +62,11 @@ mod tests {
     use crate::api::Svid;
     use linkerd_error::Result;
     use linkerd_identity::DerX509;
-    use rcgen::{Certificate, CertificateParams, SanType, SerialNumber};
+    use rcgen::{CertificateParams, KeyPair, SanType, SerialNumber};
     use std::time::SystemTime;
 
     fn gen_svid(id: Id, subject_alt_names: Vec<SanType>, serial: SerialNumber) -> Svid {
+        let key = KeyPair::generate().expect("should generate key");
         let mut params = CertificateParams::default();
         params.subject_alt_names = subject_alt_names;
         params.serial_number = Some(serial);
@@ -73,10 +74,11 @@ mod tests {
         Svid::new(
             id,
             DerX509(
-                Certificate::from_params(params)
+                params
+                    .self_signed(&key)
                     .expect("should generate cert")
-                    .serialize_der()
-                    .expect("should serialize"),
+                    .der()
+                    .to_vec(),
             ),
             Vec::default(),
             Vec::default(),
@@ -151,7 +153,7 @@ mod tests {
         let serial_1 = SerialNumber::from_slice("some-serial-1".as_bytes());
         let update_1 = SvidUpdate::new(vec![gen_svid(
             spiffe_id.clone(),
-            vec![SanType::URI(spiffe_san.into())],
+            vec![SanType::URI(spiffe_san.parse().unwrap())],
             serial_1.clone(),
         )]);
 
@@ -164,7 +166,7 @@ mod tests {
         let serial_2 = SerialNumber::from_slice("some-serial-2".as_bytes());
         let update_2 = SvidUpdate::new(vec![gen_svid(
             spiffe_id.clone(),
-            vec![SanType::URI(spiffe_san.into())],
+            vec![SanType::URI(spiffe_san.parse().unwrap())],
             serial_2.clone(),
         )]);
 
@@ -186,7 +188,7 @@ mod tests {
         let serial_1 = SerialNumber::from_slice("some-serial-1".as_bytes());
         let update_1 = SvidUpdate::new(vec![gen_svid(
             spiffe_id.clone(),
-            vec![SanType::URI(spiffe_san.into())],
+            vec![SanType::URI(spiffe_san.parse().unwrap())],
             serial_1.clone(),
         )]);
 
@@ -228,7 +230,7 @@ mod tests {
         let serial_1 = SerialNumber::from_slice("some-serial-1".as_bytes());
         let update_1 = SvidUpdate::new(vec![gen_svid(
             spiffe_id.clone(),
-            vec![SanType::URI(spiffe_san.into())],
+            vec![SanType::URI(spiffe_san.parse().unwrap())],
             serial_1.clone(),
         )]);
 
@@ -242,7 +244,7 @@ mod tests {
         let mut update_sent = svid_tx.subscribe();
         let update_2 = SvidUpdate::new(vec![gen_svid(
             spiffe_id_wrong,
-            vec![SanType::URI(spiffe_san_wrong.into())],
+            vec![SanType::URI(spiffe_san_wrong.parse().unwrap())],
             serial_2.clone(),
         )]);
 
