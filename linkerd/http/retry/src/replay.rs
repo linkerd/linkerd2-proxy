@@ -1,6 +1,6 @@
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use http::HeaderMap;
-use http_body::{Body, SizeHint};
+use http_body::{Body, Frame, SizeHint};
 use linkerd_error::Error;
 use linkerd_http_box::BoxBody;
 use parking_lot::Mutex;
@@ -160,6 +160,14 @@ where
     type Data = Data;
     type Error = Error;
 
+    fn poll_frame(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
+        todo!("XXX(kate): temporary stub");
+    }
+
+    /*
     fn poll_data(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -282,6 +290,7 @@ where
 
         Poll::Ready(Ok(None))
     }
+    */
 
     fn is_end_stream(&self) -> bool {
         // if the initial body was EOS as soon as it was wrapped, then we are
