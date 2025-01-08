@@ -1277,7 +1277,7 @@ dependencies = [
  "http",
  "ipnet",
  "linkerd-dns-name",
- "thiserror 2.0.8",
+ "thiserror 2.0.9",
 ]
 
 [[package]]
@@ -1296,7 +1296,7 @@ dependencies = [
  "linkerd-tonic-stream",
  "rangemap",
  "regex",
- "thiserror 2.0.8",
+ "thiserror 2.0.9",
  "tokio",
  "tokio-stream",
  "tonic",
@@ -1320,7 +1320,7 @@ dependencies = [
  "pprof",
  "serde",
  "serde_json",
- "thiserror 2.0.8",
+ "thiserror 2.0.9",
  "tokio",
  "tower",
  "tracing",
@@ -1386,7 +1386,7 @@ dependencies = [
  "regex",
  "semver",
  "serde_json",
- "thiserror 2.0.8",
+ "thiserror 2.0.9",
  "tokio",
  "tokio-stream",
  "tonic",
@@ -1407,7 +1407,7 @@ dependencies = [
  "linkerd-proxy-client-policy",
  "linkerd-proxy-server-policy",
  "once_cell",
- "thiserror 2.0.8",
+ "thiserror 2.0.9",
  "tokio",
  "tokio-test",
  "tonic",
@@ -1443,7 +1443,7 @@ dependencies = [
  "once_cell",
  "parking_lot",
  "rangemap",
- "thiserror 2.0.8",
+ "thiserror 2.0.9",
  "tokio",
  "tokio-test",
  "tonic",
@@ -1521,7 +1521,7 @@ dependencies = [
  "parking_lot",
  "pin-project",
  "prometheus-client",
- "thiserror 2.0.8",
+ "thiserror 2.0.9",
  "tokio",
  "tokio-rustls",
  "tokio-test",
@@ -1548,7 +1548,7 @@ dependencies = [
  "parking_lot",
  "pin-project",
  "regex",
- "thiserror 2.0.8",
+ "thiserror 2.0.9",
  "tokio",
  "tokio-stream",
  "tokio-test",
@@ -1571,7 +1571,7 @@ dependencies = [
  "linkerd-error",
  "linkerd-io",
  "linkerd-stack",
- "thiserror 2.0.8",
+ "thiserror 2.0.9",
  "tokio",
  "tower",
  "tracing",
@@ -1599,7 +1599,7 @@ dependencies = [
  "hickory-resolver",
  "linkerd-dns-name",
  "linkerd-error",
- "thiserror 2.0.8",
+ "thiserror 2.0.9",
  "tokio",
  "tracing",
 ]
@@ -1608,7 +1608,7 @@ dependencies = [
 name = "linkerd-dns-name"
 version = "0.1.0"
 dependencies = [
- "thiserror 2.0.8",
+ "thiserror 2.0.9",
  "untrusted",
 ]
 
@@ -1633,7 +1633,7 @@ name = "linkerd-error"
 version = "0.1.0"
 dependencies = [
  "futures",
- "thiserror 2.0.8",
+ "thiserror 2.0.9",
 ]
 
 [[package]]
@@ -1654,7 +1654,7 @@ dependencies = [
  "pin-project",
  "quickcheck",
  "rand",
- "thiserror 2.0.8",
+ "thiserror 2.0.9",
  "tokio",
 ]
 
@@ -1775,7 +1775,7 @@ dependencies = [
  "parking_lot",
  "pin-project",
  "prometheus-client",
- "thiserror 2.0.8",
+ "thiserror 2.0.9",
  "tokio",
 ]
 
@@ -1806,7 +1806,7 @@ dependencies = [
  "linkerd-stack",
  "linkerd-tracing",
  "parking_lot",
- "thiserror 2.0.8",
+ "thiserror 2.0.9",
  "tokio",
  "tower",
  "tracing",
@@ -1821,7 +1821,7 @@ dependencies = [
  "maplit",
  "rand",
  "regex",
- "thiserror 2.0.8",
+ "thiserror 2.0.9",
  "tracing",
  "url",
 ]
@@ -1837,7 +1837,7 @@ dependencies = [
  "linkerd-stack",
  "parking_lot",
  "pin-project",
- "thiserror 2.0.8",
+ "thiserror 2.0.9",
  "tokio",
  "tracing",
 ]
@@ -1870,7 +1870,7 @@ name = "linkerd-http-version"
 version = "0.1.0"
 dependencies = [
  "http",
- "thiserror 2.0.8",
+ "thiserror 2.0.9",
 ]
 
 [[package]]
@@ -1881,7 +1881,7 @@ dependencies = [
  "linkerd-error",
  "linkerd-metrics",
  "prometheus-client",
- "thiserror 2.0.8",
+ "thiserror 2.0.9",
  "tracing",
  "url",
 ]
@@ -1974,7 +1974,7 @@ dependencies = [
  "ring",
  "rustls-pemfile",
  "rustls-webpki",
- "thiserror 2.0.8",
+ "thiserror 2.0.9",
  "tokio",
  "tokio-rustls",
  "tracing",
@@ -2064,7 +2064,7 @@ dependencies = [
  "linkerd-pool",
  "linkerd-stack",
  "parking_lot",
- "thiserror 2.0.8",
+ "thiserror 2.0.9",
  "tokio",
  "tower-test",
  "tracing",
@@ -2158,7 +2158,7 @@ dependencies = [
  "parking_lot",
  "pin-project",
  "prometheus-client",
- "thiserror 2.0.8",
+ "thiserror 2.0.9",
  "tokio",
  "tokio-stream",
  "tokio-test",
@@ -2186,7 +2186,7 @@ dependencies = [
  "once_cell",
  "prost-types",
  "quickcheck",
- "thiserror 2.0.8",
+ "thiserror 2.0.9",
  "tonic",
 ]
 
@@ -2249,7 +2249,7 @@ dependencies = [
  "parking_lot",
  "pin-project",
  "rand",
- "thiserror 2.0.8",
+ "thiserror 2.0.9",
  "tokio",
  "tokio-test",
  "tower",
@@ -2272,7 +2272,7 @@ dependencies = [
  "linkerd2-proxy-api",
  "parking_lot",
  "pin-project",
- "thiserror 2.0.8",
+ "thiserror 2.0.9",
  "tokio",
  "tonic",
  "tracing",
@@ -2286,7 +2286,7 @@ dependencies = [
  "linkerd-error",
  "linkerd-proxy-core",
  "pin-project",
- "thiserror 2.0.8",
+ "thiserror 2.0.9",
  "tower",
  "tracing",
 ]
@@ -2304,7 +2304,7 @@ dependencies = [
  "maplit",
  "prost-types",
  "quickcheck",
- "thiserror 2.0.8",
+ "thiserror 2.0.9",
  "tokio",
 ]
 
@@ -2322,7 +2322,7 @@ dependencies = [
  "rcgen",
  "simple_asn1",
  "spiffe-proto",
- "thiserror 2.0.8",
+ "thiserror 2.0.9",
  "tokio",
  "tokio-test",
  "tonic",
@@ -2354,7 +2354,7 @@ dependencies = [
  "prost-types",
  "quickcheck",
  "rand",
- "thiserror 2.0.8",
+ "thiserror 2.0.9",
  "tokio",
  "tonic",
  "tower",
@@ -2386,7 +2386,7 @@ dependencies = [
  "linkerd-io",
  "linkerd-stack",
  "socket2",
- "thiserror 2.0.8",
+ "thiserror 2.0.9",
  "tokio",
  "tokio-stream",
  "tracing",
@@ -2429,7 +2429,7 @@ dependencies = [
  "linkerd-error",
  "linkerd-stack",
  "parking_lot",
- "thiserror 2.0.8",
+ "thiserror 2.0.9",
  "tracing",
 ]
 
@@ -2454,7 +2454,7 @@ dependencies = [
  "prost-types",
  "quickcheck",
  "regex",
- "thiserror 2.0.8",
+ "thiserror 2.0.9",
  "tokio",
  "tokio-stream",
  "tonic",
@@ -2479,7 +2479,7 @@ dependencies = [
  "linkerd-tracing",
  "parking_lot",
  "pin-project",
- "thiserror 2.0.8",
+ "thiserror 2.0.9",
  "tokio",
  "tokio-test",
  "tokio-util",
@@ -2535,7 +2535,7 @@ dependencies = [
  "linkerd-stack",
  "linkerd-tracing",
  "pin-project",
- "thiserror 2.0.8",
+ "thiserror 2.0.9",
  "tokio",
  "tower",
  "tracing",
@@ -2551,7 +2551,7 @@ dependencies = [
  "linkerd2-proxy-api",
  "rand",
  "regex",
- "thiserror 2.0.8",
+ "thiserror 2.0.9",
  "tracing",
 ]
 
@@ -3714,11 +3714,11 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "2.0.8"
+version = "2.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08f5383f3e0071702bf93ab5ee99b52d26936be9dedd9413067cbdcddcb6141a"
+checksum = "f072643fd0190df67a8bab670c20ef5d8737177d6ac6b2e9a236cb096206b2cc"
 dependencies = [
- "thiserror-impl 2.0.8",
+ "thiserror-impl 2.0.9",
 ]
 
 [[package]]
@@ -3734,9 +3734,9 @@ dependencies = [
 
 [[package]]
 name = "thiserror-impl"
-version = "2.0.8"
+version = "2.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f2f357fcec90b3caef6623a099691be676d033b40a058ac95d2a6ade6fa0c943"
+checksum = "7b50fa271071aae2e6ee85f842e2e28ba8cd2c5fb67f11fcb1fd70b276f9e7d4"
 dependencies = [
  "proc-macro2",
  "quote",
