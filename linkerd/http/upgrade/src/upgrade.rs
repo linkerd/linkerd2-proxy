@@ -50,7 +50,7 @@ struct Inner {
     upgrade_drain_signal: Option<drain::Watch>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 enum Half {
     Server,
     Client,
