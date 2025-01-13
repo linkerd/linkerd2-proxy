@@ -61,6 +61,13 @@ pub struct Service<S> {
     upgrade_drain_signal: drain::Watch,
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("OnUpgrade future has already been inserted: half={half:?}")]
+pub struct AlreadyInserted {
+    half: Half,
+    pub upgrade: OnUpgrade,
+}
+
 // === impl Http11Upgrade ===
 
 impl Http11Upgrade {
@@ -87,7 +94,7 @@ impl Http11Upgrade {
         }
     }
 
-    pub fn insert_half(self, upgrade: OnUpgrade) {
+    pub fn insert_half(self, upgrade: OnUpgrade) -> Result<(), AlreadyInserted> {
         match self {
             Self {
                 inner: Some(inner),
@@ -99,6 +106,7 @@ impl Http11Upgrade {
                     .expect("only Half::Server touches server TryLock");
                 debug_assert!(lock.is_none());
                 *lock = Some(upgrade);
+                Ok(())
             }
             Self {
                 inner: Some(inner),
@@ -110,8 +118,9 @@ impl Http11Upgrade {
                     .expect("only Half::Client touches client TryLock");
                 debug_assert!(lock.is_none());
                 *lock = Some(upgrade);
+                Ok(())
             }
-            Self { inner: None, .. } => {}
+            Self { inner: None, half } => Err(AlreadyInserted { half, upgrade }),
         }
     }
 }

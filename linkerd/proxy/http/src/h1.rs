@@ -162,7 +162,7 @@ where
             if is_upgrade(&rsp) {
                 trace!("Client response is HTTP/1.1 upgrade");
                 if let Some(upgrade) = upgrade {
-                    upgrade.insert_half(hyper::upgrade::on(&mut rsp));
+                    upgrade.insert_half(hyper::upgrade::on(&mut rsp))?;
                 }
             } else {
                 linkerd_http_upgrade::strip_connection_headers(rsp.headers_mut());
