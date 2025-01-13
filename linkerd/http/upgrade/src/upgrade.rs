@@ -70,7 +70,7 @@ impl Http11Upgrade {
     ///
     /// Each handle is used to insert 1 half of the upgrade. When both handles
     /// have inserted, the upgrade future will be spawned onto the executor.
-    pub fn halves(upgrade_drain_signal: drain::Watch) -> Http11UpgradeHalves {
+    fn halves(upgrade_drain_signal: drain::Watch) -> Http11UpgradeHalves {
         let inner = Arc::new(Inner {
             server: TryLock::new(None),
             client: TryLock::new(None),
