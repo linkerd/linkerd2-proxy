@@ -40,6 +40,12 @@ impl<B: Body> ForwardCompatibleBody<B> {
     pub(crate) fn frame(&mut self) -> combinators::Frame<'_, B> {
         combinators::Frame(self)
     }
+
+    /// Returns `true` when the end of stream has been reached.
+    #[cfg(test)]
+    pub(crate) fn is_end_stream(&self) -> bool {
+        self.inner.is_end_stream()
+    }
 }
 
 /// Future that resolves to the next frame from a `Body`.
