@@ -41,10 +41,13 @@ pub struct PeekTrailersBody<B: Body = BoxBody> {
     trailers: Option<Result<Option<http::HeaderMap>, B::Error>>,
 }
 
-pub type WithPeekTrailersBody<B> = Either<
-    futures::future::Ready<http::Response<PeekTrailersBody<B>>>,
-    Pin<Box<dyn Future<Output = http::Response<PeekTrailersBody<B>>> + Send + 'static>>,
->;
+/// A future that yields a response instrumented with [`PeekTrailersBody<B>`].
+pub type WithPeekTrailersBody<B> = Either<ReadyResponse<B>, ReadingResponse<B>>;
+/// A future that immediately yields a response.
+type ReadyResponse<B> = future::Ready<http::Response<PeekTrailersBody<B>>>;
+/// A boxed future that must poll a body before yielding a response.
+type ReadingResponse<B> =
+    Pin<Box<dyn Future<Output = http::Response<PeekTrailersBody<B>>> + Send + 'static>>;
 
 // === impl WithTrailers ===
 
