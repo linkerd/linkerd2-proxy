@@ -28,7 +28,10 @@ pub struct UpgradeBody<B = BoxBody> {
 // === impl UpgradeBody ===
 
 impl<B> UpgradeBody<B> {
-    pub fn new(body: B, upgrade: Option<(Http11Upgrade, hyper::upgrade::OnUpgrade)>) -> Self {
+    pub(crate) fn new(
+        body: B,
+        upgrade: Option<(Http11Upgrade, hyper::upgrade::OnUpgrade)>,
+    ) -> Self {
         Self { body, upgrade }
     }
 }
