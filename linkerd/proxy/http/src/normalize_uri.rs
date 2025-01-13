@@ -141,6 +141,27 @@ impl<S> MarkAbsoluteForm<S> {
     pub fn layer() -> impl layer::Layer<S, Service = Self> + Copy {
         layer::mk(Self::new)
     }
+
+    /// Returns true if the request target is in `absolute-form`.
+    ///
+    /// This is `absolute-form`: `https://example.com/docs`
+    ///
+    /// This is not:
+    ///
+    /// - `/docs`
+    /// - `example.com`
+    fn is_absolute_form(uri: &http::Uri) -> bool {
+        // It's sufficient just to check for a scheme, since in HTTP1,
+        // it's required in absolute-form, and `http::Uri` doesn't
+        // allow URIs with the other parts missing when the scheme is set.
+        debug_assert!(
+            uri.scheme().is_none() || (uri.authority().is_some() && uri.path_and_query().is_some()),
+            "is_absolute_form http::Uri invariants: {:?}",
+            uri
+        );
+
+        uri.scheme().is_some()
+    }
 }
 
 impl<S, B> tower::Service<http::Request<B>> for MarkAbsoluteForm<S>
@@ -158,7 +179,7 @@ where
 
     fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
         if let http::Version::HTTP_10 | http::Version::HTTP_11 = req.version() {
-            if h1::is_absolute_form(req.uri()) {
+            if Self::is_absolute_form(req.uri()) {
                 trace!(uri = ?req.uri(), "Absolute form");
                 req.extensions_mut().insert(h1::WasAbsoluteForm(()));
             } else {

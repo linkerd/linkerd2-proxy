@@ -1,9 +1,6 @@
 use crate::TracingExecutor;
 use futures::prelude::*;
-use http::{
-    header::{CONTENT_LENGTH, TRANSFER_ENCODING},
-    uri::Uri,
-};
+use http::header::{CONTENT_LENGTH, TRANSFER_ENCODING};
 use linkerd_error::{Error, Result};
 use linkerd_http_box::BoxBody;
 use linkerd_http_upgrade::{
@@ -200,25 +197,4 @@ pub(crate) fn is_upgrade<B>(res: &http::Response<B>) -> bool {
 
     // Just a regular HTTP response...
     false
-}
-
-/// Returns if the request target is in `absolute-form`.
-///
-/// This is `absolute-form`: `https://example.com/docs`
-///
-/// This is not:
-///
-/// - `/docs`
-/// - `example.com`
-pub(crate) fn is_absolute_form(uri: &Uri) -> bool {
-    // It's sufficient just to check for a scheme, since in HTTP1,
-    // it's required in absolute-form, and `http::Uri` doesn't
-    // allow URIs with the other parts missing when the scheme is set.
-    debug_assert!(
-        uri.scheme().is_none() || (uri.authority().is_some() && uri.path_and_query().is_some()),
-        "is_absolute_form http::Uri invariants: {:?}",
-        uri
-    );
-
-    uri.scheme().is_some()
 }
