@@ -16,6 +16,9 @@ use std::{
 /// If the first frame of the body stream was *not* a `TRAILERS` frame, this
 /// behaves identically to a normal body.
 pub struct PeekTrailersBody<B: Body = BoxBody> {
+    /// The inner [`Body`].
+    ///
+    /// This is the request or response body whose trailers are being peeked.
     inner: B,
 
     /// The first DATA frame received from the inner body, or an error that
@@ -46,6 +49,10 @@ pub type WithPeekTrailersBody<B> = Either<
 // === impl WithTrailers ===
 
 impl<B: Body> PeekTrailersBody<B> {
+    /// Returns a reference to the body's trailers, if available.
+    ///
+    /// This function will return `None` if the body's trailers could not be peeked, or if there
+    /// were no trailers included.
     pub fn peek_trailers(&self) -> Option<&http::HeaderMap> {
         self.trailers
             .as_ref()
@@ -116,6 +123,9 @@ impl<B: Body> PeekTrailersBody<B> {
         http::Response::from_parts(parts, body)
     }
 
+    /// Returns a response with an inert [`PeekTrailersBody<B>`].
+    ///
+    /// This will not peek the inner body's trailers.
     fn no_trailers(rsp: http::Response<B>) -> http::Response<Self> {
         rsp.map(|inner| Self {
             inner,
