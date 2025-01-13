@@ -87,17 +87,19 @@ impl<B: Body> PeekTrailersBody<B> {
         }
 
         // Otherwise, return a future that tries to read the next frame.
-        Either::Right(Box::pin(Self::read_response(rsp)))
+        Either::Right(Box::pin(async move {
+            let (parts, body) = rsp.into_parts();
+            let body = Self::read_body(body).await;
+            http::Response::from_parts(parts, body)
+        }))
     }
 
-    async fn read_response(rsp: http::Response<B>) -> http::Response<Self>
+    async fn read_body(mut body: B) -> Self
     where
         B: Send + Unpin,
         B::Data: Send + Unpin,
         B::Error: Send,
     {
-        let (parts, mut body) = rsp.into_parts();
-
         // First, poll the body for its first frame.
         tracing::debug!("Buffering first data frame");
         let first_data = body.data().await;
@@ -125,14 +127,11 @@ impl<B: Body> PeekTrailersBody<B> {
             tracing::debug!("Buffered trailers frame");
         }
 
-        http::Response::from_parts(
-            parts,
-            Self {
-                inner: body,
-                first_data,
-                trailers,
-            },
-        )
+        Self {
+            inner: body,
+            first_data,
+            trailers,
+        }
     }
 
     /// Returns a response with an inert [`PeekTrailersBody<B>`].
