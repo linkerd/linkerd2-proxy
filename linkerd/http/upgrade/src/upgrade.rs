@@ -1,6 +1,6 @@
 //! HTTP/1.1 Upgrades
 
-use crate::glue::UpgradeBody;
+use crate::body::UpgradeBody;
 use futures::{
     future::{self, Either},
     TryFutureExt,

@@ -2,7 +2,8 @@
 
 pub use self::upgrade::Service;
 
-pub mod glue;
+mod body;
+pub mod connect;
 pub mod upgrade;
 
 pub fn strip_connection_headers(headers: &mut http::HeaderMap) {

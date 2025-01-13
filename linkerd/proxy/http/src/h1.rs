@@ -7,7 +7,7 @@ use http::{
 use linkerd_error::{Error, Result};
 use linkerd_http_box::BoxBody;
 use linkerd_http_upgrade::{
-    glue::HyperConnect,
+    connect::HyperConnect,
     upgrade::{Http11Upgrade, HttpConnect},
 };
 use linkerd_stack::MakeConnection;
