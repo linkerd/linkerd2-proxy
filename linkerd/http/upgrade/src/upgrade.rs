@@ -90,19 +90,23 @@ impl Http11Upgrade {
     }
 
     pub fn insert_half(self, upgrade: OnUpgrade) {
-        match self.half {
-            Half::Server => {
-                let mut lock = self
-                    .inner
+        match self {
+            Self {
+                inner,
+                half: Half::Server,
+            } => {
+                let mut lock = inner
                     .server
                     .try_lock()
                     .expect("only Half::Server touches server TryLock");
                 debug_assert!(lock.is_none());
                 *lock = Some(upgrade);
             }
-            Half::Client => {
-                let mut lock = self
-                    .inner
+            Self {
+                inner,
+                half: Half::Client,
+            } => {
+                let mut lock = inner
                     .client
                     .try_lock()
                     .expect("only Half::Client touches client TryLock");
