@@ -127,8 +127,9 @@ impl fmt::Debug for Http11Upgrade {
 /// An [`Http11Upgrade`] can be cloned.
 ///
 /// NB: Only the original copy of this extension may insert an [`OnUpgrade`] future into its half
-/// of the channel. Calling [`insert_half()`] on any clones of an upgrade extension will be a noöp.
-/// See the [`Drop`] implementation provided by [`Inner`] for more information.
+/// of the channel. Calling [`insert_half()`][Http11Upgrade::insert_half] on any clones of an
+/// upgrade extension will be a noöp.
+//  See the [`Drop`] implementation provided by `Inner` for more information.
 impl Clone for Http11Upgrade {
     fn clone(&self) -> Self {
         Self {
