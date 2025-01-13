@@ -17,8 +17,11 @@ use std::{
 ///
 /// If the first frame of the body stream was *not* a `TRAILERS` frame, this
 /// behaves identically to a normal body.
+#[pin_project]
+pub struct PeekTrailersBody<B: Body = BoxBody>(#[pin] Inner<B>);
+
 #[pin_project(project = Projection)]
-pub enum PeekTrailersBody<B: Body = BoxBody> {
+enum Inner<B: Body = BoxBody> {
     /// An empty body.
     Empty,
     /// A body that contains zero or one DATA frame.
@@ -65,18 +68,19 @@ impl<B: Body> PeekTrailersBody<B> {
     /// This function will return `None` if the body's trailers could not be peeked, or if there
     /// were no trailers included.
     pub fn peek_trailers(&self) -> Option<&http::HeaderMap> {
-        match self {
-            Self::Unary {
+        let Self(inner) = self;
+        match inner {
+            Inner::Unary {
                 trailers: Some(Ok(trailers)),
                 ..
             } => Some(trailers),
-            Self::Unary {
+            Inner::Unary {
                 trailers: None | Some(Err(_)),
                 ..
             }
-            | Self::Empty
-            | Self::Buffered { .. }
-            | Self::Passthru { .. } => None,
+            | Inner::Empty
+            | Inner::Buffered { .. }
+            | Inner::Passthru { .. } => None,
         }
     }
 
@@ -91,14 +95,16 @@ impl<B: Body> PeekTrailersBody<B> {
         // If the response isn't an HTTP version that has trailers, skip trying
         // to read a trailers frame.
         if let Version::HTTP_09 | Version::HTTP_10 | Version::HTTP_11 = rsp.version() {
-            return Either::Left(future::ready(rsp.map(|inner| Self::Passthru { inner })));
+            return Either::Left(future::ready(
+                rsp.map(|inner| Self(Inner::Passthru { inner })),
+            ));
         }
 
         // If the response doesn't have a body stream, also skip trying to read
         // a trailers frame.
         if rsp.is_end_stream() {
             tracing::debug!("Skipping trailers for empty body");
-            return Either::Left(future::ready(rsp.map(|_| Self::Empty)));
+            return Either::Left(future::ready(rsp.map(|_| Self(Inner::Empty))));
         }
 
         // Otherwise, return a future that tries to read the next frame.
@@ -126,16 +132,17 @@ impl<B: Body> PeekTrailersBody<B> {
             .frame()
             .map(|f| f.map(|r| r.map(Self::split_frame)))
             .await;
-        let body: Self = match first_frame {
+
+        let body = Self(match first_frame {
             // The body has no frames. It is empty.
-            None => Self::Empty,
+            None => Inner::Empty,
             // The body yielded an error. We are done.
-            Some(Err(error)) => Self::Unary {
+            Some(Err(error)) => Inner::Unary {
                 data: Some(Err(error)),
                 trailers: None,
             },
             // The body yielded a TRAILERS frame. We are done.
-            Some(Ok(Err(trailers))) => Self::Unary {
+            Some(Ok(Err(trailers))) => Inner::Unary {
                 data: None,
                 trailers: Some(Ok(trailers)),
             },
@@ -149,24 +156,24 @@ impl<B: Body> PeekTrailersBody<B> {
                     // The second frame is available. Let's inspect it and determine what to do.
                     match second {
                         // The body is finished. There is not a TRAILERS frame.
-                        None => Self::Unary {
+                        None => Inner::Unary {
                             data: Some(Ok(first)),
                             trailers: None,
                         },
                         // We immediately yielded a result, but it was an error. Alas!
-                        Some(Err(error)) => Self::Unary {
+                        Some(Err(error)) => Inner::Unary {
                             data: Some(Ok(first)),
                             trailers: Some(Err(error)),
                         },
                         // We immediately yielded another frame, but it was a second DATA frame.
                         // We hold on to each frame, but we cannot wait for the TRAILERS.
-                        Some(Ok(Ok(second))) => Self::Buffered {
+                        Some(Ok(Ok(second))) => Inner::Buffered {
                             first: Some(Ok(first)),
                             second: Some(Ok(second)),
                             inner: body.into_inner(),
                         },
                         // The body immediately yielded a second TRAILERS frame. Nice!
-                        Some(Ok(Err(trailers))) => Self::Unary {
+                        Some(Ok(Err(trailers))) => Inner::Unary {
                             data: Some(Ok(first)),
                             trailers: Some(Ok(trailers)),
                         },
@@ -175,14 +182,14 @@ impl<B: Body> PeekTrailersBody<B> {
                     // If we are here, the second frame is not yet available. We cannot be sure
                     // that a second DATA frame is on the way, and we are no longer willing to
                     // await additional frames. There are no trailers to peek.
-                    Self::Buffered {
+                    Inner::Buffered {
                         first: None,
                         second: None,
                         inner: body.into_inner(),
                     }
                 }
             }
-        };
+        });
 
         if body.peek_trailers().is_some() {
             tracing::debug!("Buffered trailers frame");
@@ -222,7 +229,7 @@ where
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
-        let this = self.project();
+        let this = self.project().0.project();
         match this {
             Projection::Empty => Poll::Ready(None),
             Projection::Passthru { inner } => inner.poll_data(cx),
@@ -245,7 +252,7 @@ where
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
-        let this = self.project();
+        let this = self.project().0.project();
         match this {
             Projection::Empty => Poll::Ready(Ok(None)),
             Projection::Passthru { inner } => inner.poll_trailers(cx),
@@ -256,41 +263,43 @@ where
 
     #[inline]
     fn is_end_stream(&self) -> bool {
-        match self {
-            Self::Empty => true,
-            Self::Passthru { inner } => inner.is_end_stream(),
-            Self::Unary {
+        let Self(inner) = self;
+        match inner {
+            Inner::Empty => true,
+            Inner::Passthru { inner } => inner.is_end_stream(),
+            Inner::Unary {
                 data: None,
                 trailers: None,
             } => true,
-            Self::Unary { .. } => false,
-            Self::Buffered {
+            Inner::Unary { .. } => false,
+            Inner::Buffered {
                 inner,
                 first: None,
                 second: None,
             } => inner.is_end_stream(),
-            Self::Buffered { .. } => false,
+            Inner::Buffered { .. } => false,
         }
     }
 
     #[inline]
     fn size_hint(&self) -> http_body::SizeHint {
         use bytes::Buf;
-        match self {
-            Self::Empty => http_body::SizeHint::new(),
-            Self::Passthru { inner } => inner.size_hint(),
-            Self::Unary {
+        let Self(inner) = self;
+        match inner {
+            Inner::Empty => http_body::SizeHint::new(),
+            Inner::Passthru { inner } => inner.size_hint(),
+            Inner::Unary {
                 data: Some(Ok(data)),
                 ..
             } => {
                 let size = data.remaining() as u64;
                 http_body::SizeHint::with_exact(size)
             }
-            Self::Unary {
+            Inner::Unary {
                 data: None | Some(Err(_)),
                 ..
             } => http_body::SizeHint::new(),
-            Self::Buffered {
+            Inner::Buffered {
                 first,
                 second,
                 inner,
