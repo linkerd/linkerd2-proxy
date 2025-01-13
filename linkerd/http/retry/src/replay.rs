@@ -1016,10 +1016,14 @@ mod tests {
         T: http_body::Body + Unpin,
     {
         tracing::trace!("waiting for a body chunk...");
-        let chunk = body
-            .data()
+        let chunk = crate::compat::ForwardCompatibleBody::new(body)
+            .frame()
             .await
-            .map(|res| res.map_err(|_| ()).unwrap())
+            .expect("yields a result")
+            .ok()
+            .expect("yields a frame")
+            .into_data()
+            .ok()
             .map(string);
         tracing::info!(?chunk);
         chunk
