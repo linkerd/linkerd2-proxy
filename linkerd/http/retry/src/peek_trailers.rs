@@ -16,6 +16,9 @@ use std::{
 /// If the first frame of the body stream was *not* a `TRAILERS` frame, this
 /// behaves identically to a normal body.
 pub struct PeekTrailersBody<B: Body = BoxBody> {
+    /// The inner [`Body`].
+    ///
+    /// This is the request or response body whose trailers are being peeked.
     inner: B,
 
     /// The first DATA frame received from the inner body, or an error that
