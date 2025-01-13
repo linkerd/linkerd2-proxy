@@ -26,6 +26,31 @@ pub use self::upgrade::Service;
 pub mod glue;
 pub mod upgrade;
 
+/// Removes connection headers from the given [`HeaderMap`][http::HeaderMap].
+///
+/// An HTTP proxy is required to do this, according to [RFC 9110 § 7.6.1 ¶ 5][rfc9110-761-5]:
+///
+/// > Intermediaries MUST parse a received Connection header field before a message is forwarded
+/// > and, for each connection-option in this field, remove any header or trailer field(s) from the
+/// > message with the same name as the connection-option, and then remove the Connection header
+/// > field itself (or replace it with the intermediary's own control options for the forwarded
+/// > message).
+///
+/// This function additionally removes some headers mentioned in
+/// [RFC 9110 § 7.6.1 ¶ 7-8.5][rfc9110-761-7]
+///
+/// > Furthermore, intermediaries SHOULD remove or replace fields that are known to require removal
+/// > before forwarding, whether or not they appear as a connection-option, after applying those
+/// > fields' semantics. This includes but is not limited to:
+/// >
+/// > - `Proxy-Connection` (Appendix C.2.2 of [HTTP/1.1])
+/// > - `Keep-Alive` (Section 19.7.1 of [RFC2068])
+/// > - `TE` (Section 10.1.4)
+/// > - `Transfer-Encoding` (Section 6.1 of [HTTP/1.1])
+/// > - `Upgrade` (Section 7.8)
+///
+/// [rfc9110-761-5]: https://www.rfc-editor.org/rfc/rfc9110#section-7.6.1-5
+/// [rfc9110-761-7]: https://www.rfc-editor.org/rfc/rfc9110#section-7.6.1-7
 pub fn strip_connection_headers(headers: &mut http::HeaderMap) {
     use http::header;
     if let Some(val) = headers.remove(header::CONNECTION) {
