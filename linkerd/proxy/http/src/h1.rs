@@ -170,7 +170,7 @@ where
 }
 
 /// Checks responses to determine if they are successful HTTP upgrades.
-pub(crate) fn is_upgrade<B>(res: &http::Response<B>) -> bool {
+fn is_upgrade<B>(res: &http::Response<B>) -> bool {
     #[inline]
     fn is_connect_success<B>(res: &http::Response<B>) -> bool {
         res.extensions().get::<HttpConnect>().is_some() && res.status().is_success()
