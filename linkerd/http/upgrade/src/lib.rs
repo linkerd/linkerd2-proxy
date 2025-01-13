@@ -1,4 +1,17 @@
-//! Facilities for HTTP/1 upgrades.
+//! Facilities for HTTP/1.1 upgrades.
+//!
+//! See [RFC 9110 § 7.8][rfc9110] for more information about HTTP/1.1's `Upgrade` header field,
+//! and how it is used to transition to other protocols like HTTP/2 on a particular connection.
+//!
+//! Note that HTTP/2 does *NOT* provide support for the `Upgrade` header field, per
+//! [RFC 9113 § 8.6][rfc9113].
+//!
+//! > The semantics of `101 (Switching Protocols)` aren't applicable to a multiplexed protocol.
+//!
+//! Use [`Service::new()`] to add upgrade support to a [`tower::Service`].
+//!
+//! [rfc9110]: https://www.rfc-editor.org/rfc/rfc9110#field.upgrade
+//! [rfc9113]: https://www.rfc-editor.org/rfc/rfc9113.html#name-the-upgrade-header-field
 
 pub use self::upgrade::Service;
 
