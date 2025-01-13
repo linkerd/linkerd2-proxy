@@ -27,6 +27,12 @@ pub struct UpgradeBody<B = BoxBody> {
 
 // === impl UpgradeBody ===
 
+impl<B> UpgradeBody<B> {
+    pub fn new(body: B, upgrade: Option<(Http11Upgrade, hyper::upgrade::OnUpgrade)>) -> Self {
+        Self { body, upgrade }
+    }
+}
+
 impl<B> Body for UpgradeBody<B>
 where
     B: Body,
@@ -85,12 +91,6 @@ impl<B: Default> Default for UpgradeBody<B> {
             body: B::default(),
             upgrade: None,
         }
-    }
-}
-
-impl<B> UpgradeBody<B> {
-    pub fn new(body: B, upgrade: Option<(Http11Upgrade, hyper::upgrade::OnUpgrade)>) -> Self {
-        Self { body, upgrade }
     }
 }
 
