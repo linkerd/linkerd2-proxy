@@ -22,8 +22,6 @@ use try_lock::TryLock;
 /// inserted into the `Request::extensions()`. If the HTTP1 client service
 /// also detects an upgrade, the two `OnUpgrade` futures will be joined
 /// together with the glue in this type.
-// Note: this relies on there only having been 2 Inner clones, so don't
-// implement `Clone` for this type.
 pub struct Http11Upgrade {
     half: Half,
     inner: Option<Arc<Inner>>,
@@ -123,6 +121,24 @@ impl fmt::Debug for Http11Upgrade {
         f.debug_struct("Http11Upgrade")
             .field("half", &self.half)
             .finish()
+    }
+}
+
+/// An [`Http11Upgrade`] can be cloned.
+///
+/// NB: Only the original copy of this extension may insert an [`OnUpgrade`] future into its half
+/// of the channel. Calling [`insert_half()`] on any clones of an upgrade extension will be a noöp.
+/// See the [`Drop`] implementation provided by [`Inner`] for more information.
+impl Clone for Http11Upgrade {
+    fn clone(&self) -> Self {
+        Self {
+            half: self.half,
+            // We do *NOT* deeply clone our reference to `Inner`.
+            //
+            // `Http11Upgrade::insert_half()` and the `Inner` type's `Drop` glue rely on there only
+            // being one copy of the client and sender halves of the upgrade channel.
+            inner: None,
+        }
     }
 }
 
