@@ -162,10 +162,8 @@ where
                 match version {
                     Version::Http1 => {
                         // Enable support for HTTP upgrades (CONNECT and websockets).
-                        let svc = linkerd_http_upgrade::upgrade::Service::new(
-                            BoxRequest::new(svc),
-                            drain.clone(),
-                        );
+                        let svc =
+                            linkerd_http_upgrade::Service::new(BoxRequest::new(svc), drain.clone());
                         let mut conn = http1.serve_connection(io, svc).with_upgrades();
 
                         tokio::select! {
