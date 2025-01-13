@@ -472,12 +472,10 @@ mod tests {
             let poll = if data_polls.is_empty() {
                 trailer_polls.pop_front().unwrap_or(Poll::Ready(Ok(None)))
             } else {
-                // If the data frames have not all been yielded, yield `Pending`.
-                //
-                // TODO(kate): this arm should panic. it indicates `PeekTrailersBody<B>` isn't
-                // respecting the contract outlined in
+                // The called has polled for trailers before exhausting the stream of DATA frames.
+                // This indicates `PeekTrailersBody<B>` isn't respecting the contract outlined in
                 // <https://docs.rs/http-body/0.4.6/http_body/trait.Body.html#tymethod.poll_trailers>.
-                Poll::Pending
+                panic!("`poll_trailers()` was called before `poll_data()` returned `Poll::Ready(None)`");
             };
 
             // If we return `Poll::Pending`, we must schedule the task to be awoken.
