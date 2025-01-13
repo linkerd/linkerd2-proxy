@@ -49,7 +49,12 @@ pub use linkerd_http_version::{self as version, Version};
 #[derive(Clone, Debug)]
 pub struct HeaderPair(pub HeaderName, pub HeaderValue);
 
+/// HTTP/2 error codes for boxed errors.
+///
+/// Error codes are used in `RST_STREAM` and `GOAWAY` frames to convey the
+/// reasons for the stream or connection error.
 pub trait HasH2Reason {
+    /// Returns the [`Reason`][::h2::Reason] for this error.
     fn h2_reason(&self) -> Option<::h2::Reason>;
 }
 
