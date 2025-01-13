@@ -4,6 +4,7 @@ use futures::{
 };
 use http_body::Body;
 use linkerd_http_box::BoxBody;
+use pin_project::pin_project;
 use std::{
     future::Future,
     pin::Pin,
@@ -15,10 +16,12 @@ use std::{
 ///
 /// If the first frame of the body stream was *not* a `TRAILERS` frame, this
 /// behaves identically to a normal body.
+#[pin_project(project = Projection)]
 pub struct PeekTrailersBody<B: Body = BoxBody> {
     /// The inner [`Body`].
     ///
     /// This is the request or response body whose trailers are being peeked.
+    #[pin]
     inner: B,
 
     /// The first DATA frame received from the inner body, or an error that
@@ -151,24 +154,34 @@ where
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
-        let this = self.get_mut();
-        if let Some(first_data) = this.first_data.take() {
+        let Projection {
+            inner,
+            first_data,
+            trailers: _,
+        } = self.project();
+
+        if let Some(first_data) = first_data.take() {
             return Poll::Ready(Some(first_data));
         }
 
-        Pin::new(&mut this.inner).poll_data(cx)
+        inner.poll_data(cx)
     }
 
     fn poll_trailers(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
-        let this = self.get_mut();
-        if let Some(trailers) = this.trailers.take() {
+        let Projection {
+            inner,
+            first_data: _,
+            trailers,
+        } = self.project();
+
+        if let Some(trailers) = trailers.take() {
             return Poll::Ready(trailers);
         }
 
-        Pin::new(&mut this.inner).poll_trailers(cx)
+        inner.poll_trailers(cx)
     }
 
     #[inline]
