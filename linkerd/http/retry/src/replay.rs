@@ -547,8 +547,8 @@ mod tests {
     async fn replays_trailers() {
         let Test {
             mut tx,
-            mut initial,
-            mut replay,
+            initial,
+            replay,
             _trace,
         } = Test::new();
 
@@ -560,20 +560,31 @@ mod tests {
         tx.send_trailers(tlrs.clone()).await;
         drop(tx);
 
-        while initial.data().await.is_some() {
-            // do nothing
-        }
-        let initial_tlrs = initial.trailers().await.expect("trailers should not error");
-        assert_eq!(initial_tlrs.as_ref(), Some(&tlrs));
+        let read_trailers = |body: ReplayBody<_>| async move {
+            let mut body = crate::compat::ForwardCompatibleBody::new(body);
+            let _ = body
+                .frame()
+                .await
+                .expect("should yield a result")
+                .expect("should yield a frame")
+                .into_data()
+                .expect("should yield data");
+            let trls = body
+                .frame()
+                .await
+                .expect("should yield a result")
+                .expect("should yield a frame")
+                .into_trailers()
+                .expect("should yield trailers");
+            assert!(body.frame().await.is_none());
+            trls
+        };
 
-        // drop the initial body to send the data to the replay
-        drop(initial);
+        let initial_tlrs = read_trailers(initial).await;
+        assert_eq!(&initial_tlrs, &tlrs);
 
-        while replay.data().await.is_some() {
-            // do nothing
-        }
-        let replay_tlrs = replay.trailers().await.expect("trailers should not error");
-        assert_eq!(replay_tlrs.as_ref(), Some(&tlrs));
+        let replay_tlrs = read_trailers(replay).await;
+        assert_eq!(&replay_tlrs, &tlrs);
     }
 
     #[tokio::test]
