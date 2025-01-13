@@ -13,10 +13,11 @@
 //! [rfc9110]: https://www.rfc-editor.org/rfc/rfc9110#field.upgrade
 //! [rfc9113]: https://www.rfc-editor.org/rfc/rfc9113.html#name-the-upgrade-header-field
 
-pub use self::upgrade::Service;
+pub use self::svc::Service;
 
 mod body;
 pub mod connect;
+pub mod svc;
 pub mod upgrade;
 
 pub fn strip_connection_headers(headers: &mut http::HeaderMap) {
