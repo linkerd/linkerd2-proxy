@@ -142,12 +142,18 @@ impl<B: Body> PeekTrailersBody<B> {
                 trailers: None,
             },
             // The body yielded a TRAILERS frame. We are done.
-            Some(Ok(Err(trailers))) => Inner::Unary {
+            Some(Ok(Some(Either::Right(trailers)))) => Inner::Unary {
                 data: None,
                 trailers: Some(Ok(trailers)),
             },
+            // The body yielded an unknown kind of frame.
+            Some(Ok(None)) => Inner::Buffered {
+                first: None,
+                second: None,
+                inner: body.into_inner(),
+            },
             // The body yielded a DATA frame. Check for a second frame, without yielding again.
-            Some(Ok(Ok(first))) => {
+            Some(Ok(Some(Either::Left(first)))) => {
                 if let Some(second) = body
                     .frame()
                     .map(|f| f.map(|r| r.map(Self::split_frame)))
@@ -167,15 +173,21 @@ impl<B: Body> PeekTrailersBody<B> {
                         },
                         // We immediately yielded another frame, but it was a second DATA frame.
                         // We hold on to each frame, but we cannot wait for the TRAILERS.
-                        Some(Ok(Ok(second))) => Inner::Buffered {
+                        Some(Ok(Some(Either::Left(second)))) => Inner::Buffered {
                             first: Some(Ok(first)),
                             second: Some(Ok(second)),
                             inner: body.into_inner(),
                         },
                         // The body immediately yielded a second TRAILERS frame. Nice!
-                        Some(Ok(Err(trailers))) => Inner::Unary {
+                        Some(Ok(Some(Either::Right(trailers)))) => Inner::Unary {
                             data: Some(Ok(first)),
                             trailers: Some(Ok(trailers)),
+                        },
+                        // The body yielded an unknown kind of frame.
+                        Some(Ok(None)) => Inner::Buffered {
+                            first: None,
+                            second: None,
+                            inner: body.into_inner(),
                         },
                     }
                 } else {
@@ -198,21 +210,28 @@ impl<B: Body> PeekTrailersBody<B> {
         body
     }
 
-    /// Splits a `Frame<T>` into a `Result<T, E>`.
+    /// Splits a `Frame<T>` into a chunk of data or a header map.
     ///
     /// Frames do not expose their inner enums, and instead expose `into_data()` and
-    /// `into_trailers()` methods. This function will return `Ok(data)` if it is given a DATA
-    /// frame, and `Err(trailers)` if it is given a TRAILERS frame.
+    /// `into_trailers()` methods. This function breaks the frame into either `Some(Left(data))`
+    /// if it is given a DATA frame, and `Some(Right(trailers))` if it is given a TRAILERS frame.
+    ///
+    /// This returns `None` if an unknown frame is provided, that is neither.
     ///
     /// This is an internal helper to facilitate pattern matching in `read_body(..)`, above.
-    fn split_frame(frame: crate::compat::Frame<B::Data>) -> Result<B::Data, HeaderMap> {
-        frame
-            .into_data()
-            .map_err(|frame| match frame.into_trailers() {
-                Ok(trls) => trls,
-                // Safety: this is not reachable, we called `into_data()` above.
-                Err(_) => unreachable!("into_data() and `into_trailers()` both returned `Err(_)`"),
-            })
+    fn split_frame(
+        frame: crate::compat::Frame<B::Data>,
+    ) -> Option<futures::future::Either<B::Data, HeaderMap>> {
+        use {crate::compat::Frame, futures::future::Either};
+        match frame.into_data().map_err(Frame::into_trailers) {
+            Ok(data) => Some(Either::Left(data)),
+            Err(Ok(trailers)) => Some(Either::Right(trailers)),
+            Err(Err(_unknown)) => {
+                // It's possible that some sort of unknown frame could be encountered.
+                tracing::warn!("an unknown body frame has been buffered");
+                None
+            }
+        }
     }
 }
 
