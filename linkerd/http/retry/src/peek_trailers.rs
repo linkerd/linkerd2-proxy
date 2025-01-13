@@ -191,7 +191,18 @@ where
 
     #[inline]
     fn is_end_stream(&self) -> bool {
-        self.first_data.is_none() && self.trailers.is_none() && self.inner.is_end_stream()
+        let Self {
+            inner,
+            first_data,
+            trailers,
+        } = self;
+
+        let trailers_finished = match trailers {
+            Some(Ok(Some(_)) | Err(_)) => false,
+            None | Some(Ok(None)) => true,
+        };
+
+        first_data.is_none() && trailers_finished && inner.is_end_stream()
     }
 
     #[inline]
@@ -254,8 +265,7 @@ mod tests {
         let empty = MockBody::default();
         let peek = PeekTrailersBody::read_body(empty).await;
         assert!(peek.peek_trailers().is_none());
-        // TODO(kate): this will not return `true`.
-        // assert!(peek.is_end_stream());
+        assert!(peek.is_end_stream());
     }
 
     #[tokio::test]
