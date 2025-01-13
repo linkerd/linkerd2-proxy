@@ -29,7 +29,7 @@ pub struct Http11Upgrade {
     inner: Arc<Inner>,
 }
 
-/// A named "tuple" returned by `Http11Upgade::new()` of the two halves of
+/// A named "tuple" returned by [`Http11Upgade::halves()`] of the two halves of
 /// an upgrade.
 #[derive(Debug)]
 struct Http11UpgradeHalves {
