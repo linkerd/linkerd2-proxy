@@ -1,10 +1,9 @@
 use futures::{
     future::{self, Either},
-    FutureExt, TryFutureExt,
+    FutureExt,
 };
 use http_body::Body;
 use linkerd_http_box::BoxBody;
-use linkerd_stack::Service;
 use std::{
     future::Future,
     pin::Pin,
@@ -43,9 +42,6 @@ pub type WithPeekTrailersBody<B> = Either<
     futures::future::Ready<http::Response<PeekTrailersBody<B>>>,
     Pin<Box<dyn Future<Output = http::Response<PeekTrailersBody<B>>> + Send + 'static>>,
 >;
-
-#[derive(Clone, Debug)]
-pub struct ResponseWithPeekTrailers<S>(pub(crate) S);
 
 // === impl WithTrailers ===
 
@@ -183,36 +179,5 @@ where
         }
 
         hint
-    }
-}
-
-// === impl ResponseWithTrailers ===
-
-type WrapTrailersFuture<E> = future::Map<
-    WithPeekTrailersBody<BoxBody>,
-    fn(http::Response<PeekTrailersBody>) -> Result<http::Response<PeekTrailersBody>, E>,
->;
-
-impl<Req, S> Service<Req> for ResponseWithPeekTrailers<S>
-where
-    S: Service<Req, Response = http::Response<BoxBody>>,
-{
-    type Response = http::Response<PeekTrailersBody>;
-    type Error = S::Error;
-    type Future = future::AndThen<
-        S::Future,
-        WrapTrailersFuture<S::Error>,
-        fn(http::Response<BoxBody>) -> WrapTrailersFuture<S::Error>,
-    >;
-
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.0.poll_ready(cx)
-    }
-
-    #[inline]
-    fn call(&mut self, req: Req) -> Self::Future {
-        self.0
-            .call(req)
-            .and_then(|rsp| PeekTrailersBody::map_response(rsp).map(Ok))
     }
 }
