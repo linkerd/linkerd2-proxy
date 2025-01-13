@@ -591,10 +591,12 @@ mod tests {
     async fn trailers_only() {
         let Test {
             mut tx,
-            mut initial,
-            mut replay,
+            initial,
+            replay,
             _trace,
         } = Test::new();
+        let mut initial = crate::compat::ForwardCompatibleBody::new(initial);
+        let mut replay = crate::compat::ForwardCompatibleBody::new(replay);
 
         let mut tlrs = HeaderMap::new();
         tlrs.insert("x-hello", HeaderValue::from_str("world").unwrap());
@@ -604,16 +606,26 @@ mod tests {
 
         drop(tx);
 
-        assert!(dbg!(initial.data().await).is_none(), "no data in body");
-        let initial_tlrs = initial.trailers().await.expect("trailers should not error");
-        assert_eq!(initial_tlrs.as_ref(), Some(&tlrs));
+        let initial_tlrs = initial
+            .frame()
+            .await
+            .expect("should yield a result")
+            .expect("should yield a frame")
+            .into_trailers()
+            .expect("should yield trailers");
+        assert_eq!(&initial_tlrs, &tlrs);
 
         // drop the initial body to send the data to the replay
         drop(initial);
 
-        assert!(dbg!(replay.data().await).is_none(), "no data in body");
-        let replay_tlrs = replay.trailers().await.expect("trailers should not error");
-        assert_eq!(replay_tlrs.as_ref(), Some(&tlrs));
+        let replay_tlrs = replay
+            .frame()
+            .await
+            .expect("should yield a result")
+            .expect("should yield a frame")
+            .into_trailers()
+            .expect("should yield trailers");
+        assert_eq!(&replay_tlrs, &tlrs);
     }
 
     #[tokio::test(flavor = "current_thread")]
