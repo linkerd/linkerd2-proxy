@@ -31,7 +31,6 @@ pub struct Http11Upgrade {
 
 /// A named "tuple" returned by `Http11Upgade::new()` of the two halves of
 /// an upgrade.
-#[derive(Debug)]
 struct Http11UpgradeHalves {
     /// The "server" half.
     server: Http11Upgrade,
