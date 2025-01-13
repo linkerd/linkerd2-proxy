@@ -26,7 +26,7 @@ use try_lock::TryLock;
 // implement `Clone` for this type.
 pub struct Http11Upgrade {
     half: Half,
-    inner: Arc<Inner>,
+    inner: Option<Arc<Inner>>,
 }
 
 /// A named "tuple" returned by [`Http11Upgade::halves()`] of the two halves of
@@ -80,11 +80,11 @@ impl Http11Upgrade {
         Http11UpgradeHalves {
             server: Http11Upgrade {
                 half: Half::Server,
-                inner: inner.clone(),
+                inner: Some(inner.clone()),
             },
             client: Http11Upgrade {
                 half: Half::Client,
-                inner,
+                inner: Some(inner.clone()),
             },
         }
     }
@@ -92,7 +92,7 @@ impl Http11Upgrade {
     pub fn insert_half(self, upgrade: OnUpgrade) {
         match self {
             Self {
-                inner,
+                inner: Some(inner),
                 half: Half::Server,
             } => {
                 let mut lock = inner
@@ -103,7 +103,7 @@ impl Http11Upgrade {
                 *lock = Some(upgrade);
             }
             Self {
-                inner,
+                inner: Some(inner),
                 half: Half::Client,
             } => {
                 let mut lock = inner
@@ -113,6 +113,7 @@ impl Http11Upgrade {
                 debug_assert!(lock.is_none());
                 *lock = Some(upgrade);
             }
+            Self { inner: None, .. } => {}
         }
     }
 }
