@@ -138,17 +138,20 @@ where
 
         Box::pin(rsp_fut.err_into().map_ok(move |mut rsp| {
             if is_http_connect {
+                // Add an extension to indicate that this a response to a CONNECT request.
                 debug_assert!(
                     upgrade.is_some(),
                     "Upgrade extension must be set on CONNECT requests"
                 );
                 rsp.extensions_mut().insert(HttpConnect);
-
-                // Strip headers that may not be transmitted to the server, per
-                // https://tools.ietf.org/html/rfc7231#section-4.3.6:
+                // Strip headers that may not be transmitted to the server, per RFC 9110:
                 //
-                // A client MUST ignore any Content-Length or Transfer-Encoding
-                // header fields received in a successful response to CONNECT.
+                // > A server MUST NOT send any `Transfer-Encoding` or `Content-Length` header
+                // > fields in a 2xx (Successful) response to `CONNECT`. A client MUST ignore any
+                // > `Content-Length` or `Transfer-Encoding` header fields received in a successful
+                // > response to `CONNECT`.
+                //
+                // see: https://www.rfc-editor.org/rfc/rfc9110#section-9.3.6-12
                 if rsp.status().is_success() {
                     rsp.headers_mut().remove(CONTENT_LENGTH);
                     rsp.headers_mut().remove(TRANSFER_ENCODING);
