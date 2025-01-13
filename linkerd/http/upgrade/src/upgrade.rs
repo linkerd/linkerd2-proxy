@@ -32,11 +32,11 @@ pub struct Http11Upgrade {
 /// A named "tuple" returned by `Http11Upgade::new()` of the two halves of
 /// an upgrade.
 #[derive(Debug)]
-pub struct Http11UpgradeHalves {
+struct Http11UpgradeHalves {
     /// The "server" half.
-    pub server: Http11Upgrade,
+    server: Http11Upgrade,
     /// The "client" half.
-    pub client: Http11Upgrade,
+    client: Http11Upgrade,
 }
 
 /// A marker type inserted into Extensions to signal it was an HTTP CONNECT
