@@ -17,6 +17,11 @@ pub struct UpgradeBody<B = BoxBody> {
     /// The inner [`Body`] being wrapped.
     #[pin]
     body: B,
+    /// A potential HTTP/1.1 upgrade.
+    ///
+    /// If `Some(_)`, contains a channel and an upgrade future, representing transport i/o
+    /// that will service the ongoing connection. When this body is dropped, the upgrade future
+    /// will be sent to the upgrade channel.
     upgrade: Option<(Http11Upgrade, hyper::upgrade::OnUpgrade)>,
 }
 
