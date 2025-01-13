@@ -49,6 +49,10 @@ pub type WithPeekTrailersBody<B> = Either<
 // === impl WithTrailers ===
 
 impl<B: Body> PeekTrailersBody<B> {
+    /// Returns a reference to the body's trailers, if available.
+    ///
+    /// This function will return `None` if the body's trailers could not be peeked, or if there
+    /// were no trailers included.
     pub fn peek_trailers(&self) -> Option<&http::HeaderMap> {
         self.trailers
             .as_ref()
