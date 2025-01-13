@@ -123,6 +123,9 @@ impl<B: Body> PeekTrailersBody<B> {
         http::Response::from_parts(parts, body)
     }
 
+    /// Returns a response with an inert [`PeekTrailersBody<B>`].
+    ///
+    /// This will not peek the inner body's trailers.
     fn no_trailers(rsp: http::Response<B>) -> http::Response<Self> {
         rsp.map(|inner| Self {
             inner,
