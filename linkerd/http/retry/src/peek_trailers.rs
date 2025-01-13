@@ -96,37 +96,43 @@ impl<B: Body> PeekTrailersBody<B> {
         B::Data: Send + Unpin,
         B::Error: Send,
     {
-        let (parts, body) = rsp.into_parts();
-        let mut body = Self {
-            inner: body,
-            first_data: None,
-            trailers: None,
+        let (parts, mut body) = rsp.into_parts();
+
+        // First, poll the body for its first frame.
+        tracing::debug!("Buffering first data frame");
+        let first_data = body.data().await;
+
+        // Now, inspect the frame yielded. If the body yielded a data frame, we will only peek
+        // the trailers if they are immediately available. If the body did not yield a data frame,
+        // we will poll a future to yield the trailers.
+        let trailers = if first_data.is_some() {
+            // The body has data; stop waiting for trailers. Peek to see if there's immediately a
+            // trailers frame, and grab it if so. Otherwise, bail.
+            //
+            // XXX(eliza): the documentation for the `http::Body` trait says that `poll_trailers`
+            // should only be called after `poll_data` returns `None`...but, in practice, I'm
+            // fairly sure that this just means that it *will not return `Ready`* until there are
+            // no data frames left, which is fine for us here, because we `now_or_never` it.
+            body.trailers().now_or_never()
+        } else {
+            // Okay, `poll_data` has returned `None`, so there are no data frames left. Let's see
+            // if there's trailers...
+            let trls = body.trailers().await;
+            Some(trls)
         };
 
-        tracing::debug!("Buffering first data frame");
-        if let Some(data) = body.inner.data().await {
-            // The body has data; stop waiting for trailers.
-            body.first_data = Some(data);
-
-            // Peek to see if there's immediately a trailers frame, and grab
-            // it if so. Otherwise, bail.
-            // XXX(eliza): the documentation for the `http::Body` trait says
-            // that `poll_trailers` should only be called after `poll_data`
-            // returns `None`...but, in practice, I'm fairly sure that this just
-            // means that it *will not return `Ready`* until there are no data
-            // frames left, which is fine for us here, because we `now_or_never`
-            // it.
-            body.trailers = body.inner.trailers().now_or_never();
-        } else {
-            // Okay, `poll_data` has returned `None`, so there are no data
-            // frames left. Let's see if there's trailers...
-            body.trailers = Some(body.inner.trailers().await);
-        }
-        if body.trailers.is_some() {
+        if trailers.is_some() {
             tracing::debug!("Buffered trailers frame");
         }
 
-        http::Response::from_parts(parts, body)
+        http::Response::from_parts(
+            parts,
+            Self {
+                inner: body,
+                first_data,
+                trailers,
+            },
+        )
     }
 
     /// Returns a response with an inert [`PeekTrailersBody<B>`].
