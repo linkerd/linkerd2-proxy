@@ -205,11 +205,12 @@ where
             // cannot be removed.
 
             // Setup HTTP Upgrade machinery.
-            let halves = Http11Upgrade::halves(self.upgrade_drain_signal.clone());
-            req.extensions_mut().insert(halves.client);
+            let Http11UpgradeHalves { server, client } =
+                Http11Upgrade::halves(self.upgrade_drain_signal.clone());
+            req.extensions_mut().insert(client);
             let on_upgrade = hyper::upgrade::on(&mut req);
 
-            Some((halves.server, on_upgrade))
+            Some((server, on_upgrade))
         } else {
             crate::strip_connection_headers(req.headers_mut());
             None
