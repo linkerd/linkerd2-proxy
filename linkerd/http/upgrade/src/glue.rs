@@ -22,7 +22,7 @@ pub struct UpgradeBody<B = BoxBody> {
     /// to be inserted into the Http11Upgrade half.
     #[pin]
     body: B,
-    pub(super) upgrade: Option<(Http11Upgrade, hyper::upgrade::OnUpgrade)>,
+    upgrade: Option<(Http11Upgrade, hyper::upgrade::OnUpgrade)>,
 }
 
 /// Glue for any `tokio_connect::Connect` to implement `hyper::client::Connect`.
