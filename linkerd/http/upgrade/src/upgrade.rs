@@ -8,6 +8,29 @@ use tracing::instrument::Instrument;
 use tracing::{debug, info, trace};
 use try_lock::TryLock;
 
+/// Returns a pair of upgrade handles.
+///
+/// Each handle is used to insert 1 half of the upgrade. When both handles
+/// have inserted, the upgrade future will be spawned onto the executor.
+pub(crate) fn halves(upgrade_drain_signal: drain::Watch) -> Http11UpgradeHalves {
+    let inner = Arc::new(Inner {
+        server: TryLock::new(None),
+        client: TryLock::new(None),
+        upgrade_drain_signal: Some(upgrade_drain_signal),
+    });
+
+    Http11UpgradeHalves {
+        server: Http11Upgrade {
+            half: Half::Server,
+            inner: inner.clone(),
+        },
+        client: Http11Upgrade {
+            half: Half::Client,
+            inner,
+        },
+    }
+}
+
 /// A type inserted into `http::Extensions` to bridge together HTTP Upgrades.
 ///
 /// If the HTTP1 server service detects an upgrade request, this will be
@@ -50,29 +73,6 @@ enum Half {
 // === impl Http11Upgrade ===
 
 impl Http11Upgrade {
-    /// Returns a pair of upgrade handles.
-    ///
-    /// Each handle is used to insert 1 half of the upgrade. When both handles
-    /// have inserted, the upgrade future will be spawned onto the executor.
-    pub(crate) fn halves(upgrade_drain_signal: drain::Watch) -> Http11UpgradeHalves {
-        let inner = Arc::new(Inner {
-            server: TryLock::new(None),
-            client: TryLock::new(None),
-            upgrade_drain_signal: Some(upgrade_drain_signal),
-        });
-
-        Http11UpgradeHalves {
-            server: Http11Upgrade {
-                half: Half::Server,
-                inner: inner.clone(),
-            },
-            client: Http11Upgrade {
-                half: Half::Client,
-                inner,
-            },
-        }
-    }
-
     pub fn insert_half(self, upgrade: OnUpgrade) {
         match self.half {
             Half::Server => {

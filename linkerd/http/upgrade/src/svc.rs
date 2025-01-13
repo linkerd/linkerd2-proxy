@@ -1,7 +1,4 @@
-use crate::{
-    body::UpgradeBody,
-    upgrade::{Http11Upgrade, Http11UpgradeHalves},
-};
+use crate::{body::UpgradeBody, upgrade::Http11UpgradeHalves};
 use futures::future::{self, Either};
 use std::task::{Context, Poll};
 use tracing::{debug, trace};
@@ -59,7 +56,7 @@ where
 
             // Setup HTTP Upgrade machinery.
             let Http11UpgradeHalves { server, client } =
-                Http11Upgrade::halves(self.upgrade_drain_signal.clone());
+                crate::upgrade::halves(self.upgrade_drain_signal.clone());
             req.extensions_mut().insert(client);
             let on_upgrade = hyper::upgrade::on(&mut req);
 
