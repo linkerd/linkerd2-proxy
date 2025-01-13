@@ -14,8 +14,7 @@ use tracing::debug;
 #[pin_project(PinnedDrop)]
 #[derive(Debug)]
 pub struct UpgradeBody<B = BoxBody> {
-    /// In UpgradeBody::drop, if this was an HTTP upgrade, the body is taken
-    /// to be inserted into the Http11Upgrade half.
+    /// The inner [`Body`] being wrapped.
     #[pin]
     body: B,
     upgrade: Option<(Http11Upgrade, hyper::upgrade::OnUpgrade)>,
