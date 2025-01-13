@@ -30,8 +30,9 @@ pub enum PeekTrailersBody<B: Body = BoxBody> {
     },
     /// A body that (potentially) contains more than one DATA frame.
     ///
-    /// This variant indicates that the inner body's trailers could not be observed.
-    Unknown {
+    /// This variant indicates that the inner body's trailers could not be observed, with some
+    /// frames that were buffered.
+    Buffered {
         first: Option<Result<B::Data, B::Error>>,
         second: Option<Result<B::Data, B::Error>>,
         /// The inner [`Body`].
@@ -74,7 +75,7 @@ impl<B: Body> PeekTrailersBody<B> {
                 ..
             }
             | Self::Empty
-            | Self::Unknown { .. }
+            | Self::Buffered { .. }
             | Self::Passthru { .. } => None,
         }
     }
@@ -159,7 +160,7 @@ impl<B: Body> PeekTrailersBody<B> {
                         },
                         // We immediately yielded another frame, but it was a second DATA frame.
                         // We hold on to each frame, but we cannot wait for the TRAILERS.
-                        Some(Ok(Ok(second))) => Self::Unknown {
+                        Some(Ok(Ok(second))) => Self::Buffered {
                             first: Some(Ok(first)),
                             second: Some(Ok(second)),
                             inner: body.into_inner(),
@@ -174,7 +175,7 @@ impl<B: Body> PeekTrailersBody<B> {
                     // If we are here, the second frame is not yet available. We cannot be sure
                     // that a second DATA frame is on the way, and we are no longer willing to
                     // await additional frames. There are no trailers to peek.
-                    Self::Unknown {
+                    Self::Buffered {
                         first: None,
                         second: None,
                         inner: body.into_inner(),
@@ -226,7 +227,7 @@ where
             Projection::Empty => Poll::Ready(None),
             Projection::Passthru { inner } => inner.poll_data(cx),
             Projection::Unary { data, .. } => Poll::Ready(data.take()),
-            Projection::Unknown {
+            Projection::Buffered {
                 first,
                 second,
                 inner,
@@ -249,7 +250,7 @@ where
             Projection::Empty => Poll::Ready(Ok(None)),
             Projection::Passthru { inner } => inner.poll_trailers(cx),
             Projection::Unary { trailers, .. } => Poll::Ready(trailers.take().transpose()),
-            Projection::Unknown { inner, .. } => inner.poll_trailers(cx),
+            Projection::Buffered { inner, .. } => inner.poll_trailers(cx),
         }
     }
 
@@ -263,12 +264,12 @@ where
                 trailers: None,
             } => true,
             Self::Unary { .. } => false,
-            Self::Unknown {
+            Self::Buffered {
                 inner,
                 first: None,
                 second: None,
             } => inner.is_end_stream(),
-            Self::Unknown { .. } => false,
+            Self::Buffered { .. } => false,
         }
     }
 
@@ -289,7 +290,7 @@ where
                 data: None | Some(Err(_)),
                 ..
             } => http_body::SizeHint::new(),
-            Self::Unknown {
+            Self::Buffered {
                 first,
                 second,
                 inner,
