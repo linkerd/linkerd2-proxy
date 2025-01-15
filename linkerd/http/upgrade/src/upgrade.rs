@@ -32,11 +32,11 @@ pub struct Http11Upgrade {
 /// A named "tuple" returned by `Http11Upgade::new()` of the two halves of
 /// an upgrade.
 #[derive(Debug)]
-pub struct Http11UpgradeHalves {
+struct Http11UpgradeHalves {
     /// The "server" half.
-    pub server: Http11Upgrade,
+    server: Http11Upgrade,
     /// The "client" half.
-    pub client: Http11Upgrade,
+    client: Http11Upgrade,
 }
 
 /// A marker type inserted into Extensions to signal it was an HTTP CONNECT
@@ -70,7 +70,7 @@ impl Http11Upgrade {
     ///
     /// Each handle is used to insert 1 half of the upgrade. When both handles
     /// have inserted, the upgrade future will be spawned onto the executor.
-    pub fn halves(upgrade_drain_signal: drain::Watch) -> Http11UpgradeHalves {
+    fn halves(upgrade_drain_signal: drain::Watch) -> Http11UpgradeHalves {
         let inner = Arc::new(Inner {
             server: TryLock::new(None),
             client: TryLock::new(None),
