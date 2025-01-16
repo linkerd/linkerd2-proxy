@@ -221,8 +221,12 @@ pub const ENV_IDENTITY_IDENTITY_SERVER_ID: &str = "LINKERD2_PROXY_IDENTITY_SERVE
 pub const ENV_IDENTITY_IDENTITY_SERVER_NAME: &str = "LINKERD2_PROXY_IDENTITY_SERVER_NAME";
 
 // If this config is set, then the proxy will be configured to use Spire as identity
-// provider
+// provider. On Unix systems this needs to be a path to a UDS while on Windows - a
+// named pipe path.
+pub const ENV_IDENTITY_SPIRE_WORKLOAD_API_ADDRESS: &str =
+    "LINKERD2_PROXY_IDENTITY_SPIRE_WORKLOAD_API_ADDRESS";
 pub const ENV_IDENTITY_SPIRE_SOCKET: &str = "LINKERD2_PROXY_IDENTITY_SPIRE_SOCKET";
+
 pub const IDENTITY_SPIRE_BASE: &str = "LINKERD2_PROXY_IDENTITY_SPIRE";
 const DEFAULT_SPIRE_BACKOFF: ExponentialBackoff =
     ExponentialBackoff::new_unchecked(Duration::from_millis(100), Duration::from_secs(1), 0.1);
@@ -878,8 +882,13 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     let identity = {
         let tls = tls?;
 
-        match strings.get(ENV_IDENTITY_SPIRE_SOCKET)? {
-            Some(socket) => match &tls.id {
+        match parse_deprecated(
+            strings,
+            ENV_IDENTITY_SPIRE_WORKLOAD_API_ADDRESS,
+            ENV_IDENTITY_SPIRE_SOCKET,
+            |s| Ok(s.to_string()),
+        )? {
+            Some(workload_api_addr) => match &tls.id {
                 // TODO: perform stricter SPIFFE ID validation following:
                 // https://github.com/spiffe/spiffe/blob/27b59b81ba8c56885ac5d4be73b35b9b3305fd7a/standards/SPIFFE-ID.md
                 identity::Id::Uri(uri)
@@ -888,7 +897,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                     identity::Config::Spire {
                         tls,
                         client: spire::Config {
-                            socket_addr: std::sync::Arc::new(socket),
+                            workload_api_addr: std::sync::Arc::new(workload_api_addr),
                             backoff: parse_backoff(
                                 strings,
                                 IDENTITY_SPIRE_BASE,
