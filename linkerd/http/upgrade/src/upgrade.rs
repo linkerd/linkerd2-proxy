@@ -22,14 +22,14 @@ use try_lock::TryLock;
 /// inserted into the `Request::extensions()`. If the HTTP1 client service
 /// also detects an upgrade, the two `OnUpgrade` futures will be joined
 /// together with the glue in this type.
-// Note: this relies on their only having been 2 Inner clones, so don't
+// Note: this relies on there only having been 2 Inner clones, so don't
 // implement `Clone` for this type.
 pub struct Http11Upgrade {
     half: Half,
     inner: Arc<Inner>,
 }
 
-/// A named "tuple" returned by `Http11Upgade::new()` of the two halves of
+/// A named "tuple" returned by [`Http11Upgade::halves()`] of the two halves of
 /// an upgrade.
 #[derive(Debug)]
 struct Http11UpgradeHalves {
@@ -257,9 +257,11 @@ fn is_origin_form(uri: &http::uri::Uri) -> bool {
     uri.scheme().is_none() && uri.path_and_query().is_none()
 }
 
-/// Checks requests to determine if they want to perform an HTTP upgrade.
+/// Returns true if the given [Request<B>][http::Request] is attempting an HTTP/1.1 upgrade.
 fn wants_upgrade<B>(req: &http::Request<B>) -> bool {
-    // HTTP upgrades were added in 1.1, not 1.0.
+    // Upgrades are specific to HTTP/1.1. They are not included in HTTP/1.0, nor are they supported
+    // in HTTP/2. If this request is associated with any protocol version besides HTTP/1.1, we can
+    // dismiss it immediately as not being applicable to an upgrade.
     if req.version() != http::Version::HTTP_11 {
         return false;
     }
