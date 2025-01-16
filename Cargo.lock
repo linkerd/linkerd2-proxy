@@ -1226,7 +1226,7 @@ version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a101fa3df488c89130664aaf4652986da49e204fb1725d089122f75b22ff6cbb"
 dependencies = [
- "prometheus-client",
+ "prometheus-client 0.22.3",
  "tokio",
  "tokio-metrics",
  "tracing",
@@ -1381,7 +1381,7 @@ dependencies = [
  "linkerd-transport-metrics",
  "parking_lot",
  "pin-project",
- "prometheus-client",
+ "prometheus-client 0.23.1",
  "quickcheck",
  "regex",
  "semver",
@@ -1520,7 +1520,7 @@ dependencies = [
  "once_cell",
  "parking_lot",
  "pin-project",
- "prometheus-client",
+ "prometheus-client 0.23.1",
  "thiserror 2.0.11",
  "tokio",
  "tokio-rustls",
@@ -1774,7 +1774,7 @@ dependencies = [
  "linkerd-stack",
  "parking_lot",
  "pin-project",
- "prometheus-client",
+ "prometheus-client 0.23.1",
  "thiserror 2.0.11",
  "tokio",
 ]
@@ -1880,7 +1880,7 @@ dependencies = [
  "linkerd-dns-name",
  "linkerd-error",
  "linkerd-metrics",
- "prometheus-client",
+ "prometheus-client 0.23.1",
  "thiserror 2.0.11",
  "tracing",
  "url",
@@ -2003,7 +2003,7 @@ dependencies = [
  "linkerd-stack",
  "linkerd-system",
  "parking_lot",
- "prometheus-client",
+ "prometheus-client 0.23.1",
  "quickcheck",
  "tokio",
  "tracing",
@@ -2084,7 +2084,7 @@ dependencies = [
  "linkerd-stack",
  "linkerd-tracing",
  "parking_lot",
- "prometheus-client",
+ "prometheus-client 0.23.1",
  "quickcheck",
  "rand",
  "tokio",
@@ -2140,7 +2140,7 @@ name = "linkerd-proxy-balance-gauge-endpoints"
 version = "0.1.0"
 dependencies = [
  "linkerd-stack",
- "prometheus-client",
+ "prometheus-client 0.23.1",
 ]
 
 [[package]]
@@ -2157,7 +2157,7 @@ dependencies = [
  "linkerd-tracing",
  "parking_lot",
  "pin-project",
- "prometheus-client",
+ "prometheus-client 0.23.1",
  "thiserror 2.0.11",
  "tokio",
  "tokio-stream",
@@ -3165,6 +3165,18 @@ name = "prometheus-client"
 version = "0.22.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "504ee9ff529add891127c4827eb481bd69dc0ebc72e9a682e187db4caa60c3ca"
+dependencies = [
+ "dtoa",
+ "itoa",
+ "parking_lot",
+ "prometheus-client-derive-encode",
+]
+
+[[package]]
+name = "prometheus-client"
+version = "0.23.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cf41c1a7c32ed72abe5082fb19505b969095c12da9f5732a4bc9878757fd087c"
 dependencies = [
  "dtoa",
  "itoa",
