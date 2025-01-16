@@ -1,12 +1,10 @@
 use linkerd_app_core::{exp_backoff::ExponentialBackoff, Error};
 use std::sync::Arc;
-use tokio::net::UnixStream;
 use tokio::sync::watch;
 use tonic::transport::{Endpoint, Uri};
 
 pub use linkerd_app_core::identity::client::spire as client;
 
-const UNIX_PREFIX: &str = "unix:";
 const TONIC_DEFAULT_URI: &str = "http://[::]:50051";
 
 #[derive(Clone, Debug)]
@@ -44,18 +42,31 @@ impl tower::Service<()> for Client {
         let socket = self.config.socket_addr.clone();
         let backoff = self.config.backoff;
         Box::pin(async move {
-            // Strip the 'unix:' prefix for tonic compatibility.
-            let stripped_path = socket
-                .strip_prefix(UNIX_PREFIX)
-                .unwrap_or(socket.as_str())
-                .to_string();
-
             // We will ignore this uri because uds do not use it
             // if your connector does use the uri it will be provided
             // as the request to the `MakeConnection`.
             let chan = Endpoint::try_from(TONIC_DEFAULT_URI)?
                 .connect_with_connector(tower::util::service_fn(move |_: Uri| {
-                    UnixStream::connect(stripped_path.clone())
+                    #[cfg(unix)]
+                    {
+                        use tokio::net::UnixStream;
+                        const UNIX_PREFIX: &str = "unix:";
+
+                        // Strip the 'unix:' prefix for tonic compatibility.
+                        let stripped_path = socket
+                            .strip_prefix(UNIX_PREFIX)
+                            .unwrap_or(socket.as_str())
+                            .to_string();
+
+                        UnixStream::connect(stripped_path.clone())
+                    }
+
+                    #[cfg(windows)]
+                    {
+                        use tokio::net::windows::named_pipe;
+                        let named_pipe = socket.clone();
+                        async move { named_pipe::ClientOptions::new().open(named_pipe.as_str()) }
+                    }
                 }))
                 .await?;
 

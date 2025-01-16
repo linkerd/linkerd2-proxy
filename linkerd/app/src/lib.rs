@@ -288,6 +288,7 @@ impl Config {
             })
         };
 
+        #[cfg(target_os = "linux")]
         metrics::process::register(registry.sub_registry_with_prefix("process"));
         registry.register("proxy_build_info", "Proxy build info", BUILD_INFO.metric());
 

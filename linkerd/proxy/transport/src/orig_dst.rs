@@ -118,7 +118,7 @@ fn orig_dst_addr_v6(sock: &TcpStream) -> io::Result<SocketAddr> {
 }
 
 #[cfg(not(target_os = "linux"))]
-fn orig_dst_addr_v4(_: &TcpStream) -> io::Result<OrigDstAddr> {
+fn orig_dst_addr_v4(_: &TcpStream) -> io::Result<SocketAddr> {
     Err(io::Error::new(
         io::ErrorKind::Other,
         "SO_ORIGINAL_DST not supported on this operating system",
@@ -126,7 +126,7 @@ fn orig_dst_addr_v4(_: &TcpStream) -> io::Result<OrigDstAddr> {
 }
 
 #[cfg(not(target_os = "linux"))]
-fn orig_dst_addr_v6(_: &TcpStream) -> io::Result<OrigDstAddr> {
+fn orig_dst_addr_v6(_: &TcpStream) -> io::Result<SocketAddr> {
     Err(io::Error::new(
         io::ErrorKind::Other,
         "SO_ORIGINAL_DST not supported on this operating system",
