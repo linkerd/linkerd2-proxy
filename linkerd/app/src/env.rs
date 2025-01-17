@@ -149,6 +149,7 @@ const ENV_OUTBOUND_DISABLE_INFORMATIONAL_HEADERS: &str =
 const ENV_TRACE_ATTRIBUTES_PATH: &str = "LINKERD2_PROXY_TRACE_ATTRIBUTES_PATH";
 const ENV_TRACE_PROTOCOL: &str = "LINKERD2_PROXY_TRACE_PROTOCOL";
 const ENV_TRACE_SERVICE_NAME: &str = "LINKERD2_PROXY_TRACE_SERVICE_NAME";
+const ENV_TRACE_EXTRA_ATTRIBUTES: &str = "LINKERD2_PROXY_TRACE_EXTRA_ATTRIBUTES";
 
 /// Constrains which destination names may be used for profile/route discovery.
 ///
@@ -432,6 +433,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     let hostname = strings.get(ENV_HOSTNAME);
 
     let trace_attributes_file_path = strings.get(ENV_TRACE_ATTRIBUTES_PATH);
+    let trace_extra_attributes = strings.get(ENV_TRACE_EXTRA_ATTRIBUTES);
     let trace_protocol = strings.get(ENV_TRACE_PROTOCOL);
     let trace_service_name = strings.get(ENV_TRACE_SERVICE_NAME);
 
@@ -831,12 +833,17 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             } else {
                 outbound.http_request_queue.failfast_timeout
             };
-            let attributes = trace_attributes_file_path
+            let mut attributes = trace_attributes_file_path
                 .map(|path| match path.and_then(|p| p.parse::<PathBuf>().ok()) {
                     Some(path) => trace::read_trace_attributes(&path),
                     None => HashMap::new(),
                 })
                 .unwrap_or_default();
+            if let Ok(Some(attrs)) = trace_extra_attributes {
+                if !attrs.is_empty() {
+                    attributes.extend(trace::parse_env_trace_attributes(&attrs));
+                }
+            }
 
             let trace_protocol = trace_protocol
                 .map(|proto| proto.and_then(|p| p.parse::<CollectorProtocol>().ok()))

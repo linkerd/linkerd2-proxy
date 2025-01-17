@@ -1,11 +1,14 @@
-use linkerd_app_core::http_tracing::{CollectorProtocol, SpanSink};
-use linkerd_app_core::metrics::ControlHttp as HttpMetrics;
-use linkerd_app_core::svc::NewService;
-use linkerd_app_core::{control, dns, identity, opencensus, opentelemetry};
+use linkerd_app_core::{
+    control, dns,
+    http_tracing::{CollectorProtocol, SpanSink},
+    identity,
+    metrics::ControlHttp as HttpMetrics,
+    opencensus, opentelemetry,
+    svc::NewService,
+};
 use linkerd_error::Error;
-use std::collections::HashMap;
-use std::future::Future;
-use std::pin::Pin;
+use otel_collector::OtelCollectorAttributes;
+use std::{collections::HashMap, future::Future, pin::Pin};
 
 pub mod oc_collector;
 pub mod otel_collector;
@@ -92,14 +95,19 @@ impl Config {
                         svc,
                         legacy_oc_metrics,
                     ),
-                    CollectorProtocol::OpenTelemetry => otel_collector::create_collector(
-                        addr.clone(),
-                        inner.hostname,
-                        svc_name,
-                        inner.attributes,
-                        svc,
-                        legacy_otel_metrics,
-                    ),
+                    CollectorProtocol::OpenTelemetry => {
+                        let attributes = OtelCollectorAttributes {
+                            hostname: inner.hostname,
+                            service_name: svc_name,
+                            extra: inner.attributes,
+                        };
+                        otel_collector::create_collector(
+                            addr.clone(),
+                            attributes,
+                            svc,
+                            legacy_otel_metrics,
+                        )
+                    }
                 };
 
                 Ok(TraceCollector::Enabled(Box::new(collector)))
