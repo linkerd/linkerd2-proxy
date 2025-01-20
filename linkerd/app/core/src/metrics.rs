@@ -66,7 +66,6 @@ pub enum EndpointLabels {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct InboundEndpointLabels {
     pub tls: tls::ConditionalServerTls,
-    pub authority: Option<http::uri::Authority>,
     pub target_addr: SocketAddr,
     pub policy: RouteAuthzLabels,
 }
@@ -317,11 +316,6 @@ impl FmtLabels for EndpointLabels {
 
 impl FmtLabels for InboundEndpointLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(a) = self.authority.as_ref() {
-            Authority(a).fmt_labels(f)?;
-            write!(f, ",")?;
-        }
-
         (
             (TargetAddr(self.target_addr), TlsAccept::from(&self.tls)),
             &self.policy,
