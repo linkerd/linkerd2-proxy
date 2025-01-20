@@ -12,7 +12,7 @@ http = { workspace = true }
 http-body = { workspace = true }
 hyper = { workspace = true, features = ["backports", "deprecated", "http1", "http2"] }
 futures = { version = "0.3", default-features = false }
-ipnet = "2.10"
+ipnet = "2.11"
 linkerd2-proxy-api = { workspace = true, features = ["tap"] }
 linkerd-conditional = { path = "../../conditional" }
 linkerd-error = { path = "../../error" }
