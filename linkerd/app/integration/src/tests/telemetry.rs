@@ -57,9 +57,7 @@ impl Fixture {
         let client = client::new(proxy.inbound, "tele.test.svc.cluster.local");
         let tcp_dst_labels = metrics::labels().label("direction", "inbound");
         let tcp_src_labels = tcp_dst_labels.clone().label("target_addr", orig_dst);
-        let labels = tcp_dst_labels
-            .clone()
-            .label("authority", "tele.test.svc.cluster.local");
+        let labels = tcp_dst_labels.clone().label("target_port", orig_dst.port());
         let tcp_src_labels = tcp_src_labels.label("peer", "src");
         let tcp_dst_labels = tcp_dst_labels.label("peer", "dst");
         Fixture {
