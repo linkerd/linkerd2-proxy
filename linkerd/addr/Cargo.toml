@@ -8,7 +8,7 @@ publish = false
 
 [dependencies]
 http = { workspace = true }
-ipnet = "2.10"
+ipnet = "2.11"
 linkerd-dns-name = { path = "../dns/name" }
 thiserror = "2"
 

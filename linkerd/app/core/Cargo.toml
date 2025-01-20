@@ -19,7 +19,7 @@ http = { workspace = true }
 http-body = { workspace = true }
 hyper = { workspace = true, features = ["deprecated", "http1", "http2"] }
 futures = { version = "0.3", default-features = false }
-ipnet = "2.10"
+ipnet = "2.11"
 prometheus-client = "0.22"
 regex = "1"
 serde_json = "1"
