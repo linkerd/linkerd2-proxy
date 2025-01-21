@@ -6,7 +6,7 @@ use linkerd_stack::{NewService, Service};
 use linkerd_tls::{client::AlpnProtocols, ClientTls, NegotiatedProtocolRef};
 use std::{convert::TryFrom, pin::Pin, sync::Arc, task::Context};
 use tokio::sync::watch;
-use tokio_rustls::rustls::{self, pki_types::CertificateDer, ClientConfig};
+use tokio_rustls::rustls::{self, ClientConfig};
 
 /// A `NewService` that produces `Connect` services from a dynamic TLS configuration.
 #[derive(Clone)]
@@ -18,7 +18,7 @@ pub struct NewClient {
 #[derive(Clone)]
 pub struct Connect {
     server_id: id::Id,
-    server_name: rustls::pki_types::ServerName<'static>,
+    server_name: rustls::ServerName,
     config: Arc<ClientConfig>,
 }
 
@@ -68,9 +68,8 @@ impl Connect {
             }
         };
 
-        let server_name =
-            rustls::pki_types::ServerName::try_from(client_tls.server_name.to_string())
-                .expect("identity must be a valid DNS name");
+        let server_name = rustls::ServerName::try_from(client_tls.server_name.as_str())
+            .expect("identity must be a valid DNS name");
 
         Self {
             server_id: client_tls.server_id.into(),
@@ -80,7 +79,7 @@ impl Connect {
     }
 }
 
-fn extract_cert(c: &rustls::ClientConnection) -> io::Result<&CertificateDer<'_>> {
+fn extract_cert(c: &rustls::ClientConnection) -> io::Result<&rustls::Certificate> {
     match c.peer_certificates().and_then(|certs| certs.first()) {
         Some(leaf_cert) => io::Result::Ok(leaf_cert),
         None => Err(io::Error::new(io::ErrorKind::Other, "missing tls end cert")),
@@ -114,7 +113,7 @@ where
                     let s = s?;
                     let (_, conn) = s.get_ref();
                     let end_cert = extract_cert(conn)?;
-                    verifier::verify_id(end_cert, &server_id)?;
+                    verifier::verify_id(&end_cert.0, &server_id)?;
                     Ok(ClientIo(s))
                 }),
         )
