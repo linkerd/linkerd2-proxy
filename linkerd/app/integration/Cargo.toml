@@ -47,8 +47,8 @@ regex = "1"
 socket2 = "0.5"
 tokio = { version = "1", features = ["io-util", "net", "rt", "macros"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
-tokio-rustls = { workspace = true }
-rustls-pemfile = "2.2"
+tokio-rustls = "0.24"
+rustls-pemfile = "1.0"
 tower = { version = "0.4", default-features = false }
 tonic = { workspace = true, features = ["transport"], default-features = false }
 tracing = "0.1"

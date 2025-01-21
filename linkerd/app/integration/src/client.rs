@@ -2,7 +2,8 @@ use super::*;
 use linkerd_app_core::proxy::http::TracingExecutor;
 use parking_lot::Mutex;
 use std::io;
-use tokio::{net::TcpStream, task::JoinHandle};
+use tokio::net::TcpStream;
+use tokio::task::JoinHandle;
 use tokio_rustls::rustls::{self, ClientConfig};
 use tracing::info_span;
 
@@ -14,13 +15,12 @@ type Sender = mpsc::UnboundedSender<(Request, oneshot::Sender<Result<Response, C
 #[derive(Clone)]
 pub struct TlsConfig {
     client_config: Arc<ClientConfig>,
-    name: rustls::pki_types::ServerName<'static>,
+    name: rustls::ServerName,
 }
 
 impl TlsConfig {
-    pub fn new(client_config: Arc<ClientConfig>, name: &'static str) -> Self {
-        let name =
-            rustls::pki_types::ServerName::try_from(name).expect("name must be a valid DNS name");
+    pub fn new(client_config: Arc<ClientConfig>, name: &str) -> Self {
+        let name = rustls::ServerName::try_from(name).expect("name must be a valid DNS name");
         TlsConfig {
             client_config,
             name,
