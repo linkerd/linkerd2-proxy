@@ -44,7 +44,7 @@ pub use linkerd_http_override_authority::{AuthorityOverride, NewOverrideAuthorit
 pub use linkerd_http_retain::{self as retain, Retain};
 pub use linkerd_http_stream_timeouts::{self as stream_timeouts, EnforceTimeouts, StreamTimeouts};
 pub use linkerd_http_upgrade as upgrade;
-pub use linkerd_http_version::{self as version, Version};
+pub use linkerd_http_variant::{Unsupported as UnsupportedVariant, Variant};
 
 #[derive(Clone, Debug)]
 pub struct HeaderPair(pub HeaderName, pub HeaderValue);

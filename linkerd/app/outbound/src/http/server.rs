@@ -68,7 +68,7 @@ impl<N> Outbound<N> {
     >
     where
         // Target
-        T: svc::Param<http::Version>,
+        T: svc::Param<http::Variant>,
         T: Clone + Send + Unpin + 'static,
         // Server-side socket
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
@@ -196,7 +196,7 @@ impl errors::HttpRescue<Error> for ServerRescue {
 
 impl<T> svc::ExtractParam<http::ServerParams, T> for ExtractServerParams
 where
-    T: svc::Param<http::Version>,
+    T: svc::Param<http::Variant>,
 {
     #[inline]
     fn extract_param(&self, t: &T) -> http::ServerParams {

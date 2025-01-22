@@ -1,6 +1,6 @@
 use super::set_identity_header::NewSetIdentityHeader;
 use crate::{policy, Inbound};
-pub use linkerd_app_core::proxy::http::{normalize_uri, Version};
+pub use linkerd_app_core::proxy::http::{normalize_uri, Variant};
 use linkerd_app_core::{
     config::ProxyConfig,
     errors, http_tracing, io,
@@ -31,7 +31,7 @@ impl<H> Inbound<H> {
     pub fn push_http_server<T, HSvc>(self) -> Inbound<svc::ArcNewCloneHttp<T>>
     where
         // Connection target.
-        T: Param<Version>
+        T: Param<Variant>
             + Param<normalize_uri::DefaultAuthority>
             + Param<tls::ConditionalServerTls>
             + Param<ServerLabel>
@@ -95,7 +95,7 @@ impl<H> Inbound<H> {
     pub fn push_http_tcp_server<T, I, HSvc>(self) -> Inbound<svc::ArcNewTcp<T, I>>
     where
         // Connection target.
-        T: Param<Version>,
+        T: Param<Variant>,
         T: Clone + Send + Unpin + 'static,
         // Server-side socket.
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,

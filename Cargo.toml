@@ -38,7 +38,7 @@ members = [
     "linkerd/http/route",
     "linkerd/http/stream-timeouts",
     "linkerd/http/upgrade",
-    "linkerd/http/version",
+    "linkerd/http/variant",
     "linkerd/identity",
     "linkerd/idle-cache",
     "linkerd/io",

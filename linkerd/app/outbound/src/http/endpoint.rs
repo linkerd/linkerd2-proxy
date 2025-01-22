@@ -20,7 +20,7 @@ mod tests;
 
 #[derive(Clone, Debug)]
 pub struct Connect<T> {
-    version: http::Version,
+    version: http::Variant,
     inner: T,
 }
 
@@ -191,8 +191,8 @@ where
         }
 
         match self.version {
-            http::Version::Http1 => Some(SessionProtocol::Http1),
-            http::Version::H2 => Some(SessionProtocol::Http2),
+            http::Variant::Http1 => Some(SessionProtocol::Http1),
+            http::Variant::H2 => Some(SessionProtocol::Http2),
         }
     }
 }

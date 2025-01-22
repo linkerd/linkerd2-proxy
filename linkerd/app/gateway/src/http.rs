@@ -28,7 +28,7 @@ pub(crate) use self::gateway::NewHttpGateway;
 pub struct Target<T = ()> {
     addr: GatewayAddr,
     routes: watch::Receiver<outbound::http::Routes>,
-    version: http::Version,
+    version: http::Variant,
     parent: T,
 }
 
@@ -74,7 +74,7 @@ impl Gateway {
         T: svc::Param<tls::ClientId>,
         T: svc::Param<inbound::policy::AllowPolicy>,
         T: svc::Param<Option<watch::Receiver<profiles::Profile>>>,
-        T: svc::Param<http::Version>,
+        T: svc::Param<http::Variant>,
         T: svc::Param<http::normalize_uri::DefaultAuthority>,
         T: Clone + Send + Sync + Unpin + 'static,
         // Endpoint resolution.
@@ -164,7 +164,7 @@ fn mk_routes(profile: &profiles::Profile) -> Option<outbound::http::Routes> {
 
 impl<B, T: Clone> svc::router::SelectRoute<http::Request<B>> for ByRequestVersion<T> {
     type Key = Target<T>;
-    type Error = http::version::Unsupported;
+    type Error = http::UnsupportedVariant;
 
     fn select(&self, req: &http::Request<B>) -> Result<Self::Key, Self::Error> {
         let mut t = self.0.clone();
@@ -192,8 +192,8 @@ impl<T> svc::Param<GatewayAddr> for Target<T> {
     }
 }
 
-impl<T> svc::Param<http::Version> for Target<T> {
-    fn param(&self) -> http::Version {
+impl<T> svc::Param<http::Variant> for Target<T> {
+    fn param(&self) -> http::Variant {
         self.version
     }
 }

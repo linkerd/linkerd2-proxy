@@ -53,7 +53,7 @@ impl<C, T, B> Upgrade<C, T, B> {
 impl<C, T, B> Service<http::Request<B>> for Upgrade<C, T, B>
 where
     T: Clone + Send + Sync + 'static,
-    C: MakeConnection<(crate::Version, T)> + Clone + Send + Sync + 'static,
+    C: MakeConnection<(crate::Variant, T)> + Clone + Send + Sync + 'static,
     C::Connection: Unpin + Send,
     C::Future: Unpin + Send + 'static,
     B: crate::Body + Send + 'static,

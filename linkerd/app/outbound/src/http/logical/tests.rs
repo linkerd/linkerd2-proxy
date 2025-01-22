@@ -26,7 +26,7 @@ type Response = http::Response<http::BoxBody>;
 #[derive(Clone, Debug)]
 struct Target {
     num: usize,
-    version: http::Version,
+    version: http::Variant,
     routes: watch::Receiver<Routes>,
 }
 
@@ -53,8 +53,8 @@ impl std::hash::Hash for Target {
     }
 }
 
-impl svc::Param<http::Version> for Target {
-    fn param(&self) -> http::Version {
+impl svc::Param<http::Variant> for Target {
+    fn param(&self) -> http::Variant {
         self.version
     }
 }
@@ -292,7 +292,7 @@ fn mock(params: policy::Params) -> (svc::BoxCloneHttp, Handle) {
 
     let svc = stack.new_service(Target {
         num: 1,
-        version: http::Version::H2,
+        version: http::Variant::H2,
         routes,
     });
 

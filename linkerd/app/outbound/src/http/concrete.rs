@@ -277,23 +277,23 @@ impl<T> svc::Param<tls::ConditionalClientTls> for Endpoint<T> {
     }
 }
 
-impl<T> svc::Param<http::Version> for Endpoint<T>
+impl<T> svc::Param<http::Variant> for Endpoint<T>
 where
-    T: svc::Param<http::Version>,
+    T: svc::Param<http::Variant>,
 {
-    fn param(&self) -> http::Version {
+    fn param(&self) -> http::Variant {
         self.parent.param()
     }
 }
 
 impl<T> svc::Param<client::Params> for Endpoint<T>
 where
-    T: svc::Param<http::Version>,
+    T: svc::Param<http::Variant>,
 {
     fn param(&self) -> client::Params {
         match self.param() {
-            http::Version::H2 => client::Params::H2(self.http2.clone()),
-            http::Version::Http1 => {
+            http::Variant::H2 => client::Params::H2(self.http2.clone()),
+            http::Variant::Http1 => {
                 // When the target is local (i.e. same as source of traffic)
                 // then do not perform a protocol upgrade to HTTP/2
                 if self.is_local {

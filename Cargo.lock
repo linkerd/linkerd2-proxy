@@ -1855,7 +1855,7 @@ dependencies = [
  "linkerd-duplex",
  "linkerd-error",
  "linkerd-http-box",
- "linkerd-http-version",
+ "linkerd-http-variant",
  "linkerd-io",
  "linkerd-stack",
  "pin-project",
@@ -1866,7 +1866,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "linkerd-http-version"
+name = "linkerd-http-variant"
 version = "0.1.0"
 dependencies = [
  "http",
@@ -2241,7 +2241,7 @@ dependencies = [
  "linkerd-http-retain",
  "linkerd-http-stream-timeouts",
  "linkerd-http-upgrade",
- "linkerd-http-version",
+ "linkerd-http-variant",
  "linkerd-io",
  "linkerd-proxy-balance",
  "linkerd-stack",

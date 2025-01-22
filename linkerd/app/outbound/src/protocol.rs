@@ -4,7 +4,7 @@ use std::{fmt::Debug, hash::Hash};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Http<T> {
-    version: http::Version,
+    version: http::Variant,
     parent: T,
 }
 
@@ -64,7 +64,7 @@ impl<N> Outbound<N> {
 
         let detect = http.clone().map_stack(|config, _, http| {
             http.push_switch(
-                |(result, parent): (detect::Result<http::Version>, T)| -> Result<_, Infallible> {
+                |(result, parent): (detect::Result<http::Variant>, T)| -> Result<_, Infallible> {
                     Ok(match detect::allow_timeout(result) {
                         Some(version) => svc::Either::A(Http { version, parent }),
                         None => svc::Either::B(parent),
@@ -77,7 +77,7 @@ impl<N> Outbound<N> {
             // unexpected reason) the inner service is not ready.
             .push_on_service(svc::LoadShed::layer())
             .push_on_service(svc::MapTargetLayer::new(io::EitherIo::Right))
-            .lift_new_with_target::<(detect::Result<http::Version>, T)>()
+            .lift_new_with_target::<(detect::Result<http::Variant>, T)>()
             .push(detect::NewDetectService::layer(config.proxy.detect_http()))
             .arc_new_tcp()
         });
@@ -98,11 +98,11 @@ impl<N> Outbound<N> {
                     |parent: T| -> Result<_, Infallible> {
                         match parent.param() {
                             Protocol::Http1 => Ok(svc::Either::A(svc::Either::A(Http {
-                                version: http::Version::Http1,
+                                version: http::Variant::Http1,
                                 parent,
                             }))),
                             Protocol::Http2 => Ok(svc::Either::A(svc::Either::A(Http {
-                                version: http::Version::H2,
+                                version: http::Variant::H2,
                                 parent,
                             }))),
                             Protocol::Opaque => {
@@ -123,14 +123,14 @@ impl<N> Outbound<N> {
 
 // === impl Http ===
 
-impl<T> From<(http::Version, T)> for Http<T> {
-    fn from((version, parent): (http::Version, T)) -> Self {
+impl<T> From<(http::Variant, T)> for Http<T> {
+    fn from((version, parent): (http::Variant, T)) -> Self {
         Self { version, parent }
     }
 }
 
-impl<T> svc::Param<http::Version> for Http<T> {
-    fn param(&self) -> http::Version {
+impl<T> svc::Param<http::Variant> for Http<T> {
+    fn param(&self) -> http::Variant {
         self.version
     }
 }

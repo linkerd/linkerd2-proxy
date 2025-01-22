@@ -51,7 +51,7 @@ type ConnectFuture<B> = Pin<Box<dyn Future<Output = Result<Connection<B>>> + Sen
 
 impl<C, B, T> Service<T> for Connect<C, B>
 where
-    C: MakeConnection<(crate::Version, T)>,
+    C: MakeConnection<(crate::Variant, T)>,
     C::Connection: Send + Unpin + 'static,
     C::Metadata: Send,
     C::Future: Send + 'static,
@@ -79,7 +79,7 @@ where
 
         let connect = self
             .connect
-            .connect((crate::Version::H2, target))
+            .connect((crate::Variant::H2, target))
             .instrument(trace_span!("connect").or_current());
 
         Box::pin(

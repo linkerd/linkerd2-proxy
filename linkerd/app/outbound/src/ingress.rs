@@ -19,7 +19,7 @@ use tracing::Instrument;
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct Http<T> {
     parent: T,
-    version: http::Version,
+    version: http::Variant,
 }
 
 #[derive(Clone, Debug)]
@@ -314,7 +314,7 @@ impl<N> Outbound<N> {
                 }))
                 .check_new_service::<Http<T>, I>()
                 .push_switch(
-                    |(detected, target): (detect::Result<http::Version>, T)| -> Result<_, Infallible> {
+                    |(detected, target): (detect::Result<http::Variant>, T)| -> Result<_, Infallible> {
                         if let Some(version) = detect::allow_timeout(detected) {
                             return Ok(svc::Either::A(Http {
                                 version,
@@ -354,8 +354,8 @@ where
 
         // Use the request's version.
         let version = match req.version() {
-            ::http::Version::HTTP_2 => http::Version::H2,
-            ::http::Version::HTTP_10 | ::http::Version::HTTP_11 => http::Version::Http1,
+            ::http::Version::HTTP_2 => http::Variant::H2,
+            ::http::Version::HTTP_10 | ::http::Version::HTTP_11 => http::Variant::Http1,
             _ => unreachable!("Only HTTP/1 and HTTP/2 are supported"),
         };
 
@@ -368,8 +368,8 @@ where
 
 // === impl Http ===
 
-impl<T> svc::Param<http::Version> for Http<T> {
-    fn param(&self) -> http::Version {
+impl<T> svc::Param<http::Variant> for Http<T> {
+    fn param(&self) -> http::Variant {
         self.version
     }
 }
@@ -520,7 +520,7 @@ fn mk_profile_routes(
 
 fn policy_routes(
     addr: Addr,
-    version: http::Version,
+    version: http::Variant,
     policy: &policy::ClientPolicy,
 ) -> Option<http::Routes> {
     let meta = ParentRef(policy.parent.clone());
@@ -531,8 +531,8 @@ fn policy_routes(
             ..
         } => {
             let (routes, failure_accrual) = match version {
-                http::Version::Http1 => (http1.routes.clone(), http1.failure_accrual),
-                http::Version::H2 => (http2.routes.clone(), http2.failure_accrual),
+                http::Variant::Http1 => (http1.routes.clone(), http1.failure_accrual),
+                http::Variant::H2 => (http2.routes.clone(), http2.failure_accrual),
             };
             Some(http::Routes::Policy(http::policy::Params::Http(
                 http::policy::HttpParams {

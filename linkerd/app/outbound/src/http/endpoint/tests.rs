@@ -34,7 +34,7 @@ async fn http11_forward() {
 
     let svc = stack.new_service(Endpoint {
         addr: Remote(ServerAddr(addr)),
-        version: http::Version::Http1,
+        version: http::Variant::Http1,
         hint: ProtocolHint::Unknown,
     });
 
@@ -70,7 +70,7 @@ async fn http2_forward() {
 
     let svc = stack.new_service(Endpoint {
         addr: Remote(ServerAddr(addr)),
-        version: http::Version::H2,
+        version: http::Variant::H2,
         hint: ProtocolHint::Unknown,
     });
 
@@ -108,7 +108,7 @@ async fn orig_proto_upgrade() {
 
     let svc = stack.new_service(Endpoint {
         addr: Remote(ServerAddr(addr)),
-        version: http::Version::Http1,
+        version: http::Variant::Http1,
         hint: ProtocolHint::Http2,
     });
 
@@ -164,7 +164,7 @@ async fn orig_proto_skipped_on_http_upgrade() {
 
     let svc = stack.new_service(Endpoint {
         addr: Remote(ServerAddr(addr)),
-        version: http::Version::Http1,
+        version: http::Variant::Http1,
         hint: ProtocolHint::Http2,
     });
 
@@ -206,7 +206,7 @@ async fn orig_proto_http2_noop() {
 
     let svc = stack.new_service(Endpoint {
         addr: Remote(ServerAddr(addr)),
-        version: http::Version::H2,
+        version: http::Variant::H2,
         hint: ProtocolHint::Http2,
     });
 
@@ -261,7 +261,7 @@ fn serve(version: ::http::Version) -> io::Result<io::BoxedIo> {
 struct Endpoint {
     addr: Remote<ServerAddr>,
     hint: ProtocolHint,
-    version: http::Version,
+    version: http::Variant,
 }
 
 // === impl Endpoint ===
@@ -320,8 +320,8 @@ impl svc::Param<metrics::EndpointLabels> for Endpoint {
     }
 }
 
-impl svc::Param<http::Version> for Endpoint {
-    fn param(&self) -> http::Version {
+impl svc::Param<http::Variant> for Endpoint {
+    fn param(&self) -> http::Variant {
         self.version
     }
 }
@@ -329,8 +329,8 @@ impl svc::Param<http::Version> for Endpoint {
 impl svc::Param<http::client::Params> for Endpoint {
     fn param(&self) -> http::client::Params {
         match self.version {
-            http::Version::H2 => http::client::Params::H2(Default::default()),
-            http::Version::Http1 => match self.hint {
+            http::Variant::H2 => http::client::Params::H2(Default::default()),
+            http::Variant::Http1 => match self.hint {
                 ProtocolHint::Unknown | ProtocolHint::Opaque => {
                     http::client::Params::Http1(http::h1::PoolSettings {
                         max_idle: 1,
