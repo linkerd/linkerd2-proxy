@@ -52,7 +52,7 @@ linkerd-http-override-authority = { path = "../../http/override-authority" }
 linkerd-http-retain = { path = "../../http/retain" }
 linkerd-http-stream-timeouts = { path = "../../http/stream-timeouts" }
 linkerd-http-upgrade = { path = "../../http/upgrade" }
-linkerd-http-version = { path = "../../http/version" }
+linkerd-http-variant = { path = "../../http/variant" }
 linkerd-io = { path = "../../io" }
 linkerd-proxy-balance = { path = "../balance" }
 linkerd-stack = { path = "../../stack" }

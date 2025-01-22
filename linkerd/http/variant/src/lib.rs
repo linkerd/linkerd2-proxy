@@ -1,12 +1,12 @@
-//! HTTP version types.
+//! HTTP version variants.
 //!
-//! See [`Version`].
+//! See [`Variant`].
 
 use thiserror::Error;
 
 /// HTTP protocol version.
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
-pub enum Version {
+pub enum Variant {
     /// HTTP/1
     Http1,
     /// HTTP/2
@@ -18,7 +18,7 @@ pub enum Version {
 #[error("unsupported HTTP version {:?}", self.0)]
 pub struct Unsupported(http::Version);
 
-impl std::convert::TryFrom<http::Version> for Version {
+impl std::convert::TryFrom<http::Version> for Variant {
     type Error = Unsupported;
     fn try_from(v: http::Version) -> Result<Self, Unsupported> {
         match v {
@@ -29,7 +29,7 @@ impl std::convert::TryFrom<http::Version> for Version {
     }
 }
 
-impl std::fmt::Debug for Version {
+impl std::fmt::Debug for Variant {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Http1 => write!(f, "HTTP/1"),

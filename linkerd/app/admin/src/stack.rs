@@ -52,7 +52,7 @@ struct Tcp {
 #[derive(Clone, Debug)]
 struct Http {
     tcp: Tcp,
-    version: http::Version,
+    version: http::Variant,
 }
 
 #[derive(Clone, Debug)]
@@ -136,7 +136,7 @@ impl Config {
             }))
             .push_filter(
                 |(http, tcp): (
-                    Result<Option<http::Version>, detect::DetectTimeoutError<_>>,
+                    Result<Option<http::Variant>, detect::DetectTimeoutError<_>>,
                     Tcp,
                 )| {
                     match http {
@@ -150,10 +150,10 @@ impl Config {
                         //   confused/stale.
                         Err(_timeout) => {
                             let version = match tcp.tls {
-                                tls::ConditionalServerTls::None(_) => http::Version::Http1,
+                                tls::ConditionalServerTls::None(_) => http::Variant::Http1,
                                 tls::ConditionalServerTls::Some(tls::ServerTls::Established {
                                     ..
-                                }) => http::Version::H2,
+                                }) => http::Variant::H2,
                                 tls::ConditionalServerTls::Some(tls::ServerTls::Passthru {
                                     sni,
                                 }) => {
@@ -219,8 +219,8 @@ impl Param<transport::labels::Key> for Tcp {
 
 // === impl Http ===
 
-impl Param<http::Version> for Http {
-    fn param(&self) -> http::Version {
+impl Param<http::Variant> for Http {
+    fn param(&self) -> http::Variant {
         self.version
     }
 }

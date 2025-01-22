@@ -33,7 +33,7 @@ struct Logical {
     /// The request's logical destination. Used for profile discovery.
     logical: Option<NameAddr>,
     addr: Remote<ServerAddr>,
-    http: http::Version,
+    http: http::Variant,
     tls: tls::ConditionalServerTls,
     permit: policy::HttpRoutePermit,
     labels: tap::Labels,
@@ -69,7 +69,7 @@ struct LogicalError {
 impl<C> Inbound<C> {
     pub(crate) fn push_http_router<T, P>(self, profiles: P) -> Inbound<svc::ArcNewCloneHttp<T>>
     where
-        T: Param<http::Version>
+        T: Param<http::Variant>
             + Param<Remote<ServerAddr>>
             + Param<Remote<ClientAddr>>
             + Param<tls::ConditionalServerTls>
@@ -105,8 +105,8 @@ impl<C> Inbound<C> {
                         addr: t.addr,
                         permit: t.permit,
                         params: match t.http {
-                            http::Version::Http1 => http::client::Params::Http1(h1_params),
-                            http::Version::H2 => http::client::Params::H2(h2_params.clone())
+                            http::Variant::Http1 => http::client::Params::Http1(h1_params),
+                            http::Variant::H2 => http::client::Params::H2(h2_params.clone())
                         },
                     }
                 })

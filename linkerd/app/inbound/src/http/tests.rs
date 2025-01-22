@@ -763,7 +763,7 @@ fn connect_timeout() -> Box<dyn FnMut(Remote<ServerAddr>) -> ConnectFuture + Sen
 }
 
 #[derive(Clone, Debug)]
-struct Target(http::Version, tls::ConditionalServerTls);
+struct Target(http::Variant, tls::ConditionalServerTls);
 
 #[track_caller]
 fn check_error_header(hdrs: &::http::HeaderMap, expected: &str) {
@@ -782,17 +782,17 @@ fn check_error_header(hdrs: &::http::HeaderMap, expected: &str) {
 
 impl Target {
     const UNMESHED_HTTP1: Self = Self(
-        http::Version::Http1,
+        http::Variant::Http1,
         tls::ConditionalServerTls::None(tls::NoServerTls::NoClientHello),
     );
     const UNMESHED_H2: Self = Self(
-        http::Version::H2,
+        http::Variant::H2,
         tls::ConditionalServerTls::None(tls::NoServerTls::NoClientHello),
     );
 
     fn meshed_http1() -> Self {
         Self(
-            http::Version::Http1,
+            http::Variant::Http1,
             tls::ConditionalServerTls::Some(tls::ServerTls::Established {
                 client_id: Some(tls::ClientId(
                     "foosa.barns.serviceaccount.identity.linkerd.cluster.local"
@@ -806,7 +806,7 @@ impl Target {
 
     fn meshed_h2() -> Self {
         Self(
-            http::Version::H2,
+            http::Variant::H2,
             tls::ConditionalServerTls::Some(tls::ServerTls::Established {
                 client_id: Some(tls::ClientId(
                     "foosa.barns.serviceaccount.identity.linkerd.cluster.local"
@@ -841,8 +841,8 @@ impl svc::Param<Remote<ClientAddr>> for Target {
     }
 }
 
-impl svc::Param<http::Version> for Target {
-    fn param(&self) -> http::Version {
+impl svc::Param<http::Variant> for Target {
+    fn param(&self) -> http::Variant {
         self.0
     }
 }

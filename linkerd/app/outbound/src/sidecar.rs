@@ -28,7 +28,7 @@ struct Sidecar {
 #[derive(Clone, Debug)]
 struct HttpSidecar {
     orig_dst: OrigDstAddr,
-    version: http::Version,
+    version: http::Variant,
     routes: watch::Receiver<http::Routes>,
 }
 
@@ -177,7 +177,7 @@ impl std::hash::Hash for Sidecar {
 impl From<protocol::Http<Sidecar>> for HttpSidecar {
     fn from(parent: protocol::Http<Sidecar>) -> Self {
         let orig_dst = parent.orig_dst;
-        let version = svc::Param::<http::Version>::param(&parent);
+        let version = svc::Param::<http::Variant>::param(&parent);
         let mut policy = parent.policy.clone();
 
         if let Some(mut profile) = parent.profile.clone().map(watch::Receiver::from) {
@@ -215,7 +215,7 @@ impl From<protocol::Http<Sidecar>> for HttpSidecar {
 impl HttpSidecar {
     fn mk_policy_routes(
         OrigDstAddr(orig_dst): OrigDstAddr,
-        version: http::Version,
+        version: http::Variant,
         policy: &policy::ClientPolicy,
     ) -> Option<http::Routes> {
         let parent_ref = ParentRef(policy.parent.clone());
@@ -231,8 +231,8 @@ impl HttpSidecar {
                 ref http2,
                 ..
             } => match version {
-                http::Version::Http1 => (http1.routes.clone(), http1.failure_accrual),
-                http::Version::H2 => (http2.routes.clone(), http2.failure_accrual),
+                http::Variant::Http1 => (http1.routes.clone(), http1.failure_accrual),
+                http::Variant::H2 => (http2.routes.clone(), http2.failure_accrual),
             },
             policy::Protocol::Http1(policy::http::Http1 {
                 ref routes,
@@ -284,8 +284,8 @@ impl HttpSidecar {
     }
 }
 
-impl svc::Param<http::Version> for HttpSidecar {
-    fn param(&self) -> http::Version {
+impl svc::Param<http::Variant> for HttpSidecar {
+    fn param(&self) -> http::Variant {
         self.version
     }
 }

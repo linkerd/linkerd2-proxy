@@ -216,11 +216,11 @@ where
 
 // === impl Concrete ===
 
-impl<T> svc::Param<http::Version> for Concrete<T>
+impl<T> svc::Param<http::Variant> for Concrete<T>
 where
-    T: svc::Param<http::Version>,
+    T: svc::Param<http::Variant>,
 {
-    fn param(&self) -> http::Version {
+    fn param(&self) -> http::Variant {
         self.parent.param()
     }
 }

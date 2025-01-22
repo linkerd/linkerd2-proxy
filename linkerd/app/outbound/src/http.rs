@@ -89,7 +89,7 @@ impl<T> Outbound<svc::ArcNewHttp<concrete::Endpoint<logical::Concrete<Http<T>>>>
     pub fn push_http_cached<R>(self, resolve: R) -> Outbound<svc::ArcNewCloneHttp<T>>
     where
         // Logical HTTP target.
-        T: svc::Param<http::Version>,
+        T: svc::Param<http::Variant>,
         T: svc::Param<watch::Receiver<Routes>>,
         T: Clone + Debug + PartialEq + Eq + Hash + Send + Sync + 'static,
         // Endpoint resolution.
@@ -109,11 +109,11 @@ impl<T> Outbound<svc::ArcNewHttp<concrete::Endpoint<logical::Concrete<Http<T>>>>
 
 // === impl Http ===
 
-impl<T> svc::Param<http::Version> for Http<T>
+impl<T> svc::Param<http::Variant> for Http<T>
 where
-    T: svc::Param<http::Version>,
+    T: svc::Param<http::Variant>,
 {
-    fn param(&self) -> http::Version {
+    fn param(&self) -> http::Variant {
         self.0.param()
     }
 }

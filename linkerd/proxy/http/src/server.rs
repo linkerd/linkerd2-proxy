@@ -1,5 +1,5 @@
 use crate::{
-    client_handle::SetClientHandle, h2, BoxBody, BoxRequest, ClientHandle, TracingExecutor, Version,
+    client_handle::SetClientHandle, h2, BoxBody, BoxRequest, ClientHandle, TracingExecutor, Variant,
 };
 use linkerd_error::Error;
 use linkerd_io::{self as io, PeerAddr};
@@ -18,7 +18,7 @@ mod tests;
 /// Configures HTTP server behavior.
 #[derive(Clone, Debug)]
 pub struct Params {
-    pub version: Version,
+    pub version: Variant,
     pub http2: h2::ServerParams,
     pub drain: drain::Watch,
 }
@@ -33,7 +33,7 @@ pub struct NewServeHttp<X, N> {
 /// Serves HTTP connections with an inner service.
 #[derive(Clone, Debug)]
 pub struct ServeHttp<N> {
-    version: Version,
+    version: Variant,
     http1: hyper::server::conn::http1::Builder,
     http2: hyper::server::conn::http2::Builder<TracingExecutor>,
     inner: N,
@@ -160,7 +160,7 @@ where
                 let (svc, closed) = res?;
                 debug!(?version, "Handling as HTTP");
                 match version {
-                    Version::Http1 => {
+                    Variant::Http1 => {
                         // Enable support for HTTP upgrades (CONNECT and websockets).
                         let svc = linkerd_http_upgrade::upgrade::Service::new(
                             BoxRequest::new(svc),
@@ -186,7 +186,7 @@ where
                         }
                     }
 
-                    Version::H2 => {
+                    Variant::H2 => {
                         let mut conn = http2.serve_connection(io, BoxRequest::new(svc));
 
                         tokio::select! {

@@ -162,12 +162,12 @@ pub mod fuzz {
     }
 
     #[derive(Clone, Debug)]
-    struct Target(http::Version);
+    struct Target(http::Variant);
 
     // === impl Target ===
 
     impl Target {
-        const HTTP1: Self = Self(http::Version::Http1);
+        const HTTP1: Self = Self(http::Variant::Http1);
 
         fn addr() -> SocketAddr {
             ([127, 0, 0, 1], 80).into()
@@ -192,8 +192,8 @@ pub mod fuzz {
         }
     }
 
-    impl svc::Param<http::Version> for Target {
-        fn param(&self) -> http::Version {
+    impl svc::Param<http::Variant> for Target {
+        fn param(&self) -> http::Variant {
             self.0
         }
     }

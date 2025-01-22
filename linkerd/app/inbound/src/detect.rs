@@ -31,7 +31,7 @@ pub(crate) struct Forward {
 #[derive(Clone, Debug)]
 pub(crate) struct Http {
     tls: Tls,
-    http: http::Version,
+    http: http::Variant,
 }
 
 #[derive(Clone, Debug)]
@@ -128,7 +128,7 @@ impl Inbound<svc::ArcNewTcp<Http, io::BoxedIo>> {
                                     // proxy handle the protocol error if we're in an edge case.
                                     info!(%timeout, "Handling connection as HTTP/1 due to policy");
                                     Ok(svc::Either::A(Http {
-                                        http: http::Version::Http1,
+                                        http: http::Variant::Http1,
                                         tls,
                                     }))
                                 }
@@ -174,8 +174,8 @@ impl Inbound<svc::ArcNewTcp<Http, io::BoxedIo>> {
                             }
                             // Unmeshed services don't use protocol upgrading, so we can use the
                             // hint without further detection.
-                            Protocol::Http1 { .. } => http::Version::Http1,
-                            Protocol::Http2 { .. } | Protocol::Grpc { .. } => http::Version::H2,
+                            Protocol::Http1 { .. } => http::Variant::Http1,
+                            Protocol::Http2 { .. } | Protocol::Grpc { .. } => http::Variant::H2,
                             _ => unreachable!("opaque protocols must not hit the HTTP stack"),
                         };
                         Ok(svc::Either::A(Http { http, tls }))
@@ -342,8 +342,8 @@ impl svc::ExtractParam<detect::Config<http::DetectHttp>, Detect> for ConfigureHt
 
 // === impl Http ===
 
-impl svc::Param<http::Version> for Http {
-    fn param(&self) -> http::Version {
+impl svc::Param<http::Variant> for Http {
+    fn param(&self) -> http::Variant {
         self.http
     }
 }

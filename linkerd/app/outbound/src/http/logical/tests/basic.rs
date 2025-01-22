@@ -37,7 +37,7 @@ async fn routes() {
         })));
     let target = Target {
         num: 1,
-        version: http::Version::H2,
+        version: http::Variant::H2,
         routes,
     };
     let svc = stack.new_service(target);

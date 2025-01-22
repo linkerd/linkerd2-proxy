@@ -98,9 +98,9 @@ async fn upgraded_request_remains_relative_form() {
         }
     }
 
-    impl svc::Param<http::Version> for Target {
-        fn param(&self) -> http::Version {
-            http::Version::H2
+    impl svc::Param<http::Variant> for Target {
+        fn param(&self) -> http::Variant {
+            http::Variant::H2
         }
     }
 

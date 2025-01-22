@@ -57,7 +57,7 @@ async fn consecutive_failures_accrue() {
         })));
     let target = Target {
         num: 1,
-        version: http::Version::H2,
+        version: http::Variant::H2,
         routes,
     };
     let svc = stack.new_service(target);
@@ -219,7 +219,7 @@ async fn balancer_doesnt_select_tripped_breakers() {
         })));
     let target = Target {
         num: 1,
-        version: http::Version::H2,
+        version: http::Variant::H2,
         routes,
     };
     let svc = stack.new_service(target);

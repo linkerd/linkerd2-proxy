@@ -189,7 +189,7 @@ impl TestServer {
     ) -> Self {
         let params = Params {
             drain: drain(),
-            version: Version::H2,
+            version: Variant::H2,
             http2: h2,
         };
 

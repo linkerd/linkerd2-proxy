@@ -1,4 +1,4 @@
-use crate::Version;
+use crate::Variant;
 use bytes::BytesMut;
 use linkerd_detect::Detect;
 use linkerd_error::Error;
@@ -26,9 +26,9 @@ pub struct DetectHttp(());
 
 #[async_trait::async_trait]
 impl<I: io::AsyncRead + Send + Unpin + 'static> Detect<I> for DetectHttp {
-    type Protocol = Version;
+    type Protocol = Variant;
 
-    async fn detect(&self, io: &mut I, buf: &mut BytesMut) -> Result<Option<Version>, Error> {
+    async fn detect(&self, io: &mut I, buf: &mut BytesMut) -> Result<Option<Variant>, Error> {
         trace!(capacity = buf.capacity(), "Reading");
         let sz = io.read_buf(buf).await?;
         trace!(sz, "Read");
@@ -47,7 +47,7 @@ impl<I: io::AsyncRead + Send + Unpin + 'static> Detect<I> for DetectHttp {
             trace!("Checking H2 preface");
             if &buf[..H2_PREFACE.len()] == H2_PREFACE {
                 trace!("Matched HTTP/2 prefix");
-                return Ok(Some(Version::H2));
+                return Ok(Some(Variant::H2));
             }
         }
 
@@ -58,7 +58,7 @@ impl<I: io::AsyncRead + Send + Unpin + 'static> Detect<I> for DetectHttp {
                 httparse::Request::new(&mut [httparse::EMPTY_HEADER; 0]).parse(&buf[..])
             {
                 trace!("Matched HTTP/1");
-                return Ok(Some(Version::Http1));
+                return Ok(Some(Variant::Http1));
             }
         }
 
@@ -86,7 +86,7 @@ mod tests {
             let mut buf = BytesMut::with_capacity(1024);
             let mut io = io::Builder::new().read(read).build();
             let kind = DetectHttp(()).detect(&mut io, &mut buf).await.unwrap();
-            assert_eq!(kind, Some(Version::H2));
+            assert_eq!(kind, Some(Variant::H2));
         }
     }
 
@@ -106,7 +106,7 @@ mod tests {
         let mut buf = BytesMut::with_capacity(1024);
         let mut io = io::Builder::new().read(HTTP11_LINE).build();
         let kind = DetectHttp(()).detect(&mut io, &mut buf).await.unwrap();
-        assert_eq!(kind, Some(Version::Http1));
+        assert_eq!(kind, Some(Variant::Http1));
 
         const REQ: &[u8] = b"GET /foo/bar/bar/blah HTTP/1.1\r\nHost: foob.example.com\r\n\r\n";
         for i in SMALLEST_POSSIBLE_HTTP1_REQ.len()..REQ.len() {
@@ -114,7 +114,7 @@ mod tests {
             let mut buf = BytesMut::with_capacity(1024);
             let mut io = io::Builder::new().read(&REQ[..i]).build();
             let kind = DetectHttp(()).detect(&mut io, &mut buf).await.unwrap();
-            assert_eq!(kind, Some(Version::Http1));
+            assert_eq!(kind, Some(Variant::Http1));
             assert_eq!(buf[..], REQ[..i]);
         }
 
@@ -125,7 +125,7 @@ mod tests {
             let mut io = io::Builder::new().read(&POST[..i]).build();
             debug!(read = ?std::str::from_utf8(&POST[..i]).unwrap());
             let kind = DetectHttp(()).detect(&mut io, &mut buf).await.unwrap();
-            assert_eq!(kind, Some(Version::Http1));
+            assert_eq!(kind, Some(Variant::Http1));
             assert_eq!(buf[..], POST[..i]);
         }
     }

@@ -11,7 +11,7 @@ use tokio::sync::watch;
 /// Target for HTTP stacks.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Http<T> {
-    version: http::Version,
+    version: http::Variant,
     parent: outbound::Discovery<T>,
 }
 
@@ -61,8 +61,8 @@ impl Gateway {
                 |parent: outbound::Discovery<T>| -> Result<_, GatewayDomainInvalid> {
                     if let Some(proto) = (*parent).param() {
                         let version = match proto {
-                            SessionProtocol::Http1 => http::Version::Http1,
-                            SessionProtocol::Http2 => http::Version::H2,
+                            SessionProtocol::Http1 => http::Variant::Http1,
+                            SessionProtocol::Http2 => http::Variant::H2,
                         };
                         return Ok(svc::Either::A(Http { parent, version }));
                     }
@@ -154,8 +154,8 @@ impl<T> std::ops::Deref for Http<T> {
     }
 }
 
-impl<T> svc::Param<http::Version> for Http<T> {
-    fn param(&self) -> http::Version {
+impl<T> svc::Param<http::Variant> for Http<T> {
+    fn param(&self) -> http::Variant {
         self.version
     }
 }

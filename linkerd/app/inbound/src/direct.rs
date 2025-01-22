@@ -347,11 +347,11 @@ impl svc::Param<policy::AllowPolicy> for LocalHttp {
     }
 }
 
-impl svc::Param<http::Version> for LocalHttp {
-    fn param(&self) -> http::Version {
+impl svc::Param<http::Variant> for LocalHttp {
+    fn param(&self) -> http::Variant {
         match self.protocol {
-            SessionProtocol::Http1 => http::Version::Http1,
-            SessionProtocol::Http2 => http::Version::H2,
+            SessionProtocol::Http1 => http::Variant::Http1,
+            SessionProtocol::Http2 => http::Variant::H2,
         }
     }
 }

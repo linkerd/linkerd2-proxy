@@ -145,7 +145,7 @@ impl<C, T> HyperConnect<C, T> {
 
 impl<C, T> Service<hyper::Uri> for HyperConnect<C, T>
 where
-    C: MakeConnection<(linkerd_http_version::Version, T)> + Clone + Send + Sync,
+    C: MakeConnection<(linkerd_http_variant::Variant, T)> + Clone + Send + Sync,
     C::Connection: Unpin + Send,
     C::Future: Unpin + Send + 'static,
     T: Clone + Send + Sync,
@@ -162,7 +162,7 @@ where
         HyperConnectFuture {
             inner: self
                 .connect
-                .connect((linkerd_http_version::Version::Http1, self.target.clone())),
+                .connect((linkerd_http_variant::Variant::Http1, self.target.clone())),
             absolute_form: self.absolute_form,
         }
     }
