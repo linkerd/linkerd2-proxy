@@ -22,11 +22,9 @@ use try_lock::TryLock;
 /// inserted into the `Request::extensions()`. If the HTTP1 client service
 /// also detects an upgrade, the two `OnUpgrade` futures will be joined
 /// together with the glue in this type.
-// Note: this relies on there only having been 2 Inner clones, so don't
-// implement `Clone` for this type.
 pub struct Http11Upgrade {
     half: Half,
-    inner: Arc<Inner>,
+    inner: Option<Arc<Inner>>,
 }
 
 /// A named "tuple" returned by [`Http11Upgade::halves()`] of the two halves of
@@ -50,7 +48,7 @@ struct Inner {
     upgrade_drain_signal: Option<drain::Watch>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 enum Half {
     Server,
     Client,
@@ -61,6 +59,13 @@ pub struct Service<S> {
     service: S,
     /// Watch any spawned HTTP/1.1 upgrade tasks.
     upgrade_drain_signal: drain::Watch,
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("OnUpgrade future has already been inserted: half={half:?}")]
+pub struct AlreadyInserted {
+    half: Half,
+    pub upgrade: OnUpgrade,
 }
 
 // === impl Http11Upgrade ===
@@ -80,35 +85,42 @@ impl Http11Upgrade {
         Http11UpgradeHalves {
             server: Http11Upgrade {
                 half: Half::Server,
-                inner: inner.clone(),
+                inner: Some(inner.clone()),
             },
             client: Http11Upgrade {
                 half: Half::Client,
-                inner,
+                inner: Some(inner.clone()),
             },
         }
     }
 
-    pub fn insert_half(self, upgrade: OnUpgrade) {
-        match self.half {
-            Half::Server => {
-                let mut lock = self
-                    .inner
+    pub fn insert_half(self, upgrade: OnUpgrade) -> Result<(), AlreadyInserted> {
+        match self {
+            Self {
+                inner: Some(inner),
+                half: Half::Server,
+            } => {
+                let mut lock = inner
                     .server
                     .try_lock()
                     .expect("only Half::Server touches server TryLock");
                 debug_assert!(lock.is_none());
                 *lock = Some(upgrade);
+                Ok(())
             }
-            Half::Client => {
-                let mut lock = self
-                    .inner
+            Self {
+                inner: Some(inner),
+                half: Half::Client,
+            } => {
+                let mut lock = inner
                     .client
                     .try_lock()
                     .expect("only Half::Client touches client TryLock");
                 debug_assert!(lock.is_none());
                 *lock = Some(upgrade);
+                Ok(())
             }
+            Self { inner: None, half } => Err(AlreadyInserted { half, upgrade }),
         }
     }
 }
@@ -118,6 +130,25 @@ impl fmt::Debug for Http11Upgrade {
         f.debug_struct("Http11Upgrade")
             .field("half", &self.half)
             .finish()
+    }
+}
+
+/// An [`Http11Upgrade`] can be cloned.
+///
+/// NB: Only the original copy of this extension may insert an [`OnUpgrade`] future into its half
+/// of the channel. Calling [`insert_half()`][Http11Upgrade::insert_half] on any clones of an
+/// upgrade extension will result in an error.
+//  See the [`Drop`] implementation provided by `Inner` for more information.
+impl Clone for Http11Upgrade {
+    fn clone(&self) -> Self {
+        Self {
+            half: self.half,
+            // We do *NOT* deeply clone our reference to `Inner`.
+            //
+            // `Http11Upgrade::insert_half()` and the `Inner` type's `Drop` glue rely on there only
+            // being one copy of the client and sender halves of the upgrade channel.
+            inner: None,
+        }
     }
 }
 

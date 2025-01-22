@@ -126,7 +126,12 @@ impl<B> PinnedDrop for UpgradeBody<B> {
         let this = self.project();
         // If an HTTP/1 upgrade was wanted, send the upgrade future.
         if let Some((upgrade, on_upgrade)) = this.upgrade.take() {
-            upgrade.insert_half(on_upgrade);
+            if let Err(error) = upgrade.insert_half(on_upgrade) {
+                tracing::warn!(
+                    ?error,
+                    "upgrade body could not send upgrade future upon completion"
+                );
+            }
         }
     }
 }

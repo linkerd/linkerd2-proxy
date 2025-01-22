@@ -20,6 +20,7 @@ hyper = { workspace = true, default-features = false, features = [
     "client",
 ] }
 pin-project = "1"
+thiserror = "2"
 tokio = { version = "1", default-features = false }
 tower = { version = "0.4", default-features = false }
 tracing = "0.1"

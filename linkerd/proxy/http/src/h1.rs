@@ -136,7 +136,8 @@ where
             client.as_ref().unwrap().request(req)
         };
 
-        Box::pin(rsp_fut.err_into().map_ok(move |mut rsp| {
+        Box::pin(async move {
+            let mut rsp = rsp_fut.await?;
             if is_http_connect {
                 // Add an extension to indicate that this a response to a CONNECT request.
                 debug_assert!(
@@ -161,14 +162,14 @@ where
             if is_upgrade(&rsp) {
                 trace!("Client response is HTTP/1.1 upgrade");
                 if let Some(upgrade) = upgrade {
-                    upgrade.insert_half(hyper::upgrade::on(&mut rsp));
+                    upgrade.insert_half(hyper::upgrade::on(&mut rsp))?;
                 }
             } else {
                 linkerd_http_upgrade::strip_connection_headers(rsp.headers_mut());
             }
 
-            rsp.map(BoxBody::new)
-        }))
+            Ok(rsp.map(BoxBody::new))
+        })
     }
 }
 

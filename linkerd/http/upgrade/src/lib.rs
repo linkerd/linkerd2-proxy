@@ -44,7 +44,7 @@ pub mod upgrade;
 /// > fields' semantics. This includes but is not limited to:
 /// >
 /// > - `Proxy-Connection` (Appendix C.2.2 of [HTTP/1.1])
-/// > - `Keep-Alive` (Section 19.7.1 of [RFC2068])
+/// > - `Keep-Alive` (Section 19.7.1 of \[RFC2068\])
 /// > - `TE` (Section 10.1.4)
 /// > - `Transfer-Encoding` (Section 6.1 of [HTTP/1.1])
 /// > - `Upgrade` (Section 7.8)
