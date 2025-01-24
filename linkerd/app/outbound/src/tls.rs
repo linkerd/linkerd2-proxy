@@ -1,4 +1,4 @@
-use crate::{tcp, Outbound};
+use crate::{sidecar::AllowHostnameLabels, tcp, Outbound};
 use linkerd_app_core::{
     io,
     metrics::prom,
@@ -79,6 +79,7 @@ impl<C> Outbound<C> {
         // Tls target
         T: Clone + Debug + PartialEq + Eq + Hash + Send + Sync + 'static,
         T: svc::Param<watch::Receiver<Routes>>,
+        T: svc::Param<AllowHostnameLabels>,
         // Server-side connection
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + io::Peek,
         I: Debug + Send + Sync + Unpin + 'static,
@@ -112,6 +113,15 @@ impl<C> Outbound<C> {
 impl<T> svc::Param<ServerName> for Tls<T> {
     fn param(&self) -> ServerName {
         self.sni.clone()
+    }
+}
+
+impl<T> svc::Param<AllowHostnameLabels> for Tls<T>
+where
+    T: svc::Param<AllowHostnameLabels>,
+{
+    fn param(&self) -> AllowHostnameLabels {
+        self.parent.param()
     }
 }
 

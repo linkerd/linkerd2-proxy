@@ -83,6 +83,9 @@ pub struct Config {
 
     // Whether the proxy may include informational headers on HTTP responses.
     pub emit_headers: bool,
+
+    // Whether to populate hostname prometheus labels for HTTP and TLS traffic metrics.
+    pub allow_hostname_labels: bool,
 }
 
 #[derive(Clone, Debug)]

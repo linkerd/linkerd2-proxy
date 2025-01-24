@@ -2,7 +2,7 @@ use super::{
     super::{concrete, Concrete},
     route, LogicalAddr, NoRoute,
 };
-use crate::{BackendRef, EndpointRef, RouteRef};
+use crate::{sidecar::AllowHostnameLabels, BackendRef, EndpointRef, RouteRef};
 use linkerd_app_core::{
     io, proxy::http, svc, tls::ServerName, transport::addrs::*, Addr, Error, NameAddr, Result,
 };
@@ -28,6 +28,7 @@ where
     // Parent target type.
     T: Eq + Hash + Clone + Debug + Send + Sync + 'static,
     T: svc::Param<ServerName>,
+    T: svc::Param<AllowHostnameLabels>,
 {
     pub fn layer<N, I, NSvc>(
         metrics: route::TlsRouteMetrics,

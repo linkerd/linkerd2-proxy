@@ -573,6 +573,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 capacity: http_queue_capacity,
                 failfast_timeout: http_failfast_timeout,
             },
+            allow_hostname_labels: false,
         }
     };
 

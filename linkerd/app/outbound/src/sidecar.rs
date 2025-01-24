@@ -17,6 +17,8 @@ use std::fmt::Debug;
 use tokio::sync::watch;
 use tracing::info_span;
 
+pub(crate) type AllowHostnameLabels = bool;
+
 /// A target type holding discovery information for a sidecar proxy.
 #[derive(Clone, Debug)]
 struct Sidecar {
@@ -36,6 +38,7 @@ struct HttpSidecar {
 struct TlsSidecar {
     orig_dst: OrigDstAddr,
     routes: watch::Receiver<tls::Routes>,
+    allow_hostname_labels: AllowHostnameLabels,
 }
 
 #[derive(Clone, Debug)]
@@ -64,6 +67,7 @@ impl Outbound<()> {
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
         R::Resolution: Unpin,
     {
+        let allow_hostname_labels = self.config.allow_hostname_labels.clone();
         let opaq = self.clone().with_stack(
             self.to_tcp_connect()
                 .push_opaq_cached(resolve.clone())
@@ -76,7 +80,7 @@ impl Outbound<()> {
             .to_tcp_connect()
             .push_tls_cached(resolve.clone())
             .into_stack()
-            .push_map_target(TlsSidecar::from)
+            .push_map_target(move |t| TlsSidecar::from((t, allow_hostname_labels)))
             .arc_new_clone_tcp();
 
         let http = self
@@ -333,8 +337,8 @@ impl std::hash::Hash for HttpSidecar {
 
 // === impl TlsSidecar ===
 
-impl From<Sidecar> for TlsSidecar {
-    fn from(parent: Sidecar) -> Self {
+impl From<(Sidecar, AllowHostnameLabels)> for TlsSidecar {
+    fn from((parent, allow_hostname_labels): (Sidecar, AllowHostnameLabels)) -> Self {
         let orig_dst = parent.orig_dst;
         let mut policy = parent.policy.clone();
 
@@ -343,7 +347,11 @@ impl From<Sidecar> for TlsSidecar {
         let routes = tls::spawn_routes(policy, init, move |policy: &policy::ClientPolicy| {
             Self::mk_policy_routes(orig_dst, policy)
         });
-        TlsSidecar { orig_dst, routes }
+        TlsSidecar {
+            orig_dst,
+            routes,
+            allow_hostname_labels,
+        }
     }
 }
 
@@ -373,6 +381,12 @@ impl TlsSidecar {
 impl svc::Param<watch::Receiver<tls::Routes>> for TlsSidecar {
     fn param(&self) -> watch::Receiver<tls::Routes> {
         self.routes.clone()
+    }
+}
+
+impl svc::Param<AllowHostnameLabels> for TlsSidecar {
+    fn param(&self) -> AllowHostnameLabels {
+        self.allow_hostname_labels
     }
 }
 

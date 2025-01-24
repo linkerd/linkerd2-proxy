@@ -1,5 +1,5 @@
 use super::concrete;
-use crate::{BackendRef, Outbound, ParentRef};
+use crate::{sidecar::AllowHostnameLabels, BackendRef, Outbound, ParentRef};
 use linkerd_app_core::{io, svc, tls::ServerName, Addr, Error};
 use linkerd_proxy_client_policy as client_policy;
 use std::{fmt::Debug, hash::Hash, sync::Arc};
@@ -56,6 +56,7 @@ impl<N> Outbound<N> {
         // Logical target.
         T: svc::Param<watch::Receiver<Routes>>,
         T: svc::Param<ServerName>,
+        T: svc::Param<AllowHostnameLabels>,
         T: Eq + Hash + Clone + Debug + Send + Sync + 'static,
         // Concrete stack.
         I: io::AsyncRead + io::AsyncWrite + Debug + Send + Unpin + 'static,

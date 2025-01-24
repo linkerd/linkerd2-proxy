@@ -1,6 +1,7 @@
 use super::super::Concrete;
 use crate::{
     metrics::transport::{NewTransportRouteMetrics, TransportRouteMetricsFamily},
+    sidecar::AllowHostnameLabels,
     ParentRef, RouteRef,
 };
 use linkerd_app_core::{io, metrics::prom, svc, tls::ServerName, Addr, Error};
@@ -40,7 +41,7 @@ pub(crate) struct Route<T> {
 pub struct RouteLabels {
     parent: ParentRef,
     route: RouteRef,
-    hostname: ServerName,
+    hostname: Option<ServerName>,
 }
 
 pub(crate) type BackendDistribution<T> = distribute::Distribution<Backend<T>>;
@@ -75,6 +76,7 @@ where
     T: Debug + Eq + Hash,
     T: Clone + Send + Sync + 'static,
     T: svc::Param<ServerName>,
+    T: svc::Param<AllowHostnameLabels>,
 {
     /// Builds a route stack that applies policy filters to requests and
     /// distributes requests over each route's backends. These [`Concrete`]
@@ -140,12 +142,20 @@ impl<T> svc::Param<RouteLabels> for MatchedRoute<T>
 where
     T: Eq + Hash + Clone + Debug,
     T: svc::Param<ServerName>,
+    T: svc::Param<AllowHostnameLabels>,
 {
     fn param(&self) -> RouteLabels {
+        let allow_hostname: AllowHostnameLabels = self.params.parent.param();
+        let hostname = if allow_hostname {
+            Some(self.params.parent.param())
+        } else {
+            None
+        };
+        
         RouteLabels {
             route: self.params.route_ref.clone(),
             parent: self.params.parent_ref.clone(),
-            hostname: self.params.parent.param(),
+            hostname,
         }
     }
 }
@@ -162,7 +172,9 @@ impl prom::EncodeLabelSetMut for RouteLabels {
         } = self;
         parent.encode_label_set(enc)?;
         route.encode_label_set(enc)?;
-        ("hostname", hostname.to_string()).encode(enc.encode_label())?;
+        if let Some(hostname) = hostname {
+            ("hostname", hostname.to_string()).encode(enc.encode_label())?;
+        }
         Ok(())
     }
 }
