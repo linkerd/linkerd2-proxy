@@ -71,17 +71,26 @@ fn set_keepalive_or_warn(
     tokio::net::TcpStream::from_std(stream)
 }
 
+#[cfg(not(target_os = "windows"))]
 fn set_user_timeout_or_warn(
     tcp: TcpStream,
-    user_timeout: Option<Duration>,
+    _user_timeout: Option<Duration>,
 ) -> io::Result<TcpStream> {
     let sock = {
         let stream = tokio::net::TcpStream::into_std(tcp)?;
         socket2::Socket::from(stream)
     };
+
+    #[cfg(target_os = "windows")]
     if let Err(e) = sock.set_tcp_user_timeout(user_timeout) {
         tracing::warn!("failed to set user timeout: {}", e);
     }
     let stream: std::net::TcpStream = socket2::Socket::into(sock);
     tokio::net::TcpStream::from_std(stream)
+}
+
+#[cfg(target_os = "windows")]
+fn set_user_timeout_or_warn(tcp: TcpStream, _: Option<Duration>) -> io::Result<TcpStream> {
+    tracing::warn!("user timeout is not supported on windows");
+    Ok(tcp)
 }
