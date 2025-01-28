@@ -2479,6 +2479,7 @@ dependencies = [
  "http",
  "http-body",
  "hyper",
+ "hyper-util",
  "ipnet",
  "linkerd-conditional",
  "linkerd-error",
