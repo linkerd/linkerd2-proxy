@@ -311,7 +311,7 @@ impl iface::Tap for Tap {
         };
 
         let init = api::tap_event::http::RequestInit {
-            id: Some(id.clone()),
+            id: Some(id),
             method: Some(req.method().clone().into()),
             scheme: req.uri().scheme().map(http_types::Scheme::from),
             authority,
@@ -366,7 +366,7 @@ impl iface::TapResponse for TapResponse {
         };
         let since_request_init = response_init_at.saturating_duration_since(self.request_init_at);
         let init = api::tap_event::http::Event::ResponseInit(api::tap_event::http::ResponseInit {
-            id: Some(self.tap.id.clone()),
+            id: Some(self.tap.id),
             since_request_init: pb_duration(since_request_init),
             http_status: rsp.status().as_u16().into(),
             headers,
@@ -400,7 +400,7 @@ impl iface::TapResponse for TapResponse {
         let reason = err.h2_reason();
         let since_request_init = response_end_at.saturating_duration_since(self.request_init_at);
         let end = api::tap_event::http::Event::ResponseEnd(api::tap_event::http::ResponseEnd {
-            id: Some(self.tap.id.clone()),
+            id: Some(self.tap.id),
             since_request_init: pb_duration(since_request_init),
             since_response_init: None,
             response_bytes: 0,
