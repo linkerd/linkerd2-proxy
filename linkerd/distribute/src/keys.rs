@@ -1,6 +1,6 @@
 use ahash::{HashMap, HashMapExt};
 use rand::{
-    distributions::{WeightedError, WeightedIndex},
+    distr::weighted::{Error as WeightedError, WeightedIndex},
     prelude::Distribution as _,
     Rng,
 };

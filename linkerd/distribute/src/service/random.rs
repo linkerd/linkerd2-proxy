@@ -1,7 +1,7 @@
 use crate::{keys::KeyId, WeightedServiceKeys};
 use ahash::HashMap;
 use linkerd_stack::{NewService, Service};
-use rand::{distributions::WeightedError, rngs::SmallRng, SeedableRng};
+use rand::{distr::weighted, rngs::SmallRng, SeedableRng};
 use std::{
     hash::Hash,
     sync::Arc,
@@ -21,7 +21,7 @@ pub(crate) struct RandomAvailableSelection<K, S> {
 }
 
 fn new_rng() -> SmallRng {
-    SmallRng::from_rng(rand::thread_rng()).expect("RNG must initialize")
+    SmallRng::from_rng(&mut rand::rng())
 }
 
 impl<K, S> RandomAvailableSelection<K, S> {
@@ -92,7 +92,7 @@ where
             // to `poll_ready` can try this backend again.
             match selector.disable_backend(id) {
                 Ok(()) => {}
-                Err(WeightedError::AllWeightsZero) => {
+                Err(weighted::Error::InsufficientNonZero) => {
                     // There are no backends remaining.
                     break;
                 }

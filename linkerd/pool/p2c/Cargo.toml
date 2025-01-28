@@ -11,7 +11,7 @@ ahash = "0.8"
 futures = { version = "0.3", default-features = false }
 indexmap = "2"
 prometheus-client = "0.22"
-rand = { version = "0.8", features = ["small_rng"] }
+rand = { version = "0.9", features = ["small_rng"] }
 tokio = { version = "1", features = ["rt", "sync", "time"] }
 tracing = "0.1"
 
