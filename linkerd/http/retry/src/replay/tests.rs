@@ -477,13 +477,22 @@ async fn caps_buffer() {
     let mut initial = ReplayBody::try_new(body, 8).expect("channel body must not be too large");
     let replay = initial.clone();
 
-    // Send enough data to reach the cap
+    // The initial body isn't capped yet, and the replay body is waiting.
+    assert_eq!(initial.is_capped(), Some(false));
+    assert_eq!(replay.is_capped(), None);
+
+    // Send enough data to reach the cap, but do not exceed it.
     tx.send_data(Bytes::from("aaaaaaaa")).await.unwrap();
     assert_eq!(chunk(&mut initial).await, Some("aaaaaaaa".to_string()));
+    assert_eq!(initial.is_capped(), Some(false));
 
     // Further chunks are still forwarded on the initial body
     tx.send_data(Bytes::from("bbbbbbbb")).await.unwrap();
     assert_eq!(chunk(&mut initial).await, Some("bbbbbbbb".to_string()));
+
+    // The initial body has been capped now.
+    assert_eq!(initial.is_capped(), Some(true));
+    assert_eq!(replay.is_capped(), None);
 
     drop(initial);
 
@@ -495,7 +504,8 @@ async fn caps_buffer() {
         .await
         .expect("yields a result")
         .expect_err("yields an error when capped");
-    assert!(err.is::<Capped>())
+    assert!(err.is::<Capped>());
+    assert_eq!(replay.into_inner().is_capped(), Some(true));
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -522,7 +532,9 @@ async fn caps_across_replays() {
     // the original body.
     tx.send_data(Bytes::from("bbbbbbbb")).await.unwrap();
     assert_eq!(chunk(&mut replay).await, Some("aaaaaaaa".to_string()));
+    assert_eq!(replay.is_capped(), Some(false));
     assert_eq!(chunk(&mut replay).await, Some("bbbbbbbb".to_string()));
+    assert_eq!(replay.is_capped(), Some(true));
     drop(replay);
 
     // The second replay will fail, though, because the buffer was discarded.
