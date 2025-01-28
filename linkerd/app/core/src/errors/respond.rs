@@ -2,8 +2,7 @@ use crate::svc;
 use http::header::{HeaderValue, LOCATION};
 use linkerd_error::{Error, Result};
 use linkerd_error_respond as respond;
-use linkerd_proxy_http::orig_proto;
-pub use linkerd_proxy_http::{ClientHandle, HasH2Reason};
+use linkerd_proxy_http::{orig_proto, ClientHandle};
 use linkerd_stack::ExtractParam;
 use pin_project::pin_project;
 use std::{
