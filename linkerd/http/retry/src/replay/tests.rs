@@ -1,6 +1,7 @@
 use super::*;
 use bytes::Bytes;
 use http::{HeaderName, HeaderValue};
+use http_body_util::BodyExt;
 use std::collections::VecDeque;
 
 struct Test {
@@ -20,7 +21,7 @@ struct TestBody {
     trailers: Option<HeaderMap>,
 }
 
-struct Tx(hyper::body::Sender);
+struct Tx(http_body_util::channel::Sender<Bytes, Error>);
 
 #[tokio::test]
 async fn replays_one_chunk() {
@@ -88,8 +89,7 @@ async fn replays_trailers() {
     tx.send_trailers(tlrs.clone()).await;
     drop(tx);
 
-    let read_trailers = |body: ReplayBody<_>| async move {
-        let mut body = linkerd_http_body_compat::ForwardCompatibleBody::new(body);
+    let read_trailers = |mut body: ReplayBody<_>| async move {
         let _ = body
             .frame()
             .await
@@ -122,12 +122,10 @@ async fn replays_trailers() {
 async fn replays_trailers_only() {
     let Test {
         mut tx,
-        initial,
-        replay,
+        mut initial,
+        mut replay,
         _trace,
     } = Test::new();
-    let mut initial = linkerd_http_body_compat::ForwardCompatibleBody::new(initial);
-    let mut replay = linkerd_http_body_compat::ForwardCompatibleBody::new(replay);
 
     let mut tlrs = HeaderMap::new();
     tlrs.insert("x-hello", HeaderValue::from_str("world").unwrap());
@@ -328,12 +326,9 @@ async fn eos_only_when_fully_replayed() {
     // Test that each clone of a body is not EOS until the data has been
     // fully replayed.
     let _trace = linkerd_tracing::test::with_default_filter("linkerd_http_retry=trace");
-    let initial = ReplayBody::try_new(TestBody::one_data_frame(), 64 * 1024)
+    let mut initial = ReplayBody::try_new(TestBody::one_data_frame(), 64 * 1024)
         .expect("body must not be too large");
-    let replay = initial.clone();
-
-    let mut initial = linkerd_http_body_compat::ForwardCompatibleBody::new(initial);
-    let mut replay = linkerd_http_body_compat::ForwardCompatibleBody::new(replay);
+    let mut replay = initial.clone();
 
     // Read the initial body, show that the replay does not consider itself to have reached the
     // end-of-stream. Then drop the initial body, show that the replay is still not done.
@@ -366,15 +361,13 @@ async fn eos_only_when_fully_replayed() {
     assert!(replay.is_end_stream());
 
     // Even if we clone a body _after_ it has been driven to EOS, the clone must not be EOS.
-    let replay = replay.into_inner();
-    let replay2 = replay.clone();
+    let mut replay2 = replay.clone();
     assert!(!replay2.is_end_stream());
 
     // Drop the first replay body to send the data to the second replay.
     drop(replay);
 
     // Read the second replay body.
-    let mut replay2 = linkerd_http_body_compat::ForwardCompatibleBody::new(replay2);
     replay2
         .frame()
         .await
@@ -392,12 +385,9 @@ async fn eos_only_when_fully_replayed_with_trailers() {
     // Test that each clone of a body is not EOS until the data has been
     // fully replayed.
     let _trace = linkerd_tracing::test::with_default_filter("linkerd_http_retry=trace");
-    let initial = ReplayBody::try_new(TestBody::one_data_frame().with_trailers(), 64 * 1024)
+    let mut initial = ReplayBody::try_new(TestBody::one_data_frame().with_trailers(), 64 * 1024)
         .expect("body must not be too large");
-    let replay = initial.clone();
-
-    let mut initial = linkerd_http_body_compat::ForwardCompatibleBody::new(initial);
-    let mut replay = linkerd_http_body_compat::ForwardCompatibleBody::new(replay);
+    let mut replay = initial.clone();
 
     // Read the initial body, show that the replay does not consider itself to have reached the
     // end-of-stream. Then drop the initial body, show that the replay is still not done.
@@ -442,15 +432,13 @@ async fn eos_only_when_fully_replayed_with_trailers() {
     assert!(replay.is_end_stream());
 
     // Even if we clone a body _after_ it has been driven to EOS, the clone must not be EOS.
-    let replay = replay.into_inner();
-    let replay2 = replay.clone();
+    let mut replay2 = replay.clone();
     assert!(!replay2.is_end_stream());
 
     // Drop the first replay body to send the data to the second replay.
     drop(replay);
 
     // Read the second replay body.
-    let mut replay2 = linkerd_http_body_compat::ForwardCompatibleBody::new(replay2);
     replay2
         .frame()
         .await
@@ -480,14 +468,10 @@ async fn caps_buffer() {
     // cap, we allow the request to continue, but stop buffering. The
     // initial body will complete, but the replay will immediately fail.
     let _trace = linkerd_tracing::test::with_default_filter("linkerd_http_retry=trace");
-
-    // TODO(kate): see #8733. this `Body::channel` should become a `mpsc::channel`, via
-    // `http_body_util::StreamBody` and `tokio_stream::wrappers::ReceiverStream`.
-    // alternately, hyperium/http-body#140 adds a channel-backed body to `http-body-util`.
-    let (mut tx, body) = hyper::Body::channel();
+    let (mut tx, body) = http_body_util::channel::Channel::<Bytes, Error>::new(512);
     let mut initial =
         ReplayBody::try_new(body, CAPACITY).expect("channel body must not be too large");
-    let replay = initial.clone();
+    let mut replay = initial.clone();
 
     // The initial body isn't capped yet, and the replay body is waiting.
     assert_eq!(initial.is_capped(), Some(false));
@@ -508,14 +492,13 @@ async fn caps_buffer() {
 
     // The request's replay should error, since we discarded the buffer when
     // we hit the cap.
-    let mut replay = linkerd_http_body_compat::ForwardCompatibleBody::new(replay);
     let err = replay
         .frame()
         .await
         .expect("yields a result")
         .expect_err("yields an error when capped");
     assert!(err.is::<Capped>());
-    assert_eq!(replay.into_inner().is_capped(), Some(true));
+    assert_eq!(replay.is_capped(), Some(true));
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -528,11 +511,7 @@ async fn caps_across_replays() {
     // Test that, when the initial body is longer than the preconfigured
     // cap, we allow the request to continue, but stop buffering.
     let _trace = linkerd_tracing::test::with_default_filter("linkerd_http_retry=debug");
-
-    // TODO(kate): see #8733. this `Body::channel` should become a `mpsc::channel`, via
-    // `http_body_util::StreamBody` and `tokio_stream::wrappers::ReceiverStream`.
-    // alternately, hyperium/http-body#140 adds a channel-backed body to `http-body-util`.
-    let (mut tx, body) = hyper::Body::channel();
+    let (mut tx, body) = http_body_util::channel::Channel::<Bytes, Error>::new(512);
     let mut initial =
         ReplayBody::try_new(body, CAPACITY).expect("channel body must not be too large");
     let mut replay = initial.clone();
@@ -542,7 +521,7 @@ async fn caps_across_replays() {
     assert_eq!(chunk(&mut initial).await, Some("abcdefgh".to_string()));
     drop(initial);
 
-    let replay2 = replay.clone();
+    let mut replay2 = replay.clone();
 
     // The replay will reach the cap, but it should still return data from
     // the original body.
@@ -554,7 +533,6 @@ async fn caps_across_replays() {
     drop(replay);
 
     // The second replay will fail, though, because the buffer was discarded.
-    let mut replay2 = linkerd_http_body_compat::ForwardCompatibleBody::new(replay2);
     let err = replay2
         .frame()
         .await
@@ -587,10 +565,7 @@ fn body_too_big() {
         "over-sized body is too big"
     );
 
-    // TODO(kate): see #8733. this `Body::channel` should become a `mpsc::channel`, via
-    // `http_body_util::StreamBody` and `tokio_stream::wrappers::ReceiverStream`.
-    // alternately, hyperium/http-body#140 adds a channel-backed body to `http-body-util`.
-    let (_sender, body) = hyper::Body::channel();
+    let (mut _tx, body) = http_body_util::channel::Channel::<Bytes, Error>::new(512);
     assert!(
         ReplayBody::try_new(body, max_size).is_ok(),
         "body without size hint is not too big"
@@ -636,12 +611,8 @@ async fn size_hint_is_correct_across_replays() {
 
     // Read the body, check the size hint again.
     assert_eq!(chunk(&mut initial).await.as_deref(), Some(BODY));
-    let initial = {
-        // TODO(kate): the initial body doesn't report ending until it has (not) yielded trailers.
-        let mut body = linkerd_http_body_compat::ForwardCompatibleBody::new(initial);
-        assert!(body.frame().await.is_none());
-        body.into_inner()
-    };
+    // TODO(kate): the initial body doesn't report ending until it has (not) yielded trailers.
+    assert!(initial.frame().await.is_none());
     debug_assert!(initial.is_end_stream());
     // TODO(kate): this currently misreports the *remaining* size of the body.
     // let size = initial.size_hint();
@@ -675,10 +646,7 @@ async fn size_hint_is_correct_across_replays() {
 
 impl Test {
     fn new() -> Self {
-        // TODO(kate): see #8733. this `Body::channel` should become a `mpsc::channel`, via
-        // `http_body_util::StreamBody` and `tokio_stream::wrappers::ReceiverStream`.
-        // alternately, hyperium/http-body#140 adds a channel-backed body to `http-body-util`.
-        let (tx, rx) = hyper::Body::channel();
+        let (tx, rx) = http_body_util::channel::Channel::<Bytes, Error>::new(512);
         let initial = ReplayBody::try_new(BoxBody::new(rx), 64 * 1024).expect("body too large");
         let replay = initial.clone();
         Self {
@@ -739,22 +707,16 @@ impl TestBody {
 impl Body for TestBody {
     type Data = <String as Body>::Data;
     type Error = std::convert::Infallible;
-    fn poll_data(
-        self: Pin<&mut Self>,
-        _: &mut Context<'_>,
-    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
-        let Self { data, .. } = self.get_mut();
-        let next = data.pop_front().map(Bytes::from).map(Ok);
-        Poll::Ready(next)
-    }
 
-    fn poll_trailers(
+    fn poll_frame(
         self: Pin<&mut Self>,
         _: &mut Context<'_>,
-    ) -> Poll<Result<Option<HeaderMap>, Self::Error>> {
-        let Self { trailers, .. } = self.get_mut();
-        let trailers = trailers.take().map(Ok).transpose();
-        Poll::Ready(trailers)
+    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
+        let Self { data, trailers } = self.get_mut();
+        let mut next_data = || data.pop_front().map(Bytes::from).map(Frame::data).map(Ok);
+        let take_trailers = || trailers.take().map(Frame::trailers).map(Ok);
+
+        Poll::Ready(next_data().or_else(take_trailers))
     }
 
     fn is_end_stream(&self) -> bool {
@@ -767,10 +729,10 @@ impl Body for TestBody {
 
 async fn chunk<T>(body: &mut T) -> Option<String>
 where
-    T: http_body::Body + Unpin,
+    T: Body + Unpin,
 {
     tracing::trace!("waiting for a body chunk...");
-    let chunk = linkerd_http_body_compat::ForwardCompatibleBody::new(body)
+    let chunk = body
         .frame()
         .await
         .expect("yields a result")
@@ -783,12 +745,11 @@ where
     chunk
 }
 
-async fn body_to_string<B>(body: B) -> (String, Option<HeaderMap>)
+async fn body_to_string<B>(mut body: B) -> (String, Option<HeaderMap>)
 where
-    B: http_body::Body + Unpin,
+    B: Body + Unpin,
     B::Error: std::fmt::Debug,
 {
-    let mut body = linkerd_http_body_compat::ForwardCompatibleBody::new(body);
     let mut data = String::new();
     let mut trailers = None;
 
