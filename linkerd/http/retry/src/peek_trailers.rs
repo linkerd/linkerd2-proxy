@@ -3,7 +3,7 @@ use futures::{
     FutureExt,
 };
 use http::HeaderMap;
-use http_body::Body;
+use http_body::{Body, Frame};
 use linkerd_http_box::BoxBody;
 use pin_project::pin_project;
 use std::{
@@ -115,16 +115,13 @@ impl<B: Body> PeekTrailersBody<B> {
         }))
     }
 
-    async fn read_body(body: B) -> Self
+    async fn read_body(mut body: B) -> Self
     where
         B: Send + Unpin,
         B::Data: Send + Unpin,
         B::Error: Send,
     {
-        // XXX(kate): for now, wrap this in a compatibility adapter that yields `Frame<T>`s.
-        // this can be removed when we upgrade to http-body 1.0.
-        use linkerd_http_body_compat::ForwardCompatibleBody;
-        let mut body = ForwardCompatibleBody::new(body);
+        use http_body_util::BodyExt;
 
         // First, poll the body for its first frame.
         tracing::debug!("Buffering first data frame");
@@ -150,7 +147,7 @@ impl<B: Body> PeekTrailersBody<B> {
             Some(Ok(None)) => Inner::Buffered {
                 first: None,
                 second: None,
-                inner: body.into_inner(),
+                inner: body,
             },
             // The body yielded a DATA frame. Check for a second frame, without yielding again.
             Some(Ok(Some(Either::Left(first)))) => {
@@ -176,7 +173,7 @@ impl<B: Body> PeekTrailersBody<B> {
                         Some(Ok(Some(Either::Left(second)))) => Inner::Buffered {
                             first: Some(Ok(first)),
                             second: Some(Ok(second)),
-                            inner: body.into_inner(),
+                            inner: body,
                         },
                         // The body immediately yielded a second TRAILERS frame. Nice!
                         Some(Ok(Some(Either::Right(trailers)))) => Inner::Unary {
@@ -187,7 +184,7 @@ impl<B: Body> PeekTrailersBody<B> {
                         Some(Ok(None)) => Inner::Buffered {
                             first: None,
                             second: None,
-                            inner: body.into_inner(),
+                            inner: body,
                         },
                     }
                 } else {
@@ -197,7 +194,7 @@ impl<B: Body> PeekTrailersBody<B> {
                     Inner::Buffered {
                         first: None,
                         second: None,
-                        inner: body.into_inner(),
+                        inner: body,
                     }
                 }
             }
@@ -220,9 +217,9 @@ impl<B: Body> PeekTrailersBody<B> {
     ///
     /// This is an internal helper to facilitate pattern matching in `read_body(..)`, above.
     fn split_frame(
-        frame: linkerd_http_body_compat::Frame<B::Data>,
+        frame: http_body::Frame<B::Data>,
     ) -> Option<futures::future::Either<B::Data, HeaderMap>> {
-        use {futures::future::Either, linkerd_http_body_compat::Frame};
+        use {futures::future::Either, http_body::Frame};
         match frame.into_data().map_err(Frame::into_trailers) {
             Ok(data) => Some(Either::Left(data)),
             Err(Ok(trailers)) => Some(Either::Right(trailers)),
@@ -244,39 +241,32 @@ where
     type Data = B::Data;
     type Error = B::Error;
 
-    fn poll_data(
+    fn poll_frame(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
+    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         let this = self.project().0.project();
         match this {
             Projection::Empty => Poll::Ready(None),
-            Projection::Passthru { inner } => inner.poll_data(cx),
-            Projection::Unary { data, .. } => Poll::Ready(data.take()),
+            Projection::Passthru { inner } => inner.poll_frame(cx),
+            Projection::Unary { data, trailers } => {
+                let mut take_data = || data.take().map(|r| r.map(Frame::data));
+                let take_trailers = || trailers.take().map(|r| r.map(Frame::trailers));
+                let frame = take_data().or_else(take_trailers);
+                Poll::Ready(frame)
+            }
             Projection::Buffered {
                 first,
                 second,
                 inner,
             } => {
-                if let data @ Some(_) = first.take().or_else(|| second.take()) {
-                    Poll::Ready(data)
+                if let Some(data) = first.take().or_else(|| second.take()) {
+                    let frame = data.map(Frame::data);
+                    Poll::Ready(Some(frame))
                 } else {
-                    inner.poll_data(cx)
+                    inner.poll_frame(cx)
                 }
             }
-        }
-    }
-
-    fn poll_trailers(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
-        let this = self.project().0.project();
-        match this {
-            Projection::Empty => Poll::Ready(Ok(None)),
-            Projection::Passthru { inner } => inner.poll_trailers(cx),
-            Projection::Unary { trailers, .. } => Poll::Ready(trailers.take().transpose()),
-            Projection::Buffered { inner, .. } => inner.poll_trailers(cx),
         }
     }
 
@@ -357,11 +347,11 @@ mod tests {
         Some(Ok(bytes))
     }
 
-    fn trailers() -> Result<Option<http::HeaderMap>, Error> {
+    fn trailers() -> Option<Result<http::HeaderMap, Error>> {
         let mut trls = HeaderMap::with_capacity(1);
         let value = HeaderValue::from_static("shiny");
         trls.insert("trailer", value);
-        Ok(Some(trls))
+        Some(Ok(trls))
     }
 
     #[tokio::test]
