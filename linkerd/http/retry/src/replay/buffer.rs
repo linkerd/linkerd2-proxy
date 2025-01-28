@@ -12,7 +12,9 @@ pub enum Data {
     Replay(Replay),
 }
 
-/// Body data composed of multiple `Bytes` chunks.
+/// A replayable [`Buf`] of body data.
+///
+/// This storage is backed by cheaply cloneable [`Bytes`].
 #[derive(Clone, Debug, Default)]
 pub struct Replay {
     bufs: VecDeque<Bytes>,
