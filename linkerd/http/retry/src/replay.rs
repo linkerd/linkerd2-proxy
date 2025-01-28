@@ -160,6 +160,12 @@ where
     type Data = Data;
     type Error = Error;
 
+    /// Polls for the next chunk of data in this stream.
+    ///
+    /// # Panics
+    ///
+    /// This panics if another clone has currently acquired the state. A [`ReplayBody<B>`] MUST
+    /// NOT be polled until the previous body has been dropped.
     fn poll_data(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -248,6 +254,14 @@ where
         Poll::Ready(Some(Ok(Data::Initial(chunk))))
     }
 
+    /// Polls for an optional **single** [`HeaderMap`] of trailers.
+    ///
+    /// This function should only be called once `poll_data` returns `None`.
+    ///
+    /// # Panics
+    ///
+    /// This panics if another clone has currently acquired the state. A [`ReplayBody<B>`] MUST
+    /// NOT be polled until the previous body has been dropped.
     fn poll_trailers(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
