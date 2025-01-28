@@ -358,6 +358,7 @@ async fn eos_only_when_fully_replayed() {
         .expect("yields a frame")
         .into_data()
         .expect("yields a data frame");
+    // TODO(kate): the replay doesn't report ending until it has (not) yielded trailers.
     assert!(replay.frame().await.is_none());
     assert!(replay.is_end_stream());
 
@@ -378,6 +379,7 @@ async fn eos_only_when_fully_replayed() {
         .expect("yields a frame")
         .into_data()
         .expect("yields a data frame");
+    // TODO(kate): the replay doesn't report ending until it has (not) yielded trailers.
     assert!(replay2.frame().await.is_none());
     assert!(replay2.is_end_stream());
 }
