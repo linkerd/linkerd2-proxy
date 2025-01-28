@@ -212,7 +212,7 @@ mod tests {
                 Ok(backoff) => backoff,
             };
 
-            let j = backoff.jitter(base, &mut rand::thread_rng());
+            let j = backoff.jitter(base, &mut rand::rng());
             if jitter == 0.0 || base_ms == 0 || max_ms == base_ms {
                 TestResult::from_bool(j == time::Duration::default())
             } else {
