@@ -1,5 +1,7 @@
 use super::*;
+use bytes::Bytes;
 use http::HeaderValue;
+use std::collections::VecDeque;
 
 struct Test {
     // Sends body data.
@@ -10,6 +12,12 @@ struct Test {
     replay: ReplayBody<BoxBody>,
     /// An RAII guard for the tracing subscriber.
     _trace: tracing::subscriber::DefaultGuard,
+}
+
+#[derive(Debug, Default)]
+struct TestBody {
+    data: VecDeque<&'static str>,
+    trailers: Option<HeaderMap>,
 }
 
 struct Tx(hyper::body::Sender);
@@ -319,7 +327,7 @@ fn empty_body_is_always_eos() {
 async fn eos_only_when_fully_replayed() {
     // Test that each clone of a body is not EOS until the data has been
     // fully replayed.
-    let initial = ReplayBody::try_new(BoxBody::from_static("hello world"), 64 * 1024)
+    let initial = ReplayBody::try_new(TestBody::one_data_frame(), 64 * 1024)
         .expect("body must not be too large");
     let replay = initial.clone();
 
@@ -517,6 +525,45 @@ impl Tx {
             .await
             .expect("rx is not dropped");
         tracing::info!("sent trailers");
+    }
+}
+
+// === impl TestBody ===
+
+impl TestBody {
+    /// A body that yields a single DATA frame.
+    fn one_data_frame() -> Self {
+        Self {
+            data: ["one"].into(),
+            trailers: None,
+        }
+    }
+}
+
+impl Body for TestBody {
+    type Data = <String as Body>::Data;
+    type Error = std::convert::Infallible;
+    fn poll_data(
+        self: Pin<&mut Self>,
+        _: &mut Context<'_>,
+    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
+        let Self { data, .. } = self.get_mut();
+        let next = data.pop_front().map(Bytes::from).map(Ok);
+        Poll::Ready(next)
+    }
+
+    fn poll_trailers(
+        self: Pin<&mut Self>,
+        _: &mut Context<'_>,
+    ) -> Poll<Result<Option<HeaderMap>, Self::Error>> {
+        let Self { trailers, .. } = self.get_mut();
+        let trailers = trailers.take().map(Ok).transpose();
+        Poll::Ready(trailers)
+    }
+
+    fn is_end_stream(&self) -> bool {
+        let Self { data, trailers } = self;
+        data.is_empty() && trailers.is_none()
     }
 }
 
