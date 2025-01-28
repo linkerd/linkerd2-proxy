@@ -1,6 +1,6 @@
 use super::*;
 use bytes::Bytes;
-use http::HeaderValue;
+use http::{HeaderName, HeaderValue};
 use std::collections::VecDeque;
 
 struct Test {
@@ -383,6 +383,87 @@ async fn eos_only_when_fully_replayed() {
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn eos_only_when_fully_replayed_with_trailers() {
+    // Test that each clone of a body is not EOS until the data has been
+    // fully replayed.
+    let initial = ReplayBody::try_new(TestBody::one_data_frame().with_trailers(), 64 * 1024)
+        .expect("body must not be too large");
+    let replay = initial.clone();
+
+    let mut initial = crate::compat::ForwardCompatibleBody::new(initial);
+    let mut replay = crate::compat::ForwardCompatibleBody::new(replay);
+
+    // Read the initial body, show that the replay does not consider itself to have reached the
+    // end-of-stream. Then drop the initial body, show that the replay is still not done.
+    assert!(!initial.is_end_stream());
+    initial
+        .frame()
+        .await
+        .expect("yields a result")
+        .expect("yields a frame")
+        .into_data()
+        .expect("yields a data frame");
+    initial
+        .frame()
+        .await
+        .expect("yields a result")
+        .expect("yields a frame")
+        .into_trailers()
+        .map_err(drop)
+        .expect("yields a trailers frame");
+    assert!(initial.is_end_stream());
+    assert!(!replay.is_end_stream());
+    drop(initial);
+    assert!(!replay.is_end_stream());
+
+    // Read the replay body.
+    assert!(!replay.is_end_stream());
+    replay
+        .frame()
+        .await
+        .expect("yields a result")
+        .expect("yields a frame")
+        .into_data()
+        .expect("yields a data frame");
+    replay
+        .frame()
+        .await
+        .expect("yields a result")
+        .expect("yields a frame")
+        .into_trailers()
+        .map_err(drop)
+        .expect("yields a trailers frame");
+    assert!(replay.is_end_stream());
+
+    // Even if we clone a body _after_ it has been driven to EOS, the clone must not be EOS.
+    let replay = replay.into_inner();
+    let replay2 = replay.clone();
+    assert!(!replay2.is_end_stream());
+
+    // Drop the first replay body to send the data to the second replay.
+    drop(replay);
+
+    // Read the second replay body.
+    let mut replay2 = crate::compat::ForwardCompatibleBody::new(replay2);
+    replay2
+        .frame()
+        .await
+        .expect("yields a result")
+        .expect("yields a frame")
+        .into_data()
+        .expect("yields a data frame");
+    replay2
+        .frame()
+        .await
+        .expect("yields a result")
+        .expect("yields a frame")
+        .into_trailers()
+        .map_err(drop)
+        .expect("yields a trailers frame");
+    assert!(replay2.is_end_stream());
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn caps_buffer() {
     // Test that, when the initial body is longer than the preconfigured
     // cap, we allow the request to continue, but stop buffering. The
@@ -536,6 +617,18 @@ impl TestBody {
         Self {
             data: ["one"].into(),
             trailers: None,
+        }
+    }
+
+    /// Adds a TRAILERS frame to the body.
+    fn with_trailers(self) -> Self {
+        let name = HeaderName::from_static("name");
+        let value = HeaderValue::from_static("value");
+        let trailers = [(name, value)].into_iter().collect();
+
+        Self {
+            trailers: Some(trailers),
+            ..self
         }
     }
 }
