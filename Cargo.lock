@@ -2441,6 +2441,7 @@ dependencies = [
  "http 1.2.0",
  "http-body",
  "hyper",
+ "hyper-util",
  "ipnet",
  "linkerd-conditional",
  "linkerd-error",
