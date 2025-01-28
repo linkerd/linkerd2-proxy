@@ -280,13 +280,16 @@ where
 
         // If the inner body has previously ended, don't poll it again.
         if !state.rest.is_end_stream() {
-            let res = futures::ready!(Pin::new(&mut state.rest).poll_trailers(cx)).map(|tlrs| {
-                if state.trailers.is_none() {
-                    state.trailers.clone_from(&tlrs);
-                }
-                tlrs
-            });
-            return Poll::Ready(res.map_err(Into::into));
+            return Pin::new(&mut state.rest)
+                .poll_trailers(cx)
+                .map_ok(|tlrs| {
+                    // Record a copy of the inner body's trailers in the shared state.
+                    if state.trailers.is_none() {
+                        state.trailers.clone_from(&tlrs);
+                    }
+                    tlrs
+                })
+                .map_err(Into::into);
         }
 
         Poll::Ready(Ok(None))
