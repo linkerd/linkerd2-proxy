@@ -45,8 +45,10 @@ impl<B: Body> BodyState<B> {
             }
             data.copy_to_bytes(length)
         } else {
-            // Buffer and return the bytes.
-            self.buf.push_chunk(data)
+            // Buffer a clone of the bytes read on this poll.
+            let bytes = data.copy_to_bytes(length);
+            self.buf.bufs.push_back(bytes.clone());
+            bytes
         };
 
         Data::Initial(bytes)
@@ -98,21 +100,6 @@ impl Buf for Data {
 }
 
 // === impl BufList ===
-
-impl BufList {
-    fn push_chunk(&mut self, mut data: impl Buf) -> Bytes {
-        let len = data.remaining();
-        // `data` is (almost) certainly a `Bytes`, so `copy_to_bytes` should
-        // internally be a cheap refcount bump almost all of the time.
-        // But, if it isn't, this will copy it to a `Bytes` that we can
-        // now clone.
-        let bytes = data.copy_to_bytes(len);
-        // Buffer a clone of the bytes read on this poll.
-        self.bufs.push_back(bytes.clone());
-        // Return the bytes
-        bytes
-    }
-}
 
 impl Buf for BufList {
     fn remaining(&self) -> usize {
