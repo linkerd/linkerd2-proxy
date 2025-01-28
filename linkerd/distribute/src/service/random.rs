@@ -1,7 +1,7 @@
 use crate::{keys::KeyId, WeightedServiceKeys};
 use ahash::HashMap;
 use linkerd_stack::{NewService, Service};
-use rand::{rngs::SmallRng, SeedableRng};
+use rand::{distr::weighted, rngs::SmallRng, SeedableRng};
 use std::{
     hash::Hash,
     sync::Arc,
@@ -92,7 +92,7 @@ where
             // to `poll_ready` can try this backend again.
             match selector.disable_backend(id) {
                 Ok(()) => {}
-                Err(rand::distr::weighted::Error::InsufficientNonZero) => {
+                Err(weighted::Error::InsufficientNonZero) => {
                     // There are no backends remaining.
                     break;
                 }
