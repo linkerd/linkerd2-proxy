@@ -129,6 +129,6 @@ git = "https://github.com/hyperium/http-body.git"
 rev = "86fdf00ff9f5758a42f76a4d06f82e7887a990d8"
 
 [workspace.dependencies.linkerd2-proxy-api]
-version = "0.15.0"
-# git = "https://github.com/linkerd/linkerd2-proxy-api.git"
-# branch = "main"
+git = "https://github.com/linkerd/linkerd2-proxy-api.git"
+rev = "981369a18918ce5570b2d49c329eca55ae831e87"
+# https://github.com/linkerd/linkerd2-proxy-api/commit/981369a18918ce5570b2d49c329eca55ae831e87
