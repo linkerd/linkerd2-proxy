@@ -3,7 +3,7 @@
 
 use futures::Stream;
 use pin_project::pin_project;
-use rand::{rngs::SmallRng, thread_rng, SeedableRng};
+use rand::{rngs::SmallRng, SeedableRng};
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -74,7 +74,7 @@ impl ExponentialBackoff {
     pub fn stream(&self) -> ExponentialBackoffStream {
         ExponentialBackoffStream {
             backoff: *self,
-            rng: SmallRng::from_rng(&mut thread_rng()).expect("RNG must be valid"),
+            rng: SmallRng::from_rng(&mut rand::rng()),
             iterations: 0,
             sleeping: false,
             sleep: Box::pin(time::sleep(time::Duration::from_secs(0))),
@@ -103,7 +103,7 @@ impl ExponentialBackoff {
         if self.jitter == 0.0 {
             time::Duration::default()
         } else {
-            let jitter_factor = rng.gen::<f64>();
+            let jitter_factor = rng.random::<f64>();
             debug_assert!(
                 jitter_factor > 0.0,
                 "rng returns values between 0.0 and 1.0"
