@@ -1,3 +1,4 @@
+pub mod body;
 pub mod respond;
 
 pub use self::respond::{HttpRescue, NewRespond, NewRespondService, SyntheticHttpResponse};
