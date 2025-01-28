@@ -62,10 +62,13 @@ skip = [
     # Some dependencies still use indexmap v1.
     { name = "indexmap", version = "1" },
     { name = "hashbrown", version = "0.12" },
+
 ]
 skip-tree = [
     # thiserror v2 is still propagating through the ecosystem
     { name = "thiserror", version = "1" },
+    # rand 0.9 is still propagating through the ecosystem
+    { name = "rand", version = "0.8" },
 ]
 
 [sources]
