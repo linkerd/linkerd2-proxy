@@ -1920,6 +1920,7 @@ dependencies = [
  "futures",
  "http",
  "http-body",
+ "http-body-util",
  "hyper",
  "linkerd-error",
  "linkerd-exp-backoff",
