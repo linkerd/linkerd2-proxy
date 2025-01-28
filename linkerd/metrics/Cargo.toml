@@ -13,9 +13,11 @@ stack = ["dep:linkerd-stack"]
 test_util = []
 
 [dependencies]
+bytes = { workspace = true }
 deflate = { version = "1", features = ["gzip"] }
 http = { workspace = true }
 http-body = { workspace = true }
+http-body-util = { workspace = true }
 hyper = { workspace = true, features = ["http1", "http2"] }
 kubert-prometheus-process = { version = "0.2", optional = true }
 parking_lot = "0.12"
