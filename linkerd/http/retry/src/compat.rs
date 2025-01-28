@@ -1,6 +1,6 @@
 //! Compatibility utilities for upgrading to http-body 1.0.
 
-use http_body::Body;
+use http_body::{Body, SizeHint};
 
 pub(crate) use self::frame::Frame;
 
@@ -42,9 +42,15 @@ impl<B: Body> ForwardCompatibleBody<B> {
     }
 
     /// Returns `true` when the end of stream has been reached.
-    #[cfg(test)]
+    #[allow(unused, reason = "not yet used")]
     pub(crate) fn is_end_stream(&self) -> bool {
         self.inner.is_end_stream()
+    }
+
+    /// Returns the bounds on the remaining length of the stream.
+    #[allow(unused, reason = "not yet used")]
+    pub(crate) fn size_hint(&self) -> SizeHint {
+        self.inner.size_hint()
     }
 }
 
