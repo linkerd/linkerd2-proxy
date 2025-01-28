@@ -1,6 +1,19 @@
 use super::*;
 use http::HeaderValue;
 
+struct Test {
+    // Sends body data.
+    tx: Tx,
+    /// The "initial" body.
+    initial: ReplayBody<BoxBody>,
+    /// Replays the initial body.
+    replay: ReplayBody<BoxBody>,
+    /// An RAII guard for the tracing subscriber.
+    _trace: tracing::subscriber::DefaultGuard,
+}
+
+struct Tx(hyper::body::Sender);
+
 #[tokio::test]
 async fn replays_one_chunk() {
     let Test {
@@ -462,18 +475,7 @@ fn body_too_big() {
     );
 }
 
-struct Test {
-    // Sends body data.
-    tx: Tx,
-    /// The "initial" body.
-    initial: ReplayBody<BoxBody>,
-    /// Replays the initial body.
-    replay: ReplayBody<BoxBody>,
-    /// An RAII guard for the tracing subscriber.
-    _trace: tracing::subscriber::DefaultGuard,
-}
-
-struct Tx(hyper::body::Sender);
+// === impl Test ===
 
 impl Test {
     fn new() -> Self {
@@ -491,6 +493,8 @@ impl Test {
         }
     }
 }
+
+// === impl Tx ===
 
 impl Tx {
     #[tracing::instrument(skip(self))]
@@ -511,6 +515,8 @@ impl Tx {
         tracing::info!("sent trailers");
     }
 }
+
+// === helper functions ===
 
 async fn chunk<T>(body: &mut T) -> Option<String>
 where
