@@ -277,23 +277,37 @@ where
         Poll::Ready(Ok(None))
     }
 
+    #[tracing::instrument(
+        skip_all,
+        level = "trace",
+        fields(
+            state.is_some = %self.state.is_some(),
+            replay_trailers = %self.replay_trailers,
+            replay_body = %self.replay_body,
+            is_completed = ?self.state.as_ref().map(|s| s.is_completed),
+        )
+    )]
     fn is_end_stream(&self) -> bool {
         // If the initial body was empty as soon as it was wrapped, then we are finished.
         if self.shared.was_empty {
+            tracing::trace!("initial body was empty, stream has ended");
             return true;
         }
 
         let Some(state) = self.state.as_ref() else {
             // This body is not currently the "active" replay being polled.
+            tracing::trace!("inactive replay body is not complete");
             return false;
         };
 
         // if this body has data or trailers remaining to play back, it
         // is not EOS
-        !self.replay_body && !self.replay_trailers
+        let eos = !self.replay_body && !self.replay_trailers
             // if we have replayed everything, the initial body may
             // still have data remaining, so ask it
-            && state.rest.is_end_stream()
+            && state.rest.is_end_stream();
+        tracing::trace!(%eos, "checked replay body end-of-stream");
+        eos
     }
 
     #[inline]
