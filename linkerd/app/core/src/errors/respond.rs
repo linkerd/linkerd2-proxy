@@ -1,5 +1,5 @@
 use crate::svc;
-use http::header::{HeaderValue, LOCATION};
+use http::header::{HeaderName, HeaderValue, LOCATION};
 use linkerd_error::{Error, Result};
 use linkerd_error_respond as respond;
 use linkerd_proxy_http::{orig_proto, ClientHandle};
@@ -12,8 +12,8 @@ use std::{
 };
 use tracing::{debug, info_span, warn};
 
-pub const L5D_PROXY_CONNECTION: &str = "l5d-proxy-connection";
-pub const L5D_PROXY_ERROR: &str = "l5d-proxy-error";
+pub const L5D_PROXY_CONNECTION: HeaderName = HeaderName::from_static("l5d-proxy-connection");
+pub const L5D_PROXY_ERROR: HeaderName = HeaderName::from_static("l5d-proxy-error");
 
 pub fn layer<R, P: Clone, N>(
     params: P,
