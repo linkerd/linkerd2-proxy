@@ -9,12 +9,12 @@ use std::{collections::VecDeque, io::IoSlice};
 #[derive(Debug)]
 pub enum Data {
     Initial(Bytes),
-    Replay(BufList),
+    Replay(Replay),
 }
 
 /// Body data composed of multiple `Bytes` chunks.
 #[derive(Clone, Debug, Default)]
-pub struct BufList {
+pub struct Replay {
     bufs: VecDeque<Bytes>,
 }
 
@@ -36,18 +36,18 @@ impl<B: Body> BodyState<B> {
         let bytes = if self.is_capped() {
             // If there's data in the buffer, discard it now, since we won't
             // allow any clones to have a complete body.
-            if self.buf.has_remaining() {
+            if self.replay.has_remaining() {
                 tracing::debug!(
-                    buf.size = self.buf.remaining(),
+                    buf.size = self.replay.remaining(),
                     "Buffered maximum capacity, discarding buffer"
                 );
-                self.buf = Default::default();
+                self.replay = Default::default();
             }
             data.copy_to_bytes(length)
         } else {
             // Buffer a clone of the bytes read on this poll.
             let bytes = data.copy_to_bytes(length);
-            self.buf.bufs.push_back(bytes.clone());
+            self.replay.bufs.push_back(bytes.clone());
             bytes
         };
 
@@ -62,7 +62,7 @@ impl Buf for Data {
     fn remaining(&self) -> usize {
         match self {
             Data::Initial(buf) => buf.remaining(),
-            Data::Replay(bufs) => bufs.remaining(),
+            Data::Replay(replay) => replay.remaining(),
         }
     }
 
@@ -70,7 +70,7 @@ impl Buf for Data {
     fn chunk(&self) -> &[u8] {
         match self {
             Data::Initial(buf) => buf.chunk(),
-            Data::Replay(bufs) => bufs.chunk(),
+            Data::Replay(replay) => replay.chunk(),
         }
     }
 
@@ -78,7 +78,7 @@ impl Buf for Data {
     fn chunks_vectored<'iovs>(&'iovs self, iovs: &mut [IoSlice<'iovs>]) -> usize {
         match self {
             Data::Initial(buf) => buf.chunks_vectored(iovs),
-            Data::Replay(bufs) => bufs.chunks_vectored(iovs),
+            Data::Replay(replay) => replay.chunks_vectored(iovs),
         }
     }
 
@@ -86,7 +86,7 @@ impl Buf for Data {
     fn advance(&mut self, amt: usize) {
         match self {
             Data::Initial(buf) => buf.advance(amt),
-            Data::Replay(bufs) => bufs.advance(amt),
+            Data::Replay(replay) => replay.advance(amt),
         }
     }
 
@@ -94,14 +94,14 @@ impl Buf for Data {
     fn copy_to_bytes(&mut self, len: usize) -> Bytes {
         match self {
             Data::Initial(buf) => buf.copy_to_bytes(len),
-            Data::Replay(bufs) => bufs.copy_to_bytes(len),
+            Data::Replay(replay) => replay.copy_to_bytes(len),
         }
     }
 }
 
-// === impl BufList ===
+// === impl Replay ===
 
-impl Buf for BufList {
+impl Buf for Replay {
     fn remaining(&self) -> usize {
         self.bufs.iter().map(Buf::remaining).sum()
     }

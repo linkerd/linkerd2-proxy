@@ -7,7 +7,7 @@ use parking_lot::Mutex;
 use std::{pin::Pin, sync::Arc, task::Context, task::Poll};
 use thiserror::Error;
 
-pub use self::buffer::{BufList, Data};
+pub use self::buffer::{Data, Replay};
 
 mod buffer;
 
@@ -66,7 +66,7 @@ struct SharedState<B> {
 
 #[derive(Debug)]
 struct BodyState<B> {
-    buf: BufList,
+    replay: Replay,
     trailers: Option<HeaderMap>,
     rest: B,
     is_completed: bool,
@@ -102,7 +102,7 @@ impl<B: Body> ReplayBody<B> {
                 was_empty: body.is_end_stream(),
             }),
             state: Some(BodyState {
-                buf: Default::default(),
+                replay: Default::default(),
                 trailers: None,
                 rest: body,
                 is_completed: false,
@@ -169,7 +169,7 @@ where
         // when polling the inner body.
         tracing::trace!(
             replay_body = this.replay_body,
-            buf.has_remaining = state.buf.has_remaining(),
+            buf.has_remaining = state.replay.has_remaining(),
             body.is_completed = state.is_completed,
             body.max_bytes_remaining = state.max_bytes,
             "ReplayBody::poll_data"
@@ -178,11 +178,11 @@ where
         // If we haven't replayed the buffer yet, and its not empty, return the
         // buffered data first.
         if this.replay_body {
-            if state.buf.has_remaining() {
+            if state.replay.has_remaining() {
                 tracing::trace!("Replaying body");
                 // Don't return the buffered data again on the next poll.
                 this.replay_body = false;
-                return Poll::Ready(Some(Ok(Data::Replay(state.buf.clone()))));
+                return Poll::Ready(Some(Ok(Data::Replay(state.replay.clone()))));
             }
 
             if state.is_capped() {
@@ -297,7 +297,7 @@ where
 
         // Otherwise, if we're holding the state but have dropped the inner
         // body, the entire body is buffered so we know the exact size hint.
-        let buffered = state.buf.remaining() as u64;
+        let buffered = state.replay.remaining() as u64;
         let rest_hint = state.rest.size_hint();
 
         // Otherwise, add the inner body's size hint to the amount of buffered
