@@ -11,7 +11,7 @@ proto = ["linkerd2-proxy-api"]
 [dependencies]
 http = { workspace = true }
 regex = "1"
-rand = "0.8"
+rand = "0.9"
 thiserror = "2"
 tracing = "0.1"
 url = "2"
