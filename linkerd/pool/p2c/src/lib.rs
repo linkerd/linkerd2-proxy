@@ -11,7 +11,7 @@ use linkerd_error::Error;
 use linkerd_metrics::prom;
 use linkerd_pool::Pool;
 use linkerd_stack::{NewService, Service};
-use rand::{rngs::SmallRng, thread_rng, Rng, SeedableRng};
+use rand::{rngs::SmallRng, Rng, SeedableRng};
 use std::{
     collections::hash_map::Entry,
     net::SocketAddr,
@@ -76,7 +76,7 @@ where
     S::Metric: std::fmt::Debug,
 {
     pub fn new(metrics: P2cMetrics, new_endpoint: N) -> Self {
-        let rng = SmallRng::from_rng(&mut thread_rng()).expect("RNG must be seeded");
+        let rng = SmallRng::from_rng(&mut rand::rng());
         Self {
             rng,
             metrics,
@@ -120,8 +120,8 @@ fn gen_pair(rng: &mut SmallRng, len: usize) -> (usize, usize) {
     debug_assert!(len >= 2, "must have at least two endpoints");
     // Get two distinct random indexes (in a random order) and
     // compare the loads of the service at each index.
-    let aidx = rng.gen_range(0..len);
-    let mut bidx = rng.gen_range(0..(len - 1));
+    let aidx = rng.random_range(0..len);
+    let mut bidx = rng.random_range(0..(len - 1));
     if bidx >= aidx {
         bidx += 1;
     }
@@ -376,7 +376,7 @@ mod tests {
             if len < 2 {
                 return quickcheck::TestResult::discard();
             }
-            let mut rng = SmallRng::from_rng(rand::thread_rng()).expect("rng");
+            let mut rng = SmallRng::from_rng(&mut rand::rng());
             let (aidx, bidx) = gen_pair(&mut rng, len);
             quickcheck::TestResult::from_bool(aidx != bidx)
         }
