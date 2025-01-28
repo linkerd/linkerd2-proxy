@@ -590,6 +590,72 @@ fn body_too_big() {
     );
 }
 
+// This test is specifically for behavior across clones, so the clippy lint
+// is wrong here.
+#[allow(clippy::redundant_clone)]
+#[test]
+fn size_hint_is_correct_for_empty_body() {
+    let initial =
+        ReplayBody::try_new(BoxBody::empty(), 64 * 1024).expect("empty body can't be too large");
+    let size = initial.size_hint();
+    assert_eq!(size.lower(), 0);
+    assert_eq!(size.upper(), Some(0));
+
+    let replay = initial.clone();
+    let size = replay.size_hint();
+    assert_eq!(size.lower(), 0);
+    assert_eq!(size.upper(), Some(0));
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn size_hint_is_correct_across_replays() {
+    const CAPACITY: usize = 8;
+    const BODY: &str = "contents";
+    const SIZE: u64 = BODY.len() as u64;
+    debug_assert!(SIZE as usize <= CAPACITY);
+
+    // Create the initial body, and a replay.
+    let mut initial = ReplayBody::try_new(BoxBody::from_static(BODY), CAPACITY)
+        .expect("empty body can't be too large");
+    let mut replay = initial.clone();
+
+    // Show that the body reports a proper size hint.
+    let initial_size = initial.size_hint();
+    assert_eq!(initial_size.lower(), SIZE);
+    assert_eq!(initial_size.exact(), Some(SIZE));
+    assert_eq!(initial_size.upper(), Some(SIZE));
+
+    // Read the body, check the size hint again.
+    assert_eq!(chunk(&mut initial).await.as_deref(), Some(BODY));
+    debug_assert!(initial.is_end_stream());
+    // TODO(kate): this currently misreports the *remaining* size of the body.
+    // let size = initial.size_hint();
+    // assert_eq!(size.lower(), 0);
+    // assert_eq!(size.upper(), Some(0));
+
+    // The replay reports the initial size hint, before and after dropping the initial body.
+    let size = replay.size_hint();
+    assert_eq!(size.lower(), initial_size.lower());
+    assert_eq!(size.upper(), initial_size.upper());
+    drop(initial);
+    let size = replay.size_hint();
+    assert_eq!(size.lower(), initial_size.lower());
+    assert_eq!(size.upper(), initial_size.upper());
+
+    // Drop the initial body, read the replay and check its size hint.
+    assert_eq!(chunk(&mut replay).await.as_deref(), Some(BODY));
+    // let replay = {
+    //     // TODO(kate): the replay doesn't report ending until it has (not) yielded trailers.
+    //     let mut body = crate::compat::ForwardCompatibleBody::new(replay);
+    //     assert!(body.frame().await.is_none());
+    //     body.into_inner()
+    // };
+    // let size = replay.size_hint();
+    // debug_assert!(replay.is_end_stream());
+    // assert_eq!(size.lower(), 0);
+    // assert_eq!(size.upper(), Some(0));
+}
+
 // === impl Test ===
 
 impl Test {
