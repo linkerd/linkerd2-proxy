@@ -465,6 +465,11 @@ async fn eos_only_when_fully_replayed_with_trailers() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn caps_buffer() {
+    const CAPACITY: usize = 8;
+    const FILL: Bytes = Bytes::from_static(b"abcdefgh");
+    const OVERFLOW: Bytes = Bytes::from_static(b"i");
+    debug_assert!(FILL.len() == CAPACITY, "fills the body's capacity");
+
     // Test that, when the initial body is longer than the preconfigured
     // cap, we allow the request to continue, but stop buffering. The
     // initial body will complete, but the replay will immediately fail.
@@ -474,7 +479,8 @@ async fn caps_buffer() {
     // `http_body_util::StreamBody` and `tokio_stream::wrappers::ReceiverStream`.
     // alternately, hyperium/http-body#140 adds a channel-backed body to `http-body-util`.
     let (mut tx, body) = hyper::Body::channel();
-    let mut initial = ReplayBody::try_new(body, 8).expect("channel body must not be too large");
+    let mut initial =
+        ReplayBody::try_new(body, CAPACITY).expect("channel body must not be too large");
     let replay = initial.clone();
 
     // The initial body isn't capped yet, and the replay body is waiting.
@@ -482,15 +488,13 @@ async fn caps_buffer() {
     assert_eq!(replay.is_capped(), None);
 
     // Send enough data to reach the cap, but do not exceed it.
-    tx.send_data(Bytes::from("aaaaaaaa")).await.unwrap();
-    assert_eq!(chunk(&mut initial).await, Some("aaaaaaaa".to_string()));
+    tx.send_data(FILL).await.unwrap();
+    assert_eq!(chunk(&mut initial).await, Some("abcdefgh".to_string()));
     assert_eq!(initial.is_capped(), Some(false));
 
-    // Further chunks are still forwarded on the initial body
-    tx.send_data(Bytes::from("bbbbbbbb")).await.unwrap();
-    assert_eq!(chunk(&mut initial).await, Some("bbbbbbbb".to_string()));
-
-    // The initial body has been capped now.
+    // Any more bytes sent to the initial body exceeds its capacity.
+    tx.send_data(OVERFLOW).await.unwrap();
+    assert_eq!(chunk(&mut initial).await, Some("i".to_string()));
     assert_eq!(initial.is_capped(), Some(true));
     assert_eq!(replay.is_capped(), None);
 
@@ -510,6 +514,11 @@ async fn caps_buffer() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn caps_across_replays() {
+    const CAPACITY: usize = 8;
+    const FILL: Bytes = Bytes::from_static(b"abcdefgh");
+    const OVERFLOW: Bytes = Bytes::from_static(b"i");
+    debug_assert!(FILL.len() == CAPACITY, "fills the body's capacity");
+
     // Test that, when the initial body is longer than the preconfigured
     // cap, we allow the request to continue, but stop buffering.
     let _trace = linkerd_tracing::test::with_default_filter("linkerd_http_retry=debug");
@@ -518,22 +527,23 @@ async fn caps_across_replays() {
     // `http_body_util::StreamBody` and `tokio_stream::wrappers::ReceiverStream`.
     // alternately, hyperium/http-body#140 adds a channel-backed body to `http-body-util`.
     let (mut tx, body) = hyper::Body::channel();
-    let mut initial = ReplayBody::try_new(body, 8).expect("channel body must not be too large");
+    let mut initial =
+        ReplayBody::try_new(body, CAPACITY).expect("channel body must not be too large");
     let mut replay = initial.clone();
 
-    // Send enough data to reach the cap
-    tx.send_data(Bytes::from("aaaaaaaa")).await.unwrap();
-    assert_eq!(chunk(&mut initial).await, Some("aaaaaaaa".to_string()));
+    // Send enough data to reach the cap, but do not exceed it.
+    tx.send_data(FILL).await.unwrap();
+    assert_eq!(chunk(&mut initial).await, Some("abcdefgh".to_string()));
     drop(initial);
 
     let replay2 = replay.clone();
 
     // The replay will reach the cap, but it should still return data from
     // the original body.
-    tx.send_data(Bytes::from("bbbbbbbb")).await.unwrap();
-    assert_eq!(chunk(&mut replay).await, Some("aaaaaaaa".to_string()));
+    tx.send_data(OVERFLOW).await.unwrap();
+    assert_eq!(chunk(&mut replay).await, Some("abcdefgh".to_string()));
     assert_eq!(replay.is_capped(), Some(false));
-    assert_eq!(chunk(&mut replay).await, Some("bbbbbbbb".to_string()));
+    assert_eq!(chunk(&mut replay).await, Some("i".to_string()));
     assert_eq!(replay.is_capped(), Some(true));
     drop(replay);
 
