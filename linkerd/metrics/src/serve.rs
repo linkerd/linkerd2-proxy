@@ -1,3 +1,4 @@
+use bytes::Bytes;
 use deflate::{write::GzEncoder, CompressionOptions};
 use linkerd_http_box::BoxBody;
 use std::io::Write;
@@ -41,14 +42,18 @@ impl<M: FmtMetrics> Serve<M> {
             Ok(http::Response::builder()
                 .header(http::header::CONTENT_ENCODING, "gzip")
                 .header(http::header::CONTENT_TYPE, "text/plain")
-                .body(BoxBody::new(hyper::Body::from(writer.finish()?)))
+                .body(BoxBody::new(http_body_util::Full::<Bytes>::from(
+                    writer.finish().map(Bytes::from)?,
+                )))
                 .expect("Response must be valid"))
         } else {
             let mut writer = Vec::<u8>::new();
             write!(&mut writer, "{}", self.metrics.as_display())?;
             Ok(http::Response::builder()
                 .header(http::header::CONTENT_TYPE, "text/plain")
-                .body(BoxBody::new(hyper::Body::from(writer)))
+                .body(BoxBody::new(http_body_util::Full::<Bytes>::from(
+                    Bytes::from(writer),
+                )))
                 .expect("Response must be valid"))
         }
     }
