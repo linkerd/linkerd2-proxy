@@ -73,9 +73,9 @@ pub enum ResponseBody<R, B> {
     },
 }
 
-const GRPC_CONTENT_TYPE: &str = "application/grpc";
-const GRPC_STATUS: &str = "grpc-status";
-const GRPC_MESSAGE: &str = "grpc-message";
+const GRPC_CONTENT_TYPE: HeaderValue = HeaderValue::from_static("application/grpc");
+const GRPC_STATUS: HeaderName = HeaderName::from_static("grpc-status");
+const GRPC_MESSAGE: HeaderName = HeaderName::from_static("grpc-message");
 
 // === impl HttpRescue ===
 
@@ -345,7 +345,15 @@ where
                 let is_grpc = req
                     .headers()
                     .get(http::header::CONTENT_TYPE)
-                    .and_then(|v| v.to_str().ok().map(|s| s.starts_with(GRPC_CONTENT_TYPE)))
+                    .and_then(|v| {
+                        v.to_str().ok().map(|s| {
+                            s.starts_with(
+                                GRPC_CONTENT_TYPE
+                                    .to_str()
+                                    .expect("GRPC_CONTENT_TYPE only contains visible ASCII"),
+                            )
+                        })
+                    })
                     .unwrap_or(false);
                 Respond {
                     client,
