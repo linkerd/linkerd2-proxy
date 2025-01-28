@@ -70,6 +70,7 @@ async fn replays_trailers() {
         replay,
         _trace,
     } = Test::new();
+    let replay2 = replay.clone();
 
     let mut tlrs = HeaderMap::new();
     tlrs.insert("x-hello", HeaderValue::from_str("world").unwrap());
@@ -103,6 +104,9 @@ async fn replays_trailers() {
     assert_eq!(&initial_tlrs, &tlrs);
 
     let replay_tlrs = read_trailers(replay).await;
+    assert_eq!(&replay_tlrs, &tlrs);
+
+    let replay_tlrs = read_trailers(replay2).await;
     assert_eq!(&replay_tlrs, &tlrs);
 }
 
