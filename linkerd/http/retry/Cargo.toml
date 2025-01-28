@@ -10,6 +10,7 @@ publish = false
 bytes = { workspace = true }
 futures = { version = "0.3", default-features = false }
 http-body = { workspace = true }
+http-body-util = { workspace = true }
 http = { workspace = true }
 parking_lot = "0.12"
 pin-project = "1"
