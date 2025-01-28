@@ -18,3 +18,27 @@ pub fn has_grpc_status(error: &crate::Error, code: tonic::Code) -> bool {
         .map(|s| s.code() == code)
         .unwrap_or(false)
 }
+
+// Copied from tonic, where it's private.
+fn code_header(code: tonic::Code) -> http::HeaderValue {
+    use {http::HeaderValue, tonic::Code};
+    match code {
+        Code::Ok => HeaderValue::from_static("0"),
+        Code::Cancelled => HeaderValue::from_static("1"),
+        Code::Unknown => HeaderValue::from_static("2"),
+        Code::InvalidArgument => HeaderValue::from_static("3"),
+        Code::DeadlineExceeded => HeaderValue::from_static("4"),
+        Code::NotFound => HeaderValue::from_static("5"),
+        Code::AlreadyExists => HeaderValue::from_static("6"),
+        Code::PermissionDenied => HeaderValue::from_static("7"),
+        Code::ResourceExhausted => HeaderValue::from_static("8"),
+        Code::FailedPrecondition => HeaderValue::from_static("9"),
+        Code::Aborted => HeaderValue::from_static("10"),
+        Code::OutOfRange => HeaderValue::from_static("11"),
+        Code::Unimplemented => HeaderValue::from_static("12"),
+        Code::Internal => HeaderValue::from_static("13"),
+        Code::Unavailable => HeaderValue::from_static("14"),
+        Code::DataLoss => HeaderValue::from_static("15"),
+        Code::Unauthenticated => HeaderValue::from_static("16"),
+    }
+}

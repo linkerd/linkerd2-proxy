@@ -246,7 +246,7 @@ impl SyntheticHttpResponse {
             .version(http::Version::HTTP_2)
             .header(http::header::CONTENT_LENGTH, "0")
             .header(http::header::CONTENT_TYPE, GRPC_CONTENT_TYPE)
-            .header(GRPC_STATUS, code_header(self.grpc_status));
+            .header(GRPC_STATUS, super::code_header(self.grpc_status));
 
         if emit_headers {
             rsp = rsp
@@ -527,7 +527,7 @@ impl<R, B> ResponseBody<R, B> {
     fn grpc_trailers(code: tonic::Code, message: &str, emit_headers: bool) -> http::HeaderMap {
         debug!(grpc.status = ?code, "Synthesizing gRPC trailers");
         let mut t = http::HeaderMap::new();
-        t.insert(GRPC_STATUS, code_header(code));
+        t.insert(GRPC_STATUS, super::code_header(code));
         if emit_headers {
             t.insert(
                 GRPC_MESSAGE,
@@ -538,29 +538,5 @@ impl<R, B> ResponseBody<R, B> {
             );
         }
         t
-    }
-}
-
-// Copied from tonic, where it's private.
-fn code_header(code: tonic::Code) -> HeaderValue {
-    use tonic::Code;
-    match code {
-        Code::Ok => HeaderValue::from_static("0"),
-        Code::Cancelled => HeaderValue::from_static("1"),
-        Code::Unknown => HeaderValue::from_static("2"),
-        Code::InvalidArgument => HeaderValue::from_static("3"),
-        Code::DeadlineExceeded => HeaderValue::from_static("4"),
-        Code::NotFound => HeaderValue::from_static("5"),
-        Code::AlreadyExists => HeaderValue::from_static("6"),
-        Code::PermissionDenied => HeaderValue::from_static("7"),
-        Code::ResourceExhausted => HeaderValue::from_static("8"),
-        Code::FailedPrecondition => HeaderValue::from_static("9"),
-        Code::Aborted => HeaderValue::from_static("10"),
-        Code::OutOfRange => HeaderValue::from_static("11"),
-        Code::Unimplemented => HeaderValue::from_static("12"),
-        Code::Internal => HeaderValue::from_static("13"),
-        Code::Unavailable => HeaderValue::from_static("14"),
-        Code::DataLoss => HeaderValue::from_static("15"),
-        Code::Unauthenticated => HeaderValue::from_static("16"),
     }
 }
