@@ -943,6 +943,7 @@ dependencies = [
  "http",
  "http-body",
  "pin-project-lite",
+ "tokio",
 ]
 
 [[package]]
@@ -2122,9 +2123,11 @@ dependencies = [
 name = "linkerd-metrics"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "deflate",
  "http",
  "http-body",
+ "http-body-util",
  "hyper",
  "kubert-prometheus-process",
  "linkerd-http-box",
