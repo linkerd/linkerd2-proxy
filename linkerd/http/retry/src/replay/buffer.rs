@@ -1,4 +1,6 @@
+use super::BodyState;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
+use http_body::Body;
 use std::{collections::VecDeque, io::IoSlice};
 
 /// Data returned by `ReplayBody`'s `http_body::Body` implementation is either
@@ -14,6 +16,41 @@ pub enum Data {
 #[derive(Clone, Debug, Default)]
 pub struct BufList {
     bufs: VecDeque<Bytes>,
+}
+
+// === impl BodyState ===
+
+impl<B: Body> BodyState<B> {
+    /// Records a chunk of data yielded by the inner `B`-typed [`Body`].
+    ///
+    /// This returns the next chunk of data as a chunk of [`Bytes`].
+    ///
+    /// This records the chunk in the replay buffer, unless the maximum capacity has been exceeded.
+    /// If the buffer's capacity has been exceeded, the buffer will be emptied. The initial body
+    /// will be permitted to continue, but cloned replays will fail with a
+    /// [`Capped`][super::Capped] error when polled.
+    pub(super) fn record_bytes(&mut self, mut data: B::Data) -> Data {
+        let length = data.remaining();
+        self.max_bytes = self.max_bytes.saturating_sub(length);
+
+        let bytes = if self.is_capped() {
+            // If there's data in the buffer, discard it now, since we won't
+            // allow any clones to have a complete body.
+            if self.buf.has_remaining() {
+                tracing::debug!(
+                    buf.size = self.buf.remaining(),
+                    "Buffered maximum capacity, discarding buffer"
+                );
+                self.buf = Default::default();
+            }
+            data.copy_to_bytes(length)
+        } else {
+            // Buffer and return the bytes.
+            self.buf.push_chunk(data)
+        };
+
+        Data::Initial(bytes)
+    }
 }
 
 // === impl Data ===
@@ -63,7 +100,7 @@ impl Buf for Data {
 // === impl BufList ===
 
 impl BufList {
-    pub(super) fn push_chunk(&mut self, mut data: impl Buf) -> Bytes {
+    fn push_chunk(&mut self, mut data: impl Buf) -> Bytes {
         let len = data.remaining();
         // `data` is (almost) certainly a `Bytes`, so `copy_to_bytes` should
         // internally be a cheap refcount bump almost all of the time.

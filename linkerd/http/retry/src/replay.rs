@@ -204,7 +204,7 @@ where
         // Poll the inner body for more data. If the body has ended, remember
         // that so that future clones will not try polling it again (as
         // described above).
-        let mut data = {
+        let data = {
             tracing::trace!("Polling initial body");
             match futures::ready!(Pin::new(&mut state.rest).poll_data(cx)) {
                 Some(Ok(data)) => data,
@@ -219,25 +219,9 @@ where
 
         // If we have buffered the maximum number of bytes, allow *this* body to
         // continue, but don't buffer any more.
-        let length = data.remaining();
-        state.max_bytes = state.max_bytes.saturating_sub(length);
-        let chunk = if state.is_capped() {
-            // If there's data in the buffer, discard it now, since we won't
-            // allow any clones to have a complete body.
-            if state.buf.has_remaining() {
-                tracing::debug!(
-                    buf.size = state.buf.remaining(),
-                    "Buffered maximum capacity, discarding buffer"
-                );
-                state.buf = Default::default();
-            }
-            data.copy_to_bytes(length)
-        } else {
-            // Buffer and return the bytes.
-            state.buf.push_chunk(data)
-        };
+        let chunk = state.record_bytes(data);
 
-        Poll::Ready(Some(Ok(Data::Initial(chunk))))
+        Poll::Ready(Some(Ok(chunk)))
     }
 
     /// Polls for an optional **single** [`HeaderMap`] of trailers.
