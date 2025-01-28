@@ -1,5 +1,8 @@
+use super::header::{
+    GRPC_CONTENT_TYPE, GRPC_MESSAGE, GRPC_STATUS, L5D_PROXY_CONNECTION, L5D_PROXY_ERROR,
+};
 use crate::svc;
-use http::header::{HeaderName, HeaderValue, LOCATION};
+use http::header::{HeaderValue, LOCATION};
 use linkerd_error::{Error, Result};
 use linkerd_error_respond as respond;
 use linkerd_proxy_http::{orig_proto, ClientHandle};
@@ -11,9 +14,6 @@ use std::{
     task::{Context, Poll},
 };
 use tracing::{debug, info_span, warn};
-
-pub const L5D_PROXY_CONNECTION: HeaderName = HeaderName::from_static("l5d-proxy-connection");
-pub const L5D_PROXY_ERROR: HeaderName = HeaderName::from_static("l5d-proxy-error");
 
 pub fn layer<R, P: Clone, N>(
     params: P,
@@ -72,10 +72,6 @@ pub enum ResponseBody<R, B> {
         emit_headers: bool,
     },
 }
-
-const GRPC_CONTENT_TYPE: HeaderValue = HeaderValue::from_static("application/grpc");
-const GRPC_STATUS: HeaderName = HeaderName::from_static("grpc-status");
-const GRPC_MESSAGE: HeaderName = HeaderName::from_static("grpc-message");
 
 // === impl HttpRescue ===
 

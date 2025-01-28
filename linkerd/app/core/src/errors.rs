@@ -6,6 +6,16 @@ pub use linkerd_proxy_http::h2::H2Error;
 pub use linkerd_stack::{FailFastError, LoadShedError};
 pub use tonic::Code as Grpc;
 
+/// Header names and values related to error responses.
+pub mod header {
+    use http::header::{HeaderName, HeaderValue};
+    pub const L5D_PROXY_CONNECTION: HeaderName = HeaderName::from_static("l5d-proxy-connection");
+    pub const L5D_PROXY_ERROR: HeaderName = HeaderName::from_static("l5d-proxy-error");
+    pub(super) const GRPC_CONTENT_TYPE: HeaderValue = HeaderValue::from_static("application/grpc");
+    pub(super) const GRPC_MESSAGE: HeaderName = HeaderName::from_static("grpc-message");
+    pub(super) const GRPC_STATUS: HeaderName = HeaderName::from_static("grpc-status");
+}
+
 #[derive(Debug, thiserror::Error)]
 #[error("connect timed out after {0:?}")]
 pub struct ConnectTimeout(pub(crate) std::time::Duration);

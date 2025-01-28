@@ -1,6 +1,6 @@
 use futures::prelude::*;
 use linkerd_app_core::{
-    errors::respond::{L5D_PROXY_CONNECTION, L5D_PROXY_ERROR},
+    errors::header::{L5D_PROXY_CONNECTION, L5D_PROXY_ERROR},
     proxy::http::ClientHandle,
     svc, tls,
 };

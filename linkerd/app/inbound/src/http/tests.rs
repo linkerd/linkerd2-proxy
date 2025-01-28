@@ -9,7 +9,7 @@ use crate::{
 use hyper::{Request, Response};
 use linkerd_app_core::{
     classify,
-    errors::respond::L5D_PROXY_ERROR,
+    errors::header::L5D_PROXY_ERROR,
     identity, io, metrics,
     proxy::http::{self, Body as _, BoxBody},
     svc::{self, http::TracingExecutor, NewService, Param},
