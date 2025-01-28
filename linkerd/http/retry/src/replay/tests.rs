@@ -111,7 +111,7 @@ async fn replays_trailers() {
 }
 
 #[tokio::test]
-async fn trailers_only() {
+async fn replays_trailers_only() {
     let Test {
         mut tx,
         initial,
