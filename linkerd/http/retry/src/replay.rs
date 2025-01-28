@@ -290,13 +290,13 @@ where
     fn is_end_stream(&self) -> bool {
         // If the initial body was empty as soon as it was wrapped, then we are finished.
         if self.shared.was_empty {
-            tracing::trace!("initial body was empty, stream has ended");
+            tracing::trace!("Initial body was empty, stream has ended");
             return true;
         }
 
         let Some(state) = self.state.as_ref() else {
             // This body is not currently the "active" replay being polled.
-            tracing::trace!("inactive replay body is not complete");
+            tracing::trace!("Inactive replay body is not complete");
             return false;
         };
 
@@ -306,7 +306,7 @@ where
             // if we have replayed everything, the initial body may
             // still have data remaining, so ask it
             && state.rest.is_end_stream();
-        tracing::trace!(%eos, "checked replay body end-of-stream");
+        tracing::trace!(%eos, "Checked replay body end-of-stream");
         eos
     }
 
@@ -376,7 +376,7 @@ impl<B: Body> ReplayBody<B> {
             Err(Ok(trailers)) => Some(Either::Right(trailers)),
             Err(Err(_unknown)) => {
                 // It's possible that some sort of unknown frame could be encountered.
-                tracing::warn!("an unknown body frame has been buffered");
+                tracing::warn!("An unknown body frame has been buffered");
                 None
             }
         }
