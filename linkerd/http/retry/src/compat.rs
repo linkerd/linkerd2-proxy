@@ -47,20 +47,17 @@ impl<B: Body> ForwardCompatibleBody<B> {
     }
 
     /// Returns `true` when the end of stream has been reached.
-    #[allow(unused, reason = "not yet used")]
     pub(crate) fn is_end_stream(&self) -> bool {
         self.inner.is_end_stream()
     }
 
     /// Returns the bounds on the remaining length of the stream.
-    #[allow(unused, reason = "not yet used")]
     pub(crate) fn size_hint(&self) -> SizeHint {
         self.inner.size_hint()
     }
 }
 
 impl<B: Body + Unpin> ForwardCompatibleBody<B> {
-    #[allow(unused, reason = "not yet used")]
     pub(crate) fn poll_frame(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,

@@ -68,7 +68,7 @@ struct SharedState<B> {
 struct BodyState<B> {
     replay: Replay,
     trailers: Option<HeaderMap>,
-    rest: B,
+    rest: crate::compat::ForwardCompatibleBody<B>,
     is_completed: bool,
 
     /// Maximum number of bytes to buffer.
@@ -104,13 +104,19 @@ impl<B: Body> ReplayBody<B> {
             state: Some(BodyState {
                 replay: Default::default(),
                 trailers: None,
-                rest: body,
+                rest: crate::compat::ForwardCompatibleBody::new(body),
                 is_completed: false,
                 max_bytes: max_bytes + 1,
             }),
-            // The initial `ReplayBody` has nothing to replay
+            // The initial `ReplayBody` has no data to replay.
             replay_body: false,
-            replay_trailers: false,
+            // NOTE(kate): When polling the inner body in terms of frames, we will not yield
+            // `Ready(None)` from `Body::poll_data()` until we have reached the end of the
+            // underlying stream. Once we have migrated to `http-body` v1, this field will be
+            // initialized `false` thanks to the use of `Body::poll_frame()`, but for now we must
+            // initialize this to true; `poll_trailers()` will be called after the trailers have
+            // been observed previously, even for the initial body.
+            replay_trailers: true,
         })
     }
 
@@ -204,16 +210,33 @@ where
         // Poll the inner body for more data. If the body has ended, remember
         // that so that future clones will not try polling it again (as
         // described above).
-        let data = {
+        let data: B::Data = {
+            use futures::{future::Either, ready};
+            // Poll the inner body for the next frame.
             tracing::trace!("Polling initial body");
-            match futures::ready!(Pin::new(&mut state.rest).poll_data(cx)) {
-                Some(Ok(data)) => data,
-                Some(Err(e)) => return Poll::Ready(Some(Err(e.into()))),
+            let poll = Pin::new(&mut state.rest).poll_frame(cx).map_err(Into::into);
+            let frame = match ready!(poll) {
+                // The body yielded a new frame.
+                Some(Ok(frame)) => frame,
+                // The body yielded an error.
+                Some(Err(error)) => return Poll::Ready(Some(Err(error))),
+                // The body has reached the end of the stream.
                 None => {
                     tracing::trace!("Initial body completed");
                     state.is_completed = true;
                     return Poll::Ready(None);
                 }
+            };
+            // Now, inspect the frame: was it a chunk of data, or a trailers frame?
+            match Self::split_frame(frame) {
+                Some(Either::Left(data)) => data,
+                Some(Either::Right(trailers)) => {
+                    tracing::trace!("Initial body completed");
+                    state.trailers = Some(trailers);
+                    state.is_completed = true;
+                    return Poll::Ready(None);
+                }
+                None => return Poll::Ready(None),
             }
         };
 
@@ -234,7 +257,7 @@ where
     /// NOT be polled until the previous body has been dropped.
     fn poll_trailers(
         self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
+        _cx: &mut Context<'_>,
     ) -> Poll<Result<Option<HeaderMap>, Self::Error>> {
         let this = self.get_mut();
         let state = Self::acquire_state(&mut this.state, &this.shared.body);
@@ -249,20 +272,6 @@ where
                 tracing::trace!("Replaying trailers");
                 return Poll::Ready(Ok(Some(trailers.clone())));
             }
-        }
-
-        // If the inner body has previously ended, don't poll it again.
-        if !state.rest.is_end_stream() {
-            return Pin::new(&mut state.rest)
-                .poll_trailers(cx)
-                .map_ok(|tlrs| {
-                    // Record a copy of the inner body's trailers in the shared state.
-                    if state.trailers.is_none() {
-                        state.trailers.clone_from(&tlrs);
-                    }
-                    tlrs
-                })
-                .map_err(Into::into);
         }
 
         Poll::Ready(Ok(None))
@@ -330,6 +339,32 @@ impl<B> Drop for ReplayBody<B> {
         // If this clone owned the shared state, put it back.
         if let Some(state) = self.state.take() {
             *self.shared.body.lock() = Some(state);
+        }
+    }
+}
+
+impl<B: Body> ReplayBody<B> {
+    /// Splits a `Frame<T>` into a chunk of data or a header map.
+    ///
+    /// Frames do not expose their inner enums, and instead expose `into_data()` and
+    /// `into_trailers()` methods. This function breaks the frame into either `Some(Left(data))`
+    /// if it is given a DATA frame, and `Some(Right(trailers))` if it is given a TRAILERS frame.
+    ///
+    /// This returns `None` if an unknown frame is provided, that is neither.
+    ///
+    /// This is an internal helper to facilitate pattern matching in `read_body(..)`, above.
+    fn split_frame(
+        frame: crate::compat::Frame<B::Data>,
+    ) -> Option<futures::future::Either<B::Data, HeaderMap>> {
+        use {crate::compat::Frame, futures::future::Either};
+        match frame.into_data().map_err(Frame::into_trailers) {
+            Ok(data) => Some(Either::Left(data)),
+            Err(Ok(trailers)) => Some(Either::Right(trailers)),
+            Err(Err(_unknown)) => {
+                // It's possible that some sort of unknown frame could be encountered.
+                tracing::warn!("an unknown body frame has been buffered");
+                None
+            }
         }
     }
 }
