@@ -3,7 +3,6 @@ use crate::{
     WeightedServiceKeys,
 };
 use ahash::AHashSet;
-use rand::distributions::WeightedError;
 use std::{fmt::Debug, hash::Hash, sync::Arc};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -73,7 +72,7 @@ impl<K> Distribution<K> {
 
     pub fn random_available<T: IntoIterator<Item = (K, u32)>>(
         iter: T,
-    ) -> Result<Self, WeightedError> {
+    ) -> Result<Self, rand::distr::weighted::Error> {
         let weighted_keys = WeightedServiceKeys::new(
             iter.into_iter()
                 .map(|(key, weight)| WeightedKey { key, weight }),
