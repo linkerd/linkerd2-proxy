@@ -150,6 +150,9 @@ const ENV_TRACE_ATTRIBUTES_PATH: &str = "LINKERD2_PROXY_TRACE_ATTRIBUTES_PATH";
 const ENV_TRACE_PROTOCOL: &str = "LINKERD2_PROXY_TRACE_PROTOCOL";
 const ENV_TRACE_SERVICE_NAME: &str = "LINKERD2_PROXY_TRACE_SERVICE_NAME";
 const ENV_TRACE_EXTRA_ATTRIBUTES: &str = "LINKERD2_PROXY_TRACE_EXTRA_ATTRIBUTES";
+// This doesn't have the LINKERD2_ prefix because it is a conventional env var from OpenTelemetry:
+// https://opentelemetry.io/docs/specs/otel/configuration/sdk-environment-variables/#general-sdk-configuration
+const ENV_OTEL_TRACE_ATTRIBUTES: &str = "OTEL_RESOURCE_ATTRIBUTES";
 
 /// Constrains which destination names may be used for profile/route discovery.
 ///
@@ -434,6 +437,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
     let trace_attributes_file_path = strings.get(ENV_TRACE_ATTRIBUTES_PATH);
     let trace_extra_attributes = strings.get(ENV_TRACE_EXTRA_ATTRIBUTES);
+    let trace_otel_attributes = strings.get(ENV_OTEL_TRACE_ATTRIBUTES);
     let trace_protocol = strings.get(ENV_TRACE_PROTOCOL);
     let trace_service_name = strings.get(ENV_TRACE_SERVICE_NAME);
 
@@ -840,6 +844,11 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 })
                 .unwrap_or_default();
             if let Ok(Some(attrs)) = trace_extra_attributes {
+                if !attrs.is_empty() {
+                    attributes.extend(trace::parse_env_trace_attributes(&attrs));
+                }
+            }
+            if let Ok(Some(attrs)) = trace_otel_attributes {
                 if !attrs.is_empty() {
                     attributes.extend(trace::parse_env_trace_attributes(&attrs));
                 }
