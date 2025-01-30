@@ -870,7 +870,7 @@ mod tests {
         // alternately, hyperium/http-body#140 adds a channel-backed body to `http-body-util`.
         let (mut tx, body) = hyper::Body::channel();
         let mut initial = ReplayBody::try_new(body, 8).expect("channel body must not be too large");
-        let mut replay = initial.clone();
+        let replay = initial.clone();
 
         // Send enough data to reach the cap
         tx.send_data(Bytes::from("aaaaaaaa")).await.unwrap();
@@ -884,11 +884,12 @@ mod tests {
 
         // The request's replay should error, since we discarded the buffer when
         // we hit the cap.
+        let mut replay = crate::compat::ForwardCompatibleBody::new(replay);
         let err = replay
-            .data()
+            .frame()
             .await
-            .expect("replay must yield Some(Err(..)) when capped")
-            .expect_err("replay must error when cappped");
+            .expect("yields a result")
+            .expect_err("yields an error when capped");
         assert!(err.is::<Capped>())
     }
 
@@ -910,7 +911,7 @@ mod tests {
         assert_eq!(chunk(&mut initial).await, Some("aaaaaaaa".to_string()));
         drop(initial);
 
-        let mut replay2 = replay.clone();
+        let replay2 = replay.clone();
 
         // The replay will reach the cap, but it should still return data from
         // the original body.
@@ -920,11 +921,12 @@ mod tests {
         drop(replay);
 
         // The second replay will fail, though, because the buffer was discarded.
+        let mut replay2 = crate::compat::ForwardCompatibleBody::new(replay2);
         let err = replay2
-            .data()
+            .frame()
             .await
-            .expect("replay must yield Some(Err(..)) when capped")
-            .expect_err("replay must error when cappped");
+            .expect("yields a result")
+            .expect_err("yields an error when capped");
         assert!(err.is::<Capped>())
     }
 
