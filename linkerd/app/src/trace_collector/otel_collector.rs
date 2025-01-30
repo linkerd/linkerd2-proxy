@@ -4,20 +4,29 @@ use linkerd_app_core::{
 };
 use linkerd_opentelemetry::{
     self as opentelemetry, metrics,
-    proto::proto::common::v1::{any_value, AnyValue, KeyValue},
-    proto::transform::common::ResourceAttributesWithSchema,
+    proto::{
+        proto::common::v1::{any_value, AnyValue, KeyValue},
+        transform::common::ResourceAttributesWithSchema,
+    },
 };
-use std::{collections::HashMap, time::SystemTime, time::UNIX_EPOCH};
+use std::{
+    collections::HashMap,
+    time::{SystemTime, UNIX_EPOCH},
+};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{body::BoxBody, client::GrpcService};
 use tracing::Instrument;
 
+pub(super) struct OtelCollectorAttributes {
+    pub hostname: Option<String>,
+    pub service_name: String,
+    pub extra: HashMap<String, String>,
+}
+
 pub(super) fn create_collector<S>(
     addr: ControlAddr,
-    hostname: Option<String>,
-    service_name: String,
-    attributes: HashMap<String, String>,
+    attributes: OtelCollectorAttributes,
     svc: S,
     legacy_metrics: metrics::Registry,
 ) -> EnabledCollector
@@ -36,7 +45,7 @@ where
     resources
         .attributes
         .0
-        .push(service_name.with_key("service.name"));
+        .push(attributes.service_name.with_key("service.name"));
     resources
         .attributes
         .0
@@ -49,13 +58,16 @@ where
             .unwrap_or_else(|e| -(e.duration().as_secs() as i64))
             .with_key("process.start_timestamp"),
     );
-    resources
-        .attributes
-        .0
-        .push(hostname.unwrap_or_default().with_key("host.name"));
+    resources.attributes.0.push(
+        attributes
+            .hostname
+            .unwrap_or_default()
+            .with_key("host.name"),
+    );
 
     resources.attributes.0.extend(
         attributes
+            .extra
             .into_iter()
             .map(|(key, value)| value.with_key(&key)),
     );
