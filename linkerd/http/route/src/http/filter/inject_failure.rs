@@ -19,16 +19,16 @@ pub struct FailureResponse {
 pub struct Distribution {
     numerator: u32,
     denominator: u32,
-    inner: rand::distributions::Bernoulli,
+    inner: rand::distr::Bernoulli,
 }
 
 // === impl InjectFailure ===
 
 impl<T: Clone> InjectFailure<T> {
     pub fn apply(&self) -> Option<T> {
-        use rand::distributions::Distribution;
+        use rand::distr::Distribution;
 
-        if self.distribution.sample(&mut rand::thread_rng()) {
+        if self.distribution.sample(&mut rand::rng()) {
             return Some(self.response.clone());
         }
 
@@ -43,8 +43,8 @@ impl Distribution {
     pub fn from_ratio(
         numerator: u32,
         denominator: u32,
-    ) -> Result<Self, rand::distributions::BernoulliError> {
-        let inner = rand::distributions::Bernoulli::from_ratio(numerator, denominator)?;
+    ) -> Result<Self, rand::distr::BernoulliError> {
+        let inner = rand::distr::Bernoulli::from_ratio(numerator, denominator)?;
         Ok(Self {
             numerator,
             denominator,
@@ -59,7 +59,7 @@ impl Default for Distribution {
     }
 }
 
-impl rand::distributions::Distribution<bool> for Distribution {
+impl rand::distr::Distribution<bool> for Distribution {
     #[inline]
     fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> bool {
         self.inner.sample(rng)
@@ -100,7 +100,7 @@ pub mod proto {
 
     #[derive(Debug, thiserror::Error)]
     #[error("invalid request distribution: {0}")]
-    pub struct InvalidDistribution(#[from] rand::distributions::BernoulliError);
+    pub struct InvalidDistribution(#[from] rand::distr::BernoulliError);
 
     // === impl InjectFailure ===
 

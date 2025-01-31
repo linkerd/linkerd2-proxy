@@ -19,7 +19,7 @@ tokio = { version = "1", features = ["time", "sync"] }
 tonic = { workspace = true }
 tower = "0.4"
 tracing = "0.1"
-x509-parser = "0.16.0"
+x509-parser = "0.17.0"
 asn1 = { version = "0.6", package = "simple_asn1" }
 thiserror = "2"
 
