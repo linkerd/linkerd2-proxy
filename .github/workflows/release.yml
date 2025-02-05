@@ -84,7 +84,7 @@ jobs:
         if: github.event_name == 'pull_request'
       - id: changed
         if: github.event_name == 'pull_request'
-        uses: tj-actions/changed-files@d6e91a2266cdb9d62096cebf1e8546899c6aa18f
+        uses: tj-actions/changed-files@dcc7a0cba800f454d79fff4b993e8c3555bcc0a8
         with:
           files: |
             .github/workflows/release.yml
