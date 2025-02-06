@@ -1,11 +1,15 @@
-use bytes::{Buf, BufMut, Bytes, BytesMut};
+use bytes::Buf;
 use http::HeaderMap;
 use http_body::{Body, SizeHint};
 use linkerd_error::Error;
 use linkerd_http_box::BoxBody;
 use parking_lot::Mutex;
-use std::{collections::VecDeque, io::IoSlice, pin::Pin, sync::Arc, task::Context, task::Poll};
+use std::{pin::Pin, sync::Arc, task::Context, task::Poll};
 use thiserror::Error;
+
+pub use self::buffer::{Data, Replay};
+
+mod buffer;
 
 /// Unit tests for [`ReplayBody<B>`].
 #[cfg(test)]
@@ -46,21 +50,6 @@ pub struct ReplayBody<B = BoxBody> {
 #[error("replay body discarded after reaching maximum buffered bytes limit")]
 pub struct Capped;
 
-/// Data returned by `ReplayBody`'s `http_body::Body` implementation is either
-/// `Bytes` returned by the initial body, or a list of all `Bytes` chunks
-/// returned by the initial body (when replaying it).
-#[derive(Debug)]
-pub enum Data {
-    Initial(Bytes),
-    Replay(BufList),
-}
-
-/// Body data composed of multiple `Bytes` chunks.
-#[derive(Clone, Debug, Default)]
-pub struct BufList {
-    bufs: VecDeque<Bytes>,
-}
-
 #[derive(Debug)]
 struct SharedState<B> {
     body: Mutex<Option<BodyState<B>>>,
@@ -77,7 +66,7 @@ struct SharedState<B> {
 
 #[derive(Debug)]
 struct BodyState<B> {
-    buf: BufList,
+    replay: Replay,
     trailers: Option<HeaderMap>,
     rest: B,
     is_completed: bool,
@@ -113,7 +102,7 @@ impl<B: Body> ReplayBody<B> {
                 was_empty: body.is_end_stream(),
             }),
             state: Some(BodyState {
-                buf: Default::default(),
+                replay: Default::default(),
                 trailers: None,
                 rest: body,
                 is_completed: false,
@@ -180,7 +169,7 @@ where
         // when polling the inner body.
         tracing::trace!(
             replay_body = this.replay_body,
-            buf.has_remaining = state.buf.has_remaining(),
+            buf.has_remaining = state.replay.has_remaining(),
             body.is_completed = state.is_completed,
             body.max_bytes_remaining = state.max_bytes,
             "ReplayBody::poll_data"
@@ -189,11 +178,11 @@ where
         // If we haven't replayed the buffer yet, and its not empty, return the
         // buffered data first.
         if this.replay_body {
-            if state.buf.has_remaining() {
+            if state.replay.has_remaining() {
                 tracing::trace!("Replaying body");
                 // Don't return the buffered data again on the next poll.
                 this.replay_body = false;
-                return Poll::Ready(Some(Ok(Data::Replay(state.buf.clone()))));
+                return Poll::Ready(Some(Ok(Data::Replay(state.replay.clone()))));
             }
 
             if state.is_capped() {
@@ -215,7 +204,7 @@ where
         // Poll the inner body for more data. If the body has ended, remember
         // that so that future clones will not try polling it again (as
         // described above).
-        let mut data = {
+        let data = {
             tracing::trace!("Polling initial body");
             match futures::ready!(Pin::new(&mut state.rest).poll_data(cx)) {
                 Some(Ok(data)) => data,
@@ -230,25 +219,9 @@ where
 
         // If we have buffered the maximum number of bytes, allow *this* body to
         // continue, but don't buffer any more.
-        let length = data.remaining();
-        state.max_bytes = state.max_bytes.saturating_sub(length);
-        let chunk = if state.is_capped() {
-            // If there's data in the buffer, discard it now, since we won't
-            // allow any clones to have a complete body.
-            if state.buf.has_remaining() {
-                tracing::debug!(
-                    buf.size = state.buf.remaining(),
-                    "Buffered maximum capacity, discarding buffer"
-                );
-                state.buf = Default::default();
-            }
-            data.copy_to_bytes(length)
-        } else {
-            // Buffer and return the bytes.
-            state.buf.push_chunk(data)
-        };
+        let chunk = state.record_bytes(data);
 
-        Poll::Ready(Some(Ok(Data::Initial(chunk))))
+        Poll::Ready(Some(Ok(chunk)))
     }
 
     /// Polls for an optional **single** [`HeaderMap`] of trailers.
@@ -324,7 +297,7 @@ where
 
         // Otherwise, if we're holding the state but have dropped the inner
         // body, the entire body is buffered so we know the exact size hint.
-        let buffered = state.buf.remaining() as u64;
+        let buffered = state.replay.remaining() as u64;
         let rest_hint = state.rest.size_hint();
 
         // Otherwise, add the inner body's size hint to the amount of buffered
@@ -357,140 +330,6 @@ impl<B> Drop for ReplayBody<B> {
         // If this clone owned the shared state, put it back.
         if let Some(state) = self.state.take() {
             *self.shared.body.lock() = Some(state);
-        }
-    }
-}
-
-// === impl Data ===
-
-impl Buf for Data {
-    #[inline]
-    fn remaining(&self) -> usize {
-        match self {
-            Data::Initial(buf) => buf.remaining(),
-            Data::Replay(bufs) => bufs.remaining(),
-        }
-    }
-
-    #[inline]
-    fn chunk(&self) -> &[u8] {
-        match self {
-            Data::Initial(buf) => buf.chunk(),
-            Data::Replay(bufs) => bufs.chunk(),
-        }
-    }
-
-    #[inline]
-    fn chunks_vectored<'iovs>(&'iovs self, iovs: &mut [IoSlice<'iovs>]) -> usize {
-        match self {
-            Data::Initial(buf) => buf.chunks_vectored(iovs),
-            Data::Replay(bufs) => bufs.chunks_vectored(iovs),
-        }
-    }
-
-    #[inline]
-    fn advance(&mut self, amt: usize) {
-        match self {
-            Data::Initial(buf) => buf.advance(amt),
-            Data::Replay(bufs) => bufs.advance(amt),
-        }
-    }
-
-    #[inline]
-    fn copy_to_bytes(&mut self, len: usize) -> Bytes {
-        match self {
-            Data::Initial(buf) => buf.copy_to_bytes(len),
-            Data::Replay(bufs) => bufs.copy_to_bytes(len),
-        }
-    }
-}
-
-// === impl BufList ===
-
-impl BufList {
-    fn push_chunk(&mut self, mut data: impl Buf) -> Bytes {
-        let len = data.remaining();
-        // `data` is (almost) certainly a `Bytes`, so `copy_to_bytes` should
-        // internally be a cheap refcount bump almost all of the time.
-        // But, if it isn't, this will copy it to a `Bytes` that we can
-        // now clone.
-        let bytes = data.copy_to_bytes(len);
-        // Buffer a clone of the bytes read on this poll.
-        self.bufs.push_back(bytes.clone());
-        // Return the bytes
-        bytes
-    }
-}
-
-impl Buf for BufList {
-    fn remaining(&self) -> usize {
-        self.bufs.iter().map(Buf::remaining).sum()
-    }
-
-    fn chunk(&self) -> &[u8] {
-        self.bufs.front().map(Buf::chunk).unwrap_or(&[])
-    }
-
-    fn chunks_vectored<'iovs>(&'iovs self, iovs: &mut [IoSlice<'iovs>]) -> usize {
-        // Are there more than zero iovecs to write to?
-        if iovs.is_empty() {
-            return 0;
-        }
-
-        // Loop over the buffers in the replay buffer list, and try to fill as
-        // many iovecs as we can from each buffer.
-        let mut filled = 0;
-        for buf in &self.bufs {
-            filled += buf.chunks_vectored(&mut iovs[filled..]);
-            if filled == iovs.len() {
-                return filled;
-            }
-        }
-
-        filled
-    }
-
-    fn advance(&mut self, mut amt: usize) {
-        while amt > 0 {
-            let rem = self.bufs[0].remaining();
-            // If the amount to advance by is less than the first buffer in
-            // the buffer list, advance that buffer's cursor by `amt`,
-            // and we're done.
-            if rem > amt {
-                self.bufs[0].advance(amt);
-                return;
-            }
-
-            // Otherwise, advance the first buffer to its end, and
-            // continue.
-            self.bufs[0].advance(rem);
-            amt -= rem;
-
-            self.bufs.pop_front();
-        }
-    }
-
-    fn copy_to_bytes(&mut self, len: usize) -> Bytes {
-        // If the length of the requested `Bytes` is <= the length of the front
-        // buffer, we can just use its `copy_to_bytes` implementation (which is
-        // just a reference count bump).
-        match self.bufs.front_mut() {
-            Some(first) if len <= first.remaining() => {
-                let buf = first.copy_to_bytes(len);
-                // If we consumed the first buffer, also advance our "cursor" by
-                // popping it.
-                if first.remaining() == 0 {
-                    self.bufs.pop_front();
-                }
-
-                buf
-            }
-            _ => {
-                assert!(len <= self.remaining(), "`len` greater than remaining");
-                let mut buf = BytesMut::with_capacity(len);
-                buf.put(self.take(len));
-                buf.freeze()
-            }
         }
     }
 }
