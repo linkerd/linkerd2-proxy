@@ -327,6 +327,7 @@ fn empty_body_is_always_eos() {
 async fn eos_only_when_fully_replayed() {
     // Test that each clone of a body is not EOS until the data has been
     // fully replayed.
+    let _trace = linkerd_tracing::test::with_default_filter("linkerd_http_retry=trace");
     let initial = ReplayBody::try_new(TestBody::one_data_frame(), 64 * 1024)
         .expect("body must not be too large");
     let replay = initial.clone();
@@ -344,6 +345,8 @@ async fn eos_only_when_fully_replayed() {
         .expect("yields a frame")
         .into_data()
         .expect("yields a data frame");
+    // TODO(kate): the initial body doesn't report ending until it has (not) yielded trailers.
+    assert!(initial.frame().await.is_none());
     assert!(initial.is_end_stream());
     assert!(!replay.is_end_stream());
     drop(initial);
@@ -388,6 +391,7 @@ async fn eos_only_when_fully_replayed() {
 async fn eos_only_when_fully_replayed_with_trailers() {
     // Test that each clone of a body is not EOS until the data has been
     // fully replayed.
+    let _trace = linkerd_tracing::test::with_default_filter("linkerd_http_retry=trace");
     let initial = ReplayBody::try_new(TestBody::one_data_frame().with_trailers(), 64 * 1024)
         .expect("body must not be too large");
     let replay = initial.clone();
@@ -561,6 +565,7 @@ async fn caps_across_replays() {
 
 #[test]
 fn body_too_big() {
+    let _trace = linkerd_tracing::test::with_default_filter("linkerd_http_retry=trace");
     let max_size = 8;
     let mk_body = |sz: usize| -> BoxBody {
         let s = (0..sz).map(|_| "x").collect::<String>();
@@ -597,6 +602,7 @@ fn body_too_big() {
 #[allow(clippy::redundant_clone)]
 #[test]
 fn size_hint_is_correct_for_empty_body() {
+    let _trace = linkerd_tracing::test::with_default_filter("linkerd_http_retry=trace");
     let initial =
         ReplayBody::try_new(BoxBody::empty(), 64 * 1024).expect("empty body can't be too large");
     let size = initial.size_hint();
@@ -617,6 +623,7 @@ async fn size_hint_is_correct_across_replays() {
     debug_assert!(SIZE as usize <= CAPACITY);
 
     // Create the initial body, and a replay.
+    let _trace = linkerd_tracing::test::with_default_filter("linkerd_http_retry=trace");
     let mut initial = ReplayBody::try_new(BoxBody::from_static(BODY), CAPACITY)
         .expect("empty body can't be too large");
     let mut replay = initial.clone();
@@ -629,6 +636,12 @@ async fn size_hint_is_correct_across_replays() {
 
     // Read the body, check the size hint again.
     assert_eq!(chunk(&mut initial).await.as_deref(), Some(BODY));
+    let initial = {
+        // TODO(kate): the initial body doesn't report ending until it has (not) yielded trailers.
+        let mut body = crate::compat::ForwardCompatibleBody::new(initial);
+        assert!(body.frame().await.is_none());
+        body.into_inner()
+    };
     debug_assert!(initial.is_end_stream());
     // TODO(kate): this currently misreports the *remaining* size of the body.
     // let size = initial.size_hint();

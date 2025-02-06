@@ -1,6 +1,11 @@
 //! Compatibility utilities for upgrading to http-body 1.0.
 
-use http_body::Body;
+use http_body::{Body, SizeHint};
+use std::{
+    future::Future,
+    pin::Pin,
+    task::{Context, Poll},
+};
 
 pub(crate) use self::frame::Frame;
 
@@ -42,9 +47,24 @@ impl<B: Body> ForwardCompatibleBody<B> {
     }
 
     /// Returns `true` when the end of stream has been reached.
-    #[cfg(test)]
     pub(crate) fn is_end_stream(&self) -> bool {
         self.inner.is_end_stream()
+    }
+
+    /// Returns the bounds on the remaining length of the stream.
+    pub(crate) fn size_hint(&self) -> SizeHint {
+        self.inner.size_hint()
+    }
+}
+
+impl<B: Body + Unpin> ForwardCompatibleBody<B> {
+    pub(crate) fn poll_frame(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Frame<B::Data>, B::Error>>> {
+        let mut fut = self.get_mut().frame();
+        let pinned = Pin::new(&mut fut);
+        pinned.poll(cx)
     }
 }
 
