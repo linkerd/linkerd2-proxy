@@ -130,11 +130,11 @@ where
                 }
             };
 
-        let mk_policy = |policy::RoutePolicy::<policy::tls::Filter, ()> {
+        let mk_policy = |policy::tls::Policy {
                              meta,
                              distribution,
                              filters,
-                             ..
+                             params,
                          }| {
             let route_ref = RouteRef(meta);
             let parent_ref = parent_ref.clone();
@@ -147,6 +147,7 @@ where
                 route_ref,
                 filters,
                 distribution,
+                params,
             }
         };
 

@@ -59,12 +59,10 @@ pub enum Error {
 // === impl Route ===
 
 impl Route {
-    pub fn new(parent: ParentRef, route: RouteRef, uri: &http::uri::Uri) -> Self {
+    pub fn new(parent: ParentRef, route: RouteRef, uri: Option<&http::uri::Uri>) -> Self {
         let hostname = uri
-            .host()
-            .map(str::as_bytes)
-            .map(dns::Name::try_from_ascii)
-            .and_then(Result::ok);
+            .and_then(http::uri::Uri::host)
+            .and_then(|h| dns::Name::try_from_ascii(h.as_bytes()).ok());
 
         Self {
             parent,

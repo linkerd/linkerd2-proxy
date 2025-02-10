@@ -34,13 +34,14 @@ pub(crate) struct Route<T> {
     pub(super) route_ref: RouteRef,
     pub(super) filters: Arc<[policy::tls::Filter]>,
     pub(super) distribution: BackendDistribution<T>,
+    pub(super) params: policy::tls::RouteParams,
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct RouteLabels {
     parent: ParentRef,
     route: RouteRef,
-    hostname: ServerName,
+    hostname: Option<ServerName>,
 }
 
 pub(crate) type BackendDistribution<T> = distribute::Distribution<Backend<T>>;
@@ -145,7 +146,11 @@ where
         RouteLabels {
             route: self.params.route_ref.clone(),
             parent: self.params.parent_ref.clone(),
-            hostname: self.params.parent.param(),
+            hostname: self
+                .params
+                .params
+                .export_hostname_labels
+                .then(|| self.params.parent.param()),
         }
     }
 }
@@ -162,7 +167,7 @@ impl prom::EncodeLabelSetMut for RouteLabels {
         } = self;
         parent.encode_label_set(enc)?;
         route.encode_label_set(enc)?;
-        ("hostname", hostname.as_ref().as_str()).encode(enc.encode_label())?;
+        ("hostname", hostname.as_deref().map(|n| n.as_str())).encode(enc.encode_label())?;
         Ok(())
     }
 }

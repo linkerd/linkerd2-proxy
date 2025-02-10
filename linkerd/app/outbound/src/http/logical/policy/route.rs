@@ -174,7 +174,7 @@ impl<B, T> svc::ExtractParam<metrics::labels::Route, http::Request<B>> for Http<
         metrics::labels::Route::new(
             self.params.parent_ref.clone(),
             self.params.route_ref.clone(),
-            req.uri(),
+            self.params.params.export_hostname_labels.then(|| req.uri()),
         )
     }
 }
@@ -187,10 +187,9 @@ impl<T> metrics::MkStreamLabel for Http<T> {
     fn mk_stream_labeler<B>(&self, req: &::http::Request<B>) -> Option<Self::StreamLabel> {
         let parent = self.params.parent_ref.clone();
         let route = self.params.route_ref.clone();
+        let uri = self.params.params.export_hostname_labels.then(|| req.uri());
         Some(metrics::LabelHttpRsp::from(metrics::labels::Route::new(
-            parent,
-            route,
-            req.uri(),
+            parent, route, uri,
         )))
     }
 }
@@ -240,7 +239,7 @@ impl<B, T> svc::ExtractParam<metrics::labels::Route, http::Request<B>> for Grpc<
         metrics::labels::Route::new(
             self.params.parent_ref.clone(),
             self.params.route_ref.clone(),
-            req.uri(),
+            self.params.params.export_hostname_labels.then(|| req.uri()),
         )
     }
 }
@@ -253,10 +252,9 @@ impl<T> metrics::MkStreamLabel for Grpc<T> {
     fn mk_stream_labeler<B>(&self, req: &::http::Request<B>) -> Option<Self::StreamLabel> {
         let parent = self.params.parent_ref.clone();
         let route = self.params.route_ref.clone();
+        let uri = self.params.params.export_hostname_labels.then(|| req.uri());
         Some(metrics::LabelGrpcRsp::from(metrics::labels::Route::new(
-            parent,
-            route,
-            req.uri(),
+            parent, route, uri,
         )))
     }
 }

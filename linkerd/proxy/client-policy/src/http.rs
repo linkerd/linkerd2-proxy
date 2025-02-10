@@ -14,6 +14,7 @@ pub struct RouteParams {
     pub timeouts: Timeouts,
     pub retry: Option<Retry>,
     pub allow_l5d_request_headers: bool,
+    pub export_hostname_labels: bool,
 }
 
 // TODO: keepalive settings, etc.
@@ -299,7 +300,13 @@ pub mod proto {
             .ok_or(InvalidHttpRoute::Missing("distribution"))?
             .try_into()?;
 
-        let mut params = RouteParams::try_from_proto(timeouts, retry, allow_l5d_request_headers)?;
+        let export_hostname_labels = false;
+        let mut params = RouteParams::try_from_proto(
+            timeouts,
+            retry,
+            allow_l5d_request_headers,
+            export_hostname_labels,
+        )?;
         let legacy = request_timeout.map(TryInto::try_into).transpose()?;
         params.timeouts.request = params.timeouts.request.or(legacy);
 
@@ -319,6 +326,7 @@ pub mod proto {
             timeouts: Option<linkerd2_proxy_api::http_route::Timeouts>,
             retry: Option<http_route::Retry>,
             allow_l5d_request_headers: bool,
+            export_hostname_labels: bool,
         ) -> Result<Self, InvalidHttpRoute> {
             Ok(Self {
                 retry: retry.map(Retry::try_from).transpose()?,
@@ -327,6 +335,7 @@ pub mod proto {
                     .transpose()?
                     .unwrap_or_default(),
                 allow_l5d_request_headers,
+                export_hostname_labels,
             })
         }
     }
