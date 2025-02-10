@@ -88,6 +88,7 @@ where
     Self: svc::Param<classify::Request>,
     Self: svc::Param<extensions::Params>,
     Self: metrics::MkStreamLabel,
+    Self: svc::ExtractParam<metrics::labels::Route, http::Request<http::BoxBody>>,
     MatchedBackend<T, M, F>: filters::Apply,
     MatchedBackend<T, M, F>: metrics::MkStreamLabel,
 {
@@ -123,21 +124,13 @@ where
                 // leaking tasks onto the runtime.
                 .push_on_service(svc::LoadShed::layer())
                 .push(filters::NewApplyFilters::<Self, _, _>::layer())
-                .push({
-                    let mk = Self::label_extractor;
-                    let metrics = metrics.retry.clone();
-                    retry::NewHttpRetry::layer_via_mk(mk, metrics)
-                })
+                .push(retry::NewHttpRetry::<Self, _>::layer(metrics.retry.clone()))
                 .check_new::<Self>()
                 .check_new_service::<Self, http::Request<http::BoxBody>>()
                 // Set request extensions based on the route configuration
                 // AND/OR headers
                 .push(extensions::NewSetExtensions::layer())
-                .push(metrics::layer(
-                    &metrics.requests,
-                    Self::label_extractor,
-                    &metrics.body_data,
-                ))
+                .push(metrics::layer(&metrics.requests, &metrics.body_data))
                 .check_new::<Self>()
                 .check_new_service::<Self, http::Request<http::BoxBody>>()
                 // Configure a classifier to use in the endpoint stack.
@@ -173,6 +166,16 @@ impl<T> filters::Apply for Http<T> {
     #[inline]
     fn apply_response<B>(&self, rsp: &mut ::http::Response<B>) -> Result<()> {
         filters::apply_http_response(&self.params.filters, rsp)
+    }
+}
+
+impl<B, T> svc::ExtractParam<metrics::labels::Route, http::Request<B>> for Http<T> {
+    fn extract_param(&self, req: &http::Request<B>) -> metrics::labels::Route {
+        metrics::labels::Route::new(
+            self.params.parent_ref.clone(),
+            self.params.route_ref.clone(),
+            req.uri(),
+        )
     }
 }
 
@@ -229,6 +232,16 @@ impl<T> filters::Apply for Grpc<T> {
     #[inline]
     fn apply_response<B>(&self, rsp: &mut ::http::Response<B>) -> Result<()> {
         filters::apply_grpc_response(&self.params.filters, rsp)
+    }
+}
+
+impl<B, T> svc::ExtractParam<metrics::labels::Route, http::Request<B>> for Grpc<T> {
+    fn extract_param(&self, req: &http::Request<B>) -> metrics::labels::Route {
+        metrics::labels::Route::new(
+            self.params.parent_ref.clone(),
+            self.params.route_ref.clone(),
+            req.uri(),
+        )
     }
 }
 

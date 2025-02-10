@@ -85,6 +85,14 @@ struct Metrics {
 
 // === impl NewHttpRetry ===
 
+impl<P, L: Clone, ReqX, N> NewHttpRetry<P, L, (), ReqX, N> {
+    pub fn layer(
+        metrics: MetricFamilies<L>,
+    ) -> impl tower::layer::Layer<N, Service = Self> + Clone {
+        Self::layer_via_mk((), metrics)
+    }
+}
+
 impl<P, L: Clone, X: Clone, ReqX, N> NewHttpRetry<P, L, X, ReqX, N> {
     pub fn layer_via_mk(
         extract: X,

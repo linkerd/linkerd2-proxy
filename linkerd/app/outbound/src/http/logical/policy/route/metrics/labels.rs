@@ -1,7 +1,6 @@
 //! Prometheus label types.
 use linkerd_app_core::{
-    dns, errors, metrics::prom::EncodeLabelSetMut, proxy::http, svc::ExtractParam,
-    Error as BoxError,
+    dns, errors, metrics::prom::EncodeLabelSetMut, proxy::http, Error as BoxError,
 };
 use prometheus_client::encoding::*;
 
@@ -39,9 +38,6 @@ pub struct GrpcRsp {
     pub status: Option<tonic::Code>,
     pub error: Option<Error>,
 }
-
-#[derive(Clone, Debug)]
-pub struct RouteLabelExtract(pub ParentRef, pub RouteRef);
 
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 pub enum Error {
@@ -212,37 +208,6 @@ impl EncodeLabelSetMut for GrpcRsp {
 impl EncodeLabelSet for GrpcRsp {
     fn encode(&self, mut enc: LabelSetEncoder<'_>) -> std::fmt::Result {
         self.encode_label_set(&mut enc)
-    }
-}
-
-// === impl MatchedRoute ===
-
-impl<T, M, F, P> super::super::MatchedRoute<T, M, F, P> {
-    /// Returns a [`RouteLabelExtract`].
-    ///
-    /// The extractor returned by this function provides a [`ExtractParam<P, T>`] implementation
-    /// that can be used to acquire the route-level labels corresponding to a given outbound
-    /// request.
-    pub(crate) fn label_extractor(&self) -> RouteLabelExtract {
-        use super::super::Route;
-        let Route {
-            parent_ref,
-            route_ref,
-            ..
-        } = &self.params;
-
-        RouteLabelExtract(parent_ref.clone(), route_ref.clone())
-    }
-}
-
-// === impl RouteLabelExtract ===
-
-impl<B> ExtractParam<Route, http::Request<B>> for RouteLabelExtract {
-    fn extract_param(&self, t: &http::Request<B>) -> Route {
-        let Self(parent, route) = self;
-        let uri = t.uri();
-
-        Route::new(parent.clone(), route.clone(), uri)
     }
 }
 

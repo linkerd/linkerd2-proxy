@@ -1,6 +1,7 @@
 use super::{backend::metrics as backend, retry};
 use linkerd_app_core::{
     metrics::prom::{self, EncodeLabelSetMut},
+    proxy::http,
     svc,
 };
 use linkerd_http_prom::{
@@ -60,25 +61,24 @@ pub type NewRecordDuration<T, M, N> =
 #[derive(Clone, Debug)]
 pub struct ExtractRecordDurationParams<M>(pub M);
 
-pub fn layer<T, N, X>(
+pub fn layer<T, N>(
     metrics: &RequestMetrics<T::StreamLabel>,
-    mk: X,
     body_data: &RequestBodyFamilies<labels::Route>,
 ) -> impl svc::Layer<
     N,
     Service = NewRecordBodyData<
         NewRecordDuration<T, RequestMetrics<T::StreamLabel>, N>,
-        X,
-        labels::RouteLabelExtract,
+        (),
+        T,
         labels::Route,
     >,
 >
 where
     T: Clone + MkStreamLabel,
-    X: Clone,
+    T: svc::ExtractParam<labels::Route, http::Request<http::BoxBody>>,
 {
     let record = NewRecordDuration::layer_via(ExtractRecordDurationParams(metrics.clone()));
-    let body_data = NewRecordBodyData::new(mk, body_data.clone());
+    let body_data = NewRecordBodyData::new((), body_data.clone());
 
     svc::layer::mk(move |inner| {
         use svc::Layer;
