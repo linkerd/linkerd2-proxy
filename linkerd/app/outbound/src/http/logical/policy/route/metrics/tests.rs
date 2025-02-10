@@ -1,5 +1,3 @@
-use crate::http::policy::route::MatchedRoute;
-
 use super::{
     super::{Grpc, Http, Route},
     labels,
@@ -593,10 +591,8 @@ pub fn mock_http_route_metrics(
         &req,
     )
     .expect("find default route");
-
-    let extract = MatchedRoute::label_extractor;
     let (tx, handle) = tower_test::mock::pair::<http::Request<BoxBody>, http::Response<BoxBody>>();
-    let svc = super::layer(metrics, extract, body_data)
+    let svc = super::layer(metrics, body_data)
         .layer(move |_t: Http<()>| tx.clone())
         .new_service(Http {
             r#match,
@@ -642,9 +638,8 @@ pub fn mock_grpc_route_metrics(
     )
     .expect("find default route");
 
-    let extract = MatchedRoute::label_extractor;
     let (tx, handle) = tower_test::mock::pair::<http::Request<BoxBody>, http::Response<BoxBody>>();
-    let svc = super::layer(metrics, extract, body_data)
+    let svc = super::layer(metrics, body_data)
         .layer(move |_t: Grpc<()>| tx.clone())
         .new_service(Grpc {
             r#match,

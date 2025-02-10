@@ -65,7 +65,8 @@ where
     route::MatchedRoute<T, M::Summary, F, P>: route::filters::Apply
         + svc::Param<classify::Request>
         + svc::Param<route::extensions::Params>
-        + route::metrics::MkStreamLabel,
+        + route::metrics::MkStreamLabel
+        + svc::ExtractParam<route::metrics::labels::Route, http::Request<http::BoxBody>>,
     route::MatchedBackend<T, M::Summary, F>: route::filters::Apply + route::metrics::MkStreamLabel,
 {
     /// Builds a stack that applies routes to distribute requests over a cached

@@ -1,7 +1,4 @@
-use super::{
-    extensions,
-    metrics::labels::{Route as RouteLabels, RouteLabelExtract},
-};
+use super::{extensions, metrics::labels::Route as RouteLabels};
 use futures::future::{Either, Ready};
 use linkerd_app_core::{
     cause_ref, classify,
@@ -15,8 +12,7 @@ use linkerd_http_retry::{self as retry, peek_trailers::PeekTrailersBody};
 use linkerd_proxy_client_policy as policy;
 use tokio::time;
 
-pub type NewHttpRetry<F, N> =
-    retry::NewHttpRetry<RetryPolicy, RouteLabels, F, RouteLabelExtract, N>;
+pub type NewHttpRetry<X, N> = retry::NewHttpRetry<RetryPolicy, RouteLabels, (), X, N>;
 
 #[derive(Clone, Debug)]
 pub struct RetryPolicy {
