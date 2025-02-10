@@ -162,7 +162,7 @@ impl prom::EncodeLabelSetMut for RouteLabels {
         } = self;
         parent.encode_label_set(enc)?;
         route.encode_label_set(enc)?;
-        ("hostname", hostname.to_string()).encode(enc.encode_label())?;
+        ("hostname", hostname.as_ref().as_str()).encode(enc.encode_label())?;
         Ok(())
     }
 }
