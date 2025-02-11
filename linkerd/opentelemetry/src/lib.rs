@@ -9,16 +9,20 @@ use linkerd_error::Error;
 use linkerd_trace_context as trace_context;
 use metrics::Registry;
 pub use opentelemetry as otel;
-use opentelemetry::trace::{
-    SpanContext, SpanId, SpanKind, Status, TraceFlags, TraceId, TraceState,
+use opentelemetry::{
+    trace::{SpanContext, SpanId, SpanKind, Status, TraceFlags, TraceId, TraceState},
+    KeyValue,
 };
-use opentelemetry::KeyValue;
 pub use opentelemetry_proto as proto;
-use opentelemetry_proto::proto::collector::trace::v1::trace_service_client::TraceServiceClient;
-use opentelemetry_proto::proto::collector::trace::v1::ExportTraceServiceRequest;
-use opentelemetry_proto::proto::trace::v1::ResourceSpans;
-use opentelemetry_proto::transform::common::ResourceAttributesWithSchema;
-use opentelemetry_proto::transform::trace::group_spans_by_resource_and_scope;
+use opentelemetry_proto::{
+    proto::{
+        collector::trace::v1::{
+            trace_service_client::TraceServiceClient, ExportTraceServiceRequest,
+        },
+        trace::v1::ResourceSpans,
+    },
+    transform::{common::ResourceAttributesWithSchema, trace::group_spans_by_resource_and_scope},
+};
 pub use opentelemetry_sdk as sdk;
 pub use opentelemetry_sdk::export::trace::SpanData;
 use opentelemetry_sdk::trace::SpanLinks;
@@ -234,6 +238,9 @@ fn convert_span(span: ExportSpan) -> Result<SpanData, Error> {
     let mut attributes = Vec::<KeyValue>::new();
     for (k, v) in labels.iter() {
         attributes.push(KeyValue::new(k.clone(), v.clone()));
+    }
+    for (k, v) in span.labels.iter() {
+        attributes.push(KeyValue::new(*k, v.clone()));
     }
     let is_remote = kind != trace_context::export::SpanKind::Client;
     Ok(SpanData {
