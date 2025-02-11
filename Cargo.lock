@@ -2925,9 +2925,9 @@ dependencies = [
 
 [[package]]
 name = "oid-registry"
-version = "0.8.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "264c56d1492c13e769662197fb6b94e0a52abe52d27efac374615799a4bf453d"
+checksum = "12f40cff3dde1b6087cc5d5f5d4d65712f34016a03ed60e9c08dcc392736b5b7"
 dependencies = [
  "asn1-rs",
 ]
