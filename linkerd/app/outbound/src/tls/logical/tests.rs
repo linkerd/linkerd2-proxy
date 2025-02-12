@@ -158,7 +158,7 @@ fn sni_route(backend: client_policy::Backend, sni: sni::MatchSni) -> client_poli
         policy: Policy {
             meta: Meta::new_default("test_route"),
             filters: NO_FILTERS.clone(),
-            params: (),
+            params: Default::default(),
             distribution: RouteDistribution::FirstAvailable(Arc::new([RouteBackend {
                 filters: NO_FILTERS.clone(),
                 backend,

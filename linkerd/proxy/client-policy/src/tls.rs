@@ -2,8 +2,13 @@ use linkerd_tls_route as tls;
 pub use linkerd_tls_route::{find, sni, RouteMatch};
 use std::sync::Arc;
 
-pub type Policy = crate::RoutePolicy<Filter, ()>;
+pub type Policy = crate::RoutePolicy<Filter, RouteParams>;
 pub type Route = tls::Route<Policy>;
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+pub struct RouteParams {
+    pub export_hostname_labels: bool,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Tls {
@@ -23,7 +28,7 @@ pub fn default(distribution: crate::RouteDistribution<Filter>) -> Route {
         policy: Policy {
             meta: crate::Meta::new_default("default"),
             filters: Arc::new([]),
-            params: (),
+            params: Default::default(),
             distribution,
         },
     }
@@ -153,7 +158,7 @@ pub(crate) mod proto {
         Ok(Policy {
             meta: meta.clone(),
             filters,
-            params: (),
+            params: Default::default(),
             distribution,
         })
     }

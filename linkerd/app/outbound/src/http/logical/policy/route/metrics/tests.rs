@@ -17,6 +17,7 @@ use linkerd_proxy_client_policy as policy;
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn http_request_statuses() {
+    const EXPORT_HOSTNAME_LABELS: bool = true;
     let _trace = linkerd_tracing::test::trace_init();
 
     let super::HttpRouteMetrics {
@@ -26,12 +27,17 @@ async fn http_request_statuses() {
     } = super::HttpRouteMetrics::default();
     let parent_ref = crate::ParentRef(policy::Meta::new_default("parent"));
     let route_ref = crate::RouteRef(policy::Meta::new_default("route"));
-    let (mut svc, mut handle) =
-        mock_http_route_metrics(&requests, &body_data, &parent_ref, &route_ref);
+    let (mut svc, mut handle) = mock_http_route_metrics(
+        &requests,
+        &body_data,
+        &parent_ref,
+        &route_ref,
+        EXPORT_HOSTNAME_LABELS,
+    );
 
     // Send one request and ensure it's counted.
     let ok = requests.get_statuses(&labels::Rsp(
-        labels::Route::new(parent_ref.clone(), route_ref.clone(), &Uri::default()),
+        labels::Route::new(parent_ref.clone(), route_ref.clone(), None),
         labels::HttpRsp {
             status: Some(http::StatusCode::OK),
             error: None,
@@ -50,7 +56,7 @@ async fn http_request_statuses() {
     // Send another request and ensure it's counted with a different response
     // status.
     let no_content = requests.get_statuses(&labels::Rsp(
-        labels::Route::new(parent_ref.clone(), route_ref.clone(), &Uri::default()),
+        labels::Route::new(parent_ref.clone(), route_ref.clone(), None),
         labels::HttpRsp {
             status: Some(http::StatusCode::NO_CONTENT),
             error: None,
@@ -74,7 +80,7 @@ async fn http_request_statuses() {
 
     // Emit a response with an error and ensure it's counted.
     let unknown = requests.get_statuses(&labels::Rsp(
-        labels::Route::new(parent_ref.clone(), route_ref.clone(), &Uri::default()),
+        labels::Route::new(parent_ref.clone(), route_ref.clone(), None),
         labels::HttpRsp {
             status: None,
             error: Some(labels::Error::Unknown),
@@ -88,7 +94,7 @@ async fn http_request_statuses() {
     // Emit a successful response with a body that fails and ensure that both
     // the status and error are recorded.
     let mixed = requests.get_statuses(&labels::Rsp(
-        labels::Route::new(parent_ref, route_ref, &Uri::default()),
+        labels::Route::new(parent_ref, route_ref, None),
         labels::HttpRsp {
             status: Some(http::StatusCode::OK),
             error: Some(labels::Error::Unknown),
@@ -112,6 +118,7 @@ async fn http_request_statuses() {
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn http_request_hostnames() {
+    const EXPORT_HOSTNAME_LABELS: bool = true;
     const HOST_1: &str = "great.website";
     const URI_1_1: &str = "https://great.website/path/to/index.html#fragment";
     const URI_1_2: &str = "https://great.website/another/index.html";
@@ -128,8 +135,13 @@ async fn http_request_hostnames() {
     } = super::HttpRouteMetrics::default();
     let parent_ref = crate::ParentRef(policy::Meta::new_default("parent"));
     let route_ref = crate::RouteRef(policy::Meta::new_default("route"));
-    let (mut svc, mut handle) =
-        mock_http_route_metrics(&requests, &body_data, &parent_ref, &route_ref);
+    let (mut svc, mut handle) = mock_http_route_metrics(
+        &requests,
+        &body_data,
+        &parent_ref,
+        &route_ref,
+        EXPORT_HOSTNAME_LABELS,
+    );
 
     let get_counter = |host: Option<&'static str>, status: Option<http::StatusCode>| {
         requests.get_statuses(&labels::Rsp(
@@ -241,8 +253,13 @@ async fn http_request_hostnames() {
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
-async fn http_route_request_body_frames() {
-    use linkerd_http_prom::body_data::request::BodyDataMetrics;
+async fn http_request_hostnames_disabled() {
+    const EXPORT_HOSTNAME_LABELS: bool = false;
+    const HOST_1: &str = "great.website";
+    const URI_1_1: &str = "https://great.website/path/to/index.html#fragment";
+    const HOST_2: &str = "different.website";
+    const URI_2: &str = "https://different.website/index.html";
+    const URI_3: &str = "https://[3fff::]/index.html";
 
     let _trace = linkerd_tracing::test::trace_init();
 
@@ -253,14 +270,127 @@ async fn http_route_request_body_frames() {
     } = super::HttpRouteMetrics::default();
     let parent_ref = crate::ParentRef(policy::Meta::new_default("parent"));
     let route_ref = crate::RouteRef(policy::Meta::new_default("route"));
-    let (mut svc, mut handle) =
-        mock_http_route_metrics(&requests, &body_data, &parent_ref, &route_ref);
+    let (mut svc, mut handle) = mock_http_route_metrics(
+        &requests,
+        &body_data,
+        &parent_ref,
+        &route_ref,
+        EXPORT_HOSTNAME_LABELS,
+    );
+
+    let get_counter = |host: Option<&'static str>, status: Option<http::StatusCode>| {
+        requests.get_statuses(&labels::Rsp(
+            labels::Route::new_with_name(
+                parent_ref.clone(),
+                route_ref.clone(),
+                host.map(str::parse::<dns::Name>).map(Result::unwrap),
+            ),
+            labels::HttpRsp {
+                status,
+                error: None,
+            },
+        ))
+    };
+
+    let host1_ok = get_counter(Some(HOST_1), Some(http::StatusCode::OK));
+    let host2_ok = get_counter(Some(HOST_2), Some(http::StatusCode::OK));
+    let unlabeled_ok = get_counter(None, Some(http::StatusCode::OK));
+
+    // Send one request and ensure it's counted.
+    send_assert_incremented(
+        &unlabeled_ok,
+        &mut handle,
+        &mut svc,
+        http::Request::builder()
+            .uri(URI_1_1)
+            .body(BoxBody::default())
+            .unwrap(),
+        |tx| {
+            tx.send_response(
+                http::Response::builder()
+                    .status(200)
+                    .body(BoxBody::default())
+                    .unwrap(),
+            )
+        },
+    )
+    .await;
+    assert_eq!(host1_ok.get(), 0);
+    assert_eq!(host2_ok.get(), 0);
+    assert_eq!(unlabeled_ok.get(), 1);
+
+    // Send a request to a different host.
+    send_assert_incremented(
+        &unlabeled_ok,
+        &mut handle,
+        &mut svc,
+        http::Request::builder()
+            .uri(URI_2)
+            .body(BoxBody::default())
+            .unwrap(),
+        |tx| {
+            tx.send_response(
+                http::Response::builder()
+                    .status(200)
+                    .body(BoxBody::default())
+                    .unwrap(),
+            )
+        },
+    )
+    .await;
+    assert_eq!(host1_ok.get(), 0);
+    assert_eq!(host2_ok.get(), 0);
+    assert_eq!(unlabeled_ok.get(), 2);
+
+    // Send a request to a url with an ip address host component, show that it is not labeled.
+    send_assert_incremented(
+        &unlabeled_ok,
+        &mut handle,
+        &mut svc,
+        http::Request::builder()
+            .uri(URI_3)
+            .body(BoxBody::default())
+            .unwrap(),
+        |tx| {
+            tx.send_response(
+                http::Response::builder()
+                    .status(200)
+                    .body(BoxBody::default())
+                    .unwrap(),
+            )
+        },
+    )
+    .await;
+    assert_eq!(unlabeled_ok.get(), 3);
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn http_route_request_body_frames() {
+    use linkerd_http_prom::body_data::request::BodyDataMetrics;
+
+    const EXPORT_HOSTNAME_LABELS: bool = true;
+    let _trace = linkerd_tracing::test::trace_init();
+
+    let super::HttpRouteMetrics {
+        requests,
+        body_data,
+        ..
+    } = super::HttpRouteMetrics::default();
+    let parent_ref = crate::ParentRef(policy::Meta::new_default("parent"));
+    let route_ref = crate::RouteRef(policy::Meta::new_default("route"));
+    let (mut svc, mut handle) = mock_http_route_metrics(
+        &requests,
+        &body_data,
+        &parent_ref,
+        &route_ref,
+        EXPORT_HOSTNAME_LABELS,
+    );
     handle.allow(1);
 
     let labels = labels::Route::new(
         parent_ref,
         route_ref,
-        &http::uri::Uri::from_static("http://frame.count.test/"),
+        Some(&Uri::from_static("http://frame.count.test/")),
     );
     let BodyDataMetrics {
         // TODO(kate): currently, histograms do not expose their observation count or sum. so,
@@ -389,6 +519,7 @@ async fn http_route_request_body_frames() {
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn grpc_request_statuses_ok() {
+    const EXPORT_HOSTNAME_LABELS: bool = true;
     let _trace = linkerd_tracing::test::trace_init();
 
     let super::GrpcRouteMetrics {
@@ -398,15 +529,21 @@ async fn grpc_request_statuses_ok() {
     } = super::GrpcRouteMetrics::default();
     let parent_ref = crate::ParentRef(policy::Meta::new_default("parent"));
     let route_ref = crate::RouteRef(policy::Meta::new_default("route"));
-    let (mut svc, mut handle) =
-        mock_grpc_route_metrics(&requests, &body_data, &parent_ref, &route_ref);
+
+    let (mut svc, mut handle) = mock_grpc_route_metrics(
+        &requests,
+        &body_data,
+        &parent_ref,
+        &route_ref,
+        EXPORT_HOSTNAME_LABELS,
+    );
 
     // Send one request and ensure it's counted.
     let ok = requests.get_statuses(&labels::Rsp(
         labels::Route::new(
             parent_ref.clone(),
             route_ref.clone(),
-            &Uri::from_static(MOCK_GRPC_REQ_URI),
+            Some(&Uri::from_static(MOCK_GRPC_REQ_URI)),
         ),
         labels::GrpcRsp {
             status: Some(tonic::Code::Ok),
@@ -435,6 +572,7 @@ async fn grpc_request_statuses_ok() {
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn grpc_request_statuses_not_found() {
+    const EXPORT_HOSTNAME_LABELS: bool = true;
     let _trace = linkerd_tracing::test::trace_init();
 
     let super::GrpcRouteMetrics {
@@ -444,8 +582,14 @@ async fn grpc_request_statuses_not_found() {
     } = super::GrpcRouteMetrics::default();
     let parent_ref = crate::ParentRef(policy::Meta::new_default("parent"));
     let route_ref = crate::RouteRef(policy::Meta::new_default("route"));
-    let (mut svc, mut handle) =
-        mock_grpc_route_metrics(&requests, &body_data, &parent_ref, &route_ref);
+
+    let (mut svc, mut handle) = mock_grpc_route_metrics(
+        &requests,
+        &body_data,
+        &parent_ref,
+        &route_ref,
+        EXPORT_HOSTNAME_LABELS,
+    );
 
     // Send another request and ensure it's counted with a different response
     // status.
@@ -453,7 +597,7 @@ async fn grpc_request_statuses_not_found() {
         labels::Route::new(
             parent_ref.clone(),
             route_ref.clone(),
-            &Uri::from_static(MOCK_GRPC_REQ_URI),
+            Some(&Uri::from_static(MOCK_GRPC_REQ_URI)),
         ),
         labels::GrpcRsp {
             status: Some(tonic::Code::NotFound),
@@ -482,6 +626,7 @@ async fn grpc_request_statuses_not_found() {
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn grpc_request_statuses_error_response() {
+    const EXPORT_HOSTNAME_LABELS: bool = true;
     let _trace = linkerd_tracing::test::trace_init();
 
     let super::GrpcRouteMetrics {
@@ -491,14 +636,19 @@ async fn grpc_request_statuses_error_response() {
     } = super::GrpcRouteMetrics::default();
     let parent_ref = crate::ParentRef(policy::Meta::new_default("parent"));
     let route_ref = crate::RouteRef(policy::Meta::new_default("route"));
-    let (mut svc, mut handle) =
-        mock_grpc_route_metrics(&requests, &body_data, &parent_ref, &route_ref);
+    let (mut svc, mut handle) = mock_grpc_route_metrics(
+        &requests,
+        &body_data,
+        &parent_ref,
+        &route_ref,
+        EXPORT_HOSTNAME_LABELS,
+    );
 
     let unknown = requests.get_statuses(&labels::Rsp(
         labels::Route::new(
             parent_ref.clone(),
             route_ref.clone(),
-            &Uri::from_static(MOCK_GRPC_REQ_URI),
+            Some(&Uri::from_static(MOCK_GRPC_REQ_URI)),
         ),
         labels::GrpcRsp {
             status: None,
@@ -521,6 +671,7 @@ async fn grpc_request_statuses_error_response() {
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn grpc_request_statuses_error_body() {
+    const EXPORT_HOSTNAME_LABELS: bool = true;
     let _trace = linkerd_tracing::test::trace_init();
 
     let super::GrpcRouteMetrics {
@@ -530,14 +681,19 @@ async fn grpc_request_statuses_error_body() {
     } = super::GrpcRouteMetrics::default();
     let parent_ref = crate::ParentRef(policy::Meta::new_default("parent"));
     let route_ref = crate::RouteRef(policy::Meta::new_default("route"));
-    let (mut svc, mut handle) =
-        mock_grpc_route_metrics(&requests, &body_data, &parent_ref, &route_ref);
+    let (mut svc, mut handle) = mock_grpc_route_metrics(
+        &requests,
+        &body_data,
+        &parent_ref,
+        &route_ref,
+        EXPORT_HOSTNAME_LABELS,
+    );
 
     let unknown = requests.get_statuses(&labels::Rsp(
         labels::Route::new(
             parent_ref.clone(),
             route_ref.clone(),
-            &Uri::from_static(MOCK_GRPC_REQ_URI),
+            Some(&Uri::from_static(MOCK_GRPC_REQ_URI)),
         ),
         labels::GrpcRsp {
             status: None,
@@ -573,6 +729,7 @@ pub fn mock_http_route_metrics(
     body_data: &RequestBodyFamilies<labels::Route>,
     parent_ref: &crate::ParentRef,
     route_ref: &crate::RouteRef,
+    export_hostname_labels: bool,
 ) -> (svc::BoxHttp, Handle) {
     let req = http::Request::builder().body(()).unwrap();
     let (r#match, _) = policy::route::find(
@@ -584,13 +741,17 @@ pub fn mock_http_route_metrics(
                     meta: route_ref.0.clone(),
                     filters: [].into(),
                     distribution: policy::RouteDistribution::Empty,
-                    params: policy::http::RouteParams::default(),
+                    params: policy::http::RouteParams {
+                        export_hostname_labels,
+                        ..Default::default()
+                    },
                 },
             }],
         }],
         &req,
     )
     .expect("find default route");
+
     let (tx, handle) = tower_test::mock::pair::<http::Request<BoxBody>, http::Response<BoxBody>>();
     let svc = super::layer(metrics, body_data)
         .layer(move |_t: Http<()>| tx.clone())
@@ -603,7 +764,10 @@ pub fn mock_http_route_metrics(
                 route_ref: route_ref.clone(),
                 filters: [].into(),
                 distribution: Default::default(),
-                params: policy::http::RouteParams::default(),
+                params: policy::http::RouteParams {
+                    export_hostname_labels,
+                    ..Default::default()
+                },
             },
         });
 
@@ -615,6 +779,7 @@ pub fn mock_grpc_route_metrics(
     body_data: &RequestBodyFamilies<labels::Route>,
     parent_ref: &crate::ParentRef,
     route_ref: &crate::RouteRef,
+    export_hostname_labels: bool,
 ) -> (svc::BoxHttp, Handle) {
     let req = http::Request::builder()
         .method("POST")
@@ -630,7 +795,10 @@ pub fn mock_grpc_route_metrics(
                     meta: route_ref.0.clone(),
                     filters: [].into(),
                     distribution: policy::RouteDistribution::Empty,
-                    params: policy::grpc::RouteParams::default(),
+                    params: policy::grpc::RouteParams {
+                        export_hostname_labels,
+                        ..Default::default()
+                    },
                 },
             }],
         }],
@@ -650,7 +818,10 @@ pub fn mock_grpc_route_metrics(
                 route_ref: route_ref.clone(),
                 filters: [].into(),
                 distribution: Default::default(),
-                params: policy::grpc::RouteParams::default(),
+                params: policy::grpc::RouteParams {
+                    export_hostname_labels,
+                    ..Default::default()
+                },
             },
         });
 
