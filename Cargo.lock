@@ -1815,6 +1815,7 @@ dependencies = [
  "linkerd-exp-backoff",
  "linkerd-http-box",
  "linkerd-metrics",
+ "linkerd-mock-http-body",
  "linkerd-stack",
  "linkerd-tracing",
  "parking_lot",
@@ -2021,6 +2022,17 @@ dependencies = [
  "quickcheck",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "linkerd-mock-http-body"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "http",
+ "http-body",
+ "linkerd-error",
+ "tokio",
 ]
 
 [[package]]
