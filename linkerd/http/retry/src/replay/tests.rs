@@ -89,7 +89,7 @@ async fn replays_trailers() {
     drop(tx);
 
     let read_trailers = |body: ReplayBody<_>| async move {
-        let mut body = crate::compat::ForwardCompatibleBody::new(body);
+        let mut body = linkerd_http_body_compat::ForwardCompatibleBody::new(body);
         let _ = body
             .frame()
             .await
@@ -126,8 +126,8 @@ async fn replays_trailers_only() {
         replay,
         _trace,
     } = Test::new();
-    let mut initial = crate::compat::ForwardCompatibleBody::new(initial);
-    let mut replay = crate::compat::ForwardCompatibleBody::new(replay);
+    let mut initial = linkerd_http_body_compat::ForwardCompatibleBody::new(initial);
+    let mut replay = linkerd_http_body_compat::ForwardCompatibleBody::new(replay);
 
     let mut tlrs = HeaderMap::new();
     tlrs.insert("x-hello", HeaderValue::from_str("world").unwrap());
@@ -332,8 +332,8 @@ async fn eos_only_when_fully_replayed() {
         .expect("body must not be too large");
     let replay = initial.clone();
 
-    let mut initial = crate::compat::ForwardCompatibleBody::new(initial);
-    let mut replay = crate::compat::ForwardCompatibleBody::new(replay);
+    let mut initial = linkerd_http_body_compat::ForwardCompatibleBody::new(initial);
+    let mut replay = linkerd_http_body_compat::ForwardCompatibleBody::new(replay);
 
     // Read the initial body, show that the replay does not consider itself to have reached the
     // end-of-stream. Then drop the initial body, show that the replay is still not done.
@@ -374,7 +374,7 @@ async fn eos_only_when_fully_replayed() {
     drop(replay);
 
     // Read the second replay body.
-    let mut replay2 = crate::compat::ForwardCompatibleBody::new(replay2);
+    let mut replay2 = linkerd_http_body_compat::ForwardCompatibleBody::new(replay2);
     replay2
         .frame()
         .await
@@ -396,8 +396,8 @@ async fn eos_only_when_fully_replayed_with_trailers() {
         .expect("body must not be too large");
     let replay = initial.clone();
 
-    let mut initial = crate::compat::ForwardCompatibleBody::new(initial);
-    let mut replay = crate::compat::ForwardCompatibleBody::new(replay);
+    let mut initial = linkerd_http_body_compat::ForwardCompatibleBody::new(initial);
+    let mut replay = linkerd_http_body_compat::ForwardCompatibleBody::new(replay);
 
     // Read the initial body, show that the replay does not consider itself to have reached the
     // end-of-stream. Then drop the initial body, show that the replay is still not done.
@@ -450,7 +450,7 @@ async fn eos_only_when_fully_replayed_with_trailers() {
     drop(replay);
 
     // Read the second replay body.
-    let mut replay2 = crate::compat::ForwardCompatibleBody::new(replay2);
+    let mut replay2 = linkerd_http_body_compat::ForwardCompatibleBody::new(replay2);
     replay2
         .frame()
         .await
@@ -508,7 +508,7 @@ async fn caps_buffer() {
 
     // The request's replay should error, since we discarded the buffer when
     // we hit the cap.
-    let mut replay = crate::compat::ForwardCompatibleBody::new(replay);
+    let mut replay = linkerd_http_body_compat::ForwardCompatibleBody::new(replay);
     let err = replay
         .frame()
         .await
@@ -554,7 +554,7 @@ async fn caps_across_replays() {
     drop(replay);
 
     // The second replay will fail, though, because the buffer was discarded.
-    let mut replay2 = crate::compat::ForwardCompatibleBody::new(replay2);
+    let mut replay2 = linkerd_http_body_compat::ForwardCompatibleBody::new(replay2);
     let err = replay2
         .frame()
         .await
@@ -638,7 +638,7 @@ async fn size_hint_is_correct_across_replays() {
     assert_eq!(chunk(&mut initial).await.as_deref(), Some(BODY));
     let initial = {
         // TODO(kate): the initial body doesn't report ending until it has (not) yielded trailers.
-        let mut body = crate::compat::ForwardCompatibleBody::new(initial);
+        let mut body = linkerd_http_body_compat::ForwardCompatibleBody::new(initial);
         assert!(body.frame().await.is_none());
         body.into_inner()
     };
@@ -661,7 +661,7 @@ async fn size_hint_is_correct_across_replays() {
     assert_eq!(chunk(&mut replay).await.as_deref(), Some(BODY));
     // let replay = {
     //     // TODO(kate): the replay doesn't report ending until it has (not) yielded trailers.
-    //     let mut body = crate::compat::ForwardCompatibleBody::new(replay);
+    //     let mut body = linkerd_http_body_compat::ForwardCompatibleBody::new(replay);
     //     assert!(body.frame().await.is_none());
     //     body.into_inner()
     // };
@@ -770,7 +770,7 @@ where
     T: http_body::Body + Unpin,
 {
     tracing::trace!("waiting for a body chunk...");
-    let chunk = crate::compat::ForwardCompatibleBody::new(body)
+    let chunk = linkerd_http_body_compat::ForwardCompatibleBody::new(body)
         .frame()
         .await
         .expect("yields a result")
@@ -788,7 +788,7 @@ where
     B: http_body::Body + Unpin,
     B::Error: std::fmt::Debug,
 {
-    let mut body = crate::compat::ForwardCompatibleBody::new(body);
+    let mut body = linkerd_http_body_compat::ForwardCompatibleBody::new(body);
     let mut data = String::new();
     let mut trailers = None;
 

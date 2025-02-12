@@ -4,8 +4,6 @@
 pub mod peek_trailers;
 pub mod replay;
 
-mod compat;
-
 pub use self::{peek_trailers::PeekTrailersBody, replay::ReplayBody};
 pub use tower::retry::budget::Budget;
 

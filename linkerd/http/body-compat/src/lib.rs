@@ -7,12 +7,12 @@ use std::{
     task::{Context, Poll},
 };
 
-pub(crate) use self::frame::Frame;
+pub use self::frame::Frame;
 
 mod frame;
 
 #[derive(Debug)]
-pub(crate) struct ForwardCompatibleBody<B> {
+pub struct ForwardCompatibleBody<B> {
     inner: B,
     data_finished: bool,
     trailers_finished: bool,
@@ -21,7 +21,7 @@ pub(crate) struct ForwardCompatibleBody<B> {
 // === impl ForwardCompatibleBody ===
 
 impl<B: Body> ForwardCompatibleBody<B> {
-    pub(crate) fn new(body: B) -> Self {
+    pub fn new(body: B) -> Self {
         if body.is_end_stream() {
             Self {
                 inner: body,
@@ -37,28 +37,28 @@ impl<B: Body> ForwardCompatibleBody<B> {
         }
     }
 
-    pub(crate) fn into_inner(self) -> B {
+    pub fn into_inner(self) -> B {
         self.inner
     }
 
     /// Returns a future that resolves to the next frame.
-    pub(crate) fn frame(&mut self) -> combinators::Frame<'_, B> {
+    pub fn frame(&mut self) -> combinators::Frame<'_, B> {
         combinators::Frame(self)
     }
 
     /// Returns `true` when the end of stream has been reached.
-    pub(crate) fn is_end_stream(&self) -> bool {
+    pub fn is_end_stream(&self) -> bool {
         self.inner.is_end_stream()
     }
 
     /// Returns the bounds on the remaining length of the stream.
-    pub(crate) fn size_hint(&self) -> SizeHint {
+    pub fn size_hint(&self) -> SizeHint {
         self.inner.size_hint()
     }
 }
 
 impl<B: Body + Unpin> ForwardCompatibleBody<B> {
-    pub(crate) fn poll_frame(
+    pub fn poll_frame(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<B::Data>, B::Error>>> {

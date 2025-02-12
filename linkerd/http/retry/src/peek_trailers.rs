@@ -123,7 +123,7 @@ impl<B: Body> PeekTrailersBody<B> {
     {
         // XXX(kate): for now, wrap this in a compatibility adapter that yields `Frame<T>`s.
         // this can be removed when we upgrade to http-body 1.0.
-        use crate::compat::ForwardCompatibleBody;
+        use linkerd_http_body_compat::ForwardCompatibleBody;
         let mut body = ForwardCompatibleBody::new(body);
 
         // First, poll the body for its first frame.
@@ -220,9 +220,9 @@ impl<B: Body> PeekTrailersBody<B> {
     ///
     /// This is an internal helper to facilitate pattern matching in `read_body(..)`, above.
     fn split_frame(
-        frame: crate::compat::Frame<B::Data>,
+        frame: linkerd_http_body_compat::Frame<B::Data>,
     ) -> Option<futures::future::Either<B::Data, HeaderMap>> {
-        use {crate::compat::Frame, futures::future::Either};
+        use {futures::future::Either, linkerd_http_body_compat::Frame};
         match frame.into_data().map_err(Frame::into_trailers) {
             Ok(data) => Some(Either::Left(data)),
             Err(Ok(trailers)) => Some(Either::Right(trailers)),
