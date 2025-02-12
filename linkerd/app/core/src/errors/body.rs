@@ -11,6 +11,10 @@ use std::{
 };
 use tracing::{debug, warn};
 
+/// Returns a "gRPC rescue" body.
+///
+/// This returns a body that, should the inner `B`-typed body return an error when polling for
+/// DATA frames, will "rescue" the stream and return a TRAILERS frame that describes the error.
 #[pin_project(project = ResponseBodyProj)]
 pub struct ResponseBody<R, B>(#[pin] Inner<R, B>);
 
