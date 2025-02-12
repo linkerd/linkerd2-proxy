@@ -78,14 +78,13 @@ impl<B: Body + Unpin> ForwardCompatibleBody<B> {
 ///
 /// [frame]: https://docs.rs/http-body-util/0.1.2/http_body_util/combinators/struct.Frame.html
 mod combinators {
-    use core::future::Future;
-    use core::pin::Pin;
-    use core::task;
-    use http_body::Body;
-    use std::ops::Not;
-    use std::task::ready;
-
     use super::ForwardCompatibleBody;
+    use core::{future::Future, pin::Pin, task};
+    use http_body::Body;
+    use std::{
+        ops::Not,
+        task::{ready, Context, Poll},
+    };
 
     #[must_use = "futures don't do anything unless polled"]
     #[derive(Debug)]
@@ -95,7 +94,7 @@ mod combinators {
     impl<T: Body + Unpin> Future for Frame<'_, T> {
         type Output = Option<Result<super::Frame<T::Data>, T::Error>>;
 
-        fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> task::Poll<Self::Output> {
+        fn poll(self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Self::Output> {
             let Self(ForwardCompatibleBody {
                 inner,
                 data_finished,
