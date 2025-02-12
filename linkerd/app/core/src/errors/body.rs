@@ -12,7 +12,10 @@ use std::{
 use tracing::{debug, warn};
 
 #[pin_project(project = ResponseBodyProj)]
-pub enum ResponseBody<R, B> {
+pub struct ResponseBody<R, B>(#[pin] Inner<R, B>);
+
+#[pin_project(project = InnerProj)]
+enum Inner<R, B> {
     Passthru(#[pin] B),
     GrpcRescue {
         #[pin]
@@ -25,9 +28,26 @@ pub enum ResponseBody<R, B> {
 
 // === impl ResponseBody ===
 
+impl<R, B> ResponseBody<R, B> {
+    /// Returns a body in "passthru" mode.
+    pub fn passthru(inner: B) -> Self {
+        Self(Inner::Passthru(inner))
+    }
+
+    /// Returns a "gRPC rescue" body.
+    pub fn grpc_rescue(inner: B, rescue: R, emit_headers: bool) -> Self {
+        Self(Inner::GrpcRescue {
+            inner,
+            rescue,
+            emit_headers,
+            trailers: None,
+        })
+    }
+}
+
 impl<R, B: Default + linkerd_proxy_http::Body> Default for ResponseBody<R, B> {
     fn default() -> Self {
-        ResponseBody::Passthru(B::default())
+        Self(Inner::Passthru(B::default()))
     }
 }
 
@@ -43,9 +63,10 @@ where
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
-        match self.project() {
-            ResponseBodyProj::Passthru(inner) => inner.poll_data(cx),
-            ResponseBodyProj::GrpcRescue {
+        let ResponseBodyProj(inner) = self.project();
+        match inner.project() {
+            InnerProj::Passthru(inner) => inner.poll_data(cx),
+            InnerProj::GrpcRescue {
                 inner,
                 trailers,
                 rescue,
@@ -75,9 +96,10 @@ where
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
-        match self.project() {
-            ResponseBodyProj::Passthru(inner) => inner.poll_trailers(cx),
-            ResponseBodyProj::GrpcRescue {
+        let ResponseBodyProj(inner) = self.project();
+        match inner.project() {
+            InnerProj::Passthru(inner) => inner.poll_trailers(cx),
+            InnerProj::GrpcRescue {
                 inner, trailers, ..
             } => match trailers.take() {
                 Some(t) => Poll::Ready(Ok(Some(t))),
@@ -88,9 +110,10 @@ where
 
     #[inline]
     fn is_end_stream(&self) -> bool {
-        match self {
-            Self::Passthru(inner) => inner.is_end_stream(),
-            Self::GrpcRescue {
+        let Self(inner) = self;
+        match inner {
+            Inner::Passthru(inner) => inner.is_end_stream(),
+            Inner::GrpcRescue {
                 inner, trailers, ..
             } => trailers.is_none() && inner.is_end_stream(),
         }
@@ -98,9 +121,10 @@ where
 
     #[inline]
     fn size_hint(&self) -> http_body::SizeHint {
-        match self {
-            Self::Passthru(inner) => inner.size_hint(),
-            Self::GrpcRescue { inner, .. } => inner.size_hint(),
+        let Self(inner) = self;
+        match inner {
+            Inner::Passthru(inner) => inner.size_hint(),
+            Inner::GrpcRescue { inner, .. } => inner.size_hint(),
         }
     }
 }

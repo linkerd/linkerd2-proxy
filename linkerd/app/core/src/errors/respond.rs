@@ -383,19 +383,14 @@ where
     fn respond(&self, res: Result<http::Response<B>>) -> Result<Self::Response> {
         let error = match res {
             Ok(rsp) => {
-                return Ok(rsp.map(|b| match self {
+                return Ok(rsp.map(|inner| match self {
                     Respond {
                         is_grpc: true,
                         rescue,
                         emit_headers,
                         ..
-                    } => ResponseBody::GrpcRescue {
-                        inner: b,
-                        trailers: None,
-                        rescue: rescue.clone(),
-                        emit_headers: *emit_headers,
-                    },
-                    _ => ResponseBody::Passthru(b),
+                    } => ResponseBody::grpc_rescue(inner, rescue.clone(), *emit_headers),
+                    _ => ResponseBody::passthru(inner),
                 }));
             }
             Err(error) => error,
