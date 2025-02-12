@@ -150,3 +150,164 @@ impl<R, B> ResponseBody<R, B> {
         t
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::errors::header::{GRPC_MESSAGE, GRPC_STATUS};
+    use http::HeaderMap;
+    use linkerd_mock_http_body::MockBody;
+
+    struct MockRescue;
+    impl<E> HttpRescue<E> for MockRescue {
+        /// Attempts to synthesize a response from the given error.
+        fn rescue(&self, _: E) -> Result<SyntheticHttpResponse, E> {
+            let synthetic = SyntheticHttpResponse::internal_error("MockRescue::rescue");
+            Ok(synthetic)
+        }
+    }
+
+    #[tokio::test]
+    async fn rescue_body_recovers_from_error_without_grpc_message() {
+        let (_guard, _handle) = linkerd_tracing::test::trace_init();
+        let trailers = {
+            let mut trls = HeaderMap::with_capacity(1);
+            let value = HeaderValue::from_static("caboose");
+            trls.insert("trailer", value);
+            trls
+        };
+        let rescue = {
+            let inner = MockBody::default()
+                .then_yield_data(Poll::Ready(Some(Ok("inter".into()))))
+                .then_yield_data(Poll::Ready(Some(Err("an error midstream".into()))))
+                .then_yield_data(Poll::Ready(Some(Ok("rupted".into()))))
+                .then_yield_trailer(Poll::Ready(Ok(Some(trailers))));
+            let rescue = MockRescue;
+            let emit_headers = false;
+            ResponseBody::grpc_rescue(inner, rescue, emit_headers)
+        };
+        let (data, Some(trailers)) = body_to_string(rescue).await else {
+            panic!("trailers should exist");
+        };
+        assert_eq!(data, "inter");
+        assert_eq!(
+            trailers[GRPC_STATUS],
+            i32::from(tonic::Code::Internal).to_string()
+        );
+        assert_eq!(trailers.get(GRPC_MESSAGE), None);
+    }
+
+    #[tokio::test]
+    async fn rescue_body_recovers_from_error_emitting_message() {
+        let (_guard, _handle) = linkerd_tracing::test::trace_init();
+        let trailers = {
+            let mut trls = HeaderMap::with_capacity(1);
+            let value = HeaderValue::from_static("caboose");
+            trls.insert("trailer", value);
+            trls
+        };
+        let rescue = {
+            let inner = MockBody::default()
+                .then_yield_data(Poll::Ready(Some(Ok("inter".into()))))
+                .then_yield_data(Poll::Ready(Some(Err("an error midstream".into()))))
+                .then_yield_data(Poll::Ready(Some(Ok("rupted".into()))))
+                .then_yield_trailer(Poll::Ready(Ok(Some(trailers))));
+            let rescue = MockRescue;
+            let emit_headers = true;
+            ResponseBody::grpc_rescue(inner, rescue, emit_headers)
+        };
+        let (data, Some(trailers)) = body_to_string(rescue).await else {
+            panic!("trailers should exist");
+        };
+        assert_eq!(data, "inter");
+        assert_eq!(
+            trailers[GRPC_STATUS],
+            i32::from(tonic::Code::Internal).to_string()
+        );
+        assert_eq!(trailers[GRPC_MESSAGE], "MockRescue::rescue");
+    }
+
+    #[tokio::test]
+    async fn rescue_body_works_for_empty() {
+        let (_guard, _handle) = linkerd_tracing::test::trace_init();
+        let rescue = {
+            let inner = MockBody::default();
+            let rescue = MockRescue;
+            let emit_headers = false;
+            ResponseBody::grpc_rescue(inner, rescue, emit_headers)
+        };
+        let (data, trailers) = body_to_string(rescue).await;
+        assert_eq!(data, "");
+        assert_eq!(trailers, None);
+    }
+
+    #[tokio::test]
+    async fn rescue_body_works_for_body_with_data() {
+        let (_guard, _handle) = linkerd_tracing::test::trace_init();
+        let rescue = {
+            let inner = MockBody::default().then_yield_data(Poll::Ready(Some(Ok("unary".into()))));
+            let rescue = MockRescue;
+            let emit_headers = false;
+            ResponseBody::grpc_rescue(inner, rescue, emit_headers)
+        };
+        let (data, trailers) = body_to_string(rescue).await;
+        assert_eq!(data, "unary");
+        assert_eq!(trailers, None);
+    }
+
+    #[tokio::test]
+    async fn rescue_body_works_for_body_with_trailers() {
+        let (_guard, _handle) = linkerd_tracing::test::trace_init();
+        let trailers = {
+            let mut trls = HeaderMap::with_capacity(1);
+            let value = HeaderValue::from_static("caboose");
+            trls.insert("trailer", value);
+            trls
+        };
+        let rescue = {
+            let inner = MockBody::default().then_yield_trailer(Poll::Ready(Ok(Some(trailers))));
+            let rescue = MockRescue;
+            let emit_headers = false;
+            ResponseBody::grpc_rescue(inner, rescue, emit_headers)
+        };
+        let (data, trailers) = body_to_string(rescue).await;
+        assert_eq!(data, "");
+        assert_eq!(trailers.expect("has trailers")["trailer"], "caboose");
+    }
+
+    async fn body_to_string<B>(body: B) -> (String, Option<HeaderMap>)
+    where
+        B: http_body::Body + Unpin,
+        B::Error: std::fmt::Debug,
+    {
+        let mut body = linkerd_http_body_compat::ForwardCompatibleBody::new(body);
+        let mut data = String::new();
+        let mut trailers = None;
+
+        // Continue reading frames from the body until it is finished.
+        while let Some(frame) = body
+            .frame()
+            .await
+            .transpose()
+            .expect("reading a frame succeeds")
+        {
+            match frame.into_data().map(|mut buf| {
+                use bytes::Buf;
+                let bytes = buf.copy_to_bytes(buf.remaining());
+                String::from_utf8(bytes.to_vec()).unwrap()
+            }) {
+                Ok(ref s) => data.push_str(s),
+                Err(frame) => {
+                    let trls = frame
+                        .into_trailers()
+                        .map_err(drop)
+                        .expect("test frame is either data or trailers");
+                    trailers = Some(trls);
+                }
+            }
+        }
+
+        tracing::info!(?data, ?trailers, "finished reading body");
+        (data, trailers)
+    }
+}
