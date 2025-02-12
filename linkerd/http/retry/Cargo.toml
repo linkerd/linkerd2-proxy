@@ -27,4 +27,5 @@ linkerd-stack = { path = "../../stack" }
 [dev-dependencies]
 hyper = { workspace = true, features = ["deprecated"] }
 linkerd-tracing = { path = "../../tracing", features = ["ansi"] }
+linkerd-mock-http-body = { path = "../../mock/http-body" }
 tokio = { version = "1", features = ["macros", "rt"] }

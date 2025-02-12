@@ -47,6 +47,7 @@ members = [
     "linkerd/meshtls/rustls",
     "linkerd/meshtls/verifier",
     "linkerd/metrics",
+    "linkerd/mock/http-body",
     "linkerd/opaq-route",
     "linkerd/opencensus",
     "linkerd/opentelemetry",

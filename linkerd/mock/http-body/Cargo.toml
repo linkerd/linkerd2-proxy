@@ -1,0 +1,17 @@
+[package]
+name = "linkerd-mock-http-body"
+version = "0.1.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+license = "Apache-2.0"
+edition = "2021"
+publish = false
+description = """
+Mock `http_body::Body` facilities for use in tests.
+"""
+
+[dependencies]
+bytes = { workspace = true }
+http = { workspace = true }
+http-body = { workspace = true }
+linkerd-error = { path = "../../error" }
+tokio = { version = "1", default-features = false, features = ["rt"] }
