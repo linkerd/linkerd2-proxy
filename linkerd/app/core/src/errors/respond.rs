@@ -1,19 +1,15 @@
+use super::{
+    body::ResponseBody,
+    header::{GRPC_CONTENT_TYPE, GRPC_MESSAGE, GRPC_STATUS, L5D_PROXY_CONNECTION, L5D_PROXY_ERROR},
+};
 use crate::svc;
 use http::header::{HeaderValue, LOCATION};
 use linkerd_error::{Error, Result};
 use linkerd_error_respond as respond;
 use linkerd_proxy_http::{orig_proto, ClientHandle};
 use linkerd_stack::ExtractParam;
-use pin_project::pin_project;
-use std::{
-    borrow::Cow,
-    pin::Pin,
-    task::{Context, Poll},
-};
+use std::borrow::Cow;
 use tracing::{debug, info_span, warn};
-
-pub const L5D_PROXY_CONNECTION: &str = "l5d-proxy-connection";
-pub const L5D_PROXY_ERROR: &str = "l5d-proxy-error";
 
 pub fn layer<R, P: Clone, N>(
     params: P,
@@ -32,10 +28,10 @@ pub trait HttpRescue<E> {
 
 #[derive(Clone, Debug)]
 pub struct SyntheticHttpResponse {
-    grpc_status: tonic::Code,
+    pub grpc_status: tonic::Code,
     http_status: http::StatusCode,
     close_connection: bool,
-    message: Cow<'static, str>,
+    pub message: Cow<'static, str>,
     location: Option<HeaderValue>,
 }
 
@@ -60,22 +56,6 @@ pub struct Respond<R> {
     client: Option<ClientHandle>,
     emit_headers: bool,
 }
-
-#[pin_project(project = ResponseBodyProj)]
-pub enum ResponseBody<R, B> {
-    Passthru(#[pin] B),
-    GrpcRescue {
-        #[pin]
-        inner: B,
-        trailers: Option<http::HeaderMap>,
-        rescue: R,
-        emit_headers: bool,
-    },
-}
-
-const GRPC_CONTENT_TYPE: &str = "application/grpc";
-const GRPC_STATUS: &str = "grpc-status";
-const GRPC_MESSAGE: &str = "grpc-message";
 
 // === impl HttpRescue ===
 
@@ -246,7 +226,7 @@ impl SyntheticHttpResponse {
             .version(http::Version::HTTP_2)
             .header(http::header::CONTENT_LENGTH, "0")
             .header(http::header::CONTENT_TYPE, GRPC_CONTENT_TYPE)
-            .header(GRPC_STATUS, code_header(self.grpc_status));
+            .header(GRPC_STATUS, super::code_header(self.grpc_status));
 
         if emit_headers {
             rsp = rsp
@@ -345,7 +325,15 @@ where
                 let is_grpc = req
                     .headers()
                     .get(http::header::CONTENT_TYPE)
-                    .and_then(|v| v.to_str().ok().map(|s| s.starts_with(GRPC_CONTENT_TYPE)))
+                    .and_then(|v| {
+                        v.to_str().ok().map(|s| {
+                            s.starts_with(
+                                GRPC_CONTENT_TYPE
+                                    .to_str()
+                                    .expect("GRPC_CONTENT_TYPE only contains visible ASCII"),
+                            )
+                        })
+                    })
                     .unwrap_or(false);
                 Respond {
                     client,
@@ -395,19 +383,14 @@ where
     fn respond(&self, res: Result<http::Response<B>>) -> Result<Self::Response> {
         let error = match res {
             Ok(rsp) => {
-                return Ok(rsp.map(|b| match self {
+                return Ok(rsp.map(|inner| match self {
                     Respond {
                         is_grpc: true,
                         rescue,
                         emit_headers,
                         ..
-                    } => ResponseBody::GrpcRescue {
-                        inner: b,
-                        trailers: None,
-                        rescue: rescue.clone(),
-                        emit_headers: *emit_headers,
-                    },
-                    _ => ResponseBody::Passthru(b),
+                    } => ResponseBody::grpc_rescue(inner, rescue.clone(), *emit_headers),
+                    _ => ResponseBody::passthru(inner),
                 }));
             }
             Err(error) => error,
@@ -438,129 +421,5 @@ where
         };
 
         Ok(rsp)
-    }
-}
-
-// === impl ResponseBody ===
-
-impl<R, B: Default + linkerd_proxy_http::Body> Default for ResponseBody<R, B> {
-    fn default() -> Self {
-        ResponseBody::Passthru(B::default())
-    }
-}
-
-impl<R, B> linkerd_proxy_http::Body for ResponseBody<R, B>
-where
-    B: linkerd_proxy_http::Body<Error = Error>,
-    R: HttpRescue<B::Error>,
-{
-    type Data = B::Data;
-    type Error = B::Error;
-
-    fn poll_data(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
-        match self.project() {
-            ResponseBodyProj::Passthru(inner) => inner.poll_data(cx),
-            ResponseBodyProj::GrpcRescue {
-                inner,
-                trailers,
-                rescue,
-                emit_headers,
-            } => {
-                // should not be calling poll_data if we have set trailers derived from an error
-                assert!(trailers.is_none());
-                match inner.poll_data(cx) {
-                    Poll::Ready(Some(Err(error))) => {
-                        let SyntheticHttpResponse {
-                            grpc_status,
-                            message,
-                            ..
-                        } = rescue.rescue(error)?;
-                        let t = Self::grpc_trailers(grpc_status, &message, *emit_headers);
-                        *trailers = Some(t);
-                        Poll::Ready(None)
-                    }
-                    data => data,
-                }
-            }
-        }
-    }
-
-    #[inline]
-    fn poll_trailers(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
-        match self.project() {
-            ResponseBodyProj::Passthru(inner) => inner.poll_trailers(cx),
-            ResponseBodyProj::GrpcRescue {
-                inner, trailers, ..
-            } => match trailers.take() {
-                Some(t) => Poll::Ready(Ok(Some(t))),
-                None => inner.poll_trailers(cx),
-            },
-        }
-    }
-
-    #[inline]
-    fn is_end_stream(&self) -> bool {
-        match self {
-            Self::Passthru(inner) => inner.is_end_stream(),
-            Self::GrpcRescue {
-                inner, trailers, ..
-            } => trailers.is_none() && inner.is_end_stream(),
-        }
-    }
-
-    #[inline]
-    fn size_hint(&self) -> http_body::SizeHint {
-        match self {
-            Self::Passthru(inner) => inner.size_hint(),
-            Self::GrpcRescue { inner, .. } => inner.size_hint(),
-        }
-    }
-}
-
-impl<R, B> ResponseBody<R, B> {
-    fn grpc_trailers(code: tonic::Code, message: &str, emit_headers: bool) -> http::HeaderMap {
-        debug!(grpc.status = ?code, "Synthesizing gRPC trailers");
-        let mut t = http::HeaderMap::new();
-        t.insert(GRPC_STATUS, code_header(code));
-        if emit_headers {
-            t.insert(
-                GRPC_MESSAGE,
-                HeaderValue::from_str(message).unwrap_or_else(|error| {
-                    warn!(%error, "Failed to encode error header");
-                    HeaderValue::from_static("Unexpected error")
-                }),
-            );
-        }
-        t
-    }
-}
-
-// Copied from tonic, where it's private.
-fn code_header(code: tonic::Code) -> HeaderValue {
-    use tonic::Code;
-    match code {
-        Code::Ok => HeaderValue::from_static("0"),
-        Code::Cancelled => HeaderValue::from_static("1"),
-        Code::Unknown => HeaderValue::from_static("2"),
-        Code::InvalidArgument => HeaderValue::from_static("3"),
-        Code::DeadlineExceeded => HeaderValue::from_static("4"),
-        Code::NotFound => HeaderValue::from_static("5"),
-        Code::AlreadyExists => HeaderValue::from_static("6"),
-        Code::PermissionDenied => HeaderValue::from_static("7"),
-        Code::ResourceExhausted => HeaderValue::from_static("8"),
-        Code::FailedPrecondition => HeaderValue::from_static("9"),
-        Code::Aborted => HeaderValue::from_static("10"),
-        Code::OutOfRange => HeaderValue::from_static("11"),
-        Code::Unimplemented => HeaderValue::from_static("12"),
-        Code::Internal => HeaderValue::from_static("13"),
-        Code::Unavailable => HeaderValue::from_static("14"),
-        Code::DataLoss => HeaderValue::from_static("15"),
-        Code::Unauthenticated => HeaderValue::from_static("16"),
     }
 }
