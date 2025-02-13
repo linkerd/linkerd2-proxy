@@ -1688,6 +1688,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd-http-body-compat"
+version = "0.1.0"
+dependencies = [
+ "http",
+ "http-body",
+]
+
+[[package]]
 name = "linkerd-http-box"
 version = "0.1.0"
 dependencies = [
@@ -1813,6 +1821,7 @@ dependencies = [
  "hyper",
  "linkerd-error",
  "linkerd-exp-backoff",
+ "linkerd-http-body-compat",
  "linkerd-http-box",
  "linkerd-metrics",
  "linkerd-mock-http-body",

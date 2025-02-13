@@ -68,7 +68,7 @@ struct SharedState<B> {
 struct BodyState<B> {
     replay: Replay,
     trailers: Option<HeaderMap>,
-    rest: crate::compat::ForwardCompatibleBody<B>,
+    rest: linkerd_http_body_compat::ForwardCompatibleBody<B>,
     is_completed: bool,
 
     /// Maximum number of bytes to buffer.
@@ -104,7 +104,7 @@ impl<B: Body> ReplayBody<B> {
             state: Some(BodyState {
                 replay: Default::default(),
                 trailers: None,
-                rest: crate::compat::ForwardCompatibleBody::new(body),
+                rest: linkerd_http_body_compat::ForwardCompatibleBody::new(body),
                 is_completed: false,
                 max_bytes: max_bytes + 1,
             }),
@@ -368,9 +368,9 @@ impl<B: Body> ReplayBody<B> {
     ///
     /// This is an internal helper to facilitate pattern matching in `read_body(..)`, above.
     fn split_frame(
-        frame: crate::compat::Frame<B::Data>,
+        frame: linkerd_http_body_compat::Frame<B::Data>,
     ) -> Option<futures::future::Either<B::Data, HeaderMap>> {
-        use {crate::compat::Frame, futures::future::Either};
+        use {futures::future::Either, linkerd_http_body_compat::Frame};
         match frame.into_data().map_err(Frame::into_trailers) {
             Ok(data) => Some(Either::Left(data)),
             Err(Ok(trailers)) => Some(Either::Right(trailers)),

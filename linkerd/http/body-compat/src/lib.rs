@@ -7,12 +7,12 @@ use std::{
     task::{Context, Poll},
 };
 
-pub(crate) use self::frame::Frame;
+pub use self::frame::Frame;
 
 mod frame;
 
 #[derive(Debug)]
-pub(crate) struct ForwardCompatibleBody<B> {
+pub struct ForwardCompatibleBody<B> {
     inner: B,
     data_finished: bool,
     trailers_finished: bool,
@@ -21,7 +21,7 @@ pub(crate) struct ForwardCompatibleBody<B> {
 // === impl ForwardCompatibleBody ===
 
 impl<B: Body> ForwardCompatibleBody<B> {
-    pub(crate) fn new(body: B) -> Self {
+    pub fn new(body: B) -> Self {
         if body.is_end_stream() {
             Self {
                 inner: body,
@@ -37,28 +37,28 @@ impl<B: Body> ForwardCompatibleBody<B> {
         }
     }
 
-    pub(crate) fn into_inner(self) -> B {
+    pub fn into_inner(self) -> B {
         self.inner
     }
 
     /// Returns a future that resolves to the next frame.
-    pub(crate) fn frame(&mut self) -> combinators::Frame<'_, B> {
+    pub fn frame(&mut self) -> combinators::Frame<'_, B> {
         combinators::Frame(self)
     }
 
     /// Returns `true` when the end of stream has been reached.
-    pub(crate) fn is_end_stream(&self) -> bool {
+    pub fn is_end_stream(&self) -> bool {
         self.inner.is_end_stream()
     }
 
     /// Returns the bounds on the remaining length of the stream.
-    pub(crate) fn size_hint(&self) -> SizeHint {
+    pub fn size_hint(&self) -> SizeHint {
         self.inner.size_hint()
     }
 }
 
 impl<B: Body + Unpin> ForwardCompatibleBody<B> {
-    pub(crate) fn poll_frame(
+    pub fn poll_frame(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<B::Data>, B::Error>>> {
@@ -78,14 +78,13 @@ impl<B: Body + Unpin> ForwardCompatibleBody<B> {
 ///
 /// [frame]: https://docs.rs/http-body-util/0.1.2/http_body_util/combinators/struct.Frame.html
 mod combinators {
-    use core::future::Future;
-    use core::pin::Pin;
-    use core::task;
-    use http_body::Body;
-    use std::ops::Not;
-    use std::task::ready;
-
     use super::ForwardCompatibleBody;
+    use core::{future::Future, pin::Pin, task};
+    use http_body::Body;
+    use std::{
+        ops::Not,
+        task::{ready, Context, Poll},
+    };
 
     #[must_use = "futures don't do anything unless polled"]
     #[derive(Debug)]
@@ -95,7 +94,7 @@ mod combinators {
     impl<T: Body + Unpin> Future for Frame<'_, T> {
         type Output = Option<Result<super::Frame<T::Data>, T::Error>>;
 
-        fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> task::Poll<Self::Output> {
+        fn poll(self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Self::Output> {
             let Self(ForwardCompatibleBody {
                 inner,
                 data_finished,
