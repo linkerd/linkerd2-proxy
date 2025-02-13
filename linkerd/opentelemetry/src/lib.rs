@@ -24,7 +24,7 @@ use opentelemetry_proto::{
     transform::{common::ResourceAttributesWithSchema, trace::group_spans_by_resource_and_scope},
 };
 pub use opentelemetry_sdk as sdk;
-pub use opentelemetry_sdk::export::trace::SpanData;
+pub use opentelemetry_sdk::trace::SpanData;
 use opentelemetry_sdk::trace::SpanLinks;
 use tokio::{sync::mpsc, time};
 use tonic::{self as grpc, body::BoxBody, client::GrpcService};

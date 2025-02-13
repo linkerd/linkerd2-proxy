@@ -1,9 +1,15 @@
-use crate::proto::resource::v1::Resource;
-use crate::proto::trace::v1::{span, status, ResourceSpans, ScopeSpans, Span, Status};
-use crate::transform::common::{to_nanos, Attributes, ResourceAttributesWithSchema};
-use opentelemetry::trace;
-use opentelemetry::trace::{Link, SpanId, SpanKind};
-use opentelemetry_sdk::export::trace::SpanData;
+use crate::{
+    proto::{
+        resource::v1::Resource,
+        trace::v1::{span, status, ResourceSpans, ScopeSpans, Span, Status},
+    },
+    transform::common::{to_nanos, Attributes, ResourceAttributesWithSchema},
+};
+use opentelemetry::{
+    trace,
+    trace::{Link, SpanId, SpanKind},
+};
+use opentelemetry_sdk::trace::SpanData;
 use std::collections::HashMap;
 
 impl From<SpanKind> for span::SpanKind {
@@ -40,8 +46,8 @@ impl From<Link> for span::Link {
         }
     }
 }
-impl From<opentelemetry_sdk::export::trace::SpanData> for Span {
-    fn from(source_span: opentelemetry_sdk::export::trace::SpanData) -> Self {
+impl From<opentelemetry_sdk::trace::SpanData> for Span {
+    fn from(source_span: opentelemetry_sdk::trace::SpanData) -> Self {
         let span_kind: span::SpanKind = source_span.span_kind.into();
         Span {
             trace_id: source_span.span_context.trace_id().to_bytes().to_vec(),
@@ -185,17 +191,21 @@ pub fn group_spans_by_resource_and_scope(
 
 #[cfg(test)]
 mod tests {
-    use crate::proto::common::v1::any_value::Value;
-    use crate::transform::common::ResourceAttributesWithSchema;
-    use opentelemetry::trace::{
-        SpanContext, SpanId, SpanKind, Status, TraceFlags, TraceId, TraceState,
+    use crate::{
+        proto::common::v1::any_value::Value, transform::common::ResourceAttributesWithSchema,
     };
-    use opentelemetry::{InstrumentationScope, KeyValue};
-    use opentelemetry_sdk::export::trace::SpanData;
-    use opentelemetry_sdk::resource::Resource;
-    use opentelemetry_sdk::trace::{SpanEvents, SpanLinks};
-    use std::borrow::Cow;
-    use std::time::{Duration, SystemTime};
+    use opentelemetry::{
+        trace::{SpanContext, SpanId, SpanKind, Status, TraceFlags, TraceId, TraceState},
+        InstrumentationScope, KeyValue,
+    };
+    use opentelemetry_sdk::{
+        resource::Resource,
+        trace::{SpanData, SpanEvents, SpanLinks},
+    };
+    use std::{
+        borrow::Cow,
+        time::{Duration, SystemTime},
+    };
 
     fn create_test_span_data(instrumentation_name: &'static str) -> SpanData {
         let span_context = SpanContext::new(
@@ -224,7 +234,9 @@ mod tests {
 
     #[test]
     fn test_group_spans_by_resource_and_scope_single_scope() {
-        let resource = Resource::new(vec![KeyValue::new("resource_key", "resource_value")]);
+        let resource = Resource::builder_empty()
+            .with_attribute(KeyValue::new("resource_key", "resource_value"))
+            .build();
         let span_data = create_test_span_data("lib1");
 
         let spans = vec![span_data.clone()];
@@ -269,7 +281,9 @@ mod tests {
 
     #[test]
     fn test_group_spans_by_resource_and_scope_multiple_scopes() {
-        let resource = Resource::new(vec![KeyValue::new("resource_key", "resource_value")]);
+        let resource = Resource::builder_empty()
+            .with_attribute(KeyValue::new("resource_key", "resource_value"))
+            .build();
         let span_data1 = create_test_span_data("lib1");
         let span_data2 = create_test_span_data("lib1");
         let span_data3 = create_test_span_data("lib2");

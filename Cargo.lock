@@ -1273,7 +1273,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc2f4eb4bc735547cfed7c0a4922cbd04a4655978c09b54f1f7b228750664c34"
 dependencies = [
  "cfg-if",
- "windows-targets 0.48.5",
+ "windows-targets 0.52.0",
 ]
 
 [[package]]
@@ -2983,15 +2983,15 @@ dependencies = [
 
 [[package]]
 name = "opentelemetry"
-version = "0.27.1"
+version = "0.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab70038c28ed37b97d8ed414b6429d343a8bbf44c9f79ec854f3a643029ba6d7"
+checksum = "236e667b670a5cdf90c258f5a55794ec5ac5027e960c224bff8367a59e1e6426"
 dependencies = [
  "futures-core",
  "futures-sink",
  "js-sys",
  "pin-project-lite",
- "thiserror 1.0.69",
+ "thiserror 2.0.11",
  "tracing",
 ]
 
@@ -3008,9 +3008,9 @@ dependencies = [
 
 [[package]]
 name = "opentelemetry_sdk"
-version = "0.27.1"
+version = "0.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "231e9d6ceef9b0b2546ddf52335785ce41252bc7474ee8ba05bfad277be13ab8"
+checksum = "84dfad6042089c7fc1f6118b7040dc2eb4ab520abbf410b79dc481032af39570"
 dependencies = [
  "futures-channel",
  "futures-executor",
@@ -3018,7 +3018,7 @@ dependencies = [
  "opentelemetry",
  "percent-encoding",
  "rand 0.8.5",
- "thiserror 1.0.69",
+ "thiserror 2.0.11",
 ]
 
 [[package]]
