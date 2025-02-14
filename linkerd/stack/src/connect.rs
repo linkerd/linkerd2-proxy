@@ -2,7 +2,6 @@ use crate::{layer, Service};
 use futures::prelude::*;
 use linkerd_error::Error;
 use std::task::{Context, Poll};
-use tokio::io::{AsyncRead, AsyncWrite};
 
 /// A helper `Service` that drops metadata from a `MakeConnection`
 #[derive(Clone, Debug)]
@@ -18,7 +17,7 @@ pub struct MakeConnectionService<S>(S);
 /// be used by consumers of these services.
 pub trait MakeConnection<T> {
     /// An I/O type that represents a connection to the remote endpoint.
-    type Connection: AsyncRead + AsyncWrite;
+    type Connection: hyper::rt::Read + hyper::rt::Write;
 
     /// Metadata associated with the established connection.
     type Metadata;
@@ -54,7 +53,7 @@ impl<T, S, I, M> MakeConnection<T> for S
 where
     S: Service<T, Response = (I, M)>,
     S::Error: Into<Error>,
-    I: AsyncRead + AsyncWrite,
+    I: hyper::rt::Read + hyper::rt::Write,
 {
     type Connection = I;
     type Metadata = M;
