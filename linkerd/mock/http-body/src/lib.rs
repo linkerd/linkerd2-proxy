@@ -3,7 +3,7 @@
 //! See [`MockBody`] for more information.
 
 use bytes::Bytes;
-use http_body::Body;
+use http_body::{Body, Frame};
 use linkerd_error::Error;
 use std::{
     collections::VecDeque,
@@ -17,7 +17,7 @@ use std::{
 #[derive(Default)]
 pub struct MockBody {
     data_polls: VecDeque<Poll<Option<Result<Bytes, Error>>>>,
-    trailer_polls: VecDeque<Poll<Result<Option<http::HeaderMap>, Error>>>,
+    trailer_polls: VecDeque<Poll<Option<Result<http::HeaderMap, Error>>>>,
 }
 
 // === impl MockBody ===
@@ -32,7 +32,7 @@ impl MockBody {
     /// Appends a poll outcome for [`Body::poll_trailers()`].
     pub fn then_yield_trailer(
         mut self,
-        poll: Poll<Result<Option<http::HeaderMap>, Error>>,
+        poll: Poll<Option<Result<http::HeaderMap, Error>>>,
     ) -> Self {
         self.trailer_polls.push_back(poll);
         self
@@ -51,40 +51,21 @@ impl Body for MockBody {
     type Data = Bytes;
     type Error = Error;
 
-    fn poll_data(
+    fn poll_frame(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
-        let poll = self
-            .get_mut()
-            .data_polls
-            .pop_front()
-            .unwrap_or(Poll::Ready(None));
-        // If we return `Poll::Pending`, we must schedule the task to be awoken.
-        if poll.is_pending() {
-            Self::schedule(cx);
-        }
-        poll
-    }
-
-    fn poll_trailers(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
+    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         let Self {
             data_polls,
             trailer_polls,
         } = self.get_mut();
 
-        let poll = if data_polls.is_empty() {
-            trailer_polls.pop_front().unwrap_or(Poll::Ready(Ok(None)))
-        } else {
-            // The caller has polled for trailers before exhausting the stream of DATA frames.
-            // This indicates `PeekTrailersBody<B>` isn't respecting the contract outlined in
-            // <https://docs.rs/http-body/0.4.6/http_body/trait.Body.html#tymethod.poll_trailers>.
-            panic!(
-                "`poll_trailers()` was called before `poll_data()` returned `Poll::Ready(None)`"
-            );
+        let poll = {
+            let mut next_data = || data_polls.pop_front().map(|p| p.map_ok(Frame::data));
+            let next_trailer = || trailer_polls.pop_front().map(|p| p.map_ok(Frame::trailers));
+            next_data()
+                .or_else(next_trailer)
+                .unwrap_or(Poll::Ready(None))
         };
 
         // If we return `Poll::Pending`, we must schedule the task to be awoken.
