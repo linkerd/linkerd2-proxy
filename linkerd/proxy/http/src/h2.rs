@@ -55,7 +55,7 @@ where
     C::Connection: Send + Unpin + 'static,
     C::Metadata: Send,
     C::Future: Send + 'static,
-    B: Body + Send + 'static,
+    B: Body + Send + Unpin + 'static,
     B::Data: Send,
     B::Error: Into<Error> + Send + Sync,
 {
@@ -147,7 +147,7 @@ where
     B::Data: Send,
     B::Error: Into<Error> + Send + Sync,
 {
-    type Response = http::Response<hyper::Body>;
+    type Response = http::Response<hyper::body::Incoming>;
     type Error = hyper::Error;
     type Future = Pin<Box<dyn Send + Future<Output = Result<Self::Response, Self::Error>>>>;
 
