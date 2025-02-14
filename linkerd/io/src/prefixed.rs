@@ -78,6 +78,35 @@ impl<I: io::AsyncRead> io::AsyncRead for PrefixedIo<I> {
     }
 }
 
+impl<I: hyper::rt::Read> hyper::rt::Read for PrefixedIo<I> {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        mut buf: hyper::rt::ReadBufCursor<'_>,
+    ) -> io::Poll<()> {
+        // XXX(kate): this is copy-pasted from `io::AsyncRead`, above.
+        let this = self.project();
+        // Check the length only once, since looking as the length
+        // of a Bytes isn't as cheap as the length of a &[u8].
+        let peeked_len = this.prefix.len();
+
+        if peeked_len == 0 {
+            this.io.poll_read(cx, buf)
+        } else {
+            let len = cmp::min(buf.remaining(), peeked_len);
+            buf.put_slice(&this.prefix.as_ref()[..len]);
+            this.prefix.advance(len);
+            // If we've finally emptied the prefix, drop it so we don't
+            // hold onto the allocated memory any longer. We won't peek
+            // again.
+            if peeked_len == len {
+                *this.prefix = Bytes::new();
+            }
+            io::Poll::Ready(Ok(()))
+        }
+    }
+}
+
 impl<I: io::Write> io::Write for PrefixedIo<I> {
     #[inline]
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
@@ -118,5 +147,31 @@ impl<I: io::AsyncWrite> io::AsyncWrite for PrefixedIo<I> {
     #[inline]
     fn is_write_vectored(&self) -> bool {
         self.io.is_write_vectored()
+    }
+}
+
+impl<I: hyper::rt::Write> hyper::rt::Write for PrefixedIo<I> {
+    fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> io::Poll<usize> {
+        self.project().io.poll_write(cx, buf)
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> io::Poll<()> {
+        self.project().io.poll_flush(cx)
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> io::Poll<()> {
+        self.project().io.poll_shutdown(cx)
+    }
+
+    fn is_write_vectored(&self) -> bool {
+        self.io.is_write_vectored()
+    }
+
+    fn poll_write_vectored(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: &[std::io::IoSlice<'_>],
+    ) -> io::Poll<usize> {
+        self.project().io.poll_write_vectored(cx, bufs)
     }
 }

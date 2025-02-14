@@ -47,6 +47,19 @@ impl<L: io::AsyncRead, R: io::AsyncRead> io::AsyncRead for EitherIo<L, R> {
     }
 }
 
+impl<L: hyper::rt::Read, R: hyper::rt::Read> hyper::rt::Read for EitherIo<L, R> {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: hyper::rt::ReadBufCursor<'_>,
+    ) -> io::Poll<()> {
+        match self.project() {
+            EitherIoProj::Left(l) => l.poll_read(cx, buf),
+            EitherIoProj::Right(r) => r.poll_read(cx, buf),
+        }
+    }
+}
+
 impl<L: io::AsyncWrite, R: io::AsyncWrite> io::AsyncWrite for EitherIo<L, R> {
     #[inline]
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> io::Poll<()> {
@@ -89,6 +102,47 @@ impl<L: io::AsyncWrite, R: io::AsyncWrite> io::AsyncWrite for EitherIo<L, R> {
         match self {
             EitherIo::Left(l) => l.is_write_vectored(),
             EitherIo::Right(r) => r.is_write_vectored(),
+        }
+    }
+}
+
+impl<L: hyper::rt::Write, R: hyper::rt::Write> hyper::rt::Write for EitherIo<L, R> {
+    fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> io::Poll<usize> {
+        match self.project() {
+            EitherIoProj::Left(l) => l.poll_write(cx, buf),
+            EitherIoProj::Right(r) => r.poll_write(cx, buf),
+        }
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> io::Poll<()> {
+        match self.project() {
+            EitherIoProj::Left(l) => l.poll_flush(cx),
+            EitherIoProj::Right(r) => r.poll_flush(cx),
+        }
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> io::Poll<()> {
+        match self.project() {
+            EitherIoProj::Left(l) => l.poll_shutdown(cx),
+            EitherIoProj::Right(r) => r.poll_shutdown(cx),
+        }
+    }
+
+    fn is_write_vectored(&self) -> bool {
+        match self {
+            EitherIo::Left(l) => l.is_write_vectored(),
+            EitherIo::Right(r) => r.is_write_vectored(),
+        }
+    }
+
+    fn poll_write_vectored(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: &[std::io::IoSlice<'_>],
+    ) -> io::Poll<usize> {
+        match self.project() {
+            EitherIoProj::Left(l) => l.poll_write_vectored(cx, bufs),
+            EitherIoProj::Right(r) => r.poll_write_vectored(cx, bufs),
         }
     }
 }

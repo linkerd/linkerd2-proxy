@@ -1407,6 +1407,7 @@ dependencies = [
  "http 1.2.0",
  "http-body",
  "hyper",
+ "hyper-util",
  "ipnet",
  "linkerd-addr",
  "linkerd-conditional",
@@ -1994,6 +1995,7 @@ dependencies = [
  "async-trait",
  "bytes",
  "futures",
+ "hyper",
  "hyper-util",
  "linkerd-errno",
  "pin-project",
@@ -2007,6 +2009,8 @@ name = "linkerd-meshtls"
 version = "0.1.0"
 dependencies = [
  "futures",
+ "hyper",
+ "hyper-util",
  "linkerd-conditional",
  "linkerd-dns-name",
  "linkerd-error",
@@ -2032,6 +2036,8 @@ dependencies = [
  "boring",
  "futures",
  "hex",
+ "hyper",
+ "hyper-util",
  "linkerd-dns-name",
  "linkerd-error",
  "linkerd-identity",
@@ -2051,6 +2057,8 @@ name = "linkerd-meshtls-rustls"
 version = "0.1.0"
 dependencies = [
  "futures",
+ "hyper",
+ "hyper-util",
  "linkerd-dns-name",
  "linkerd-error",
  "linkerd-identity",
@@ -2485,6 +2493,8 @@ name = "linkerd-proxy-transport"
 version = "0.1.0"
 dependencies = [
  "futures",
+ "hyper",
+ "hyper-util",
  "libc",
  "linkerd-error",
  "linkerd-io",
@@ -2632,6 +2642,7 @@ dependencies = [
  "async-trait",
  "bytes",
  "futures",
+ "hyper",
  "linkerd-conditional",
  "linkerd-dns-name",
  "linkerd-error",
