@@ -27,6 +27,12 @@ hyper = { workspace = true, features = [
     "server",
 ] }
 hyper-balance = { path = "../../../hyper-balance" }
+hyper-util = { workspace = true, default-features = false, features = [
+    "client",
+    "client-legacy",
+    "http1",
+    "service",
+] }
 parking_lot = "0.12"
 pin-project = "1"
 rand = "0.9"
@@ -54,6 +60,7 @@ linkerd-proxy-balance = { path = "../balance" }
 linkerd-stack = { path = "../../stack" }
 
 [dev-dependencies]
+http-body-util = { workspace = true, features = ["channel"] }
 tokio-test = "0.4"
 tower-test = "0.4"
 linkerd-tracing = { path = "../../tracing", features = ["ansi"] }
