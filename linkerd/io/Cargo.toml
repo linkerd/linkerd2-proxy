@@ -16,6 +16,7 @@ default = []
 async-trait = "0.1"
 futures = { version = "0.3", default-features = false }
 bytes = { workspace = true }
+hyper = { workspace = true, default-features = false }
 hyper-util = { workspace = true, features = ["tokio"] }
 linkerd-errno = { path = "../errno" }
 tokio = { version = "1", features = ["io-util", "net"] }

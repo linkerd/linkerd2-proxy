@@ -11,6 +11,8 @@ test-util = ["linkerd-tls-test-util"]
 
 [dependencies]
 futures = { version = "0.3", default-features = false }
+hyper = { workspace = true }
+hyper-util = { workspace = true }
 ring = { version = "0.17", features = ["std"] }
 rustls-pemfile = "2.2"
 rustls-webpki = { version = "0.102.8", features = ["std"] }

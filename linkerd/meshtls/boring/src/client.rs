@@ -21,7 +21,7 @@ pub struct Connect {
 pub type ConnectFuture<I> = Pin<Box<dyn Future<Output = io::Result<ClientIo<I>>> + Send>>;
 
 #[derive(Debug)]
-pub struct ClientIo<I>(tokio_boring::SslStream<I>);
+pub struct ClientIo<I>(hyper_util::rt::TokioIo<tokio_boring::SslStream<I>>);
 
 // === impl NewClient ===
 
@@ -117,7 +117,7 @@ where
                 "Initiated TLS connection"
             );
             trace!(peer.id = %server_id, peer.name = %server_name);
-            Ok(ClientIo(io))
+            Ok(ClientIo(hyper_util::rt::TokioIo::new(io)))
         })
     }
 }
@@ -131,6 +131,16 @@ impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncRead for ClientIo<I> {
         cx: &mut Context<'_>,
         buf: &mut io::ReadBuf<'_>,
     ) -> io::Poll<()> {
+        Pin::new(self.0.inner_mut()).poll_read(cx, buf)
+    }
+}
+
+impl<I: io::AsyncRead + io::AsyncWrite + Unpin> hyper::rt::Read for ClientIo<I> {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: hyper::rt::ReadBufCursor<'_>,
+    ) -> std::task::Poll<Result<(), std::io::Error>> {
         Pin::new(&mut self.0).poll_read(cx, buf)
     }
 }
@@ -138,17 +148,17 @@ impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncRead for ClientIo<I> {
 impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncWrite for ClientIo<I> {
     #[inline]
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> io::Poll<()> {
-        Pin::new(&mut self.0).poll_flush(cx)
+        Pin::new(self.0.inner_mut()).poll_flush(cx)
     }
 
     #[inline]
     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> io::Poll<()> {
-        Pin::new(&mut self.0).poll_shutdown(cx)
+        Pin::new(self.0.inner_mut()).poll_shutdown(cx)
     }
 
     #[inline]
     fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> io::Poll<usize> {
-        Pin::new(&mut self.0).poll_write(cx, buf)
+        Pin::new(self.0.inner_mut()).poll_write(cx, buf)
     }
 
     #[inline]
@@ -157,12 +167,12 @@ impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncWrite for ClientIo<I> {
         cx: &mut Context<'_>,
         bufs: &[io::IoSlice<'_>],
     ) -> io::Poll<usize> {
-        Pin::new(&mut self.0).poll_write_vectored(cx, bufs)
+        Pin::new(self.0.inner_mut()).poll_write_vectored(cx, bufs)
     }
 
     #[inline]
     fn is_write_vectored(&self) -> bool {
-        self.0.is_write_vectored()
+        self.0.inner().is_write_vectored()
     }
 }
 
@@ -170,6 +180,7 @@ impl<I> ClientIo<I> {
     #[inline]
     pub fn negotiated_protocol(&self) -> Option<NegotiatedProtocolRef<'_>> {
         self.0
+            .inner()
             .ssl()
             .selected_alpn_protocol()
             .map(NegotiatedProtocolRef)
@@ -179,6 +190,6 @@ impl<I> ClientIo<I> {
 impl<I: io::PeerAddr> io::PeerAddr for ClientIo<I> {
     #[inline]
     fn peer_addr(&self) -> io::Result<std::net::SocketAddr> {
-        self.0.get_ref().peer_addr()
+        self.0.inner().get_ref().peer_addr()
     }
 }

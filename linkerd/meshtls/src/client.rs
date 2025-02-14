@@ -180,6 +180,23 @@ impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncRead for ClientIo<I> {
     }
 }
 
+impl<I: io::AsyncRead + io::AsyncWrite + Unpin> hyper::rt::Read for ClientIo<I> {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: hyper::rt::ReadBufCursor<'_>,
+    ) -> io::Poll<()> {
+        match self.project() {
+            #[cfg(feature = "boring")]
+            ClientIoProj::Boring(io) => io.poll_read(cx, buf),
+            #[cfg(feature = "rustls")]
+            ClientIoProj::Rustls(io) => io.poll_read(cx, buf),
+            #[cfg(not(feature = "__has_any_tls_impls"))]
+            _ => crate::no_tls!(cx, buf),
+        }
+    }
+}
+
 impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncWrite for ClientIo<I> {
     #[inline]
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> io::Poll<()> {
@@ -248,6 +265,60 @@ impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncWrite for ClientIo<I> {
             #[cfg(not(feature = "__has_any_tls_impls"))]
             _ => crate::no_tls!(),
         }
+    }
+}
+
+impl<I: io::AsyncRead + io::AsyncWrite + Unpin> hyper::rt::Write for ClientIo<I> {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<Result<usize, std::io::Error>> {
+        match self.project() {
+            #[cfg(feature = "boring")]
+            ClientIoProj::Boring(io) => tokio::io::AsyncWrite::poll_write(io, cx, buf),
+            #[cfg(feature = "rustls")]
+            ClientIoProj::Rustls(io) => tokio::io::AsyncWrite::poll_write(io, cx, buf),
+            #[cfg(not(feature = "__has_any_tls_impls"))]
+            _ => crate::no_tls!(cx, buf),
+        }
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), std::io::Error>> {
+        match self.project() {
+            #[cfg(feature = "boring")]
+            ClientIoProj::Boring(io) => tokio::io::AsyncWrite::poll_flush(io, cx),
+            #[cfg(feature = "rustls")]
+            ClientIoProj::Rustls(io) => tokio::io::AsyncWrite::poll_flush(io, cx),
+            #[cfg(not(feature = "__has_any_tls_impls"))]
+            _ => crate::no_tls!(cx),
+        }
+    }
+
+    fn poll_shutdown(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<(), std::io::Error>> {
+        match self.project() {
+            #[cfg(feature = "boring")]
+            ClientIoProj::Boring(io) => tokio::io::AsyncWrite::poll_shutdown(io, cx),
+            #[cfg(feature = "rustls")]
+            ClientIoProj::Rustls(io) => tokio::io::AsyncWrite::poll_shutdown(io, cx),
+            #[cfg(not(feature = "__has_any_tls_impls"))]
+            _ => crate::no_tls!(cx),
+        }
+    }
+
+    fn is_write_vectored(&self) -> bool {
+        tokio::io::AsyncWrite::is_write_vectored(self)
+    }
+
+    fn poll_write_vectored(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: &[std::io::IoSlice<'_>],
+    ) -> Poll<Result<usize, std::io::Error>> {
+        tokio::io::AsyncWrite::poll_write_vectored(self, cx, bufs)
     }
 }
 
