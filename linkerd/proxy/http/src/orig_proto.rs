@@ -1,6 +1,7 @@
 use super::{h1, h2, Body};
 use futures::prelude::*;
 use http::header::{HeaderValue, TRANSFER_ENCODING};
+use http_body::Frame;
 use linkerd_error::{Error, Result};
 use linkerd_http_box::BoxBody;
 use linkerd_stack::{layer, MakeConnection, Service};
@@ -56,7 +57,7 @@ where
     C: MakeConnection<(crate::Variant, T)> + Clone + Send + Sync + 'static,
     C::Connection: Unpin + Send,
     C::Future: Unpin + Send + 'static,
-    B: crate::Body + Send + 'static,
+    B: crate::Body + Send + Unpin + 'static,
     B::Data: Send,
     B::Error: Into<Error> + Send + Sync,
 {
@@ -211,23 +212,13 @@ where
         self.inner.is_end_stream()
     }
 
-    fn poll_data(
+    fn poll_frame(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
+    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         self.project()
             .inner
-            .poll_data(cx)
-            .map_err(downgrade_h2_error)
-    }
-
-    fn poll_trailers(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
-        self.project()
-            .inner
-            .poll_trailers(cx)
+            .poll_frame(cx)
             .map_err(downgrade_h2_error)
     }
 

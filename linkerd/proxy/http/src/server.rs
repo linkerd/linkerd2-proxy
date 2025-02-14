@@ -1,8 +1,7 @@
-use crate::{
-    client_handle::SetClientHandle, h2, BoxBody, BoxRequest, ClientHandle, TracingExecutor, Variant,
-};
+use crate::{client_handle::SetClientHandle, h2, BoxBody, ClientHandle, TracingExecutor, Variant};
 use linkerd_error::Error;
-use linkerd_io::{self as io, PeerAddr};
+use linkerd_http_upgrade::glue::UpgradeBody;
+use linkerd_io::PeerAddr;
 use linkerd_stack::{layer, ExtractParam, NewService};
 use std::{
     future::Future,
@@ -126,13 +125,22 @@ where
 
 impl<I, N, S> Service<I> for ServeHttp<N>
 where
-    I: io::AsyncRead + io::AsyncWrite + PeerAddr + Send + Unpin + 'static,
+    I: hyper::rt::Read + hyper::rt::Write + PeerAddr + Send + Unpin + 'static,
     N: NewService<ClientHandle, Service = S> + Send + 'static,
-    S: Service<http::Request<BoxBody>, Response = http::Response<BoxBody>, Error = Error>
-        + Unpin
+    S: Service<
+            http::Request<hyper::body::Incoming>,
+            Response = http::Response<BoxBody>,
+            Error = Error,
+        > + Service<
+            http::Request<UpgradeBody<hyper::body::Incoming>>,
+            Response = http::Response<BoxBody>,
+            Error = Error,
+        > + Clone
         + Send
+        + Unpin
         + 'static,
-    S::Future: Send + 'static,
+    <S as Service<http::Request<hyper::body::Incoming>>>::Future: Send + 'static,
+    <S as Service<http::Request<UpgradeBody<hyper::body::Incoming>>>>::Future: Send + 'static,
 {
     type Response = ();
     type Error = Error;
@@ -162,10 +170,8 @@ where
                 match version {
                     Variant::Http1 => {
                         // Enable support for HTTP upgrades (CONNECT and websockets).
-                        let svc = linkerd_http_upgrade::upgrade::Service::new(
-                            BoxRequest::new(svc),
-                            drain.clone(),
-                        );
+                        let svc = linkerd_http_upgrade::upgrade::Service::new(svc, drain.clone());
+                        let svc = hyper_util::service::TowerToHyperService::new(svc);
                         let mut conn = http1.serve_connection(io, svc).with_upgrades();
 
                         tokio::select! {
@@ -187,7 +193,8 @@ where
                     }
 
                     Variant::H2 => {
-                        let mut conn = http2.serve_connection(io, BoxRequest::new(svc));
+                        let svc = hyper_util::service::TowerToHyperService::new(svc);
+                        let mut conn = http2.serve_connection(io, svc);
 
                         tokio::select! {
                             res = &mut conn => {
