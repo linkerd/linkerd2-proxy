@@ -1995,6 +1995,7 @@ dependencies = [
  "async-trait",
  "bytes",
  "futures",
+ "hyper-util",
  "linkerd-errno",
  "pin-project",
  "tokio",
