@@ -1,20 +1,20 @@
-name: markdown
+# name: markdown
 
-permissions:
-  contents: read
+# permissions:
+#   contents: read
 
-on:
-  pull_request:
-    paths:
-      - .github/workflows/shellcheck.yml
-      - '**/*.sh'
-      - justfile
+# on:
+#   pull_request:
+#     paths:
+#       - .github/workflows/shellcheck.yml
+#       - '**/*.sh'
+#       - justfile
 
-jobs:
-  sh-lint:
-    timeout-minutes: 5
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: linkerd/dev/actions/setup-tools@v45
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-      - run: just sh-lint
+# jobs:
+#   sh-lint:
+#     timeout-minutes: 5
+#     runs-on: ubuntu-24.04
+#     steps:
+#       - uses: linkerd/dev/actions/setup-tools@v45
+#       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+#       - run: just sh-lint

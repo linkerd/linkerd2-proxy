@@ -881,19 +881,22 @@ async fn metrics_have_no_double_commas() {
     assert!(!scrape.contains(",,"), "outbound metrics had double comma");
 }
 
-#[tokio::test]
-async fn metrics_has_start_time() {
-    let Fixture {
-        metrics,
-        proxy: _proxy,
-        _profile,
-        dst_tx: _dst_tx,
-        pol_out_tx: _pol_out_tx,
-        ..
-    } = Fixture::inbound().await;
-    let uptime_regex = regex::Regex::new(r"process_start_time_seconds \d+")
-        .expect("compiling regex shouldn't fail");
-    assert_eventually!(uptime_regex.find(&metrics.get("/metrics").await).is_some())
+#[cfg(target_os = "linux")]
+mod process {
+    #[tokio::test]
+    async fn metrics_has_start_time() {
+        let Fixture {
+            metrics,
+            proxy: _proxy,
+            _profile,
+            dst_tx: _dst_tx,
+            pol_out_tx: _pol_out_tx,
+            ..
+        } = Fixture::inbound().await;
+        let uptime_regex = regex::Regex::new(r"process_start_time_seconds \d+")
+            .expect("compiling regex shouldn't fail");
+        assert_eventually!(uptime_regex.find(&metrics.get("/metrics").await).is_some())
+    }
 }
 
 mod transport {

@@ -1,78 +1,78 @@
-name: Weekly proxy release
+# name: Weekly proxy release
 
-on:
-  schedule:
-    # Wednesday at ~8:40PM Pacific
-    - cron: "40 3 * * 3"
-  workflow_dispatch: {}
+# on:
+#   schedule:
+#     # Wednesday at ~8:40PM Pacific
+#     - cron: "40 3 * * 3"
+#   workflow_dispatch: {}
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref }}
-  cancel-in-progress: true
+# concurrency:
+#   group: ${{ github.workflow }}-${{ github.head_ref }}
+#   cancel-in-progress: true
 
-jobs:
-  last-release:
-    if: github.repository == 'linkerd/linkerd2-proxy' # Don't run this in forks.
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    env:
-      GH_REPO: ${{ github.repository }}
-      GH_TOKEN: ${{ github.token }}
-    steps:
-      - name: Latest release
-        id: latest
-        run: gh release view --json name,publishedAt | jq -r 'to_entries[] | (.key + "=" + .value)' >> "$GITHUB_OUTPUT"
-      - name: Check if release was in last 72 hours
-        id: recency
-        env:
-          PUBLISHED_AT: ${{ steps.latest.outputs.publishedAt }}
-        run: |
-          if [ "$(date -d "$PUBLISHED_AT" +%s)" -gt "$(date -d '72 hours ago' +%s)" ]; then
-            echo "Last release $PUBLISHED_AT is recent" >&2
-            echo "recent=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "Last release $PUBLISHED_AT is not recent" >&2
-            echo "recent=false" >> "$GITHUB_OUTPUT"
-          fi
-    outputs:
-      version: ${{ steps.latest.outputs.name }}
-      published-at: ${{ steps.latest.outputs.publishedAt }}
-      recent: ${{ steps.recency.outputs.recent == 'true' }}
+# jobs:
+#   last-release:
+#     if: github.repository == 'linkerd/linkerd2-proxy' # Don't run this in forks.
+#     runs-on: ubuntu-24.04
+#     timeout-minutes: 5
+#     env:
+#       GH_REPO: ${{ github.repository }}
+#       GH_TOKEN: ${{ github.token }}
+#     steps:
+#       - name: Latest release
+#         id: latest
+#         run: gh release view --json name,publishedAt | jq -r 'to_entries[] | (.key + "=" + .value)' >> "$GITHUB_OUTPUT"
+#       - name: Check if release was in last 72 hours
+#         id: recency
+#         env:
+#           PUBLISHED_AT: ${{ steps.latest.outputs.publishedAt }}
+#         run: |
+#           if [ "$(date -d "$PUBLISHED_AT" +%s)" -gt "$(date -d '72 hours ago' +%s)" ]; then
+#             echo "Last release $PUBLISHED_AT is recent" >&2
+#             echo "recent=true" >> "$GITHUB_OUTPUT"
+#           else
+#             echo "Last release $PUBLISHED_AT is not recent" >&2
+#             echo "recent=false" >> "$GITHUB_OUTPUT"
+#           fi
+#     outputs:
+#       version: ${{ steps.latest.outputs.name }}
+#       published-at: ${{ steps.latest.outputs.publishedAt }}
+#       recent: ${{ steps.recency.outputs.recent == 'true' }}
 
-  last-commit:
-    needs: last-release
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-      - name: Check if the most recent commit is after the last release
-        id: recency
-        env:
-          PUBLISHED_AT: ${{ needs.last-release.outputs.published-at }}
-        run: |
-          if [ "$(git log -1 --format=%ct)" -gt "$(date -d "$PUBLISHED_AT" +%s)" ]; then
-            echo "HEAD after last release $PUBLISHED_AT" >&2
-            echo "after-release=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "after-release=false" >> "$GITHUB_OUTPUT"
-          fi
-    outputs:
-      after-release: ${{ steps.recency.outputs.after-release == 'true' }}
+#   last-commit:
+#     needs: last-release
+#     runs-on: ubuntu-24.04
+#     timeout-minutes: 5
+#     steps:
+#       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+#       - name: Check if the most recent commit is after the last release
+#         id: recency
+#         env:
+#           PUBLISHED_AT: ${{ needs.last-release.outputs.published-at }}
+#         run: |
+#           if [ "$(git log -1 --format=%ct)" -gt "$(date -d "$PUBLISHED_AT" +%s)" ]; then
+#             echo "HEAD after last release $PUBLISHED_AT" >&2
+#             echo "after-release=true" >> "$GITHUB_OUTPUT"
+#           else
+#             echo "after-release=false" >> "$GITHUB_OUTPUT"
+#           fi
+#     outputs:
+#       after-release: ${{ steps.recency.outputs.after-release == 'true' }}
 
-  trigger-release:
-    needs: [last-release, last-commit]
-    if: needs.last-release.outputs.recent == 'false' && needs.last-commit.outputs.after-release == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    permissions:
-      actions: write
-    env:
-      GH_REPO: ${{ github.repository }}
-      GH_TOKEN: ${{ github.token }}
-      LAST_VERSION: ${{ needs.last-release.outputs.version }}
-    steps:
-      - name: Get the latest minor version
-        run: |
-          m="$(echo "$LAST_VERSION" | cut -d. -f2)"
-          echo MINOR_VERSION="$((m+1))" >> "$GITHUB_ENV"
-      - run: gh workflow run release.yml -f publish=true -f version=v2."$MINOR_VERSION".0
+#   trigger-release:
+#     needs: [last-release, last-commit]
+#     if: needs.last-release.outputs.recent == 'false' && needs.last-commit.outputs.after-release == 'true'
+#     runs-on: ubuntu-24.04
+#     timeout-minutes: 5
+#     permissions:
+#       actions: write
+#     env:
+#       GH_REPO: ${{ github.repository }}
+#       GH_TOKEN: ${{ github.token }}
+#       LAST_VERSION: ${{ needs.last-release.outputs.version }}
+#     steps:
+#       - name: Get the latest minor version
+#         run: |
+#           m="$(echo "$LAST_VERSION" | cut -d. -f2)"
+#           echo MINOR_VERSION="$((m+1))" >> "$GITHUB_ENV"
+#       - run: gh workflow run release.yml -f publish=true -f version=v2."$MINOR_VERSION".0

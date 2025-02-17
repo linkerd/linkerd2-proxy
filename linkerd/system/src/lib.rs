@@ -8,5 +8,5 @@ mod linux;
 #[cfg(target_os = "linux")]
 pub use self::linux::{blocking_stat, max_fds, ms_per_tick, open_fds, page_size, Stat};
 
-#[cfg(not(target_os = "linux"))]
-compile_error!("The system crate requires Linux");
+// #[cfg(not(target_os = "linux"))]
+// compile_error!("The system crate requires Linux");

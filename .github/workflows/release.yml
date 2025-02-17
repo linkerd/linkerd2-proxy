@@ -1,224 +1,224 @@
-name: Release
+# name: Release
 
-on:
-  pull_request: {}
-  workflow_dispatch:
-    inputs:
-      version:
-        description: "Version in the form v1.2.3-prerelease+buildinfo"
-        required: true
-        type: string
-      tag-prefix:
-        description: "Tag prefix"
-        required: false
-        type: string
-        default: "release/"
-      profile:
-        description: "Build profile"
-        required: false
-        type: choice
-        options: ["debug", "release"]
-        default: "release"
-      publish:
-        description: "Publish the release?"
-        required: false
-        type: boolean
-        default: false
-      ref:
-        description: "Reference of the commit to release (default: github.ref)"
-        required: false
-        type: string
-        default: ""
-      prerelease:
-        description: "Is this a prerelease?"
-        required: false
-        type: boolean
-        default: false
-      draft:
-        description: "Is this a draft?"
-        required: false
-        type: boolean
-        default: false
-      latest:
-        description: "Make this the latest release?"
-        required: false
-        type: boolean
-        default: true
+# on:
+#   pull_request: {}
+#   workflow_dispatch:
+#     inputs:
+#       version:
+#         description: "Version in the form v1.2.3-prerelease+buildinfo"
+#         required: true
+#         type: string
+#       tag-prefix:
+#         description: "Tag prefix"
+#         required: false
+#         type: string
+#         default: "release/"
+#       profile:
+#         description: "Build profile"
+#         required: false
+#         type: choice
+#         options: ["debug", "release"]
+#         default: "release"
+#       publish:
+#         description: "Publish the release?"
+#         required: false
+#         type: boolean
+#         default: false
+#       ref:
+#         description: "Reference of the commit to release (default: github.ref)"
+#         required: false
+#         type: string
+#         default: ""
+#       prerelease:
+#         description: "Is this a prerelease?"
+#         required: false
+#         type: boolean
+#         default: false
+#       draft:
+#         description: "Is this a draft?"
+#         required: false
+#         type: boolean
+#         default: false
+#       latest:
+#         description: "Make this the latest release?"
+#         required: false
+#         type: boolean
+#         default: true
 
-env:
-  CARGO_INCREMENTAL: 0
-  CARGO_NET_RETRY: 10
-  RUSTFLAGS: "-D warnings -A deprecated --cfg tokio_unstable"
-  RUSTUP_MAX_RETRIES: 10
+# env:
+#   CARGO_INCREMENTAL: 0
+#   CARGO_NET_RETRY: 10
+#   RUSTFLAGS: "-D warnings -A deprecated --cfg tokio_unstable"
+#   RUSTUP_MAX_RETRIES: 10
 
-concurrency:
-  group: ${{ github.workflow }}-${{ inputs.ref || github.head_ref }}
-  cancel-in-progress: true
+# concurrency:
+#   group: ${{ github.workflow }}-${{ inputs.ref || github.head_ref }}
+#   cancel-in-progress: true
 
-jobs:
-  meta:
-    timeout-minutes: 5
-    runs-on: ubuntu-24.04
-    steps:
-      - id: meta
-        env:
-          VERSION: ${{ inputs.version }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          shopt -s extglob
-          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
-            echo version="0.0.0-test.${GITHUB_SHA:0:7}"
-            echo archs='["amd64"]'
-            exit 0
-          fi >> "$GITHUB_OUTPUT"
-          if ! [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+)?(\+[0-9A-Za-z-]+)?$ ]]; then
-            echo "Invalid version: $VERSION" >&2
-            exit 1
-          fi
-          ( echo version="${VERSION#v}"
-            echo archs='["amd64", "arm64", "arm"]'
-          ) >> "$GITHUB_OUTPUT"
+# jobs:
+#   meta:
+#     timeout-minutes: 5
+#     runs-on: ubuntu-24.04
+#     steps:
+#       - id: meta
+#         env:
+#           VERSION: ${{ inputs.version }}
+#         shell: bash
+#         run: |
+#           set -euo pipefail
+#           shopt -s extglob
+#           if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+#             echo version="0.0.0-test.${GITHUB_SHA:0:7}"
+#             echo archs='["amd64"]'
+#             exit 0
+#           fi >> "$GITHUB_OUTPUT"
+#           if ! [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+)?(\+[0-9A-Za-z-]+)?$ ]]; then
+#             echo "Invalid version: $VERSION" >&2
+#             exit 1
+#           fi
+#           ( echo version="${VERSION#v}"
+#             echo archs='["amd64", "arm64", "arm"]'
+#           ) >> "$GITHUB_OUTPUT"
 
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        if: github.event_name == 'pull_request'
-      - id: changed
-        if: github.event_name == 'pull_request'
-        uses: tj-actions/changed-files@dcc7a0cba800f454d79fff4b993e8c3555bcc0a8
-        with:
-          files: |
-            .github/workflows/release.yml
-            justfile
-            Cargo.toml
+#       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+#         if: github.event_name == 'pull_request'
+#       - id: changed
+#         if: github.event_name == 'pull_request'
+#         uses: tj-actions/changed-files@dcc7a0cba800f454d79fff4b993e8c3555bcc0a8
+#         with:
+#           files: |
+#             .github/workflows/release.yml
+#             justfile
+#             Cargo.toml
 
-    outputs:
-      archs: ${{ steps.meta.outputs.archs }}
-      version: ${{ steps.meta.outputs.version }}
-      package: ${{ github.event_name == 'workflow_dispatch' || steps.changed.outputs.any_changed == 'true' }}
-      profile: ${{ inputs.profile || 'release' }}
-      publish: ${{ inputs.publish }}
-      ref: ${{ inputs.ref || github.sha }}
-      tag: "${{ inputs.tag-prefix || 'release/' }}v${{ steps.meta.outputs.version }}"
-      prerelease: ${{ inputs.prerelease }}
-      draft: ${{ inputs.draft }}
-      latest: ${{ inputs.latest }}
+#     outputs:
+#       archs: ${{ steps.meta.outputs.archs }}
+#       version: ${{ steps.meta.outputs.version }}
+#       package: ${{ github.event_name == 'workflow_dispatch' || steps.changed.outputs.any_changed == 'true' }}
+#       profile: ${{ inputs.profile || 'release' }}
+#       publish: ${{ inputs.publish }}
+#       ref: ${{ inputs.ref || github.sha }}
+#       tag: "${{ inputs.tag-prefix || 'release/' }}v${{ steps.meta.outputs.version }}"
+#       prerelease: ${{ inputs.prerelease }}
+#       draft: ${{ inputs.draft }}
+#       latest: ${{ inputs.latest }}
 
-  info:
-    needs: meta
-    runs-on: ubuntu-24.04
-    timeout-minutes: 3
-    steps:
-      - name: Inputs
-        run: |
-          jq . <<EOF
-          ${{ toJson(inputs) }}
-          EOF
-      - name: Meta
-        run: |
-          jq . <<EOF
-          ${{ toJson(needs.meta.outputs) }}
-          EOF
+#   info:
+#     needs: meta
+#     runs-on: ubuntu-24.04
+#     timeout-minutes: 3
+#     steps:
+#       - name: Inputs
+#         run: |
+#           jq . <<EOF
+#           ${{ toJson(inputs) }}
+#           EOF
+#       - name: Meta
+#         run: |
+#           jq . <<EOF
+#           ${{ toJson(needs.meta.outputs) }}
+#           EOF
 
-  package:
-    needs: meta
-    if: needs.meta.outputs.package == 'true'
+#   package:
+#     needs: meta
+#     if: needs.meta.outputs.package == 'true'
 
-    strategy:
-      matrix:
-        arch: ${{ fromJson(needs.meta.outputs.archs) }}
-        libc: [gnu] # musl
+#     strategy:
+#       matrix:
+#         arch: ${{ fromJson(needs.meta.outputs.archs) }}
+#         libc: [gnu] # musl
 
-    # If we're not actually building on a release tag, don't short-circuit on
-    # errors. This helps us know whether a failure is platform-specific.
-    continue-on-error: ${{ needs.meta.outputs.publish != 'true' }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 40
-    container: docker://ghcr.io/linkerd/dev:v45-rust-musl
-    env:
-      LINKERD2_PROXY_VENDOR: ${{ github.repository_owner }}
-      LINKERD2_PROXY_VERSION: ${{ needs.meta.outputs.version }}
-    steps:
-      - name: Configure git
-        run: git config --global --add safe.directory "$PWD" # actions/runner#2033
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        with:
-          ref: ${{ needs.meta.outputs.ref }}
-      - uses: Swatinem/rust-cache@f0deed1e0edfc6a9be95417288c0e1099b1eeec3
-        with:
-          key: ${{ matrix.arch }}
-      - run: just fetch
-      - run: just arch=${{ matrix.arch }} libc=${{ matrix.libc }} rustup
-      - run: just arch=${{ matrix.arch }} libc=${{ matrix.libc }} profile=${{ needs.meta.outputs.profile }} build
-      - run: just arch=${{ matrix.arch }} libc=${{ matrix.libc }} profile=${{ needs.meta.outputs.profile }} package
-      - uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08
-        with:
-          name: ${{ matrix.arch }}-artifacts
-          path: target/package/*
+#     # If we're not actually building on a release tag, don't short-circuit on
+#     # errors. This helps us know whether a failure is platform-specific.
+#     continue-on-error: ${{ needs.meta.outputs.publish != 'true' }}
+#     runs-on: ubuntu-24.04
+#     timeout-minutes: 40
+#     container: docker://ghcr.io/linkerd/dev:v45-rust-musl
+#     env:
+#       LINKERD2_PROXY_VENDOR: ${{ github.repository_owner }}
+#       LINKERD2_PROXY_VERSION: ${{ needs.meta.outputs.version }}
+#     steps:
+#       - name: Configure git
+#         run: git config --global --add safe.directory "$PWD" # actions/runner#2033
+#       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+#         with:
+#           ref: ${{ needs.meta.outputs.ref }}
+#       - uses: Swatinem/rust-cache@f0deed1e0edfc6a9be95417288c0e1099b1eeec3
+#         with:
+#           key: ${{ matrix.arch }}
+#       - run: just fetch
+#       - run: just arch=${{ matrix.arch }} libc=${{ matrix.libc }} rustup
+#       - run: just arch=${{ matrix.arch }} libc=${{ matrix.libc }} profile=${{ needs.meta.outputs.profile }} build
+#       - run: just arch=${{ matrix.arch }} libc=${{ matrix.libc }} profile=${{ needs.meta.outputs.profile }} package
+#       - uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08
+#         with:
+#           name: ${{ matrix.arch }}-artifacts
+#           path: target/package/*
 
-  publish:
-    needs: [meta, package]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    permissions:
-      actions: write
-      contents: write
-    env:
-      VERSION: v${{ needs.meta.outputs.version }}
-      TAG: ${{ needs.meta.outputs.tag }}
-    steps:
-      - name: Configure git
-        env:
-          GITHUB_USERNAME: ${{ vars.LINKERD2_PROXY_GITHUB_USERNAME || 'github-actions[bot]' }}
-        run: |
-          git config --global --add safe.directory "$PWD" # actions/runner#2033
-          git config --global user.name "$GITHUB_USERNAME"
-          git config --global user.email "$GITHUB_USERNAME"@users.noreply.github.com
-      # Tag the release.
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        with:
-          token: ${{ secrets.LINKERD2_PROXY_GITHUB_TOKEN || github.token }}
-          ref: ${{ needs.meta.outputs.ref }}
-      - run: git tag -a -m "$VERSION" "$TAG"
-      # Fetch the artifacts.
-      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16
-        with:
-          path: artifacts
-      - run: du -h artifacts/**/*
-      # Publish the release.
-      - if: needs.meta.outputs.publish == 'true'
-        run: git push origin "$TAG"
-      - if: needs.meta.outputs.publish == 'true'
-        uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda
-        with:
-          name: ${{ env.VERSION }}
-          tag_name: ${{ env.TAG }}
-          files: artifacts/**/*
-          generate_release_notes: true
-          prerelease: ${{ needs.meta.outputs.prerelease }}
-          draft: ${{ needs.meta.outputs.draft }}
-          make_latest: ${{ needs.meta.outputs.latest }}
-      - if: >-
-          needs.meta.outputs.publish == 'true' &&
-          needs.meta.outputs.prerelease == 'false' &&
-          needs.meta.outputs.draft == 'false' &&
-          needs.meta.outputs.latest == 'true'
-        name: Trigger sync-proxy in linkerd2
-        run: gh workflow run sync-proxy.yml -f version="$TAG"
-        env:
-          GH_REPO: ${{ vars.LINKERD2_REPO || 'linkerd/linkerd2' }}
-          GH_TOKEN: ${{ secrets.LINKERD2_GITHUB_TOKEN }}
+#   publish:
+#     needs: [meta, package]
+#     runs-on: ubuntu-24.04
+#     timeout-minutes: 5
+#     permissions:
+#       actions: write
+#       contents: write
+#     env:
+#       VERSION: v${{ needs.meta.outputs.version }}
+#       TAG: ${{ needs.meta.outputs.tag }}
+#     steps:
+#       - name: Configure git
+#         env:
+#           GITHUB_USERNAME: ${{ vars.LINKERD2_PROXY_GITHUB_USERNAME || 'github-actions[bot]' }}
+#         run: |
+#           git config --global --add safe.directory "$PWD" # actions/runner#2033
+#           git config --global user.name "$GITHUB_USERNAME"
+#           git config --global user.email "$GITHUB_USERNAME"@users.noreply.github.com
+#       # Tag the release.
+#       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+#         with:
+#           token: ${{ secrets.LINKERD2_PROXY_GITHUB_TOKEN || github.token }}
+#           ref: ${{ needs.meta.outputs.ref }}
+#       - run: git tag -a -m "$VERSION" "$TAG"
+#       # Fetch the artifacts.
+#       - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16
+#         with:
+#           path: artifacts
+#       - run: du -h artifacts/**/*
+#       # Publish the release.
+#       - if: needs.meta.outputs.publish == 'true'
+#         run: git push origin "$TAG"
+#       - if: needs.meta.outputs.publish == 'true'
+#         uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda
+#         with:
+#           name: ${{ env.VERSION }}
+#           tag_name: ${{ env.TAG }}
+#           files: artifacts/**/*
+#           generate_release_notes: true
+#           prerelease: ${{ needs.meta.outputs.prerelease }}
+#           draft: ${{ needs.meta.outputs.draft }}
+#           make_latest: ${{ needs.meta.outputs.latest }}
+#       - if: >-
+#           needs.meta.outputs.publish == 'true' &&
+#           needs.meta.outputs.prerelease == 'false' &&
+#           needs.meta.outputs.draft == 'false' &&
+#           needs.meta.outputs.latest == 'true'
+#         name: Trigger sync-proxy in linkerd2
+#         run: gh workflow run sync-proxy.yml -f version="$TAG"
+#         env:
+#           GH_REPO: ${{ vars.LINKERD2_REPO || 'linkerd/linkerd2' }}
+#           GH_TOKEN: ${{ secrets.LINKERD2_GITHUB_TOKEN }}
 
-  release-ok:
-    needs: publish
-    if: always()
-    timeout-minutes: 3
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Results
-        run: |
-          echo 'needs.publish.result: ${{ needs.publish.result }}'
+#   release-ok:
+#     needs: publish
+#     if: always()
+#     timeout-minutes: 3
+#     runs-on: ubuntu-24.04
+#     steps:
+#       - name: Results
+#         run: |
+#           echo 'needs.publish.result: ${{ needs.publish.result }}'
 
-      - name: Verify jobs
-        # All jobs must succeed or be skipped.
-        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
-        run: exit 1
+#       - name: Verify jobs
+#         # All jobs must succeed or be skipped.
+#         if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+#         run: exit 1

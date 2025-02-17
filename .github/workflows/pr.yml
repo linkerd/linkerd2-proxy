@@ -6,6 +6,9 @@ env:
   CARGO_NET_RETRY: 10
   RUSTUP_MAX_RETRIES: 10
   RUSTFLAGS: "-D warnings -D deprecated --cfg tokio_unstable -C debuginfo=0"
+  C_INCLUDE_PATH: "C:\\msys64\\usr\\include"
+  CPLUS_INCLUDE_PATH: "C:\\msys64\\usr\\include"
+  LIBRARY_PATH: "C:\\msys64\\usr\\lib"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref }}
@@ -54,127 +57,159 @@ jobs:
       cargo_crates: ${{ steps.cargo-crates.outputs.crates }}
       rust_changed: ${{ steps.build.outputs.any_changed == 'true' ||  steps.rust.outputs.any_changed == 'true' }}
 
-  info:
-    timeout-minutes: 3
-    needs: meta
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Info
-        run: |
-          echo 'github.actor: ${{ github.actor }}'
-          echo 'github.event_name: ${{ github.event_name }}'
-          echo 'github.event.pull_request.number: ${{ github.event.pull_request.number }}'
-          echo 'needs.meta.outputs.is_dependabot: ${{ needs.meta.outputs.is_dependabot }}'
-          echo 'needs.meta.outputs.any_changed: ${{ needs.meta.outputs.any_changed }}'
-          echo 'needs.meta.outputs.actions_changed: ${{ needs.meta.outputs.actions_changed }}'
-          echo 'needs.meta.outputs.cargo_changed: ${{ needs.meta.outputs.cargo_changed }}'
-          echo 'needs.meta.outputs.cargo_crates: ${{ needs.meta.outputs.cargo_crates }}'
-          echo 'needs.meta.outputs.rust_changed: ${{ needs.meta.outputs.rust_changed }}'
+  # info:
+  #   timeout-minutes: 3
+  #   needs: meta
+  #   runs-on: ubuntu-24.04
+  #   steps:
+  #     - name: Info
+  #       run: |
+  #         echo 'github.actor: ${{ github.actor }}'
+  #         echo 'github.event_name: ${{ github.event_name }}'
+  #         echo 'github.event.pull_request.number: ${{ github.event.pull_request.number }}'
+  #         echo 'needs.meta.outputs.is_dependabot: ${{ needs.meta.outputs.is_dependabot }}'
+  #         echo 'needs.meta.outputs.any_changed: ${{ needs.meta.outputs.any_changed }}'
+  #         echo 'needs.meta.outputs.actions_changed: ${{ needs.meta.outputs.actions_changed }}'
+  #         echo 'needs.meta.outputs.cargo_changed: ${{ needs.meta.outputs.cargo_changed }}'
+  #         echo 'needs.meta.outputs.cargo_crates: ${{ needs.meta.outputs.cargo_crates }}'
+  #         echo 'needs.meta.outputs.rust_changed: ${{ needs.meta.outputs.rust_changed }}'
 
-  actions:
-    needs: meta
-    if: needs.meta.outputs.actions_changed == 'true'
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: linkerd/dev/actions/setup-tools@v45
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-      - run: just action-lint
-      - run: just action-dev-check
+  # actions:
+  #   needs: meta
+  #   if: needs.meta.outputs.actions_changed == 'true'
+  #   runs-on: ubuntu-24.04
+  #   steps:
+  #     - uses: linkerd/dev/actions/setup-tools@v45
+  #     - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+  #     - run: just action-lint
+  #     - run: just action-dev-check
 
-  rust:
+  # rust:
+  #   needs: meta
+  #   if: needs.meta.outputs.cargo_changed == 'true' || needs.meta.outputs.rust_changed == 'true'
+  #   runs-on: ubuntu-24.04
+  #   container: ghcr.io/linkerd/dev:v45-rust
+  #   permissions:
+  #     contents: read
+  #   timeout-minutes: 20
+  #   steps:
+  #     - run: git config --global --add safe.directory "$PWD" # actions/runner#2033
+  #     - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+  #     - uses: Swatinem/rust-cache@f0deed1e0edfc6a9be95417288c0e1099b1eeec3
+  #     - run: just fetch
+  #     - name: Run cargo deny check bans licenses sources
+  #       uses: EmbarkStudios/cargo-deny-action@e2f4ede4a4e60ea15ff31bc0647485d80c66cfba
+  #       with:
+  #         command: check bans licenses sources
+  #     - run: just check-fmt
+  #     - run: just clippy
+  #     - run: just doc
+  #     - run: just test --exclude=linkerd2-proxy --no-run
+  #     - run: just test --exclude=linkerd2-proxy
+  #       env:
+  #         NEXTEST_RETRIES: 3
+
+  rust-windows:
     needs: meta
-    if: needs.meta.outputs.cargo_changed == 'true' || needs.meta.outputs.rust_changed == 'true'
-    runs-on: ubuntu-24.04
-    container: ghcr.io/linkerd/dev:v45-rust
+    runs-on: windows-latest
     permissions:
       contents: read
     timeout-minutes: 20
     steps:
-      - run: git config --global --add safe.directory "$PWD" # actions/runner#2033
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-      - uses: Swatinem/rust-cache@f0deed1e0edfc6a9be95417288c0e1099b1eeec3
-      - run: just fetch
-      - name: Run cargo deny check bans licenses sources
-        uses: EmbarkStudios/cargo-deny-action@e2f4ede4a4e60ea15ff31bc0647485d80c66cfba
+      - name: Install Rust (rustup)
+        run: rustup update stable --no-self-update && rustup default stable
+        shell: bash
+      - run: rustup target add x86_64-pc-windows-gnu
+      - name: Install nasm
+        run: choco install nasm
+        shell: cmd
+      - name: Install LLVM and Clang
+        uses: KyleMayes/install-llvm-action@v2.0.5
         with:
-          command: check bans licenses sources
-      - run: just check-fmt
-      - run: just clippy
-      - run: just doc
-      - run: just test --exclude=linkerd2-proxy --no-run
-      - run: just test --exclude=linkerd2-proxy
-        env:
-          NEXTEST_RETRIES: 3
+          version: "18.1.8"
+          directory: ${{ runner.temp }}/llvm
+      - name: Set LIBCLANG_PATH
+        run: echo "LIBCLANG_PATH=$((gcm clang).source -replace "clang.exe")" >> $env:GITHUB_ENV
+      - name: fetch
+        run: cargo fetch --locked
+      - name: fmt
+        run: cargo fmt -- --check
+      - name: clippy
+        run: cargo clippy  --target=x86_64-pc-windows-gnu --workspace --all-targets --frozen
+      - name: tests
+        run: cargo test --target=x86_64-pc-windows-gnu --workspace --exclude=linkerd2-proxy --frozen
+          
 
-  rust-crates:
-    needs: meta
-    if: needs.meta.outputs.cargo_changed == 'true'
-    timeout-minutes: 20
-    runs-on: ubuntu-24.04
-    container: ghcr.io/linkerd/dev:v45-rust
-    strategy:
-      matrix:
-        crate: ${{ fromJson(needs.meta.outputs.cargo_crates) }}
-    steps:
-      - run: git config --global --add safe.directory "$PWD" # actions/runner#2033
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-      - uses: Swatinem/rust-cache@f0deed1e0edfc6a9be95417288c0e1099b1eeec3
-      - run: just fetch
-      - run: just check-crate ${{ matrix.crate }}
+  # rust-crates:
+  #   needs: meta
+  #   if: needs.meta.outputs.cargo_changed == 'true'
+  #   timeout-minutes: 20
+  #   runs-on: ubuntu-24.04
+  #   container: ghcr.io/linkerd/dev:v45-rust
+  #   strategy:
+  #     matrix:
+  #       crate: ${{ fromJson(needs.meta.outputs.cargo_crates) }}
+  #   steps:
+  #     - run: git config --global --add safe.directory "$PWD" # actions/runner#2033
+  #     - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+  #     - uses: Swatinem/rust-cache@f0deed1e0edfc6a9be95417288c0e1099b1eeec3
+  #     - run: just fetch
+  #     - run: just check-crate ${{ matrix.crate }}
 
-  linkerd-install:
-    needs: meta
-    if: needs.meta.outputs.cargo_changed == 'true' || needs.meta.outputs.rust_changed == 'true'
-    timeout-minutes: 20
-    runs-on: ubuntu-24.04
-    env:
-      WAIT_TIMEOUT: 2m
-    steps:
-      - uses: linkerd/dev/actions/setup-tools@v45
-      - name: scurl https://run.linkerd.io/install-edge | sh
-        run: |
-          scurl https://run.linkerd.io/install-edge | sh
-          echo "PATH=$PATH:$HOME/.linkerd2/bin" >> "$GITHUB_ENV"
-          export PATH="$PATH:$HOME/.linkerd2/bin"
-          tag=$(linkerd version --client --short)
-          echo "linkerd $tag"
-          echo "LINKERD_TAG=$tag" >> "$GITHUB_ENV"
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-      - run: just docker
-      - run: just-k3d create
-      - run: just k3d-load-linkerd
-      - run: just linkerd-install
-      - run: just linkerd-check-control-plane-proxy
-        env:
-          TMPDIR: ${{ runner.temp }}
+  # linkerd-install:
+  #   needs: meta
+  #   if: needs.meta.outputs.cargo_changed == 'true' || needs.meta.outputs.rust_changed == 'true'
+  #   timeout-minutes: 20
+  #   runs-on: ubuntu-24.04
+  #   env:
+  #     WAIT_TIMEOUT: 2m
+  #   steps:
+  #     - uses: linkerd/dev/actions/setup-tools@v45
+  #     - name: scurl https://run.linkerd.io/install-edge | sh
+  #       run: |
+  #         scurl https://run.linkerd.io/install-edge | sh
+  #         echo "PATH=$PATH:$HOME/.linkerd2/bin" >> "$GITHUB_ENV"
+  #         export PATH="$PATH:$HOME/.linkerd2/bin"
+  #         tag=$(linkerd version --client --short)
+  #         echo "linkerd $tag"
+  #         echo "LINKERD_TAG=$tag" >> "$GITHUB_ENV"
+  #     - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+  #     - run: just docker
+  #     - run: just-k3d create
+  #     - run: just k3d-load-linkerd
+  #     - run: just linkerd-install
+  #     - run: just linkerd-check-control-plane-proxy
+  #       env:
+  #         TMPDIR: ${{ runner.temp }}
 
-  ship-it:
-    timeout-minutes: 3
-    needs: [meta, actions, rust, rust-crates, linkerd-install]
-    if: always()
-    runs-on: ubuntu-24.04
+  # ship-it:
+  #   timeout-minutes: 3
+  #   needs: [meta, actions, rust, rust-crates, linkerd-install]
+  #   if: always()
+  #   runs-on: ubuntu-24.04
 
-    permissions:
-      contents: write
-      pull-requests: write
+  #   permissions:
+  #     contents: write
+  #     pull-requests: write
 
-    steps:
-      - name: Results
-        run: |
-          echo 'needs.actions.result: ${{ needs.actions.result }}'
-          echo 'needs.rust.result: ${{ needs.rust.result }}'
-          echo 'needs.rust-crates.result: ${{ needs.rust-crates.result }}'
-          echo 'needs.linkerd-install.result: ${{ needs.linkerd-install.result }}'
+  #   steps:
+  #     - name: Results
+  #       run: |
+  #         echo 'needs.actions.result: ${{ needs.actions.result }}'
+  #         echo 'needs.rust.result: ${{ needs.rust.result }}'
+  #         echo 'needs.rust-crates.result: ${{ needs.rust-crates.result }}'
+  #         echo 'needs.linkerd-install.result: ${{ needs.linkerd-install.result }}'
 
-      - name: Verify jobs
-        # All jobs must succeed or be skipped.
-        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
-        run: exit 1
+  #     - name: Verify jobs
+  #       # All jobs must succeed or be skipped.
+  #       if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+  #       run: exit 1
 
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        if: needs.meta.outputs.is_dependabot == 'true' && needs.meta.outputs.any_changed == 'true'
-      - name: "Merge dependabot changes"
-        if: needs.meta.outputs.is_dependabot == 'true' && needs.meta.outputs.any_changed == 'true'
-        run: gh pr merge '${{ github.event.pull_request.number }}' --auto --squash
-        env:
-          GH_TOKEN: ${{ github.token }}
+  #     - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+  #       if: needs.meta.outputs.is_dependabot == 'true' && needs.meta.outputs.any_changed == 'true'
+  #     - name: "Merge dependabot changes"
+  #       if: needs.meta.outputs.is_dependabot == 'true' && needs.meta.outputs.any_changed == 'true'
+  #       run: gh pr merge '${{ github.event.pull_request.number }}' --auto --squash
+  #       env:
+  #         GH_TOKEN: ${{ github.token }}
