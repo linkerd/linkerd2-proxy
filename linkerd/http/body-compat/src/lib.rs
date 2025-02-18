@@ -1,3 +1,6 @@
+#![deprecated = "interfaces from this crate can be removed in place of http_body and http_body_util"]
+#![allow(deprecated)]
+
 //! Compatibility utilities for upgrading to http-body 1.0.
 
 use http_body::{Body, SizeHint};
@@ -11,10 +14,19 @@ pub use self::frame::Frame;
 
 mod frame;
 
+#[deprecated = "this type can be removed in place of http_body::Body"]
 #[derive(Debug)]
 pub struct ForwardCompatibleBody<B> {
     inner: B,
+    #[allow(
+        dead_code,
+        reason = "this field is no longer needed, but preserved for historical reasons"
+    )]
     data_finished: bool,
+    #[allow(
+        dead_code,
+        reason = "this field is no longer needed, but preserved for historical reasons"
+    )]
     trailers_finished: bool,
 }
 
@@ -61,7 +73,7 @@ impl<B: Body + Unpin> ForwardCompatibleBody<B> {
     pub fn poll_frame(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Frame<B::Data>, B::Error>>> {
+    ) -> Poll<Option<Result<http_body::Frame<B::Data>, B::Error>>> {
         let mut fut = self.get_mut().frame();
         let pinned = Pin::new(&mut fut);
         pinned.poll(cx)
@@ -79,62 +91,27 @@ impl<B: Body + Unpin> ForwardCompatibleBody<B> {
 /// [frame]: https://docs.rs/http-body-util/0.1.2/http_body_util/combinators/struct.Frame.html
 mod combinators {
     use super::ForwardCompatibleBody;
-    use core::{future::Future, pin::Pin, task};
+    use core::{future::Future, pin::Pin};
     use http_body::Body;
-    use std::{
-        ops::Not,
-        task::{ready, Context, Poll},
-    };
+    use std::task::{Context, Poll};
 
+    #[deprecated = "this type can be replaced with http_body::Frame"]
     #[must_use = "futures don't do anything unless polled"]
     #[derive(Debug)]
     /// Future that resolves to the next frame from a [`Body`].
     pub struct Frame<'a, T>(pub(super) &'a mut super::ForwardCompatibleBody<T>);
 
     impl<T: Body + Unpin> Future for Frame<'_, T> {
-        type Output = Option<Result<super::Frame<T::Data>, T::Error>>;
+        type Output = Option<Result<http_body::Frame<T::Data>, T::Error>>;
 
         fn poll(self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Self::Output> {
             let Self(ForwardCompatibleBody {
                 inner,
-                data_finished,
-                trailers_finished,
+                data_finished: _,
+                trailers_finished: _,
             }) = self.get_mut();
-            let mut pinned = Pin::new(inner);
 
-            // We have already yielded the trailers, the body is done.
-            if *trailers_finished {
-                return task::Poll::Ready(None);
-            }
-
-            // We are still yielding data frames.
-            if data_finished.not() {
-                match ready!(pinned.as_mut().poll_data(ctx)) {
-                    Some(Ok(data)) => {
-                        // We yielded a frame.
-                        return task::Poll::Ready(Some(Ok(super::Frame::data(data))));
-                    }
-                    Some(Err(error)) => {
-                        // If we encountered an error, we are finished.
-                        *data_finished = true;
-                        *trailers_finished = true;
-                        return task::Poll::Ready(Some(Err(error)));
-                    }
-                    None => {
-                        // We are done yielding data frames. Mark the corresponding flag, and fall
-                        // through to poll the trailers...
-                        *data_finished = true;
-                    }
-                };
-            }
-
-            // We have yielded all of the data frames but have not yielded the trailers.
-            let trailers = ready!(pinned.poll_trailers(ctx));
-            *trailers_finished = true;
-            let trailers = trailers
-                .transpose()
-                .map(|res| res.map(super::Frame::trailers));
-            task::Poll::Ready(trailers)
+            Pin::new(inner).poll_frame(ctx)
         }
     }
 }
