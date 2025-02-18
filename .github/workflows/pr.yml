@@ -120,9 +120,15 @@ jobs:
       - name: Install Rust (rustup)
         run: rustup update stable --no-self-update && rustup default stable
         shell: bash
+      - name: Install nextest
+        run: curl -LsSf https://get.nexte.st/latest/windows-tar | tar zxf - -C ${CARGO_HOME:-~/.cargo}/bin
+        shell: bash
       - run: rustup target add x86_64-pc-windows-gnu
       - name: Install nasm
         run: choco install nasm
+        shell: cmd
+      - name: Install protoc
+        run: choco install protoc
         shell: cmd
       - name: Install LLVM and Clang
         uses: KyleMayes/install-llvm-action@v2.0.5
@@ -137,8 +143,12 @@ jobs:
         run: cargo fmt -- --check
       - name: clippy
         run: cargo clippy  --target=x86_64-pc-windows-gnu --workspace --all-targets --frozen
+      - name: tests no run
+        run: cargo nextest run  --target=x86_64-pc-windows-gnu --workspace --frozen --exclude=linkerd2-proxy --no-run
       - name: tests
-        run: cargo test --target=x86_64-pc-windows-gnu --workspace --exclude=linkerd2-proxy --frozen
+        run: cargo nextest run  --target=x86_64-pc-windows-gnu --workspace --frozen --exclude=linkerd2-proxy
+        env:
+          NEXTEST_RETRIES: 3
           
 
   # rust-crates:
