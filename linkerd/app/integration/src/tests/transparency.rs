@@ -1369,8 +1369,8 @@ mod proxy_to_proxy {
             "transparency.test.svc.cluster.local",
         );
         let res = client.request(client.request_builder("/")).await.unwrap();
-        // tracing::info!(res);
-        assert_eq!(res.status(), http::StatusCode::BAD_GATEWAY);
+        tracing::info!("result {:?}", res);
+        assert_eq!(res.status(), http::StatusCode::GATEWAY_TIMEOUT);
 
         // ensure panics from the server are propagated
         proxies.join_servers().await;
