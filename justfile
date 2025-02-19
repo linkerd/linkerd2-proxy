@@ -31,10 +31,18 @@ arch := "amd64"
 
 libc := 'gnu'
 
+os := 'windows'
+
 # If a `arch` is specified, then we change the default cargo `--target`
 # to support cross-compilation. Otherwise, we use `rustup` to find the default.
 _target := if arch == 'amd64' {
-        "x86_64-unknown-linux-" + libc
+        if os == 'linux' {
+            "x86_64-unknown-linux-" + libc
+        } else if os == 'windows' {
+            "x86_64-pc-windows-" + libc
+        } else {
+            error("unsupported os=" + os)
+        }
     } else if arch == "arm64" {
         "aarch64-unknown-linux-" + libc
     } else if arch == "arm" {
@@ -46,7 +54,7 @@ _target := if arch == 'amd64' {
 _cargo := 'just-cargo profile=' + profile + ' target=' + _target + ' toolchain=' + toolchain
 
 _target_dir := "target" / _target / profile
-_target_bin := _target_dir / "linkerd2-proxy"
+_target_bin := _target_dir / "linkerd2-proxy.exe"
 _package_name := "linkerd2-proxy-" + package_version + "-" + arch + if libc == 'musl' { '-static' } else { '' }
 _package_dir := "target/package" / _package_name
 shasum := "shasum -a 256"

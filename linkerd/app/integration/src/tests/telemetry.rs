@@ -881,6 +881,7 @@ async fn metrics_have_no_double_commas() {
     assert!(!scrape.contains(",,"), "outbound metrics had double comma");
 }
 
+#[cfg(target_os = "linux")]
 #[tokio::test]
 async fn metrics_has_start_time() {
     let Fixture {

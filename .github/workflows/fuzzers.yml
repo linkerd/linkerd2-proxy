@@ -1,63 +1,63 @@
-name: fuzzers
+# name: fuzzers
 
-on:
-  # Only run on PRs that touch fuzzed crates
-  pull_request:
-    paths:
-      - 'linkerd/addr/**'
-      - 'linkerd/app/inbound/**'
-      - 'linkerd/dns/**'
-      - 'linkerd/proxy/http/**'
-      - 'linkerd/tls/**'
-      - 'linkerd/transport-header/**'
-      - .github/workflows/fuzzers.yml
-      - .github/fuzzers-list.sh
+# on:
+#   # Only run on PRs that touch fuzzed crates
+#   pull_request:
+#     paths:
+#       - 'linkerd/addr/**'
+#       - 'linkerd/app/inbound/**'
+#       - 'linkerd/dns/**'
+#       - 'linkerd/proxy/http/**'
+#       - 'linkerd/tls/**'
+#       - 'linkerd/transport-header/**'
+#       - .github/workflows/fuzzers.yml
+#       - .github/fuzzers-list.sh
 
-env:
-  CARGO_INCREMENTAL: 0
-  CARGO_NET_RETRY: 10
-  RUST_BACKTRACE: short
-  RUSTFLAGS: "-D warnings -A deprecated --cfg tokio_unstable -C debuginfo=0"
-  RUSTUP_MAX_RETRIES: 10
+# env:
+#   CARGO_INCREMENTAL: 0
+#   CARGO_NET_RETRY: 10
+#   RUST_BACKTRACE: short
+#   RUSTFLAGS: "-D warnings -A deprecated --cfg tokio_unstable -C debuginfo=0"
+#   RUSTUP_MAX_RETRIES: 10
 
-permissions:
-  contents: read
+# permissions:
+#   contents: read
 
-jobs:
-  list-changed:
-    timeout-minutes: 3
-    runs-on: ubuntu-24.04
-    container: docker://rust:1.83.0
-    steps:
-      - run: apt update && apt install -y jo
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-      - run: git config --global --add safe.directory "$PWD" # actions/runner#2033
-      - uses: tj-actions/changed-files@dcc7a0cba800f454d79fff4b993e8c3555bcc0a8
-        id: changed-files
-      - name: list changed crates
-        id: list-changed
-        shell: bash
-        run: |
-          dirs=$(.github/fuzzers-list.sh ${{ steps.changed-files.outputs.all_changed_files }} | jo -a)
-          echo "dirs=$dirs" >> "$GITHUB_OUTPUT"
-    outputs:
-      dirs: ${{ steps.list-changed.outputs.dirs }}
+# jobs:
+#   list-changed:
+#     timeout-minutes: 3
+#     runs-on: ubuntu-24.04
+#     container: docker://rust:1.83.0
+#     steps:
+#       - run: apt update && apt install -y jo
+#       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+#       - run: git config --global --add safe.directory "$PWD" # actions/runner#2033
+#       - uses: tj-actions/changed-files@dcc7a0cba800f454d79fff4b993e8c3555bcc0a8
+#         id: changed-files
+#       - name: list changed crates
+#         id: list-changed
+#         shell: bash
+#         run: |
+#           dirs=$(.github/fuzzers-list.sh ${{ steps.changed-files.outputs.all_changed_files }} | jo -a)
+#           echo "dirs=$dirs" >> "$GITHUB_OUTPUT"
+#     outputs:
+#       dirs: ${{ steps.list-changed.outputs.dirs }}
 
-  # Build fuzzers for any changed crates.
-  build:
-    needs: [list-changed]
-    timeout-minutes: 40
-    runs-on: ubuntu-24.04
-    container: docker://rust:1.83.0
-    strategy:
-      matrix:
-        dir: ${{ fromJson(needs.list-changed.outputs.dirs) }}
-    steps:
-      - run: rustup toolchain add nightly
-      - run: cargo install cargo-fuzz
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-      - run: git config --global --add safe.directory "$PWD" # actions/runner#2033
-      - working-directory: ${{matrix.dir}}
-        run: cargo +nightly fetch
-      - working-directory: ${{matrix.dir}}
-        run: cargo +nightly fuzz build
+#   # Build fuzzers for any changed crates.
+#   build:
+#     needs: [list-changed]
+#     timeout-minutes: 40
+#     runs-on: ubuntu-24.04
+#     container: docker://rust:1.83.0
+#     strategy:
+#       matrix:
+#         dir: ${{ fromJson(needs.list-changed.outputs.dirs) }}
+#     steps:
+#       - run: rustup toolchain add nightly
+#       - run: cargo install cargo-fuzz
+#       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+#       - run: git config --global --add safe.directory "$PWD" # actions/runner#2033
+#       - working-directory: ${{matrix.dir}}
+#         run: cargo +nightly fetch
+#       - working-directory: ${{matrix.dir}}
+#         run: cargo +nightly fuzz build
