@@ -69,8 +69,10 @@ impl fmt::Display for ControlAddr {
     }
 }
 
-pub type RspBody =
-    linkerd_http_metrics::requests::ResponseBody<http::balance::Body<hyper::Body>, classify::Eos>;
+pub type RspBody = linkerd_http_metrics::requests::ResponseBody<
+    http::balance::Body<hyper::body::Incoming>,
+    classify::Eos,
+>;
 
 #[derive(Clone, Debug, Default)]
 pub struct Metrics {
@@ -129,9 +131,9 @@ impl Config {
             self.connect.user_timeout,
         ))
         .push(tls::Client::layer(identity))
-        .push_connect_timeout(self.connect.timeout)
+        .push_connect_timeout(self.connect.timeout) // Client<NewClient, ConnectTcp>
         .push_map_target(|(_version, target)| target)
-        .push(self::client::layer(self.connect.http2))
+        .push(self::client::layer::<_, _>(self.connect.http2))
         .push_on_service(svc::MapErr::layer_boxed())
         .into_new_service();
 
@@ -147,6 +149,8 @@ impl Config {
             .push_new_reconnect(self.connect.backoff)
             .instrument(|t: &self::client::Target| info_span!("endpoint", addr = %t.addr));
 
+        todo!();
+        /*
         let balance = endpoint
             .lift_new()
             .push(self::balance::layer(metrics.balance, dns, resolve_backoff))
@@ -161,6 +165,7 @@ impl Config {
             .push_on_service(svc::BoxCloneSyncService::layer())
             .push(svc::ArcNewService::layer())
             .into_inner()
+        */
     }
 }
 

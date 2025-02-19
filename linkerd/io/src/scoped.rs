@@ -89,6 +89,17 @@ impl<I: io::AsyncRead> io::AsyncRead for ScopedIo<I> {
     }
 }
 
+impl<I: hyper::rt::Read> hyper::rt::Read for ScopedIo<I> {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: hyper::rt::ReadBufCursor<'_>,
+    ) -> io::Poll<()> {
+        let this = self.project();
+        this.io.poll_read(cx, buf).map_err(this.scope.err())
+    }
+}
+
 impl<I: io::Write> io::Write for ScopedIo<I> {
     #[inline]
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
@@ -136,5 +147,40 @@ impl<I: io::AsyncWrite> io::AsyncWrite for ScopedIo<I> {
     #[inline]
     fn is_write_vectored(&self) -> bool {
         self.io.is_write_vectored()
+    }
+}
+
+impl<I: hyper::rt::Write> hyper::rt::Write for ScopedIo<I> {
+    #[inline]
+    fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> io::Poll<usize> {
+        let this = self.project();
+        this.io.poll_write(cx, buf).map_err(this.scope.err())
+    }
+
+    #[inline]
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> io::Poll<()> {
+        let this = self.project();
+        this.io.poll_flush(cx).map_err(this.scope.err())
+    }
+
+    #[inline]
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> io::Poll<()> {
+        let this = self.project();
+        this.io.poll_shutdown(cx).map_err(this.scope.err())
+    }
+
+    fn is_write_vectored(&self) -> bool {
+        self.io.is_write_vectored()
+    }
+
+    fn poll_write_vectored(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: &[std::io::IoSlice<'_>],
+    ) -> io::Poll<usize> {
+        let this = self.project();
+        this.io
+            .poll_write_vectored(cx, bufs)
+            .map_err(this.scope.err())
     }
 }

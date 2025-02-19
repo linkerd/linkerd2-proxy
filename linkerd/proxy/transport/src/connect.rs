@@ -6,7 +6,6 @@ use std::{
     pin::Pin,
     task::{Context, Poll},
 };
-use tokio::net::TcpStream;
 use tracing::debug;
 
 #[derive(Copy, Clone, Debug)]
@@ -14,6 +13,8 @@ pub struct ConnectTcp {
     keepalive: Keepalive,
     user_timeout: UserTimeout,
 }
+
+type TcpStream = io::ScopedIo<hyper_util::rt::TokioIo<tokio::net::TcpStream>>;
 
 impl ConnectTcp {
     pub fn new(keepalive: Keepalive, user_timeout: UserTimeout) -> Self {
@@ -25,7 +26,7 @@ impl ConnectTcp {
 }
 
 impl<T: Param<Remote<ServerAddr>>> Service<T> for ConnectTcp {
-    type Response = (io::ScopedIo<TcpStream>, Local<ClientAddr>);
+    type Response = (TcpStream, Local<ClientAddr>);
     type Error = io::Error;
     type Future = Pin<Box<dyn Future<Output = io::Result<Self::Response>> + Send + Sync + 'static>>;
 
@@ -39,7 +40,7 @@ impl<T: Param<Remote<ServerAddr>>> Service<T> for ConnectTcp {
         let Remote(ServerAddr(addr)) = t.param();
         debug!(server.addr = %addr, "Connecting");
         Box::pin(async move {
-            let io = TcpStream::connect(&addr).await?;
+            let io = tokio::net::TcpStream::connect(&addr).await?;
             super::set_nodelay_or_warn(&io);
             let io = super::set_keepalive_or_warn(io, keepalive)?;
             let io = super::set_user_timeout_or_warn(io, user_timeout)?;
@@ -49,7 +50,10 @@ impl<T: Param<Remote<ServerAddr>>> Service<T> for ConnectTcp {
                 ?keepalive,
                 "Connected",
             );
-            Ok((io::ScopedIo::client(io), Local(ClientAddr(local_addr))))
+            Ok((
+                io::ScopedIo::client(hyper_util::rt::TokioIo::new(io)),
+                Local(ClientAddr(local_addr)),
+            ))
         })
     }
 }

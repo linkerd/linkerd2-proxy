@@ -18,6 +18,7 @@ drain = { version = "0.1", features = ["retain"] }
 http = { workspace = true }
 http-body = { workspace = true }
 hyper = { workspace = true, features = ["http1", "http2"] }
+hyper-util = { workspace = true }
 futures = { version = "0.3", default-features = false }
 ipnet = "2.11"
 prometheus-client = "0.22"
