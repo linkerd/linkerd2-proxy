@@ -1,12 +1,12 @@
 use linkerd_app_core::{exp_backoff::ExponentialBackoff, Error};
 use std::sync::Arc;
-use tokio::net::UnixStream;
 use tokio::sync::watch;
-use tonic::transport::{Endpoint, Uri};
 
 pub use linkerd_app_core::identity::client::spire as client;
 
+#[cfg(target_os = "linux")]
 const UNIX_PREFIX: &str = "unix:";
+#[cfg(target_os = "linux")]
 const TONIC_DEFAULT_URI: &str = "http://[::]:50051";
 
 #[derive(Clone, Debug)]
@@ -17,17 +17,27 @@ pub struct Config {
 
 // Connects to SPIRE workload API via Unix Domain Socket
 pub struct Client {
+    #[allow(dead_code)]
     config: Config,
 }
 
 // === impl Client ===
 
+#[cfg(target_os = "linux")]
 impl From<Config> for Client {
     fn from(config: Config) -> Self {
         Self { config }
     }
 }
 
+#[cfg(not(target_os = "linux"))]
+impl From<Config> for Client {
+    fn from(_: Config) -> Self {
+        panic!("Spire is supported on Linux only")
+    }
+}
+
+#[cfg(target_os = "linux")]
 impl tower::Service<()> for Client {
     type Response = tonic::Response<watch::Receiver<client::SvidUpdate>>;
     type Error = Error;
@@ -44,6 +54,9 @@ impl tower::Service<()> for Client {
         let socket = self.config.socket_addr.clone();
         let backoff = self.config.backoff;
         Box::pin(async move {
+            use tokio::net::UnixStream;
+            use tonic::transport::{Endpoint, Uri};
+
             // Strip the 'unix:' prefix for tonic compatibility.
             let stripped_path = socket
                 .strip_prefix(UNIX_PREFIX)
@@ -64,5 +77,23 @@ impl tower::Service<()> for Client {
 
             Ok(receiver)
         })
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+impl tower::Service<()> for Client {
+    type Response = tonic::Response<watch::Receiver<client::SvidUpdate>>;
+    type Error = Error;
+    type Future = futures::future::BoxFuture<'static, Result<Self::Response, Self::Error>>;
+
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        unimplemented!("Spire is supported on Linux only")
+    }
+
+    fn call(&mut self, _req: ()) -> Self::Future {
+        unimplemented!("Spire is supported on Linux only")
     }
 }
