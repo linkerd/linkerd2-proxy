@@ -272,23 +272,22 @@ dependencies = [
 
 [[package]]
 name = "boring"
-version = "4.13.0"
+version = "4.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f5aac023c3ba13725de1604aff621a9dbf9a4f3af1ea6fb712bca91ad729a8e"
+checksum = "3e10058cf3b10c9eca798177ac6ee3c895c7312d094618de60a2bb6f2698f25f"
 dependencies = [
  "bitflags 2.4.2",
  "boring-sys",
  "foreign-types",
  "libc",
- "once_cell",
  "openssl-macros",
 ]
 
 [[package]]
 name = "boring-sys"
-version = "4.13.0"
+version = "4.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ebabcc15924f3244f244cfb1dfe43c0b28236ea8c1f71dc8e5a146eae0342d79"
+checksum = "84e89df19c49b8b7c670349a2341c674bccf1fb39bf565fa15cca0b10d1effc4"
 dependencies = [
  "autocfg",
  "bindgen",
@@ -1273,7 +1272,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc2f4eb4bc735547cfed7c0a4922cbd04a4655978c09b54f1f7b228750664c34"
 dependencies = [
  "cfg-if",
- "windows-targets 0.48.5",
+ "windows-targets 0.52.0",
 ]
 
 [[package]]
@@ -3890,13 +3889,12 @@ dependencies = [
 
 [[package]]
 name = "tokio-boring"
-version = "4.13.0"
+version = "4.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e37b8f984fc360dee7b04fe901d10af3f4af08715ec21260cb600ac9cdad3a0c"
+checksum = "2748c49762114e8aefcc169c3ba5c7573edcfe461db9cd0a3a1fa337ecc96b9f"
 dependencies = [
  "boring",
  "boring-sys",
- "once_cell",
  "tokio",
 ]
 
