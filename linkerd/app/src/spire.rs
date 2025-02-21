@@ -17,7 +17,7 @@ pub struct Config {
 
 // Connects to SPIRE workload API via Unix Domain Socket
 pub struct Client {
-    #[allow(dead_code)]
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     config: Config,
 }
 
