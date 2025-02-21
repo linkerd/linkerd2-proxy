@@ -93,7 +93,7 @@ fn set_user_timeout_or_warn(
     user_timeout: Option<Duration>,
 ) -> io::Result<TcpStream> {
     if user_timeout.is_some() {
-        tracing::warn!("TCP_USER_TIMEOUT is supported on Linux only.");
+        tracing::debug!("TCP_USER_TIMEOUT is supported on Linux only.");
     }
     Ok(tcp)
 }
