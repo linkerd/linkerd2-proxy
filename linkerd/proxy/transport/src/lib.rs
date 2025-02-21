@@ -71,6 +71,7 @@ fn set_keepalive_or_warn(
     tokio::net::TcpStream::from_std(stream)
 }
 
+#[cfg(target_os = "linux")]
 fn set_user_timeout_or_warn(
     tcp: TcpStream,
     user_timeout: Option<Duration>,
@@ -84,4 +85,15 @@ fn set_user_timeout_or_warn(
     }
     let stream: std::net::TcpStream = socket2::Socket::into(sock);
     tokio::net::TcpStream::from_std(stream)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn set_user_timeout_or_warn(
+    tcp: TcpStream,
+    user_timeout: Option<Duration>,
+) -> io::Result<TcpStream> {
+    if user_timeout.is_some() {
+        tracing::debug!("TCP_USER_TIMEOUT is supported on Linux only.");
+    }
+    Ok(tcp)
 }
