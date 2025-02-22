@@ -15,7 +15,10 @@ __has_any_tls_impls = []
 
 [dependencies]
 futures = { version = "0.3", default-features = false }
+hyper = { workspace = true }
+hyper-util = { workspace = true }
 pin-project = "1"
+tokio = { version = "1", default-features = false }
 
 linkerd-dns-name = { path = "../dns/name" }
 linkerd-error = { path = "../error" }

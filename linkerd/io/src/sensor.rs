@@ -77,6 +77,42 @@ impl<T: AsyncRead + AsyncWrite, S: Sensor> AsyncWrite for SensorIo<T, S> {
     }
 }
 
+impl<T: hyper::rt::Write, S: Sensor> hyper::rt::Write for SensorIo<T, S> {
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+        let this = self.project();
+        this.sensor.record_error(this.io.poll_shutdown(cx))
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+        let this = self.project();
+        this.sensor.record_error(this.io.poll_flush(cx))
+    }
+
+    fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<usize> {
+        let this = self.project();
+        let bytes = ready!(this.sensor.record_error(this.io.poll_write(cx, buf)))?;
+        this.sensor.record_write(bytes);
+        Poll::Ready(Ok(bytes))
+    }
+
+    fn poll_write_vectored(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: &[std::io::IoSlice<'_>],
+    ) -> Poll<usize> {
+        let this = self.project();
+        let bytes = ready!(this
+            .sensor
+            .record_error(this.io.poll_write_vectored(cx, bufs)))?;
+        this.sensor.record_write(bytes);
+        Poll::Ready(Ok(bytes))
+    }
+
+    fn is_write_vectored(&self) -> bool {
+        self.io.is_write_vectored()
+    }
+}
+
 impl<T: PeerAddr, S> PeerAddr for SensorIo<T, S> {
     fn peer_addr(&self) -> Result<std::net::SocketAddr> {
         self.io.peer_addr()
