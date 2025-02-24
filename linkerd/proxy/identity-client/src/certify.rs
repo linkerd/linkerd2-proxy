@@ -93,7 +93,7 @@ impl Certify {
         C: Credentials,
         N: NewService<(), Service = S>,
         S: GrpcService<BoxBody>,
-        S::ResponseBody: Default + Body<Data = tonic::codegen::Bytes> + Send + 'static,
+        S::ResponseBody: Body<Data = tonic::codegen::Bytes> + Send + 'static,
         <S::ResponseBody as Body>::Error: Into<Error> + Send,
     {
         debug!("Identity daemon running");
@@ -155,7 +155,7 @@ async fn certify<C, S>(
 where
     C: Credentials,
     S: GrpcService<BoxBody>,
-    S::ResponseBody: Default + Body<Data = tonic::codegen::Bytes> + Send + 'static,
+    S::ResponseBody: Body<Data = tonic::codegen::Bytes> + Send + 'static,
     <S::ResponseBody as Body>::Error: Into<Error> + Send,
 {
     let req = tonic::Request::new(api::CertifyRequest {
