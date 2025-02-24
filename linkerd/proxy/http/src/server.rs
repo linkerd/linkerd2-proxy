@@ -1,7 +1,6 @@
-use crate::{
-    client_handle::SetClientHandle, h2, BoxBody, BoxRequest, ClientHandle, TracingExecutor, Variant,
-};
+use crate::{client_handle::SetClientHandle, h2, BoxBody, ClientHandle, TracingExecutor, Variant};
 use linkerd_error::Error;
+use linkerd_http_box::BoxRequest;
 use linkerd_io::{self as io, PeerAddr};
 use linkerd_stack::{layer, ExtractParam, NewService};
 use std::{
@@ -77,6 +76,7 @@ where
         } = h2;
 
         let mut http2 = hyper::server::conn::http2::Builder::new(TracingExecutor);
+        http2.timer(hyper_util::rt::TokioTimer::new());
         match flow_control {
             None => {}
             Some(h2::FlowControl::Adaptive) => {
@@ -110,13 +110,16 @@ where
             http2.max_send_buf_size(sz);
         }
 
+        let mut http1 = hyper::server::conn::http1::Builder::new();
+        http1.timer(hyper_util::rt::TokioTimer::new());
+
         debug!(?version, "Creating HTTP service");
         let inner = self.inner.new_service(target);
         ServeHttp {
             inner,
             version,
             drain,
-            http1: hyper::server::conn::http1::Builder::new(),
+            http1,
             http2,
         }
     }
@@ -130,6 +133,7 @@ where
     N: NewService<ClientHandle, Service = S> + Send + 'static,
     S: Service<http::Request<BoxBody>, Response = http::Response<BoxBody>, Error = Error>
         + Unpin
+        + Clone
         + Send
         + 'static,
     S::Future: Send + 'static,
@@ -166,6 +170,8 @@ where
                             BoxRequest::new(svc),
                             drain.clone(),
                         );
+                        let svc = hyper_util::service::TowerToHyperService::new(svc);
+                        let io = hyper_util::rt::TokioIo::new(io);
                         let mut conn = http1.serve_connection(io, svc).with_upgrades();
 
                         tokio::select! {
@@ -187,7 +193,10 @@ where
                     }
 
                     Variant::H2 => {
-                        let mut conn = http2.serve_connection(io, BoxRequest::new(svc));
+                        let svc =
+                            hyper_util::service::TowerToHyperService::new(BoxRequest::new(svc));
+                        let io = hyper_util::rt::TokioIo::new(io);
+                        let mut conn = http2.serve_connection(io, svc);
 
                         tokio::select! {
                             res = &mut conn => {
