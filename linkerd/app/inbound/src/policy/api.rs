@@ -34,8 +34,7 @@ static INVALID_POLICY: once_cell::sync::OnceCell<ServerPolicy> = once_cell::sync
 impl<S> Api<S>
 where
     S: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error> + Clone,
-    S::ResponseBody:
-        http::Body<Data = tonic::codegen::Bytes, Error = Error> + Default + Send + 'static,
+    S::ResponseBody: http::Body<Data = tonic::codegen::Bytes, Error = Error> + Send + 'static,
 {
     pub(super) fn new(
         workload: Arc<str>,
@@ -60,8 +59,7 @@ impl<S> Service<u16> for Api<S>
 where
     S: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error>,
     S: Clone + Send + Sync + 'static,
-    S::ResponseBody:
-        http::Body<Data = tonic::codegen::Bytes, Error = Error> + Default + Send + 'static,
+    S::ResponseBody: http::Body<Data = tonic::codegen::Bytes, Error = Error> + Send + 'static,
     S::Future: Send + 'static,
 {
     type Response =
