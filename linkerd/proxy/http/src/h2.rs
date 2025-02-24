@@ -55,7 +55,7 @@ where
     C::Connection: Send + Unpin + 'static,
     C::Metadata: Send,
     C::Future: Send + 'static,
-    B: Body + Send + 'static,
+    B: Body + Send + Unpin + 'static,
     B::Data: Send,
     B::Error: Into<Error> + Send + Sync,
 {
@@ -86,6 +86,7 @@ where
             async move {
                 let (io, _meta) = connect.err_into::<Error>().await?;
                 let mut builder = hyper::client::conn::http2::Builder::new(TracingExecutor);
+                builder.timer(hyper_util::rt::TokioTimer::new());
                 match flow_control {
                     None => {}
                     Some(FlowControl::Adaptive) => {
@@ -123,7 +124,7 @@ where
                 }
 
                 let (tx, conn) = builder
-                    .handshake(io)
+                    .handshake(hyper_util::rt::TokioIo::new(io))
                     .instrument(trace_span!("handshake").or_current())
                     .await?;
 
@@ -147,7 +148,7 @@ where
     B::Data: Send,
     B::Error: Into<Error> + Send + Sync,
 {
-    type Response = http::Response<hyper::Body>;
+    type Response = http::Response<hyper::body::Incoming>;
     type Error = hyper::Error;
     type Future = Pin<Box<dyn Send + Future<Output = Result<Self::Response, Self::Error>>>>;
 
