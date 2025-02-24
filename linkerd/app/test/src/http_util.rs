@@ -1,5 +1,8 @@
 use crate::{
-    app_core::{svc, Error},
+    app_core::{
+        svc::{self, http::TracingExecutor},
+        Error,
+    },
     io, ContextError,
 };
 use http_body::Body;
@@ -19,14 +22,14 @@ pub async fn connect_and_accept_http1(
     client_settings: &mut hyper::client::conn::http1::Builder,
     server: BoxServer,
 ) -> (
-    hyper::client::conn::http1::SendRequest<hyper::Body>,
+    hyper::client::conn::http1::SendRequest<hyper::body::Incoming>,
     JoinSet<Result<(), Error>>,
 ) {
     tracing::info!(settings = ?client_settings, "connecting client with");
     let (client_io, server_io) = io::duplex(4096);
 
     let (client, conn) = client_settings
-        .handshake(client_io)
+        .handshake(hyper_util::rt::TokioIo::new(client_io))
         .await
         .expect("Client must connect");
 
@@ -63,14 +66,14 @@ pub async fn connect_and_accept_http1(
 ///
 /// [send]: hyper::client::conn::http2::SendRequest
 pub async fn connect_and_accept_http2<B>(
-    client_settings: &mut hyper::client::conn::http2::Builder,
+    client_settings: &mut hyper::client::conn::http2::Builder<TracingExecutor>,
     server: BoxServer,
 ) -> (
     hyper::client::conn::http2::SendRequest<B>,
     JoinSet<Result<(), Error>>,
 )
 where
-    B: Body + Send + 'static,
+    B: Body + Unpin + Send + 'static,
     B::Data: Send,
     B::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
 {
@@ -78,7 +81,7 @@ where
     let (client_io, server_io) = io::duplex(4096);
 
     let (client, conn) = client_settings
-        .handshake(client_io)
+        .handshake(hyper_util::rt::TokioIo::new(client_io))
         .await
         .expect("Client must connect");
 
@@ -114,10 +117,11 @@ where
     T: Body,
     T::Error: Into<Error>,
 {
+    use http_body_util::BodyExt;
     let bytes = body
         .collect()
         .await
-        .map(http_body::Collected::to_bytes)
+        .map(http_body_util::Collected::to_bytes)
         .map_err(ContextError::ctx("HTTP response body stream failed"))?
         .to_vec();
 
