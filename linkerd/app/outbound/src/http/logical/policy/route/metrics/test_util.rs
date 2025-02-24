@@ -1,3 +1,4 @@
+use http::Response;
 use linkerd_app_core::{
     metrics::prom::Counter,
     proxy::http::Body,
@@ -23,11 +24,11 @@ pub async fn send_assert_incremented(
     };
     assert_eq!(counter.get(), init);
     send(tx);
-    if let Ok(mut rsp) = call.await {
-        if !rsp.body().is_end_stream() {
+    if let Ok(mut body) = call.await.map(Response::into_body) {
+        if !body.is_end_stream() {
             assert_eq!(counter.get(), 0);
-            while let Some(Ok(_)) = rsp.body_mut().data().await {}
-            let _ = rsp.body_mut().trailers().await;
+            while let Some(Ok(_)) = body.data().await {}
+            let _ = body.trailers().await;
         }
     }
     assert_eq!(counter.get(), init + 1);
