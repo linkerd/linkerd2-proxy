@@ -102,7 +102,7 @@ where
     T: Param<ConditionalClientTls>,
     L: NewService<ClientTls, Service = H>,
     C: MakeConnection<T, Error = io::Error>,
-    C::Connection: io::AsyncRead + io::AsyncWrite + Send + Unpin,
+    C::Connection: Send + Unpin,
     C::Metadata: Send + Unpin,
     C::Future: Send + 'static,
     H: Service<C::Connection, Response = (I, Option<NegotiatedProtocol>), Error = io::Error>
