@@ -264,10 +264,9 @@ fn run(
 
     let span = info_span!("test client", peer_addr = %addr, ?version, test = %test_name);
     let work = async move {
-        let client = hyper::Client::builder()
+        let client = hyper_util::client::legacy::Client::builder(TracingExecutor)
             .http2_only(http2_only)
-            .executor(TracingExecutor)
-            .build::<Conn, hyper::Body>(conn);
+            .build::<Conn, BoxBody>(conn);
         tracing::trace!("client task started");
         let mut rx = rx;
         let (drain_tx, drain) = drain::channel();
@@ -277,7 +276,7 @@ fn run(
         // instance would remain un-dropped.
         async move {
             while let Some((req, cb)) = rx.recv().await {
-                let req = req.map(hyper::Body::from);
+                let req = req.map(BoxBody::new);
                 tracing::trace!(?req);
                 let req = client.request(req);
                 tokio::spawn(
@@ -350,10 +349,10 @@ impl tower::Service<hyper::Uri> for Conn {
     }
 }
 
-impl hyper::client::connect::Connection for RunningIo {
-    fn connected(&self) -> hyper::client::connect::Connected {
+impl hyper_util::client::legacy::connect::Connection for RunningIo {
+    fn connected(&self) -> hyper_util::client::legacy::connect::Connected {
         // Setting `proxy` to true will configure Hyper to use absolute-form
         // URIs on this connection.
-        hyper::client::connect::Connected::new().proxy(self.abs_form)
+        hyper_util::client::legacy::connect::Connected::new().proxy(self.abs_form)
     }
 }

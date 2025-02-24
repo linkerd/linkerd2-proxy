@@ -18,13 +18,18 @@ type BoxServer = svc::BoxTcp<io::DuplexStream>;
 /// request and await a response, and (2) a [`JoinSet<T>`] running background tasks.
 ///
 /// [send]: hyper::client::conn::http1::SendRequest
-pub async fn connect_and_accept_http1(
+pub async fn connect_and_accept_http1<B>(
     client_settings: &mut hyper::client::conn::http1::Builder,
     server: BoxServer,
 ) -> (
-    hyper::client::conn::http1::SendRequest<hyper::body::Incoming>,
+    hyper::client::conn::http1::SendRequest<B>,
     JoinSet<Result<(), Error>>,
-) {
+)
+where
+    B: Body + Send + 'static,
+    B::Data: Send,
+    B::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
+{
     tracing::info!(settings = ?client_settings, "connecting client with");
     let (client_io, server_io) = io::duplex(4096);
 
