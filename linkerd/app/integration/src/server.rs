@@ -193,7 +193,7 @@ impl Server {
             drain.clone(),
             async move {
                 tracing::info!("support server running");
-                let mut new_svc = NewSvc(Arc::new(self.routes));
+                let svc = Svc(Arc::new(self.routes));
                 if let Some(delay) = delay {
                     let _ = listening_tx.take().unwrap().send(());
                     delay.await;
@@ -213,15 +213,10 @@ impl Server {
                         .instrument(span.clone())
                         .await?;
                     let srv_conn_count = srv_conn_count.clone();
-                    let svc = new_svc.call(());
+                    let svc = svc.clone();
                     let f = async move {
                         tracing::trace!("serving...");
-                        let svc = svc.await;
-                        tracing::trace!("service acquired");
                         srv_conn_count.fetch_add(1, Ordering::Release);
-                        let svc = svc.map_err(|e| {
-                            tracing::error!("support/server new_service error: {}", e)
-                        })?;
                         let result = match self.version {
                             Run::Http1 => hyper::server::conn::http1::Builder::new()
                                 .serve_connection(sock, svc)
@@ -290,7 +285,7 @@ impl std::fmt::Debug for Route {
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct Svc(Arc<HashMap<String, Route>>);
 
 impl Svc {
@@ -323,23 +318,6 @@ impl tower::Service<Request> for Svc {
 
     fn call(&mut self, req: Request) -> Self::Future {
         self.route(req)
-    }
-}
-
-#[derive(Debug)]
-struct NewSvc(Arc<HashMap<String, Route>>);
-
-impl Service<()> for NewSvc {
-    type Response = Svc;
-    type Error = ::std::io::Error;
-    type Future = future::Ready<Result<Svc, Self::Error>>;
-
-    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Poll::Ready(Ok(()))
-    }
-
-    fn call(&mut self, _: ()) -> Self::Future {
-        future::ok(Svc(Arc::clone(&self.0)))
     }
 }
 
