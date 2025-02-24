@@ -95,6 +95,7 @@ impl Server {
             tls,
         }
     }
+
     fn http1() -> Self {
         Server::new(Run::Http1, None)
     }
