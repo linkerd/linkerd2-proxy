@@ -95,7 +95,7 @@ jobs:
       - uses: Swatinem/rust-cache@f0deed1e0edfc6a9be95417288c0e1099b1eeec3
       - run: just fetch
       - name: Run cargo deny check bans licenses sources
-        uses: EmbarkStudios/cargo-deny-action@13fd9ef18c30518efe066a8ac36cd629cc377507
+        uses: EmbarkStudios/cargo-deny-action@0484eedcba649433ebd03d9b7c9c002746bbc4b9
         with:
           command: check bans licenses sources
       - run: just check-fmt
