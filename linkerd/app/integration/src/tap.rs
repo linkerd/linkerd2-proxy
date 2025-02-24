@@ -205,21 +205,29 @@ where
     }
 
     fn call(&mut self, req: http::Request<B>) -> Self::Future {
-        // this is okay to do because the body should always be complete, we
-        // just can't prove it.
-        let req = futures::executor::block_on(async move {
-            let (parts, body) = req.into_parts();
-            let body = body
-                .collect()
+        let Self(client) = self;
+        let req = req.map(Self::collect_body).map(Into::into);
+        let fut = client.send_req(req).map_err(|err| err.to_string());
+        Box::pin(fut)
+    }
+}
+
+impl SyncSvc {
+    /// Collects the given [`Body`], returning a [`Bytes`].
+    ///
+    /// NB: This blocks the current thread until the provided body has been collected. This is
+    /// an acceptable practice in test code for the sake of simplicitly, because we will always
+    /// provide [`SyncSvc`] with bodies that are complete.
+    fn collect_body<B>(body: B) -> Bytes
+    where
+        B: Body,
+        B::Error: std::fmt::Debug,
+    {
+        futures::executor::block_on(async move {
+            body.collect()
                 .await
                 .expect("body should not fail")
-                .to_bytes();
-            http::Request::from_parts(parts, body)
-        });
-        Box::pin(
-            self.0
-                .send_req(req.map(Into::into))
-                .map_err(|err| err.to_string()),
-        )
+                .to_bytes()
+        })
     }
 }
