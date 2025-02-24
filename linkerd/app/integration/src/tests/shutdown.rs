@@ -117,7 +117,7 @@ async fn tcp_waits_for_proxies_to_close() {
         .await;
     let proxy = proxy::new().inbound(srv).shutdown_signal(rx).run().await;
 
-    let client = client::tcp(proxy.inbound);
+    let client = crate::tcp::client(proxy.inbound);
 
     let tcp_client = client.connect().await;
 

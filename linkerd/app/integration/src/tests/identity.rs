@@ -33,7 +33,7 @@ async fn nonblocking_identity_detection() {
         .await;
 
     let proxy = proxy.inbound(srv).run_with_test_env(env).await;
-    let client = client::tcp(proxy.inbound);
+    let client = crate::tcp::client(proxy.inbound);
 
     // Create an idle connection and then an active connection. Ensure that
     // protocol detection on the idle connection does not block communication on

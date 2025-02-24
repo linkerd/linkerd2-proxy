@@ -70,7 +70,7 @@ async fn outbound_tcp() {
         .run()
         .await;
 
-    let client = client::tcp(proxy.outbound);
+    let client = crate::tcp::client(proxy.outbound);
 
     let tcp_client = client.connect().await;
 
@@ -109,7 +109,7 @@ async fn outbound_tcp_external() {
         .run()
         .await;
 
-    let client = client::tcp(proxy.outbound);
+    let client = crate::tcp::client(proxy.outbound);
 
     let tcp_client = client.connect().await;
 
@@ -139,7 +139,7 @@ async fn inbound_tcp() {
         .await;
     let proxy = proxy::new().inbound(srv).run().await;
 
-    let client = client::tcp(proxy.inbound);
+    let client = crate::tcp::client(proxy.inbound);
 
     let tcp_client = client.connect().await;
 
@@ -360,7 +360,7 @@ async fn serve_server_first(mut sock: tokio::net::TcpStream, tx: mpsc::Sender<()
 
 async fn server_first_client(addr: SocketAddr, mut rx: mpsc::Receiver<()>) {
     const TIMEOUT: Duration = Duration::from_secs(5);
-    let client = client::tcp(addr);
+    let client = crate::tcp::client(addr);
 
     let tcp_client = client.connect().await;
 
@@ -402,7 +402,7 @@ async fn tcp_connections_close_if_client_closes() {
         .await;
     let proxy = proxy::new().inbound(srv).run().await;
 
-    let client = client::tcp(proxy.inbound);
+    let client = crate::tcp::client(proxy.inbound);
 
     let tcp_client = client.connect().await;
     tcp_client.write(msg1).await;
@@ -608,7 +608,7 @@ macro_rules! http1_tests {
             let mk = $proxy;
             let proxy = mk(srv).await;
 
-            let client = client::tcp(proxy.inbound);
+            let client = crate::tcp::client(proxy.inbound);
 
             let tcp_client = client.connect().await;
 
@@ -764,7 +764,7 @@ macro_rules! http1_tests {
             let mk = $proxy;
             let proxy = mk(srv).await;
 
-            let client = client::tcp(proxy.inbound);
+            let client = crate::tcp::client(proxy.inbound);
 
             let tcp_client = client.connect().await;
 
@@ -856,7 +856,7 @@ macro_rules! http1_tests {
             let mk = $proxy;
             let proxy = mk(srv).await;
 
-            let client = client::tcp(proxy.inbound);
+            let client = crate::tcp::client(proxy.inbound);
 
             let tcp_client = client.connect().await;
 
@@ -898,7 +898,7 @@ macro_rules! http1_tests {
 
             // A TCP client is used since the HTTP client would stop these requests
             // from ever touching the network.
-            let client = client::tcp(proxy.inbound);
+            let client = crate::tcp::client(proxy.inbound);
 
             let bad_uris = vec!["/origin-form", "/", "http://test/bar", "http://test", "*"];
 
@@ -1397,7 +1397,7 @@ async fn http10_without_host() {
         .await;
     let proxy = proxy::new().inbound(srv).run().await;
 
-    let client = client::tcp(proxy.inbound);
+    let client = crate::tcp::client(proxy.inbound);
 
     let tcp_client = client.connect().await;
 
