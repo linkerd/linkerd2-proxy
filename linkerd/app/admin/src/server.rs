@@ -172,14 +172,14 @@ impl<M> Admin<M> {
     fn not_found() -> Response<BoxBody> {
         Response::builder()
             .status(http::StatusCode::NOT_FOUND)
-            .body(BoxBody::new(hyper::Body::empty()))
+            .body(BoxBody::empty())
             .expect("builder with known status code must not fail")
     }
 
     fn method_not_allowed() -> Response<BoxBody> {
         Response::builder()
             .status(http::StatusCode::METHOD_NOT_ALLOWED)
-            .body(BoxBody::new(hyper::Body::empty()))
+            .body(BoxBody::empty())
             .expect("builder with known status code must not fail")
     }
 
