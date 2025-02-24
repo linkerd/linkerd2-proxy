@@ -332,7 +332,6 @@ async fn accept_connection(
                 _running: None,
             })
         }
-
         None => Ok(RunningIo {
             io: Box::pin(io),
             abs_form: false,
