@@ -1,4 +1,6 @@
 use http::Response;
+use http_body::Body;
+use http_body_util::BodyExt;
 use linkerd_app_core::{
     metrics::prom::Counter,
     svc::{self, http::BoxBody, Service, ServiceExt},
@@ -23,11 +25,7 @@ pub async fn send_assert_incremented(
     };
     assert_eq!(counter.get(), init);
     send(tx);
-    if let Ok(mut body) = call
-        .await
-        .map(Response::into_body)
-        .map(linkerd_http_body_compat::ForwardCompatibleBody::new)
-    {
+    if let Ok(mut body) = call.await.map(Response::into_body) {
         if !body.is_end_stream() {
             assert_eq!(counter.get(), 0);
             while let Some(Ok(_)) = body.frame().await {}
