@@ -43,7 +43,7 @@ pub struct Listening {
 
 type Request = http::Request<hyper::Body>;
 type Response = http::Response<hyper::Body>;
-type RspFuture = Pin<Box<dyn Future<Output = Result<Response, BoxError>> + Send + Sync + 'static>>;
+type RspFuture = Pin<Box<dyn Future<Output = Result<Response, Error>> + Send + Sync + 'static>>;
 
 impl Listening {
     pub fn connections(&self) -> usize {
@@ -126,7 +126,7 @@ impl Server {
     {
         self.route_async(path, move |req| {
             let res = cb(req);
-            async move { Ok::<_, BoxError>(res) }
+            async move { Ok::<_, Error>(res) }
         })
     }
 
@@ -136,7 +136,7 @@ impl Server {
     where
         F: Fn(Request) -> U + Send + Sync + 'static,
         U: TryFuture<Ok = Response> + Send + Sync + 'static,
-        U::Error: Into<BoxError> + Send + 'static,
+        U::Error: Into<Error> + Send + 'static,
     {
         let func = move |req| Box::pin(cb(req).map_err(Into::into)) as RspFuture;
         self.routes.insert(path.into(), Route(Box::new(func)));
@@ -149,7 +149,7 @@ impl Server {
             let resp = resp.clone();
             async move {
                 tokio::time::sleep(latency).await;
-                Ok::<_, BoxError>(
+                Ok::<_, Error>(
                     http::Response::builder()
                         .status(200)
                         .body(hyper::Body::from(resp.clone()))
@@ -279,8 +279,6 @@ impl std::fmt::Debug for Route {
     }
 }
 
-type BoxError = Box<dyn std::error::Error + Send + Sync>;
-
 #[derive(Clone, Debug)]
 struct Svc(Arc<HashMap<String, Route>>);
 
@@ -305,7 +303,7 @@ impl Svc {
 
 impl tower::Service<Request> for Svc {
     type Response = Response;
-    type Error = BoxError;
+    type Error = Error;
     type Future = RspFuture;
 
     fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
