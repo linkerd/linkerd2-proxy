@@ -1,6 +1,6 @@
 use super::*;
 
-pub use linkerd2_proxy_api::destination as pb;
+use linkerd2_proxy_api::destination as pb;
 use linkerd2_proxy_api::net;
 use linkerd_app_core::proxy::http::TracingExecutor;
 use parking_lot::Mutex;

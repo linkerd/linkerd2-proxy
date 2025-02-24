@@ -310,7 +310,7 @@ async fn outbound_opaque_tcp_server_first() {
     let name = format!("opaque.test.svc.cluster.local:{}", srv.addr.port());
     let dstctl = controller::new();
     let profile = dstctl.profile_tx(srv.addr);
-    profile.send(controller::pb::DestinationProfile {
+    profile.send(linkerd2_proxy_api::destination::DestinationProfile {
         fully_qualified_name: name.clone(),
         ..Default::default()
     });

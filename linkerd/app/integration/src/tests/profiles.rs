@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 struct TestBuilder {
     server: server::Server,
     routes: Vec<controller::RouteBuilder>,
-    budget: Option<controller::pb::RetryBudget>,
+    budget: Option<linkerd2_proxy_api::destination::RetryBudget>,
     default_routes: bool,
 }
 
@@ -39,7 +39,10 @@ impl TestBuilder {
         }
     }
 
-    fn with_budget(self, budget: impl Into<Option<controller::pb::RetryBudget>>) -> Self {
+    fn with_budget(
+        self,
+        budget: impl Into<Option<linkerd2_proxy_api::destination::RetryBudget>>,
+    ) -> Self {
         Self {
             budget: budget.into(),
             ..self
