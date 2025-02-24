@@ -24,7 +24,7 @@ async fn nonblocking_identity_detection() {
 
     let msg1 = "custom tcp hello\n";
     let msg2 = "custom tcp bye";
-    let srv = server::tcp()
+    let srv = crate::tcp::server()
         .accept(move |read| {
             assert_eq!(read, msg1.as_bytes());
             msg2

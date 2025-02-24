@@ -119,7 +119,7 @@ impl TcpFixture {
     const BYE_MSG: &'static str = "custom tcp bye";
 
     async fn server() -> server::Listening {
-        server::tcp()
+        crate::tcp::server()
             .accept(move |read| {
                 assert_eq!(read, Self::HELLO_MSG.as_bytes());
                 TcpFixture::BYE_MSG
