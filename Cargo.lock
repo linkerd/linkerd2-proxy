@@ -1384,6 +1384,7 @@ dependencies = [
  "futures",
  "http 1.2.0",
  "http-body",
+ "http-body-util",
  "hyper",
  "linkerd-app-core",
  "linkerd-app-inbound",
