@@ -192,9 +192,8 @@ type ResponseFuture =
 
 impl<B> tower::Service<http::Request<B>> for SyncSvc
 where
-    B: Body + Send + 'static,
-    B::Data: Send + 'static,
-    B::Error: std::fmt::Debug + Send + 'static,
+    B: Body,
+    B::Error: std::fmt::Debug,
 {
     type Response = http::Response<hyper::Body>;
     type Error = String;
