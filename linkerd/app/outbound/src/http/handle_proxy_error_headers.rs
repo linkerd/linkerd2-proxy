@@ -158,6 +158,7 @@ fn update_response<B>(rsp: &mut http::Response<B>, closable: bool) -> bool {
 mod test {
     use super::*;
     use linkerd_app_core::{svc::ServiceExt, Infallible};
+    use linkerd_http_box::BoxBody;
     use linkerd_tracing::test;
     use tokio::time;
 
@@ -175,19 +176,19 @@ mod test {
         // with the l5d-proxy-error header.
         let mut req = http::Request::builder()
             .uri("http://foo.example.com")
-            .body(hyper::Body::default())
+            .body(BoxBody::default())
             .unwrap();
         let (handle, closed) = ClientHandle::new(([192, 0, 2, 3], 50000).into());
         req.extensions_mut().insert(handle);
 
         let svc = HandleProxyErrorHeaders::for_test(
             true,
-            svc::mk(|_: http::Request<hyper::Body>| {
+            svc::mk(|_: http::Request<BoxBody>| {
                 future::ok::<_, Infallible>(
                     http::Response::builder()
                         .status(http::StatusCode::BAD_GATEWAY)
                         .header(L5D_PROXY_CONNECTION, "close")
-                        .body(hyper::Body::default())
+                        .body(BoxBody::default())
                         .unwrap(),
                 )
             }),
@@ -212,19 +213,19 @@ mod test {
         // with the l5d-proxy-error header.
         let mut req = http::Request::builder()
             .uri("http://foo.example.com")
-            .body(hyper::Body::default())
+            .body(BoxBody::default())
             .unwrap();
         let (handle, closed) = ClientHandle::new(([192, 0, 2, 3], 50000).into());
         req.extensions_mut().insert(handle);
 
         let svc = HandleProxyErrorHeaders::for_test(
             false,
-            svc::mk(|_: http::Request<hyper::Body>| {
+            svc::mk(|_: http::Request<BoxBody>| {
                 future::ok::<_, Infallible>(
                     http::Response::builder()
                         .status(http::StatusCode::BAD_GATEWAY)
                         .header(L5D_PROXY_CONNECTION, "close")
-                        .body(hyper::Body::default())
+                        .body(BoxBody::default())
                         .unwrap(),
                 )
             }),

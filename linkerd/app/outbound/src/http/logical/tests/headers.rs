@@ -1,4 +1,5 @@
 use super::*;
+use http_body_util::BodyExt;
 use linkerd_app_core::{proxy::http::StatusCode, trace};
 use linkerd_proxy_client_policy::http::RouteParams as HttpParams;
 use tokio::time;
@@ -156,7 +157,6 @@ async fn grpc() {
     .await
     .expect("response")
     .expect("response")
-    .map(linkerd_http_body_compat::ForwardCompatibleBody::new)
     .into_parts();
     assert_eq!(parts.status, StatusCode::OK);
     let trailers = body
@@ -232,7 +232,6 @@ async fn grpc_requires_allow() {
     .await
     .expect("response")
     .expect("response")
-    .map(linkerd_http_body_compat::ForwardCompatibleBody::new)
     .into_parts();
     assert_eq!(parts.status, StatusCode::OK);
     let trailers = body

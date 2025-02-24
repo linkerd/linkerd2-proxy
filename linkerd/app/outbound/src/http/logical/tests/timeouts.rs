@@ -1,4 +1,5 @@
 use super::{super::LogicalError, *};
+use http_body_util::BodyExt;
 use linkerd_app_core::{
     errors,
     proxy::http::{
@@ -124,11 +125,7 @@ async fn request_timeout_response_body() {
     .await;
 
     info!("Verifying that the request body times out with the expected stream error");
-    let mut rsp = call
-        .await
-        .unwrap()
-        .map(linkerd_http_body_compat::ForwardCompatibleBody::new)
-        .into_body();
+    let mut rsp = call.await.unwrap().into_body();
     let error = time::timeout(TIMEOUT * 2, rsp.frame())
         .await
         .expect("should timeout internally")
@@ -212,11 +209,7 @@ async fn response_timeout_response_body() {
     );
 
     info!("Sending a request that responds immediately but does not complete");
-    let mut rsp = send_req(svc.clone(), http_get())
-        .await
-        .unwrap()
-        .map(linkerd_http_body_compat::ForwardCompatibleBody::new)
-        .into_body();
+    let mut rsp = send_req(svc.clone(), http_get()).await.unwrap().into_body();
 
     info!("Verifying that the request body times out with the expected stream error");
     let error = time::timeout(TIMEOUT * 2, rsp.frame())
@@ -292,11 +285,7 @@ async fn idle_timeout_response_body() {
     .await;
 
     info!("Verifying that the request body times out with the expected stream error");
-    let mut rsp = call
-        .await
-        .unwrap()
-        .map(linkerd_http_body_compat::ForwardCompatibleBody::new)
-        .into_body();
+    let mut rsp = call.await.unwrap().into_body();
     let error = time::timeout(TIMEOUT * 2, rsp.frame())
         .await
         .expect("should timeout internally")
