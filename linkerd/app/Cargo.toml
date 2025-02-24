@@ -18,6 +18,7 @@ pprof = ["linkerd-app-admin/pprof"]
 
 [dependencies]
 futures = { version = "0.3", default-features = false }
+hyper-util = { workspace = true }
 linkerd-app-admin = { path = "./admin" }
 linkerd-app-core = { path = "./core" }
 linkerd-app-gateway = { path = "./gateway" }

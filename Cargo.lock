@@ -1356,6 +1356,7 @@ name = "linkerd-app"
 version = "0.1.0"
 dependencies = [
  "futures",
+ "hyper-util",
  "linkerd-app-admin",
  "linkerd-app-core",
  "linkerd-app-gateway",
