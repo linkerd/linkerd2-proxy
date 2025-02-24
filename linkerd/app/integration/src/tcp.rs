@@ -1,10 +1,11 @@
 use super::*;
-use std::collections::VecDeque;
-use std::io;
-use std::net::TcpListener as StdTcpListener;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use tokio::net::TcpStream;
-use tokio::task::JoinHandle;
+use std::{
+    collections::VecDeque,
+    io,
+    net::TcpListener as StdTcpListener,
+    sync::atomic::{AtomicUsize, Ordering},
+};
+use tokio::{net::TcpStream, task::JoinHandle};
 
 type TcpConnSender = mpsc::UnboundedSender<(
     Option<Vec<u8>>,
