@@ -28,7 +28,7 @@ pub use futures::{future, FutureExt, TryFuture, TryFutureExt};
 pub use http::{HeaderMap, Request, Response, StatusCode};
 pub use http_body::Body;
 pub use linkerd_app as app;
-pub use linkerd_app_core::{drain, Addr};
+pub use linkerd_app_core::{drain, Addr, Error};
 pub use linkerd_app_test::*;
 pub use linkerd_tracing::test::*;
 use socket2::Socket;
@@ -49,8 +49,6 @@ pub use tower::Service;
 /// Environment variable for overriding the test patience.
 pub const ENV_TEST_PATIENCE_MS: &str = "RUST_TEST_PATIENCE_MS";
 pub const DEFAULT_TEST_PATIENCE: Duration = Duration::from_millis(15);
-
-pub type Error = Box<dyn std::error::Error + Send + Sync + 'static>;
 
 /// Retry an assertion up to a specified number of times, waiting
 /// `RUST_TEST_PATIENCE_MS` between retries.
