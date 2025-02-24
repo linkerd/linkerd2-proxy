@@ -790,7 +790,12 @@ mod grpc_retry {
         assert_eq!(retries.load(Ordering::Relaxed), 1);
     }
 
-    async fn data(body: &mut hyper::Body) -> Bytes {
+    async fn data<B>(body: &mut B) -> B::Data
+    where
+        B: http_body::Body + Unpin,
+        B::Data: std::fmt::Debug,
+        B::Error: std::fmt::Debug,
+    {
         let data = body
             .data()
             .await
@@ -799,7 +804,13 @@ mod grpc_retry {
         tracing::info!(?data);
         data
     }
-    async fn trailers(body: &mut hyper::Body) -> http::HeaderMap {
+
+    async fn trailers<B>(body: &mut B) -> http::HeaderMap
+    where
+        B: http_body::Body + Unpin,
+        B::Error: std::fmt::Debug,
+    {
+        let mut body = Pin::new(body);
         let trailers = body
             .trailers()
             .await
