@@ -11,7 +11,7 @@ use linkerd_app_core::{
     classify,
     errors::header::L5D_PROXY_ERROR,
     identity, io, metrics,
-    proxy::http::{self, Body as _, BoxBody},
+    proxy::http::{self, BoxBody},
     svc::{self, http::TracingExecutor, NewService, Param},
     tls,
     transport::{ClientAddr, OrigDstAddr, Remote, ServerAddr},
@@ -631,15 +631,21 @@ async fn grpc_response_class() {
         .body(hyper::Body::default())
         .unwrap();
 
-    let mut rsp = client
+    let rsp = client
         .send_request(req)
         .await
         .expect("HTTP client request failed");
     tracing::info!(?rsp);
     assert_eq!(rsp.status(), http::StatusCode::OK);
 
-    rsp.body_mut().data().await;
-    let trls = rsp.body_mut().trailers().await.unwrap().unwrap();
+    let mut body = linkerd_http_body_compat::ForwardCompatibleBody::new(rsp.into_body());
+    let trls = body
+        .frame()
+        .await
+        .unwrap()
+        .unwrap()
+        .into_trailers()
+        .expect("trailers frame");
     assert_eq!(trls.get("grpc-status").unwrap().to_str().unwrap(), "2");
 
     let response_total = metrics
