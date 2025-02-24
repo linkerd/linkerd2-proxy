@@ -19,6 +19,7 @@ bytes = { workspace = true }
 deflate = { version = "1", optional = true, features = ["gzip"] }
 http = { workspace = true }
 http-body = { workspace = true }
+http-body-util = { workspace = true }
 hyper = { workspace = true, features = ["http1", "http2"] }
 futures = { version = "0.3", default-features = false }
 pprof = { version = "0.14", optional = true, features = ["prost-codec"] }
