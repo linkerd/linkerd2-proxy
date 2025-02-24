@@ -220,6 +220,8 @@ enum Run {
     Http2,
 }
 
+pub type Running = Pin<Box<dyn Future<Output = ()> + Send + Sync + 'static>>;
+
 fn run(
     addr: SocketAddr,
     version: Run,
@@ -235,7 +237,12 @@ fn run(
         false
     };
 
-    let (running_tx, running) = running();
+    let (running_tx, running) = {
+        let (tx, rx) = oneshot::channel();
+        let rx = Box::pin(rx.map(|_| ()));
+        (tx, rx)
+    };
+
     let conn = Conn {
         addr,
         absolute_uris,
