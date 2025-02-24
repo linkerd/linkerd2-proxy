@@ -69,8 +69,10 @@ impl fmt::Display for ControlAddr {
     }
 }
 
-pub type RspBody =
-    linkerd_http_metrics::requests::ResponseBody<http::balance::Body<hyper::Body>, classify::Eos>;
+pub type RspBody = linkerd_http_metrics::requests::ResponseBody<
+    http::balance::Body<hyper::body::Incoming>,
+    classify::Eos,
+>;
 
 #[derive(Clone, Debug, Default)]
 pub struct Metrics {
@@ -112,7 +114,7 @@ impl Config {
                 warn!(error, "Failed to resolve control-plane component");
                 if let Some(e) = crate::errors::cause_ref::<dns::ResolveError>(&*error) {
                     if let Some(ttl) = e.negative_ttl() {
-                        return Ok(Either::Left(
+                        return Ok::<_, Error>(Either::Left(
                             IntervalStream::new(time::interval(ttl)).map(|_| ()),
                         ));
                     }
@@ -129,9 +131,9 @@ impl Config {
             self.connect.user_timeout,
         ))
         .push(tls::Client::layer(identity))
-        .push_connect_timeout(self.connect.timeout)
+        .push_connect_timeout(self.connect.timeout) // Client<NewClient, ConnectTcp>
         .push_map_target(|(_version, target)| target)
-        .push(self::client::layer(self.connect.http2))
+        .push(self::client::layer::<_, _>(self.connect.http2))
         .push_on_service(svc::MapErr::layer_boxed())
         .into_new_service();
 
