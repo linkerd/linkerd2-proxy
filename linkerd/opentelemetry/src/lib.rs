@@ -39,7 +39,7 @@ pub async fn export_spans<T, S>(
 ) where
     T: GrpcService<BoxBody> + Clone,
     T::Error: Into<Error>,
-    T::ResponseBody: Default + Body<Data = tonic::codegen::Bytes> + Send + 'static,
+    T::ResponseBody: Body<Data = tonic::codegen::Bytes> + Send + 'static,
     <T::ResponseBody as Body>::Error: Into<Error> + Send,
     S: Stream<Item = ExportSpan> + Unpin,
 {
@@ -66,7 +66,7 @@ impl<T, S> SpanExporter<T, S>
 where
     T: GrpcService<BoxBody> + Clone,
     T::Error: Into<Error>,
-    T::ResponseBody: Default + Body<Data = tonic::codegen::Bytes> + Send + 'static,
+    T::ResponseBody: Body<Data = tonic::codegen::Bytes> + Send + 'static,
     <T::ResponseBody as Body>::Error: Into<Error> + Send,
     S: Stream<Item = ExportSpan> + Unpin,
 {
