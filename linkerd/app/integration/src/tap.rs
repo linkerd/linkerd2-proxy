@@ -194,7 +194,7 @@ impl<B> tower::Service<http::Request<B>> for SyncSvc
 where
     B: Body + Send + 'static,
     B::Data: Send + 'static,
-    B::Error: Send + 'static,
+    B::Error: std::fmt::Debug + Send + 'static,
 {
     type Response = http::Response<hyper::Body>;
     type Error = String;
@@ -209,10 +209,11 @@ where
         // just can't prove it.
         let req = futures::executor::block_on(async move {
             let (parts, body) = req.into_parts();
-            let body = match body.collect().await.map(http_body::Collected::to_bytes) {
-                Ok(body) => body,
-                Err(_) => unreachable!("body should not fail"),
-            };
+            let body = body
+                .collect()
+                .await
+                .expect("body should not fail")
+                .to_bytes();
             http::Request::from_parts(parts, body)
         });
         Box::pin(
