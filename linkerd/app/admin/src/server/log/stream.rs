@@ -51,11 +51,13 @@ where
         // If the request is a QUERY, use the request body
         method if method.as_str() == "QUERY" => {
             // TODO(eliza): validate that the request has a content-length...
+            use http_body_util::BodyExt;
             let body = recover!(
-                http_body::Body::collect(req.into_body())
+                req.into_body()
+                    .collect()
                     .await
                     .map_err(Into::into)
-                    .map(http_body::Collected::aggregate),
+                    .map(http_body_util::Collected::aggregate),
                 "Reading log stream request body",
                 StatusCode::BAD_REQUEST
             );
@@ -74,7 +76,7 @@ where
                 .status(StatusCode::METHOD_NOT_ALLOWED)
                 .header(header::ALLOW, "GET")
                 .header(header::ALLOW, "QUERY")
-                .body(BoxBody::new(hyper::Body::empty()))
+                .body(BoxBody::empty())
                 .expect("builder with known status code must not fail"));
         }
     };
@@ -99,7 +101,7 @@ where
     // https://github.com/hawkw/thingbuf/issues/62 would allow us to avoid the
     // copy by passing the channel's pooled buffer directly to hyper, and
     // returning it to the channel to be reused when hyper is done with it.
-    let (mut tx, body) = hyper::Body::channel();
+    let (mut tx, body) = http_body_util::channel::Channel::<Bytes, Error>::new(1024);
     tokio::spawn(
         async move {
             // TODO(eliza): we could definitely implement some batching here.
