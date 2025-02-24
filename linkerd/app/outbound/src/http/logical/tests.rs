@@ -157,25 +157,26 @@ async fn serve(
     handle: &mut tower_test::mock::Handle<Request, Response>,
     call: impl Future<Output = Result<Response>> + Send + 'static,
 ) {
-    let (mut req, tx) = handle
+    let (req, tx) = handle
         .next_request()
         .await
         .expect("service must receive request");
     tracing::debug!(?req, "Received request");
 
     // Ensure the whole request is processed.
-    if !req.body().is_end_stream() {
-        while let Some(res) = req.body_mut().data().await {
-            res.expect("request body must not error");
-        }
-        if !req.body().is_end_stream() {
-            req.body_mut()
-                .trailers()
-                .await
-                .expect("request body must not error");
-        }
+    let (parts, mut body) = req
+        .map(linkerd_http_body_compat::ForwardCompatibleBody::new)
+        .into_parts();
+    if !body.is_end_stream() {
+        while body
+            .frame()
+            .await
+            .transpose()
+            .expect("request body must not error")
+            .is_some()
+        {}
     }
-    drop(req);
+    drop((parts, body));
 
     tokio::spawn(
         async move {
