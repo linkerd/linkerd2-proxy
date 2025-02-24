@@ -13,19 +13,35 @@ pub fn new() -> Server {
 }
 
 pub fn http1() -> Server {
-    Server::http1()
+    Server {
+        routes: Default::default(),
+        version: Run::Http1,
+        tls: None,
+    }
 }
 
 pub fn http1_tls(tls: Arc<ServerConfig>) -> Server {
-    Server::http1_tls(tls)
+    Server {
+        routes: Default::default(),
+        version: Run::Http1,
+        tls: Some(tls),
+    }
 }
 
 pub fn http2() -> Server {
-    Server::http2()
+    Server {
+        routes: Default::default(),
+        version: Run::Http2,
+        tls: None,
+    }
 }
 
 pub fn http2_tls(tls: Arc<ServerConfig>) -> Server {
-    Server::http2_tls(tls)
+    Server {
+        routes: Default::default(),
+        version: Run::Http2,
+        tls: Some(tls),
+    }
 }
 
 pub struct Server {
@@ -88,30 +104,6 @@ impl Listening {
 }
 
 impl Server {
-    fn new(run: Run, tls: Option<Arc<ServerConfig>>) -> Self {
-        Server {
-            routes: HashMap::new(),
-            version: run,
-            tls,
-        }
-    }
-
-    fn http1() -> Self {
-        Server::new(Run::Http1, None)
-    }
-
-    fn http1_tls(tls: Arc<ServerConfig>) -> Self {
-        Server::new(Run::Http1, Some(tls))
-    }
-
-    fn http2() -> Self {
-        Server::new(Run::Http2, None)
-    }
-
-    fn http2_tls(tls: Arc<ServerConfig>) -> Self {
-        Server::new(Run::Http2, Some(tls))
-    }
-
     /// Return a string body as a 200 OK response, with the string as
     /// the response body.
     pub fn route(mut self, path: &str, resp: &str) -> Self {
