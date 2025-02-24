@@ -63,6 +63,7 @@ flate2 = { version = "1", default-features = false, features = [
 ] }
 # Log streaming isn't enabled by default globally, but we want to test it.
 linkerd-app-admin = { path = "../admin", features = ["log-streaming"] }
+linkerd-http-body-compat = { path = "../../http/body-compat" }
 # No code from this crate is actually used; only necessary to enable the Rustls
 # implementation.
 linkerd-meshtls = { path = "../../meshtls", features = ["rustls"] }
