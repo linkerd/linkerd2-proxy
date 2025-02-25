@@ -9,11 +9,13 @@ use linkerd_error::Error;
 use linkerd_trace_context::export::{ExportSpan, SpanKind};
 use metrics::Registry;
 pub use opencensus_proto as proto;
-use opencensus_proto::agent::common::v1::Node;
-use opencensus_proto::agent::trace::v1::{
-    trace_service_client::TraceServiceClient, ExportTraceServiceRequest,
+use opencensus_proto::{
+    agent::{
+        common::v1::Node,
+        trace::v1::{trace_service_client::TraceServiceClient, ExportTraceServiceRequest},
+    },
+    trace::v1::{Span, TruncatableString},
 };
-use opencensus_proto::trace::v1::{Span, TruncatableString};
 use std::collections::HashMap;
 use tokio::{sync::mpsc, time};
 use tokio_stream::wrappers::ReceiverStream;
