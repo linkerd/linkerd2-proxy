@@ -34,7 +34,7 @@ where
     S: GrpcService<BoxBody> + Clone + Send + 'static,
     S::Error: Into<Error>,
     S::Future: Send,
-    S::ResponseBody: Default + Body<Data = tonic::codegen::Bytes> + Send + 'static,
+    S::ResponseBody: Body<Data = tonic::codegen::Bytes> + Send + 'static,
     <S::ResponseBody as Body>::Error: Into<Error> + Send,
 {
     let (span_sink, spans_rx) = mpsc::channel(crate::trace_collector::SPAN_BUFFER_CAPACITY);
