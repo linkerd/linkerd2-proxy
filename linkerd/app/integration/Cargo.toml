@@ -22,12 +22,14 @@ futures = { version = "0.3", default-features = false, features = ["executor"] }
 h2 = { workspace = true }
 http = { workspace = true }
 http-body = { workspace = true }
+http-body-util = { workspace = true }
 hyper = { workspace = true, features = [
     "http1",
     "http2",
     "client",
     "server",
 ] }
+hyper-util = { workspace = true, features = ["service"] }
 ipnet = "2"
 linkerd-app = { path = "..", features = ["allow-loopback"] }
 linkerd-app-core = { path = "../core" }

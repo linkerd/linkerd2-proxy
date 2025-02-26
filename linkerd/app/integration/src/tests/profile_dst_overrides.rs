@@ -1,5 +1,6 @@
 use crate::*;
 use linkerd2_proxy_api::destination as pb;
+use linkerd_app_core::svc::http::BoxBody;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 struct Service {
@@ -14,11 +15,17 @@ impl Service {
         let counter = response_counter.clone();
         let svc = server::http1()
             .route_fn("/load-profile", |_| {
-                Response::builder().status(201).body("".into()).unwrap()
+                Response::builder()
+                    .status(201)
+                    .body(BoxBody::empty())
+                    .unwrap()
             })
             .route_fn("/", move |_req| {
                 counter.fetch_add(1, Ordering::SeqCst);
-                Response::builder().status(200).body(name.into()).unwrap()
+                Response::builder()
+                    .status(200)
+                    .body(BoxBody::from_static(name))
+                    .unwrap()
             })
             .run()
             .await;

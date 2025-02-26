@@ -1,16 +1,16 @@
 use super::*;
 use http::{Request, Response};
-use linkerd_app_core::proxy::http::TracingExecutor;
+use linkerd_app_core::{proxy::http::TracingExecutor, svc::http::BoxBody};
 use parking_lot::Mutex;
 use std::io;
 use tokio::{net::TcpStream, task::JoinHandle};
 use tokio_rustls::rustls::{self, ClientConfig};
 use tracing::info_span;
 
-type ClientError = hyper::Error;
+type ClientError = hyper_util::client::legacy::Error;
 type Sender = mpsc::UnboundedSender<(
-    Request<hyper::Body>,
-    oneshot::Sender<Result<Response<hyper::Body>, ClientError>>,
+    Request<BoxBody>,
+    oneshot::Sender<Result<Response<hyper::body::Incoming>, ClientError>>,
 )>;
 
 #[derive(Clone)]
@@ -131,11 +131,19 @@ impl Client {
     pub fn request(
         &self,
         builder: http::request::Builder,
-    ) -> impl Future<Output = Result<Response<hyper::Body>, ClientError>> + Send + 'static {
-        self.send_req(builder.body(Bytes::new().into()).unwrap())
+    ) -> impl Future<Output = Result<Response<hyper::body::Incoming>, ClientError>> + Send + 'static
+    {
+        let req = builder.body(BoxBody::empty()).unwrap();
+        self.send_req(req)
     }
 
-    pub async fn request_body(&self, req: Request<hyper::Body>) -> Response<hyper::Body> {
+    pub async fn request_body<B>(&self, req: Request<B>) -> Response<hyper::body::Incoming>
+    where
+        B: Body + Send + 'static,
+        B::Data: Send + 'static,
+        B::Error: Into<Error>,
+    {
+        let req = req.map(BoxBody::new);
         self.send_req(req).await.expect("response")
     }
 
@@ -151,11 +159,16 @@ impl Client {
         }
     }
 
-    #[tracing::instrument(skip(self))]
-    pub(crate) fn send_req(
+    #[tracing::instrument(skip(self, req))]
+    pub(crate) fn send_req<B>(
         &self,
-        mut req: Request<hyper::Body>,
-    ) -> impl Future<Output = Result<Response<hyper::Body>, ClientError>> + Send + 'static {
+        mut req: Request<B>,
+    ) -> impl Future<Output = Result<Response<hyper::body::Incoming>, ClientError>> + Send + 'static
+    where
+        B: Body + Send + 'static,
+        B::Data: Send + 'static,
+        B::Error: Into<Error>,
+    {
         if req.uri().scheme().is_none() {
             if self.tls.is_some() {
                 *req.uri_mut() = format!("https://{}{}", self.authority, req.uri().path())
@@ -169,8 +182,9 @@ impl Client {
         }
         tracing::debug!(headers = ?req.headers(), "request");
         let (tx, rx) = oneshot::channel();
-        let _ = self.tx.send((req.map(Into::into), tx));
-        async move { rx.await.expect("request cancelled") }.in_current_span()
+        let req = req.map(BoxBody::new);
+        let _ = self.tx.send((req, tx));
+        async { rx.await.expect("request cancelled") }.in_current_span()
     }
 
     pub async fn wait_for_closed(self) {
@@ -227,8 +241,8 @@ fn run(
     tls: Option<TlsConfig>,
 ) -> (Sender, JoinHandle<()>, Running) {
     let (tx, rx) = mpsc::unbounded_channel::<(
-        Request<hyper::Body>,
-        oneshot::Sender<Result<Response<hyper::Body>, ClientError>>,
+        Request<BoxBody>,
+        oneshot::Sender<Result<Response<hyper::body::Incoming>, ClientError>>,
     )>();
 
     let test_name = thread_name();
@@ -258,10 +272,9 @@ fn run(
 
     let span = info_span!("test client", peer_addr = %addr, ?version, test = %test_name);
     let work = async move {
-        let client = hyper::Client::builder()
+        let client = hyper_util::client::legacy::Client::builder(TracingExecutor)
             .http2_only(http2_only)
-            .executor(TracingExecutor)
-            .build::<Conn, hyper::Body>(conn);
+            .build::<Conn, BoxBody>(conn);
         tracing::trace!("client task started");
         let mut rx = rx;
         let (drain_tx, drain) = drain::channel();
@@ -271,7 +284,6 @@ fn run(
         // instance would remain un-dropped.
         async move {
             while let Some((req, cb)) = rx.recv().await {
-                let req = req.map(hyper::Body::from);
                 tracing::trace!(?req);
                 let req = client.request(req);
                 tokio::spawn(
@@ -303,9 +315,11 @@ struct Conn {
 }
 
 impl tower::Service<hyper::Uri> for Conn {
-    type Response = RunningIo;
+    type Response = hyper_util::rt::TokioIo<RunningIo>;
     type Error = io::Error;
-    type Future = Pin<Box<dyn Future<Output = io::Result<RunningIo>> + Send + 'static>>;
+    type Future = Pin<
+        Box<dyn Future<Output = io::Result<hyper_util::rt::TokioIo<RunningIo>>> + Send + 'static>,
+    >;
 
     fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
@@ -335,19 +349,19 @@ impl tower::Service<hyper::Uri> for Conn {
             } else {
                 Box::pin(io) as Pin<Box<dyn Io + Send + 'static>>
             };
-            Ok(RunningIo {
+            Ok(hyper_util::rt::TokioIo::new(RunningIo {
                 io,
                 abs_form,
                 _running: Some(running),
-            })
+            }))
         })
     }
 }
 
-impl hyper::client::connect::Connection for RunningIo {
-    fn connected(&self) -> hyper::client::connect::Connected {
+impl hyper_util::client::legacy::connect::Connection for RunningIo {
+    fn connected(&self) -> hyper_util::client::legacy::connect::Connected {
         // Setting `proxy` to true will configure Hyper to use absolute-form
         // URIs on this connection.
-        hyper::client::connect::Connected::new().proxy(self.abs_form)
+        hyper_util::client::legacy::connect::Connected::new().proxy(self.abs_form)
     }
 }
