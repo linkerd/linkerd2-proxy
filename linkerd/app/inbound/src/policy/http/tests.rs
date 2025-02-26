@@ -1,6 +1,7 @@
 use super::*;
 use crate::policy::{Authentication, Authorization, Meta, Protocol, ServerPolicy};
 use linkerd_app_core::{svc::Service, Infallible};
+use linkerd_http_box::BoxBody;
 use linkerd_proxy_server_policy::{LocalRateLimit, RateLimitError};
 
 macro_rules! conn {
@@ -40,7 +41,7 @@ macro_rules! new_svc {
             metrics: HttpAuthzMetrics::default(),
             inner: |(permit, _): (HttpRoutePermit, ())| {
                 let f = $rsp;
-                svc::mk(move |req: ::http::Request<hyper::Body>| {
+                svc::mk(move |req: ::http::Request<BoxBody>| {
                     futures::future::ready((f)(permit.clone(), req))
                 })
             },
@@ -56,9 +57,9 @@ macro_rules! new_svc {
         new_svc!(
             $proto,
             conn!(),
-            |permit: HttpRoutePermit, _req: ::http::Request<hyper::Body>| {
+            |permit: HttpRoutePermit, _req: ::http::Request<BoxBody>| {
                 let mut rsp = ::http::Response::builder()
-                    .body(hyper::Body::default())
+                    .body(BoxBody::default())
                     .unwrap();
                 rsp.extensions_mut().insert(permit.clone());
                 Ok::<_, Infallible>(rsp)
@@ -119,11 +120,7 @@ async fn http_route() {
 
     // Test that authorization policies allow requests:
     let rsp = svc
-        .call(
-            ::http::Request::builder()
-                .body(hyper::Body::default())
-                .unwrap(),
-        )
+        .call(::http::Request::builder().body(BoxBody::default()).unwrap())
         .await
         .expect("serves");
     let permit = rsp
@@ -137,7 +134,7 @@ async fn http_route() {
         .call(
             ::http::Request::builder()
                 .method(::http::Method::POST)
-                .body(hyper::Body::default())
+                .body(BoxBody::default())
                 .unwrap(),
         )
         .await
@@ -149,7 +146,7 @@ async fn http_route() {
         .call(
             ::http::Request::builder()
                 .method(::http::Method::DELETE)
-                .body(hyper::Body::default())
+                .body(BoxBody::default())
                 .unwrap(),
         )
         .await
@@ -213,11 +210,7 @@ async fn http_route() {
     .expect("must send");
 
     assert!(svc
-        .call(
-            ::http::Request::builder()
-                .body(hyper::Body::default())
-                .unwrap(),
-        )
+        .call(::http::Request::builder().body(BoxBody::default()).unwrap(),)
         .await
         .expect_err("fails")
         .is::<HttpRouteUnauthorized>());
@@ -226,7 +219,7 @@ async fn http_route() {
         .call(
             ::http::Request::builder()
                 .method(::http::Method::POST)
-                .body(hyper::Body::default())
+                .body(BoxBody::default())
                 .unwrap(),
         )
         .await
@@ -237,7 +230,7 @@ async fn http_route() {
         .call(
             ::http::Request::builder()
                 .method(::http::Method::DELETE)
-                .body(hyper::Body::default())
+                .body(BoxBody::default())
                 .unwrap(),
         )
         .await
@@ -285,14 +278,14 @@ async fn http_filter_header() {
             },
         }],
     }]));
-    let inner = |permit: HttpRoutePermit, req: ::http::Request<hyper::Body>| -> Result<_> {
+    let inner = |permit: HttpRoutePermit, req: ::http::Request<BoxBody>| -> Result<_> {
         assert_eq!(req.headers().len(), 1);
         assert_eq!(
             req.headers().get("testkey"),
             Some(&"testval".parse().unwrap())
         );
         let mut rsp = ::http::Response::builder()
-            .body(hyper::Body::default())
+            .body(BoxBody::default())
             .unwrap();
         rsp.extensions_mut().insert(permit);
         Ok(rsp)
@@ -300,11 +293,7 @@ async fn http_filter_header() {
     let (mut svc, _tx) = new_svc!(proto, conn!(), inner);
 
     let rsp = svc
-        .call(
-            ::http::Request::builder()
-                .body(hyper::Body::default())
-                .unwrap(),
-        )
+        .call(::http::Request::builder().body(BoxBody::default()).unwrap())
         .await
         .expect("serves");
     let permit = rsp
@@ -354,16 +343,12 @@ async fn http_filter_inject_failure() {
         }],
     }]));
     let inner = |_: HttpRoutePermit,
-                 _: ::http::Request<hyper::Body>|
-     -> Result<::http::Response<hyper::Body>> { unreachable!() };
+                 _: ::http::Request<BoxBody>|
+     -> Result<::http::Response<BoxBody>> { unreachable!() };
     let (mut svc, _tx) = new_svc!(proto, conn!(), inner);
 
     let err = svc
-        .call(
-            ::http::Request::builder()
-                .body(hyper::Body::default())
-                .unwrap(),
-        )
+        .call(::http::Request::builder().body(BoxBody::default()).unwrap())
         .await
         .expect_err("fails");
     assert_eq!(
@@ -397,22 +382,14 @@ async fn rate_limit_allow() {
 
     // First request should be allowed
     let rsp = svc
-        .call(
-            ::http::Request::builder()
-                .body(hyper::Body::default())
-                .unwrap(),
-        )
+        .call(::http::Request::builder().body(BoxBody::default()).unwrap())
         .await
         .expect("serves");
     assert_eq!(rsp.status(), ::http::StatusCode::OK);
 
     // Second request should be allowed as well
     let rsp = svc
-        .call(
-            ::http::Request::builder()
-                .body(hyper::Body::default())
-                .unwrap(),
-        )
+        .call(::http::Request::builder().body(BoxBody::default()).unwrap())
         .await
         .expect("serves");
     assert_eq!(rsp.status(), ::http::StatusCode::OK);
@@ -440,22 +417,14 @@ async fn rate_limit_deny() {
 
     // First request should be allowed
     let rsp = svc
-        .call(
-            ::http::Request::builder()
-                .body(hyper::Body::default())
-                .unwrap(),
-        )
+        .call(::http::Request::builder().body(BoxBody::default()).unwrap())
         .await
         .expect("serves");
     assert_eq!(rsp.status(), ::http::StatusCode::OK);
 
     // Second request should be denied
     let rsp = svc
-        .call(
-            ::http::Request::builder()
-                .body(hyper::Body::default())
-                .unwrap(),
-        )
+        .call(::http::Request::builder().body(BoxBody::default()).unwrap())
         .await
         .expect_err("should deny");
     let err = rsp
@@ -526,7 +495,7 @@ async fn grpc_route() {
             ::http::Request::builder()
                 .uri("/foo.bar.bah/baz")
                 .method(::http::Method::POST)
-                .body(hyper::Body::default())
+                .body(BoxBody::default())
                 .unwrap(),
         )
         .await
@@ -542,7 +511,7 @@ async fn grpc_route() {
             ::http::Request::builder()
                 .uri("/foo.bar.bah/qux")
                 .method(::http::Method::POST)
-                .body(hyper::Body::default())
+                .body(BoxBody::default())
                 .unwrap(),
         )
         .await
@@ -554,7 +523,7 @@ async fn grpc_route() {
             ::http::Request::builder()
                 .uri("/boo.bar.bah/bah")
                 .method(::http::Method::POST)
-                .body(hyper::Body::default())
+                .body(BoxBody::default())
                 .unwrap(),
         )
         .await
@@ -606,14 +575,14 @@ async fn grpc_filter_header() {
             },
         }],
     }]));
-    let inner = |permit: HttpRoutePermit, req: ::http::Request<hyper::Body>| -> Result<_> {
+    let inner = |permit: HttpRoutePermit, req: ::http::Request<BoxBody>| -> Result<_> {
         assert_eq!(req.headers().len(), 1);
         assert_eq!(
             req.headers().get("testkey"),
             Some(&"testval".parse().unwrap())
         );
         let mut rsp = ::http::Response::builder()
-            .body(hyper::Body::default())
+            .body(BoxBody::default())
             .unwrap();
         rsp.extensions_mut().insert(permit);
         Ok(rsp)
@@ -625,7 +594,7 @@ async fn grpc_filter_header() {
             ::http::Request::builder()
                 .uri("/foo.bar.bah/baz")
                 .method(::http::Method::POST)
-                .body(hyper::Body::default())
+                .body(BoxBody::default())
                 .unwrap(),
         )
         .await
@@ -683,8 +652,8 @@ async fn grpc_filter_inject_failure() {
         }],
     }]));
     let inner = |_: HttpRoutePermit,
-                 _: ::http::Request<hyper::Body>|
-     -> Result<::http::Response<hyper::Body>> { unreachable!() };
+                 _: ::http::Request<BoxBody>|
+     -> Result<::http::Response<BoxBody>> { unreachable!() };
     let (mut svc, _tx) = new_svc!(proto, conn!(), inner);
 
     let err = svc
@@ -692,7 +661,7 @@ async fn grpc_filter_inject_failure() {
             ::http::Request::builder()
                 .uri("/foo.bar.bah/baz")
                 .method(::http::Method::POST)
-                .body(hyper::Body::default())
+                .body(BoxBody::default())
                 .unwrap(),
         )
         .await
