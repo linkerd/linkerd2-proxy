@@ -254,7 +254,7 @@ async fn grpc_headers_end() {
     assert_eq!(res.status(), 200);
     assert_eq!(res.headers()["grpc-status"], "1");
     let body = res.into_body();
-    let bytes = http_body::Body::collect(body)
+    let bytes = http_body_util::BodyExt::collect(body)
         .await
         .unwrap()
         .to_bytes()

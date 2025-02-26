@@ -1,5 +1,5 @@
 use crate::*;
-use linkerd_app_core::svc::http::TracingExecutor;
+use linkerd_app_core::svc::http::{BoxBody, TracingExecutor};
 use std::error::Error as _;
 use tokio::time::timeout;
 
@@ -493,7 +493,7 @@ macro_rules! http1_tests {
                     assert_eq!(req.headers().get("host").unwrap(), host);
                     Response::builder()
                         .version(http::Version::HTTP_10)
-                        .body("".into())
+                        .body(linkerd_app_core::svc::http::BoxBody::empty())
                         .unwrap()
                 })
                 .run()
@@ -530,7 +530,7 @@ macro_rules! http1_tests {
                 .route_fn("/", move |req| {
                     assert_eq!(req.headers()["host"], host);
                     assert_eq!(req.uri().to_string(), format!("http://{}/", auth));
-                    Response::new("".into())
+                    Response::new(linkerd_app_core::svc::http::BoxBody::empty())
                 })
                 .run()
                 .await;
@@ -970,7 +970,7 @@ macro_rules! http1_tests {
             let req = client
                 .request_builder("/")
                 .method("POST")
-                .body("hello".into())
+                .body(linkerd_app_core::svc::http::BoxBody::from_static("hello"))
                 .unwrap();
 
             let resp = client.request_body(req).await;
@@ -993,7 +993,7 @@ macro_rules! http1_tests {
                     Ok::<_, std::io::Error>(
                         Response::builder()
                             .header("transfer-encoding", "chunked")
-                            .body("world".into())
+                            .body(linkerd_app_core::svc::http::BoxBody::from_static("world"))
                             .unwrap(),
                     )
                 })
@@ -1007,7 +1007,7 @@ macro_rules! http1_tests {
                 .request_builder("/")
                 .method("POST")
                 .header("transfer-encoding", "chunked")
-                .body("hello".into())
+                .body(linkerd_app_core::svc::http::BoxBody::from_static("hello"))
                 .unwrap();
 
             let resp = client.request_body(req).await;
@@ -1032,7 +1032,7 @@ macro_rules! http1_tests {
                     } else {
                         StatusCode::OK
                     };
-                    let mut res = Response::new("".into());
+                    let mut res = Response::new(linkerd_app_core::svc::http::BoxBody::empty());
                     *res.status_mut() = status;
                     res
                 })
@@ -1071,7 +1071,7 @@ macro_rules! http1_tests {
                     Response::builder()
                         .status(status)
                         .header("content-length", "0")
-                        .body("".into())
+                        .body(linkerd_app_core::svc::http::BoxBody::empty())
                         .unwrap()
                 })
                 .run()
@@ -1117,7 +1117,10 @@ macro_rules! http1_tests {
                         })
                         .unwrap_or(200);
 
-                    Response::builder().status(status).body("".into()).unwrap()
+                    Response::builder()
+                        .status(status)
+                        .body(linkerd_app_core::svc::http::BoxBody::empty())
+                        .unwrap()
                 })
                 .run()
                 .await;
@@ -1180,7 +1183,7 @@ macro_rules! http1_tests {
                     assert_eq!(req.method(), "HEAD");
                     Response::builder()
                         .header("content-length", "55")
-                        .body("".into())
+                        .body(linkerd_app_core::svc::http::BoxBody::empty())
                         .unwrap()
                 })
                 .run()
@@ -1390,7 +1393,7 @@ async fn http10_without_host() {
             assert_eq!(req.uri().to_string(), "/");
             Response::builder()
                 .version(http::Version::HTTP_10)
-                .body("".into())
+                .body(BoxBody::empty())
                 .unwrap()
         })
         .run()
@@ -1587,7 +1590,7 @@ async fn http2_request_without_authority() {
     let srv = server::http2()
         .route_fn("/", |req| {
             assert_eq!(req.uri().authority(), None);
-            Response::new("".into())
+            Response::new(BoxBody::empty())
         })
         .run()
         .await;
@@ -1603,13 +1606,14 @@ async fn http2_request_without_authority() {
         .await
         .expect("connect error");
     let (mut client, conn) = hyper::client::conn::http2::Builder::new(TracingExecutor)
-        .handshake(io)
+        .timer(hyper_util::rt::TokioTimer::new())
+        .handshake(hyper_util::rt::TokioIo::new(io))
         .await
         .expect("handshake error");
 
     tokio::spawn(conn.map_err(|e| tracing::info!("conn error: {:?}", e)));
 
-    let req = Request::new(hyper::Body::empty());
+    let req = Request::new(BoxBody::empty());
     // these properties are specifically what we want, and set by default
     assert_eq!(req.uri(), "/");
     assert_eq!(req.version(), http::Version::HTTP_11);
@@ -1633,12 +1637,14 @@ async fn http2_rst_stream_is_propagated() {
     let proxy = proxy::new().inbound(srv).run().await;
     let client = client::http2(proxy.inbound, "transparency.example.com");
 
-    let err: hyper::Error = client
+    let err: hyper_util::client::legacy::Error = client
         .request(client.request_builder("/"))
         .await
         .expect_err("client request should error");
 
     let rst = err
+        .source()
+        .expect("error should have a source")
         .source()
         .expect("error should have a source")
         .downcast_ref::<h2::Error>()

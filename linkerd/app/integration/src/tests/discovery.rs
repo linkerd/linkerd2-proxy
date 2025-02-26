@@ -484,7 +484,7 @@ mod http2 {
 
         let body = {
             let body = res.into_body();
-            let body = http_body::Body::collect(body)
+            let body = http_body_util::BodyExt::collect(body)
                 .await
                 .unwrap()
                 .to_bytes()
