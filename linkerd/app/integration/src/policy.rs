@@ -2,6 +2,7 @@ use super::*;
 pub use api::{inbound, outbound};
 use api::{inbound::inbound_server_policies_server, outbound::outbound_policies_server};
 use futures::stream;
+use http_body_util::combinators::UnsyncBoxBody;
 use linkerd2_proxy_api as api;
 use parking_lot::Mutex;
 use std::collections::VecDeque;
@@ -33,6 +34,9 @@ pub struct InboundSender(Tx<inbound::Server>);
 
 #[derive(Debug, Clone)]
 pub struct OutboundSender(Tx<outbound::OutboundPolicy>);
+
+#[derive(Clone)]
+struct RoutesSvc(grpc::service::Routes);
 
 type Tx<T> = mpsc::UnboundedSender<Result<T, grpc::Status>>;
 type Rx<T> = UnboundedReceiverStream<Result<T, grpc::Status>>;
@@ -308,7 +312,7 @@ impl Controller {
                 Server(Arc::new(self.outbound)),
             ))
             .into_service();
-        controller::run(svc, "support policy controller", None).await
+        controller::run(RoutesSvc(svc), "support policy controller", None).await
     }
 }
 
@@ -506,6 +510,33 @@ impl<Req, Rsp> Inner<Req, Rsp> {
         let rx = UnboundedReceiverStream::new(rx);
         self.calls.lock().push_back((call, rx));
         tx
+    }
+}
+
+// === impl RoutesSvc ===
+
+impl Service<Request<hyper::body::Incoming>> for RoutesSvc {
+    type Response =
+        <grpc::service::Routes as Service<Request<UnsyncBoxBody<Bytes, grpc::Status>>>>::Response;
+    type Error =
+        <grpc::service::Routes as Service<Request<UnsyncBoxBody<Bytes, grpc::Status>>>>::Error;
+    type Future =
+        <grpc::service::Routes as Service<Request<UnsyncBoxBody<Bytes, grpc::Status>>>>::Future;
+
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        let Self(routes) = self;
+        routes.poll_ready(cx)
+    }
+
+    fn call(&mut self, req: Request<hyper::body::Incoming>) -> Self::Future {
+        use http_body_util::{combinators::UnsyncBoxBody, BodyExt};
+
+        let Self(routes) = self;
+        let req = req.map(|body| {
+            UnsyncBoxBody::new(body.map_err(|err| grpc::Status::from_error(Box::new(err))))
+        });
+
+        routes.call(req)
     }
 }
 
