@@ -9,7 +9,6 @@
 ///
 /// The next id is 17.
 /// TODO(bdrutu): Add an example.
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Span {
     /// A unique identifier for a trace. All spans from the same trace share
@@ -122,7 +121,6 @@ pub mod span {
     /// It is a list of Tracestate.Entry with a maximum of 32 members in the list.
     ///
     /// See the <https://github.com/w3c/distributed-tracing> for more details about this field.
-    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Tracestate {
         /// A list of entries that represent the Tracestate.
@@ -131,7 +129,6 @@ pub mod span {
     }
     /// Nested message and enum types in `Tracestate`.
     pub mod tracestate {
-        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct Entry {
             /// The key must begin with a lowercase letter, and can only contain
@@ -147,7 +144,6 @@ pub mod span {
         }
     }
     /// A set of attributes, each with a key and a value.
-    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Attributes {
         /// The set of attributes. The value can be a string, an integer, a double
@@ -170,7 +166,6 @@ pub mod span {
         pub dropped_attributes_count: i32,
     }
     /// A time-stamped annotation or message event in the Span.
-    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct TimeEvent {
         /// The time the event occurred.
@@ -184,7 +179,6 @@ pub mod span {
     /// Nested message and enum types in `TimeEvent`.
     pub mod time_event {
         /// A text annotation with a set of attributes.
-        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct Annotation {
             /// A user-supplied message describing the event.
@@ -195,8 +189,7 @@ pub mod span {
             pub attributes: ::core::option::Option<super::Attributes>,
         }
         /// An event describing a message sent/received between Spans.
-        #[allow(clippy::derive_partial_eq_without_eq)]
-        #[derive(Clone, PartialEq, ::prost::Message)]
+        #[derive(Clone, Copy, PartialEq, ::prost::Message)]
         pub struct MessageEvent {
             /// The type of MessageEvent. Indicates whether the message was sent or
             /// received.
@@ -246,9 +239,9 @@ pub mod span {
                 /// (if the ProtoBuf definition does not change) and safe for programmatic use.
                 pub fn as_str_name(&self) -> &'static str {
                     match self {
-                        Type::Unspecified => "TYPE_UNSPECIFIED",
-                        Type::Sent => "SENT",
-                        Type::Received => "RECEIVED",
+                        Self::Unspecified => "TYPE_UNSPECIFIED",
+                        Self::Sent => "SENT",
+                        Self::Received => "RECEIVED",
                     }
                 }
                 /// Creates an enum from field names used in the ProtoBuf definition.
@@ -264,7 +257,6 @@ pub mod span {
         }
         /// A `TimeEvent` can contain either an `Annotation` object or a
         /// `MessageEvent` object, but not both.
-        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum Value {
             /// A text annotation with a set of attributes.
@@ -278,7 +270,6 @@ pub mod span {
     /// A collection of `TimeEvent`s. A `TimeEvent` is a time-stamped annotation
     /// on the span, consisting of either user-supplied key-value pairs, or
     /// details of a message sent/received between Spans.
-    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct TimeEvents {
         /// A collection of `TimeEvent`s.
@@ -297,7 +288,6 @@ pub mod span {
     /// different trace. For example, this can be used in batching operations,
     /// where a single batch handler processes multiple requests from different
     /// traces or when the handler receives a request from a different project.
-    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Link {
         /// A unique identifier of a trace that this linked span is part of. The ID is a
@@ -349,9 +339,9 @@ pub mod span {
             /// (if the ProtoBuf definition does not change) and safe for programmatic use.
             pub fn as_str_name(&self) -> &'static str {
                 match self {
-                    Type::Unspecified => "TYPE_UNSPECIFIED",
-                    Type::ChildLinkedSpan => "CHILD_LINKED_SPAN",
-                    Type::ParentLinkedSpan => "PARENT_LINKED_SPAN",
+                    Self::Unspecified => "TYPE_UNSPECIFIED",
+                    Self::ChildLinkedSpan => "CHILD_LINKED_SPAN",
+                    Self::ParentLinkedSpan => "PARENT_LINKED_SPAN",
                 }
             }
             /// Creates an enum from field names used in the ProtoBuf definition.
@@ -367,7 +357,6 @@ pub mod span {
     }
     /// A collection of links, which are references from this span to a span
     /// in the same or different trace.
-    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Links {
         /// A collection of links.
@@ -409,9 +398,9 @@ pub mod span {
         /// (if the ProtoBuf definition does not change) and safe for programmatic use.
         pub fn as_str_name(&self) -> &'static str {
             match self {
-                SpanKind::Unspecified => "SPAN_KIND_UNSPECIFIED",
-                SpanKind::Server => "SERVER",
-                SpanKind::Client => "CLIENT",
+                Self::Unspecified => "SPAN_KIND_UNSPECIFIED",
+                Self::Server => "SERVER",
+                Self::Client => "CLIENT",
             }
         }
         /// Creates an enum from field names used in the ProtoBuf definition.
@@ -430,7 +419,6 @@ pub mod span {
 /// are a subset of those of
 /// [google.rpc.Status](<https://github.com/googleapis/googleapis/blob/master/google/rpc/status.proto>),
 /// which is used by [gRPC](<https://github.com/grpc>).
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Status {
     /// The status code. This is optional field. It is safe to assume 0 (OK)
@@ -442,7 +430,6 @@ pub struct Status {
     pub message: ::prost::alloc::string::String,
 }
 /// The value of an Attribute.
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AttributeValue {
     /// The type of the value.
@@ -452,7 +439,6 @@ pub struct AttributeValue {
 /// Nested message and enum types in `AttributeValue`.
 pub mod attribute_value {
     /// The type of the value.
-    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Value {
         /// A string up to 256 bytes long.
@@ -470,7 +456,6 @@ pub mod attribute_value {
     }
 }
 /// The call stack which originated this span.
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct StackTrace {
     /// Stack frames in this stack trace.
@@ -494,7 +479,6 @@ pub struct StackTrace {
 /// Nested message and enum types in `StackTrace`.
 pub mod stack_trace {
     /// A single stack frame in a stack trace.
-    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct StackFrame {
         /// The fully-qualified name that uniquely identifies the function or
@@ -524,7 +508,6 @@ pub mod stack_trace {
         pub source_version: ::core::option::Option<super::TruncatableString>,
     }
     /// A collection of stack frames, which can be truncated.
-    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct StackFrames {
         /// Stack frames in this call stack.
@@ -538,7 +521,6 @@ pub mod stack_trace {
     }
 }
 /// A description of a binary module.
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Module {
     /// TODO: document the meaning of this field.
@@ -552,7 +534,6 @@ pub struct Module {
     pub build_id: ::core::option::Option<TruncatableString>,
 }
 /// A string that might be shortened to a specified length.
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct TruncatableString {
     /// The shortened string. For example, if the original string was 500 bytes long and
@@ -570,8 +551,7 @@ pub struct TruncatableString {
 }
 /// Global configuration of the trace service. All fields must be specified, or
 /// the default (zero) values will be used for each type.
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct TraceConfig {
     /// The global default max number of attributes per span.
     #[prost(int64, tag = "4")]
@@ -592,8 +572,7 @@ pub struct TraceConfig {
 /// Nested message and enum types in `TraceConfig`.
 pub mod trace_config {
     /// The global default sampler used to make decisions on span sampling.
-    #[allow(clippy::derive_partial_eq_without_eq)]
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    #[derive(Clone, Copy, PartialEq, ::prost::Oneof)]
     pub enum Sampler {
         #[prost(message, tag = "1")]
         ProbabilitySampler(super::ProbabilitySampler),
@@ -605,16 +584,14 @@ pub mod trace_config {
 }
 /// Sampler that tries to uniformly sample traces with a given probability.
 /// The probability of sampling a trace is equal to that of the specified probability.
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct ProbabilitySampler {
     /// The desired probability of sampling. Must be within \[0.0, 1.0\].
     #[prost(double, tag = "1")]
     pub sampling_probability: f64,
 }
 /// Sampler that always makes a constant decision on span sampling.
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct ConstantSampler {
     #[prost(enumeration = "constant_sampler::ConstantDecision", tag = "1")]
     pub decision: i32,
@@ -649,9 +626,9 @@ pub mod constant_sampler {
         /// (if the ProtoBuf definition does not change) and safe for programmatic use.
         pub fn as_str_name(&self) -> &'static str {
             match self {
-                ConstantDecision::AlwaysOff => "ALWAYS_OFF",
-                ConstantDecision::AlwaysOn => "ALWAYS_ON",
-                ConstantDecision::AlwaysParent => "ALWAYS_PARENT",
+                Self::AlwaysOff => "ALWAYS_OFF",
+                Self::AlwaysOn => "ALWAYS_ON",
+                Self::AlwaysParent => "ALWAYS_PARENT",
             }
         }
         /// Creates an enum from field names used in the ProtoBuf definition.
@@ -666,8 +643,7 @@ pub mod constant_sampler {
     }
 }
 /// Sampler that tries to sample with a rate per time window.
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct RateLimitingSampler {
     /// Rate per second.
     #[prost(int64, tag = "1")]
