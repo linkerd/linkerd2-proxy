@@ -10,48 +10,75 @@ pub(crate) fn build() -> Runtime {
     //
     // The basic scheduler is used when the threaded scheduler would provide no
     // benefit.
-    let mut cores = std::env::var("LINKERD2_PROXY_CORES")
+
+    let min_cores = std::env::var("LINKERD2_PROXY_CORES_MIN")
         .ok()
         .and_then(|v| {
             let opt = v.parse::<usize>().ok().filter(|n| *n > 0);
             if opt.is_none() {
-                warn!(LINKERD2_PROXY_CORES = %v, "Ignoring invalid configuration");
+                warn!(LINKERD2_PROXY_CORES_MIN = %v, "Ignoring invalid configuration");
             }
             opt
         })
-        .unwrap_or(0);
+        .unwrap_or(1);
 
-    let cpus = num_cpus::get();
-    debug_assert!(cpus > 0, "At least one CPU must be available");
-    if cores > cpus {
-        warn!(
-            cpus,
-            LINKERD2_PROXY_CORES = cores,
-            "Ignoring configuration due to insufficient resources"
-        );
-        cores = cpus;
-    }
+    let max_cores = std::env::var("LINKERD2_PROXY_CORES_MAX")
+        .ok()
+        .and_then(|v| {
+            let opt = v.parse::<usize>().ok().filter(|n| *n > 0);
+            if opt.is_none() {
+                warn!(LINKERD2_PROXY_CORES_MAX = %v, "Ignoring invalid configuration");
+            }
+            opt
+        })
+        .or_else(|| {
+            std::env::var("LINKERD2_PROXY_CORES").ok().and_then(|v| {
+                let opt = v.parse::<usize>().ok().filter(|n| *n > 0);
+                if opt.is_none() {
+                    warn!(LINKERD2_PROXY_CORES = %v, "Ignoring invalid configuration");
+                }
+                opt
+            })
+        });
 
-    match cores {
-        // `0` is unexpected, but it's a wild world out there.
-        0 | 1 => {
-            info!("Using single-threaded proxy runtime");
-            Builder::new_current_thread()
-                .enable_all()
-                .thread_name("proxy")
-                .build()
-                .expect("failed to build basic runtime!")
-        }
-        num_cpus => {
-            info!(%cores, "Using multi-threaded proxy runtime");
-            Builder::new_multi_thread()
-                .enable_all()
-                .thread_name("proxy")
-                .worker_threads(num_cpus)
-                .max_blocking_threads(num_cpus)
-                .build()
-                .expect("failed to build threaded runtime!")
-        }
+    let cores_ratio = std::env::var("LINKERD2_PROXY_CORES_RATIO")
+        .ok()
+        .and_then(|v| {
+            let opt = v.parse::<f64>().ok().filter(|n| *n > 0.0 && *n <= 1.0);
+            if opt.is_none() {
+                warn!(LINKERD2_PROXY_CORES = %v, "Ignoring invalid configuration");
+            }
+            opt
+        });
+
+    let available_cpus = num_cpus::get();
+    debug_assert!(available_cpus > 0, "At least one CPU must be available");
+
+    let cores = if let Some(max) = max_cores {
+        max.min(available_cpus)
+    } else if let Some(ratio) = cores_ratio {
+        let computed = (available_cpus as f64 * ratio).ceil() as usize;
+        computed.max(min_cores).min(available_cpus)
+    } else {
+        1
+    };
+
+    if cores == 1 {
+        info!("Using single-threaded proxy runtime");
+        Builder::new_current_thread()
+            .enable_all()
+            .thread_name("proxy")
+            .build()
+            .expect("failed to build basic runtime!")
+    } else {
+        info!(%cores, "Using multi-threaded proxy runtime");
+        Builder::new_multi_thread()
+            .enable_all()
+            .thread_name("proxy")
+            .worker_threads(cores)
+            .max_blocking_threads(cores)
+            .build()
+            .expect("failed to build threaded runtime!")
     }
 }
 
