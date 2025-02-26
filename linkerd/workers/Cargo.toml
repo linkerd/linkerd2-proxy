@@ -1,0 +1,8 @@
+[package]
+name = "linkerd-workers"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "CPU core allocation logic for Linkerd"
+
+[dependencies]

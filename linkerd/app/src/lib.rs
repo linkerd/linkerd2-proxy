@@ -29,6 +29,7 @@ pub use linkerd_app_core::{metrics, trace, transport::BindTcp, BUILD_INFO};
 use linkerd_app_gateway as gateway;
 use linkerd_app_inbound::{self as inbound, Inbound};
 use linkerd_app_outbound::{self as outbound, Outbound};
+pub use linkerd_workers::Workers;
 use std::pin::Pin;
 use tokio::{
     sync::mpsc,
