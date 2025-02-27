@@ -54,13 +54,16 @@ linkerd-tonic-watch = { path = "../../tonic-watch" }
 [dev-dependencies]
 futures-util = "0.3"
 http-body = { workspace = true }
+http-body-util = { workspace = true, features = ["channel"] }
 hyper = { workspace = true, features = ["http1", "http2"] }
+hyper-util = { workspace = true }
 tokio = { version = "1", features = ["macros", "sync", "time"] }
 tokio-rustls = { workspace = true }
 tokio-test = "0.4"
 tower-test = "0.4"
 
 linkerd-app-test = { path = "../test", features = ["client-policy"] }
+linkerd-http-box = { path = "../../http/box" }
 linkerd-http-prom = { path = "../../http/prom", features = ["test-util"] }
 linkerd-io = { path = "../../io", features = ["tokio-test"] }
 linkerd-meshtls = { path = "../../meshtls", features = ["rustls"] }

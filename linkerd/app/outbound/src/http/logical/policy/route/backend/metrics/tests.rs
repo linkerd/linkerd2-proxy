@@ -137,7 +137,7 @@ async fn body_data_layer_records_frames() -> Result<(), Error> {
 
     // Create a request.
     let req = {
-        let empty = hyper::Body::empty();
+        let empty = BoxBody::empty();
         let body = BoxBody::new(empty);
         http::Request::builder().method("DOOT").body(body).unwrap()
     };
@@ -172,7 +172,7 @@ async fn body_data_layer_records_frames() -> Result<(), Error> {
     // Create a response whose body is backed by a channel that we can send chunks to, send it.
     tracing::info!("sending response");
     let mut resp_tx = {
-        let (tx, body) = hyper::Body::channel();
+        let (tx, body) = http_body_util::channel::Channel::<bytes::Bytes, Error>::new(1024);
         let body = BoxBody::new(body);
         let resp = http::Response::builder()
             .status(http::StatusCode::IM_A_TEAPOT)
@@ -200,11 +200,11 @@ async fn body_data_layer_records_frames() -> Result<(), Error> {
     async fn read_chunk(body: &mut std::pin::Pin<Box<BoxBody>>) -> Result<Vec<u8>, Error> {
         use std::task::{Context, Poll};
         let mut ctx = Context::from_waker(futures_util::task::noop_waker_ref());
-        let data = match body.as_mut().poll_data(&mut ctx) {
+        let data = match body.as_mut().poll_frame(&mut ctx) {
             Poll::Ready(Some(Ok(d))) => d,
             _ => panic!("next chunk should be ready"),
         };
-        let chunk = data.chunk().to_vec();
+        let chunk = data.into_data().expect("data frame").chunk().to_vec();
         Ok(chunk)
     }
 
@@ -242,7 +242,7 @@ async fn body_data_layer_records_frames() -> Result<(), Error> {
         tracing::info!("closing response body");
         drop(resp_tx);
         let mut ctx = Context::from_waker(futures_util::task::noop_waker_ref());
-        match body.as_mut().poll_data(&mut ctx) {
+        match body.as_mut().poll_frame(&mut ctx) {
             Poll::Ready(None) => {}
             _ => panic!("got unexpected poll result"),
         };
