@@ -11,12 +11,6 @@ updates:
     allow:
       - dependency-type: "all"
     ignore:
-      # These dependencies will be updated via higher-level aggregator dependencies like `clap`,
-      # `futures`, `prost`, `tracing`, and `trust-dns-resolver`:
-      - dependency-name: "futures-*"
-      - dependency-name: "prost-derive"
-      - dependency-name: "tracing-*"
-      - dependency-name: "trust-dns-proto"
       # These dependencies are for platforms that we don't support:
       - dependency-name: "hermit-abi"
       - dependency-name: "redox_*"
@@ -25,9 +19,29 @@ updates:
       - dependency-name: "web-sys"
       - dependency-name: "windows*"
     groups:
+      boring:
+        patterns:
+          - "boring*"
+      hickory:
+        patterns:
+          - "hickory*"
+      futures:
+        patterns:
+          - "futures*"
       opentelemetry:
         patterns:
           - "opentelemetry*"
+      prost:
+        patterns:
+          - "prost*"
+      rustls:
+        patterns:
+          - "tokio-rustls"
+          - "rustls*"
+          - "ring"
+      tracing:
+        patterns:
+          - "tracing*"
 
   - package-ecosystem: cargo
     directory: /linkerd/addr/fuzz
