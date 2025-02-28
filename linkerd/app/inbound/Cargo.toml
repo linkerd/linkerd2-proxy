@@ -56,6 +56,7 @@ linkerd-meshtls-rustls = { path = "../../meshtls/rustls", features = [
 [dev-dependencies]
 hyper = { workspace = true, features = ["deprecated", "http1", "http2"] }
 linkerd-app-test = { path = "../test" }
+linkerd-http-body-compat = { path = "../../http/body-compat" }
 linkerd-http-metrics = { path = "../../http/metrics", features = ["test-util"] }
 linkerd-idle-cache = { path = "../../idle-cache", features = ["test-util"] }
 linkerd-io = { path = "../../io", features = ["tokio-test"] }
