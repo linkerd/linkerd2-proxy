@@ -1,7 +1,7 @@
 use super::*;
 use linkerd_app_core::{
     errors,
-    proxy::http::{self, Body, StatusCode},
+    proxy::http::{self, StatusCode},
     svc::http::stream_timeouts::StreamDeadlineError,
     trace,
 };
@@ -340,7 +340,7 @@ async fn grpc_internal() {
     );
 
     info!("Verifying that we see the successful response");
-    let mut rsp = time::timeout(
+    let (parts, mut body) = time::timeout(
         TIMEOUT * 10,
         send_req(
             svc.clone(),
@@ -351,14 +351,24 @@ async fn grpc_internal() {
     )
     .await
     .expect("response")
-    .expect("response ok");
-    assert_eq!(rsp.status(), StatusCode::OK);
-    while rsp.body_mut().data().await.is_some() {}
-    let trailers = rsp.body_mut().trailers().await;
+    .expect("response ok")
+    .map(linkerd_http_body_compat::ForwardCompatibleBody::new)
+    .into_parts();
+    assert_eq!(parts.status, StatusCode::OK);
+    let trailers = loop {
+        match body.frame().await {
+            Some(Ok(frame)) => {
+                if let Ok(trailers) = frame.into_trailers() {
+                    break trailers;
+                } else {
+                    continue;
+                }
+            }
+            None | Some(Err(_)) => panic!("body did not yield trailers"),
+        }
+    };
     assert_eq!(
         trailers
-            .expect("trailers")
-            .expect("trailers")
             .get("grpc-status")
             .expect("grpc-status")
             .to_str()
@@ -405,7 +415,7 @@ async fn grpc_timeout() {
     );
 
     info!("Verifying that we see the successful response");
-    let mut rsp = time::timeout(
+    let (parts, mut body) = time::timeout(
         TIMEOUT * 10,
         send_req(
             svc.clone(),
@@ -416,14 +426,24 @@ async fn grpc_timeout() {
     )
     .await
     .expect("response")
-    .expect("response ok");
-    assert_eq!(rsp.status(), StatusCode::OK);
-    while rsp.body_mut().data().await.is_some() {}
-    let trailers = rsp.body_mut().trailers().await;
+    .expect("response ok")
+    .map(linkerd_http_body_compat::ForwardCompatibleBody::new)
+    .into_parts();
+    assert_eq!(parts.status, StatusCode::OK);
+    let trailers = loop {
+        match body.frame().await {
+            Some(Ok(frame)) => {
+                if let Ok(trailers) = frame.into_trailers() {
+                    break trailers;
+                } else {
+                    continue;
+                }
+            }
+            None | Some(Err(_)) => panic!("body did not yield trailers"),
+        }
+    };
     assert_eq!(
         trailers
-            .expect("trailers")
-            .expect("trailers")
             .get("grpc-status")
             .expect("grpc-status")
             .to_str()

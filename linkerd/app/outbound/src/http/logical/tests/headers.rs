@@ -139,7 +139,7 @@ async fn grpc() {
     );
 
     info!("Verifying that we see the successful response");
-    let mut rsp = time::timeout(
+    let (parts, mut body) = time::timeout(
         TIMEOUT * 4,
         send_req(
             svc.clone(),
@@ -155,17 +155,18 @@ async fn grpc() {
     )
     .await
     .expect("response")
-    .expect("response");
-    assert_eq!(rsp.status(), StatusCode::OK);
-    while let Some(res) = rsp.body_mut().data().await {
-        res.expect("data");
-    }
-    let trailers = rsp
-        .body_mut()
-        .trailers()
+    .expect("response")
+    .map(linkerd_http_body_compat::ForwardCompatibleBody::new)
+    .into_parts();
+    assert_eq!(parts.status, StatusCode::OK);
+    let trailers = body
+        .frame()
         .await
-        .expect("trailers")
-        .expect("trailers");
+        .expect("a result")
+        .expect("a frame")
+        .into_trailers()
+        .ok()
+        .expect("trailers frame");
     assert_eq!(
         trailers
             .get("grpc-status")
@@ -214,7 +215,7 @@ async fn grpc_requires_allow() {
     );
 
     info!("Verifying that we see the successful response");
-    let mut rsp = time::timeout(
+    let (parts, mut body) = time::timeout(
         TIMEOUT * 4,
         send_req(
             svc.clone(),
@@ -230,17 +231,18 @@ async fn grpc_requires_allow() {
     )
     .await
     .expect("response")
-    .expect("response");
-    assert_eq!(rsp.status(), StatusCode::OK);
-    while let Some(res) = rsp.body_mut().data().await {
-        res.expect("data");
-    }
-    let trailers = rsp
-        .body_mut()
-        .trailers()
+    .expect("response")
+    .map(linkerd_http_body_compat::ForwardCompatibleBody::new)
+    .into_parts();
+    assert_eq!(parts.status, StatusCode::OK);
+    let trailers = body
+        .frame()
         .await
-        .expect("trailers")
-        .expect("trailers");
+        .expect("a result")
+        .expect("a frame")
+        .into_trailers()
+        .ok()
+        .expect("trailers frame");
     assert_eq!(
         trailers
             .get("grpc-status")
