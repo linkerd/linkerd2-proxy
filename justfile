@@ -28,26 +28,30 @@ docker-image := docker-repo + ":" + docker-tag
 
 # The architecture name to use for packages. Either 'amd64', 'arm64', or 'arm'.
 arch := "amd64"
+# The OS name to use for packages. Either 'linux' or 'windows'.
+os := "linux"
 
 libc := 'gnu'
 
 # If a `arch` is specified, then we change the default cargo `--target`
 # to support cross-compilation. Otherwise, we use `rustup` to find the default.
-_target := if arch == 'amd64' {
+_target := if os + '-' + arch == "linux-amd64" {
         "x86_64-unknown-linux-" + libc
-    } else if arch == "arm64" {
+    } else if os + '-' + arch == "linux-arm64" {
         "aarch64-unknown-linux-" + libc
-    } else if arch == "arm" {
+    } else if os + '-' + arch == "linux-arm" {
         "armv7-unknown-linux-" + libc + "eabihf"
+    } else if os + '-' + arch == "windows-amd64" {
+        "x86_64-pc-windows-" + libc
     } else {
-        error("unsupported arch=" + arch)
+        error("unsupported: os=" + os + " arch=" + arch + " libc=" + libc)
     }
 
 _cargo := 'just-cargo profile=' + profile + ' target=' + _target + ' toolchain=' + toolchain
 
 _target_dir := "target" / _target / profile
 _target_bin := _target_dir / "linkerd2-proxy"
-_package_name := "linkerd2-proxy-" + package_version + "-" + arch + if libc == 'musl' { '-static' } else { '' }
+_package_name := "linkerd2-proxy-" + package_version + "-" + arch + (if libc == 'musl' { '-static' } else { '' }) + (if os == 'windows' { '.exe' } else { '' })
 _package_dir := "target/package" / _package_name
 shasum := "shasum -a 256"
 
