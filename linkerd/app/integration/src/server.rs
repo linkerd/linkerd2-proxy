@@ -151,7 +151,7 @@ impl Server {
                 tokio::time::sleep(latency).await;
                 Ok::<_, Error>(
                     http::Response::builder()
-                        .status(200)
+                        .status(StatusCode::OK)
                         .body(hyper::Body::from(resp.clone()))
                         .unwrap(),
                 )
@@ -265,7 +265,7 @@ impl Route {
         Route(Box::new(move |_| {
             Box::pin(future::ok(
                 http::Response::builder()
-                    .status(200)
+                    .status(StatusCode::OK)
                     .body(hyper::Body::from(body.clone()))
                     .unwrap(),
             ))
@@ -292,7 +292,7 @@ impl Svc {
             None => {
                 tracing::warn!("server 404: {:?}", req.uri().path());
                 let res = http::Response::builder()
-                    .status(404)
+                    .status(StatusCode::NOT_FOUND)
                     .body(Default::default())
                     .unwrap();
                 Box::pin(async move { Ok(res) })
