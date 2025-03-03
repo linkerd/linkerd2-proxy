@@ -95,6 +95,7 @@ impl Server {
             tls,
         }
     }
+
     fn http1() -> Self {
         Server::new(Run::Http1, None)
     }
@@ -329,7 +330,6 @@ async fn accept_connection(
                 _running: None,
             })
         }
-
         None => Ok(RunningIo {
             io: Box::pin(io),
             abs_form: false,
