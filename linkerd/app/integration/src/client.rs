@@ -1,4 +1,5 @@
 use super::*;
+use http::{Request, Response};
 use linkerd_app_core::proxy::http::TracingExecutor;
 use parking_lot::Mutex;
 use std::io;
@@ -7,9 +8,10 @@ use tokio_rustls::rustls::{self, ClientConfig};
 use tracing::info_span;
 
 type ClientError = hyper::Error;
-type Request = http::Request<hyper::Body>;
-type Response = http::Response<hyper::Body>;
-type Sender = mpsc::UnboundedSender<(Request, oneshot::Sender<Result<Response, ClientError>>)>;
+type Sender = mpsc::UnboundedSender<(
+    Request<hyper::Body>,
+    oneshot::Sender<Result<Response<hyper::Body>, ClientError>>,
+)>;
 
 #[derive(Clone)]
 pub struct TlsConfig {
@@ -133,11 +135,12 @@ impl Client {
     pub fn request(
         &self,
         builder: http::request::Builder,
-    ) -> impl Future<Output = Result<Response, ClientError>> + Send + Sync + 'static {
+    ) -> impl Future<Output = Result<Response<hyper::Body>, ClientError>> + Send + Sync + 'static
+    {
         self.send_req(builder.body(Bytes::new().into()).unwrap())
     }
 
-    pub async fn request_body(&self, req: Request) -> Response {
+    pub async fn request_body(&self, req: Request<hyper::Body>) -> Response<hyper::Body> {
         self.send_req(req).await.expect("response")
     }
 
@@ -156,8 +159,9 @@ impl Client {
     #[tracing::instrument(skip(self))]
     pub(crate) fn send_req(
         &self,
-        mut req: Request,
-    ) -> impl Future<Output = Result<Response, ClientError>> + Send + Sync + 'static {
+        mut req: Request<hyper::Body>,
+    ) -> impl Future<Output = Result<Response<hyper::Body>, ClientError>> + Send + Sync + 'static
+    {
         if req.uri().scheme().is_none() {
             if self.tls.is_some() {
                 *req.uri_mut() = format!("https://{}{}", self.authority, req.uri().path())
@@ -228,8 +232,10 @@ fn run(
     version: Run,
     tls: Option<TlsConfig>,
 ) -> (Sender, JoinHandle<()>, Running) {
-    let (tx, rx) =
-        mpsc::unbounded_channel::<(Request, oneshot::Sender<Result<Response, ClientError>>)>();
+    let (tx, rx) = mpsc::unbounded_channel::<(
+        Request<hyper::Body>,
+        oneshot::Sender<Result<Response<hyper::Body>, ClientError>>,
+    )>();
 
     let test_name = thread_name();
     let absolute_uris = if let Run::Http1 { absolute_uris } = version {
