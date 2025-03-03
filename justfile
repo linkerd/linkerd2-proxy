@@ -28,7 +28,7 @@ docker-image := docker-repo + ":" + docker-tag
 
 # The architecture name to use for packages. Either 'amd64', 'arm64', or 'arm'.
 arch := "amd64"
-# The OS name to use for packages. Either 'linux'.
+# The OS name to use for packages. Either 'linux' or 'windows'.
 os := "linux"
 
 libc := 'gnu'
