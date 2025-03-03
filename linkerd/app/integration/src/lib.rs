@@ -217,15 +217,6 @@ impl Shutdown {
 
 pub type ShutdownRx = Pin<Box<dyn Future<Output = ()> + Send>>;
 
-/// A channel used to signal when a Client's related connection is running or closed.
-pub fn running() -> (oneshot::Sender<()>, Running) {
-    let (tx, rx) = oneshot::channel();
-    let rx = Box::pin(rx.map(|_| ()));
-    (tx, rx)
-}
-
-pub type Running = Pin<Box<dyn Future<Output = ()> + Send + Sync + 'static>>;
-
 pub fn s(bytes: &[u8]) -> &str {
     ::std::str::from_utf8(bytes).unwrap()
 }
