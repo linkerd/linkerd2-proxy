@@ -53,7 +53,7 @@ async fn outbound_tcp() {
     let msg1 = "custom tcp hello\n";
     let msg2 = "custom tcp bye";
 
-    let srv = server::tcp()
+    let srv = crate::tcp::server()
         .accept(move |read| {
             assert_eq!(read, msg1.as_bytes());
             msg2
@@ -91,7 +91,7 @@ async fn outbound_tcp_external() {
     let msg1 = "custom tcp hello\n";
     let msg2 = "custom tcp bye";
 
-    let srv = server::tcp()
+    let srv = crate::tcp::server()
         .accept(move |read| {
             assert_eq!(read, msg1.as_bytes());
             msg2
@@ -130,7 +130,7 @@ async fn inbound_tcp() {
     let msg1 = "custom tcp hello\n";
     let msg2 = "custom tcp bye";
 
-    let srv = server::tcp()
+    let srv = crate::tcp::server()
         .accept(move |read| {
             assert_eq!(read, msg1.as_bytes());
             msg2
@@ -201,7 +201,7 @@ async fn test_inbound_server_speaks_first(env: TestEnv) {
     let _trace = trace_init();
 
     let (tx, rx) = mpsc::channel(1);
-    let srv = server::tcp()
+    let srv = crate::tcp::server()
         .accept_fut(move |sock| serve_server_first(sock, tx))
         .run()
         .await;
@@ -231,7 +231,7 @@ async fn inbound_tcp_server_first_no_discovery() {
     let _trace = trace_init();
 
     let (tx, rx) = mpsc::channel(1);
-    let srv = server::tcp()
+    let srv = crate::tcp::server()
         .accept_fut(move |sock| serve_server_first(sock, tx))
         .run()
         .await;
@@ -303,7 +303,7 @@ async fn outbound_opaque_tcp_server_first() {
     let _trace = trace_init();
 
     let (tx, rx) = mpsc::channel(1);
-    let srv = server::tcp()
+    let srv = crate::tcp::server()
         .accept_fut(move |sock| serve_server_first(sock, tx))
         .run()
         .await;
@@ -383,7 +383,7 @@ async fn tcp_connections_close_if_client_closes() {
 
     let (tx, mut rx) = mpsc::channel::<()>(1);
 
-    let srv = server::tcp()
+    let srv = crate::tcp::server()
         .accept_fut(move |mut sock| {
             async move {
                 let _tx = tx;
@@ -582,7 +582,7 @@ macro_rules! http1_tests {
             let chatproto_req = "[chatproto-c]{send}: hi all\n";
             let chatproto_res = "[chatproto-s]{recv}: welcome!\n";
 
-            let srv = server::tcp()
+            let srv = crate::tcp::server()
                 .accept_fut(move |mut sock| {
                     async move {
                         // Read upgrade_req...
@@ -731,7 +731,7 @@ macro_rules! http1_tests {
             let tunneled_req = b"{send}: hi all\n";
             let tunneled_res = b"{recv}: welcome!\n";
 
-            let srv = server::tcp()
+            let srv = crate::tcp::server()
                 .accept_fut(move |mut sock| {
                     async move {
                         // Read connect_req...
@@ -823,7 +823,7 @@ macro_rules! http1_tests {
             let tunneled_req = b"{send}: hi all\n";
             let tunneled_res = b"{recv}: welcome!\n";
 
-            let srv = server::tcp()
+            let srv = crate::tcp::server()
                 .accept_fut(move |mut sock| {
                     async move {
                         // Read connect_req...
@@ -887,7 +887,7 @@ macro_rules! http1_tests {
         async fn http11_connect_bad_requests() {
             let _trace = trace_init();
 
-            let srv = server::tcp()
+            let srv = crate::tcp::server()
                 .accept(move |_sock| -> Vec<u8> {
                     unreachable!("shouldn't get through the proxy");
                 })
@@ -1210,7 +1210,7 @@ macro_rules! http1_tests {
             let _trace = trace_init();
 
             // test both http/1.0 and 1.1
-            let srv = server::tcp()
+            let srv = crate::tcp::server()
                 .accept(move |_read| {
                     "\
                      HTTP/1.0 200 OK\r\n\

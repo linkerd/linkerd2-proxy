@@ -101,7 +101,7 @@ async fn tcp_waits_for_proxies_to_close() {
     let msg1 = "custom tcp hello\n";
     let msg2 = "custom tcp bye";
 
-    let srv = server::tcp()
+    let srv = crate::tcp::server()
         // Trigger a shutdown while TCP stream is busy
         .accept_fut(move |mut sock| {
             async move {

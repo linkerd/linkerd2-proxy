@@ -27,10 +27,6 @@ pub fn http2_tls(tls: Arc<ServerConfig>) -> Server {
     Server::http2_tls(tls)
 }
 
-pub fn tcp() -> tcp::TcpServer {
-    tcp::server()
-}
-
 pub struct Server {
     routes: HashMap<String, Route>,
     version: Run,
