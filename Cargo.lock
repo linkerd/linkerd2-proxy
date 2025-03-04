@@ -2057,7 +2057,6 @@ name = "linkerd-opencensus"
 version = "0.1.0"
 dependencies = [
  "futures",
- "http",
  "http-body",
  "linkerd-error",
  "linkerd-metrics",
