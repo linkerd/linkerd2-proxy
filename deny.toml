@@ -55,14 +55,20 @@ skip = [
     # `linkerd-trace-context`, `rustls-pemfile` and `tonic` depend on `base64`
     # v0.13.1 while `rcgen` depends on v0.21.5
     { name = "base64" },
-    { name = "bitflags", version = "1" },
     # https://github.com/hawkw/matchers/pull/4
     { name = "regex-automata", version = "0.1" },
     { name = "regex-syntax", version = "0.6" },
     # Some dependencies still use indexmap v1.
     { name = "indexmap", version = "1" },
     { name = "hashbrown", version = "0.12" },
-
+    # `bindgen` v0.70.1 depends on an older version of `itertools`.
+    { name = "itertools", version = "0.13" },
+    # `procfs` v0.17.0 depends on `rustix` v0.38.44. that version of `rustix`
+    # in terms depends upon `linux-raw-sys`.
+    { name = "rustix", version = "0.38.44" },
+    { name = "linux-raw-sys", version = "0.4.15" },
+    # This can be removed once we catch up to the latest tower release.
+    { name = "tower", version = "0.4.13" },
 ]
 skip-tree = [
     # thiserror v2 is still propagating through the ecosystem
@@ -74,4 +80,9 @@ skip-tree = [
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
-allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-registry = [
+    "https://github.com/rust-lang/crates.io-index",
+    "https://github.com/linkerd/drain-rs",
+    "https://github.com/linkerd/http-body",
+    "https://github.com/linkerd/linkerd2-proxy-api",
+]
