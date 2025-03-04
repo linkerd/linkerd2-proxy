@@ -6,4 +6,4 @@ edition = "2021"
 publish = false
 
 [dependencies]
-tower-service = "0.3"
+tower-service = { workspace = true }
