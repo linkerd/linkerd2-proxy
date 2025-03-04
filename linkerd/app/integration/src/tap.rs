@@ -106,7 +106,6 @@ pub trait TapEventExt {
     //fn id(&self) -> (u32, u64);
     fn event(&self) -> &pb::tap_event::http::Event;
 
-    fn request_init_method(&self) -> String;
     fn request_init_authority(&self) -> &str;
     fn request_init_path(&self) -> &str;
 
@@ -131,16 +130,6 @@ impl TapEventExt for pb::TapEvent {
                 event: Some(ref ev),
             })) => ev,
             _ => panic!("unknown event: {:?}", self.event),
-        }
-    }
-
-    fn request_init_method(&self) -> String {
-        match self.event() {
-            pb::tap_event::http::Event::RequestInit(_ev) => {
-                //TODO: ugh
-                unimplemented!("method");
-            }
-            e => panic!("not RequestInit event: {:?}", e),
         }
     }
 
