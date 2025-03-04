@@ -113,7 +113,7 @@ async fn inbound_timeout() {
     let _trace = trace_init();
 
     let (proxy, metrics) = Test::default().run().await;
-    let client = client::tcp(proxy.inbound);
+    let client = crate::tcp::client(proxy.inbound);
 
     let _tcp_client = client.connect().await;
 
@@ -133,7 +133,7 @@ async fn inbound_io_err() {
     let _trace = trace_init();
 
     let (proxy, metrics) = Test::default().run().await;
-    let client = client::tcp(proxy.inbound);
+    let client = crate::tcp::client(proxy.inbound);
 
     let tcp_client = client.connect().await;
 
@@ -167,7 +167,7 @@ async fn inbound_success() {
         "foo.ns1.svc.cluster.local",
         client_config.clone(),
     );
-    let no_tls_client = client::tcp(proxy.inbound);
+    let no_tls_client = crate::tcp::client(proxy.inbound);
 
     let metric = metric(&proxy)
         .label("error", "tls detection timeout")
@@ -198,7 +198,7 @@ async fn inbound_multi() {
     let _trace = trace_init();
 
     let (proxy, metrics) = Test::default().run().await;
-    let client = client::tcp(proxy.inbound);
+    let client = crate::tcp::client(proxy.inbound);
 
     let metric = metric(&proxy);
     let timeout_metric = metric.clone().label("error", "tls detection timeout");
@@ -244,7 +244,7 @@ async fn inbound_direct_multi() {
     let proxy = proxy::new().inbound(srv).inbound_direct();
 
     let (proxy, metrics) = Test::new(proxy).run().await;
-    let client = client::tcp(proxy.inbound);
+    let client = crate::tcp::client(proxy.inbound);
 
     let metric = metrics::metric(METRIC).label("target_addr", proxy.inbound);
     let timeout_metric = metric.clone().label("error", "tls detection timeout");
@@ -291,7 +291,7 @@ async fn inbound_invalid_ip() {
         .run()
         .await;
 
-    let client = client::tcp(proxy.inbound);
+    let client = crate::tcp::client(proxy.inbound);
     let metric = metric(&proxy)
         .label("error", "unexpected")
         .label("target_addr", fake_ip);
@@ -354,7 +354,7 @@ async fn inbound_direct_success() {
         .await;
 
     let tls_client = client::http1(proxy2.outbound, auth);
-    let no_tls_client = client::tcp(proxy1.inbound);
+    let no_tls_client = crate::tcp::client(proxy1.inbound);
 
     let metric = metrics::metric(METRIC)
         .label("target_addr", proxy1.inbound)

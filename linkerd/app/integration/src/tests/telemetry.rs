@@ -145,7 +145,7 @@ impl TcpFixture {
             .run()
             .await;
 
-        let client = client::tcp(proxy.inbound);
+        let client = crate::tcp::client(proxy.inbound);
         let metrics = client::http1(proxy.admin, "localhost");
 
         let src_labels = metrics::labels()
@@ -184,7 +184,7 @@ impl TcpFixture {
             .run()
             .await;
 
-        let client = client::tcp(proxy.outbound);
+        let client = crate::tcp::client(proxy.outbound);
         let metrics = client::http1(proxy.admin, "localhost");
 
         let src_labels = metrics::labels()
