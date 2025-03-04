@@ -59,7 +59,7 @@ pub struct Listening {
 }
 
 type RspFuture =
-    Pin<Box<dyn Future<Output = Result<Response<hyper::Body>, Error>> + Send + Sync + 'static>>;
+    Pin<Box<dyn Future<Output = Result<Response<hyper::Body>, Error>> + Send + 'static>>;
 
 impl Listening {
     pub fn connections(&self) -> usize {
@@ -128,7 +128,7 @@ impl Server {
     pub fn route_async<F, U>(mut self, path: &str, cb: F) -> Self
     where
         F: Fn(Request<hyper::Body>) -> U + Send + Sync + 'static,
-        U: TryFuture<Ok = Response<hyper::Body>> + Send + Sync + 'static,
+        U: TryFuture<Ok = Response<hyper::Body>> + Send + 'static,
         U::Error: Into<Error> + Send + 'static,
     {
         let func = move |req| Box::pin(cb(req).map_err(Into::into)) as RspFuture;
@@ -219,9 +219,17 @@ impl Server {
                         tracing::trace!(?result, "serve done");
                         result
                     };
-                    tokio::spawn(
-                        cancelable(drain.clone(), f).instrument(span.clone().or_current()),
-                    );
+                    // let fut = Box::pin(cancelable(drain.clone(), f).instrument(span.clone().or_current()))
+                    let drain = drain.clone();
+                    tokio::spawn(async move {
+                        tokio::select! {
+                            res = f => res,
+                            _ = drain.signaled() => {
+                                tracing::debug!("canceled!");
+                                Ok(())
+                            }
+                        }
+                    });
                 }
             }
             .instrument(

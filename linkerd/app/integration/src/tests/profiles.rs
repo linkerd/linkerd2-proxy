@@ -293,7 +293,8 @@ mod cross_version {
             .method("POST")
             .body(body)
             .unwrap();
-        let res = tokio::spawn(async move { client.request_body(req).await });
+        let fut = client.send_req(req);
+        let res = tokio::spawn(fut);
         tx.send_data(Bytes::from_static(b"hello"))
             .await
             .expect("the whole body should be read");
@@ -301,7 +302,7 @@ mod cross_version {
             .await
             .expect("the whole body should be read");
         drop(tx);
-        let res = res.await.unwrap();
+        let res = res.await.unwrap().unwrap();
         assert_eq!(res.status(), 200);
     }
 
@@ -392,7 +393,8 @@ mod cross_version {
             .method("POST")
             .body(body)
             .unwrap();
-        let res = tokio::spawn(async move { client.request_body(req).await });
+        let fut = client.send_req(req);
+        let res = tokio::spawn(fut);
         // send a 32k chunk
         tx.send_data(Bytes::from(&[1u8; 32 * 1024][..]))
             .await
@@ -406,7 +408,7 @@ mod cross_version {
             .await
             .expect("the whole body should be read");
         drop(tx);
-        let res = res.await.unwrap();
+        let res = res.await.unwrap().unwrap();
 
         assert_eq!(res.status(), 533);
     }

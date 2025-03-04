@@ -131,8 +131,7 @@ impl Client {
     pub fn request(
         &self,
         builder: http::request::Builder,
-    ) -> impl Future<Output = Result<Response<hyper::Body>, ClientError>> + Send + Sync + 'static
-    {
+    ) -> impl Future<Output = Result<Response<hyper::Body>, ClientError>> + Send + 'static {
         self.send_req(builder.body(Bytes::new().into()).unwrap())
     }
 
@@ -156,8 +155,7 @@ impl Client {
     pub(crate) fn send_req(
         &self,
         mut req: Request<hyper::Body>,
-    ) -> impl Future<Output = Result<Response<hyper::Body>, ClientError>> + Send + Sync + 'static
-    {
+    ) -> impl Future<Output = Result<Response<hyper::Body>, ClientError>> + Send + 'static {
         if req.uri().scheme().is_none() {
             if self.tls.is_some() {
                 *req.uri_mut() = format!("https://{}{}", self.authority, req.uri().path())
@@ -172,7 +170,7 @@ impl Client {
         tracing::debug!(headers = ?req.headers(), "request");
         let (tx, rx) = oneshot::channel();
         let _ = self.tx.send((req.map(Into::into), tx));
-        async { rx.await.expect("request cancelled") }.in_current_span()
+        async move { rx.await.expect("request cancelled") }.in_current_span()
     }
 
     pub async fn wait_for_closed(self) {
@@ -221,7 +219,7 @@ enum Run {
     Http2,
 }
 
-pub type Running = Pin<Box<dyn Future<Output = ()> + Send + Sync + 'static>>;
+pub type Running = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
 
 fn run(
     addr: SocketAddr,
