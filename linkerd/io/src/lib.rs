@@ -76,3 +76,10 @@ impl PeerAddr for tokio::io::DuplexStream {
         Ok(([0, 0, 0, 0], 0).into())
     }
 }
+
+impl<T: PeerAddr> PeerAddr for hyper_util::rt::tokio::TokioIo<T> {
+    #[inline]
+    fn peer_addr(&self) -> Result<SocketAddr> {
+        self.inner().peer_addr()
+    }
+}

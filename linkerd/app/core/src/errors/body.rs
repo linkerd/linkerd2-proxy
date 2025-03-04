@@ -3,6 +3,7 @@ use super::{
     respond::{HttpRescue, SyntheticHttpResponse},
 };
 use http::{header::HeaderValue, HeaderMap};
+use http_body::Frame;
 use linkerd_error::{Error, Result};
 use pin_project::pin_project;
 use std::{
@@ -66,19 +67,18 @@ where
     type Data = B::Data;
     type Error = B::Error;
 
-    fn poll_data(
+    fn poll_frame(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
+    ) -> Poll<Option<std::result::Result<http_body::Frame<Self::Data>, Self::Error>>> {
         let ResponseBodyProj(inner) = self.as_mut().project();
         match inner.project() {
-            InnerProj::Passthru(inner) => inner.poll_data(cx),
-            InnerProj::Rescued { trailers: _ } => Poll::Ready(None),
+            InnerProj::Passthru(inner) => inner.poll_frame(cx),
             InnerProj::GrpcRescue {
                 inner,
                 rescue,
                 emit_headers,
-            } => match inner.poll_data(cx) {
+            } => match inner.poll_frame(cx) {
                 Poll::Ready(Some(Err(error))) => {
                     // The inner body has yielded an error, which we will try to rescue. If so,
                     // store our synthetic trailers reporting the error.
@@ -88,19 +88,10 @@ where
                 }
                 data => data,
             },
-        }
-    }
-
-    #[inline]
-    fn poll_trailers(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
-        let ResponseBodyProj(inner) = self.project();
-        match inner.project() {
-            InnerProj::Passthru(inner) => inner.poll_trailers(cx),
-            InnerProj::GrpcRescue { inner, .. } => inner.poll_trailers(cx),
-            InnerProj::Rescued { trailers } => Poll::Ready(Ok(trailers.take())),
+            InnerProj::Rescued { trailers } => {
+                let trailers = trailers.take().map(Frame::trailers).map(Ok);
+                Poll::Ready(trailers)
+            }
         }
     }
 
@@ -205,7 +196,7 @@ mod tests {
                 .then_yield_data(Poll::Ready(Some(Ok("inter".into()))))
                 .then_yield_data(Poll::Ready(Some(Err("an error midstream".into()))))
                 .then_yield_data(Poll::Ready(Some(Ok("rupted".into()))))
-                .then_yield_trailer(Poll::Ready(Ok(Some(trailers))));
+                .then_yield_trailer(Poll::Ready(Some(Ok(trailers))));
             let rescue = MockRescue;
             let emit_headers = false;
             ResponseBody::grpc_rescue(inner, rescue, emit_headers)
@@ -235,7 +226,7 @@ mod tests {
                 .then_yield_data(Poll::Ready(Some(Ok("inter".into()))))
                 .then_yield_data(Poll::Ready(Some(Err("an error midstream".into()))))
                 .then_yield_data(Poll::Ready(Some(Ok("rupted".into()))))
-                .then_yield_trailer(Poll::Ready(Ok(Some(trailers))));
+                .then_yield_trailer(Poll::Ready(Some(Ok(trailers))));
             let rescue = MockRescue;
             let emit_headers = true;
             ResponseBody::grpc_rescue(inner, rescue, emit_headers)
@@ -289,7 +280,7 @@ mod tests {
             trls
         };
         let rescue = {
-            let inner = MockBody::default().then_yield_trailer(Poll::Ready(Ok(Some(trailers))));
+            let inner = MockBody::default().then_yield_trailer(Poll::Ready(Some(Ok(trailers))));
             let rescue = MockRescue;
             let emit_headers = false;
             ResponseBody::grpc_rescue(inner, rescue, emit_headers)
@@ -299,12 +290,13 @@ mod tests {
         assert_eq!(trailers.expect("has trailers")["trailer"], "caboose");
     }
 
-    async fn body_to_string<B>(body: B) -> (String, Option<HeaderMap>)
+    async fn body_to_string<B>(mut body: B) -> (String, Option<HeaderMap>)
     where
         B: http_body::Body + Unpin,
         B::Error: std::fmt::Debug,
     {
-        let mut body = linkerd_http_body_compat::ForwardCompatibleBody::new(body);
+        use http_body_util::BodyExt;
+
         let mut data = String::new();
         let mut trailers = None;
 

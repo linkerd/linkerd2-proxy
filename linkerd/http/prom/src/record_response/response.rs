@@ -1,3 +1,4 @@
+use http_body::Frame;
 use linkerd_error::Error;
 use linkerd_http_box::BoxBody;
 use linkerd_metrics::prom::Counter;
@@ -150,28 +151,16 @@ where
     type Data = B::Data;
     type Error = B::Error;
 
-    fn poll_data(
+    fn poll_frame(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Self::Data, B::Error>>> {
+    ) -> Poll<Option<Result<Frame<Self::Data>, B::Error>>> {
         let mut this = self.project();
-        let res = futures::ready!(this.inner.as_mut().poll_data(cx));
+        let res = futures::ready!(this.inner.as_mut().poll_frame(cx));
         if (*this.inner).is_end_stream() {
             if let Some(tx) = this.flushed.take() {
                 let _ = tx.send(time::Instant::now());
             }
-        }
-        Poll::Ready(res)
-    }
-
-    fn poll_trailers(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<Option<http::HeaderMap>, B::Error>> {
-        let this = self.project();
-        let res = futures::ready!(this.inner.poll_trailers(cx));
-        if let Some(tx) = this.flushed.take() {
-            let _ = tx.send(time::Instant::now());
         }
         Poll::Ready(res)
     }

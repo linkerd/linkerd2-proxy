@@ -1,3 +1,5 @@
+use linkerd_app_core::svc::http::BoxBody;
+
 use crate::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -71,7 +73,10 @@ impl TestBuilder {
             // This route is just called by the test setup, to trigger the proxy
             // to start fetching the ServiceProfile.
             .route_fn("/load-profile", |_| {
-                Response::builder().status(201).body("".into()).unwrap()
+                Response::builder()
+                    .status(201)
+                    .body(BoxBody::empty())
+                    .unwrap()
             });
 
         if self.default_routes {
@@ -121,7 +126,7 @@ impl TestBuilder {
             ::std::thread::sleep(Duration::from_secs(1));
             Response::builder()
                 .status(200)
-                .body("slept".into())
+                .body(BoxBody::from_static("slept"))
                 .unwrap()
         })
         .route_async("/0.5", move |req| {
@@ -129,17 +134,20 @@ impl TestBuilder {
             async move {
                 // Read the entire body before responding, so that the
                 // client doesn't fail when writing it out.
-                let body = http_body::Body::collect(req.into_body())
+                let body = http_body_util::BodyExt::collect(req.into_body())
                     .await
-                    .map(http_body::Collected::to_bytes);
+                    .map(http_body_util::Collected::to_bytes);
                 let bytes = body.as_ref().map(Bytes::len);
                 tracing::debug!(?bytes, "recieved body");
                 Ok::<_, Error>(if fail {
-                    Response::builder().status(533).body("nope".into()).unwrap()
+                    Response::builder()
+                        .status(533)
+                        .body(BoxBody::from_static("nope"))
+                        .unwrap()
                 } else {
                     Response::builder()
                         .status(200)
-                        .body("retried".into())
+                        .body(BoxBody::from_static("retried"))
                         .unwrap()
                 })
             }
@@ -147,11 +155,14 @@ impl TestBuilder {
         .route_fn("/0.5/sleep", move |_req| {
             ::std::thread::sleep(Duration::from_secs(1));
             if counter2.fetch_add(1, Ordering::Relaxed) % 2 == 0 {
-                Response::builder().status(533).body("nope".into()).unwrap()
+                Response::builder()
+                    .status(533)
+                    .body(BoxBody::from_static("nope"))
+                    .unwrap()
             } else {
                 Response::builder()
                     .status(200)
-                    .body("retried".into())
+                    .body(BoxBody::from_static("retried"))
                     .unwrap()
             }
         })
@@ -159,12 +170,15 @@ impl TestBuilder {
             if counter3.fetch_add(1, Ordering::Relaxed) % 2 == 0 {
                 Response::builder()
                     .status(533)
-                    .body(vec![b'x'; 1024 * 100].into())
+                    .body(BoxBody::new(http_body_util::Full::new(Bytes::from(vec![
+                            b'x';
+                            1024 * 100
+                        ]))))
                     .unwrap()
             } else {
                 Response::builder()
                     .status(200)
-                    .body("retried".into())
+                    .body(BoxBody::from_static("retried"))
                     .unwrap()
             }
         })
