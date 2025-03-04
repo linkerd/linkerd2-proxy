@@ -2082,7 +2082,6 @@ dependencies = [
  "opentelemetry-proto",
  "opentelemetry_sdk",
  "tokio",
- "tokio-stream",
  "tonic",
  "tracing",
 ]
