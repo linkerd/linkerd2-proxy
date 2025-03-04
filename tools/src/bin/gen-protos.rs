@@ -53,7 +53,7 @@ fn generate_protos(out_dir: &Path, iface_files: &[PathBuf], includes: &Path) {
         .build_server(false)
         .emit_rerun_if_changed(false)
         .out_dir(out_dir)
-        .compile(iface_files, &[includes])
+        .compile_protos(iface_files, &[includes])
     {
         eprintln!("\nfailed to compile protos: {}", error);
     }
