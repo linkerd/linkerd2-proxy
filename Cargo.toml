@@ -127,6 +127,8 @@ rev = "86fdf00ff9f5758a42f76a4d06f82e7887a990d8"
 [patch.crates-io.http-body-util]
 git = "https://github.com/hyperium/http-body.git"
 rev = "86fdf00ff9f5758a42f76a4d06f82e7887a990d8"
+[patch.crates-io.hyper-util]
+path = "/home/katie/work/hyper-util"
 
 [workspace.dependencies.linkerd2-proxy-api]
 git = "https://github.com/linkerd/linkerd2-proxy-api.git"
