@@ -14,7 +14,7 @@ This should probably be decomposed into smaller, decoupled crates.
 [dependencies]
 async-trait = "0.1"
 bytes = { workspace = true }
-drain = "0.1"
+drain = { workspace = true }
 futures = { version = "0.3", default-features = false }
 h2 = { workspace = true }
 http = { workspace = true }

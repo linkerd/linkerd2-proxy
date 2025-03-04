@@ -11,7 +11,7 @@ Facilities for HTTP/1 upgrades.
 
 [dependencies]
 bytes = { workspace = true }
-drain = "0.1"
+drain = { workspace = true }
 futures = { version = "0.3", default-features = false }
 http = { workspace = true }
 http-body = { workspace = true }
