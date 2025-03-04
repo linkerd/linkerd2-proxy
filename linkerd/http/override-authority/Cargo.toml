@@ -11,7 +11,7 @@ Tower middleware to override request authorities.
 
 [dependencies]
 http = { workspace = true }
-tower = { version = "0.4", default-features = false }
+tower = { workspace = true, default-features = false }
 tracing = "0.1"
 
 linkerd-stack = { path = "../../stack" }

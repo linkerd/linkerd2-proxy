@@ -15,6 +15,6 @@ This is mostly intended to support cache eviction.
 http = { workspace = true }
 http-body = { workspace = true }
 pin-project = "1"
-tower = { version = "0.4", default-features = false }
+tower = { workspace = true, default-features = false }
 
 linkerd-stack = { path = "../../stack" }

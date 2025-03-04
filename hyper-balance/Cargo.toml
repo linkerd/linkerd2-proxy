@@ -12,7 +12,7 @@ http = { workspace = true }
 http-body = { workspace = true }
 hyper = { workspace = true, features = ["deprecated"] }
 pin-project = "1"
-tower = { version = "0.4", default-features = false, features = ["load"] }
+tower = { workspace = true, default-features = false, features = ["load"] }
 tokio = { version = "1", features = ["macros"] }
 
 [dev-dependencies]
