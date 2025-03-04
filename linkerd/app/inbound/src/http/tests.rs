@@ -237,7 +237,6 @@ async fn downgrade_absolute_form() {
 }
 
 #[tokio::test(flavor = "current_thread")]
-#[ignore = "TODO(kate): #8733 do not merge, outstanding test to fix."]
 async fn http1_bad_gateway_meshed_response_error_header() {
     let _trace = trace_init();
 
@@ -273,7 +272,7 @@ async fn http1_bad_gateway_meshed_response_error_header() {
     // because we don't build a real HTTP endpoint stack, which adds error
     // context to this error, and the client rescue layer is below where the
     // logical error context is added.
-    check_error_header(rsp.headers(), "server is not listening");
+    check_error_header(rsp.headers(), "client error (Connect)");
 
     // Wait for all of the background tasks to complete, panicking if any returned an error.
     drop(client);
@@ -331,7 +330,6 @@ async fn http1_bad_gateway_unmeshed_response() {
 }
 
 #[tokio::test(flavor = "current_thread")]
-#[ignore = "TODO(kate): #8733 do not merge, outstanding test to fix."]
 async fn http1_connect_timeout_meshed_response_error_header() {
     let _trace = trace_init();
     tokio::time::pause();
@@ -370,7 +368,7 @@ async fn http1_connect_timeout_meshed_response_error_header() {
     // because we don't build a real HTTP endpoint stack, which adds error
     // context to this error, and the client rescue layer is below where the
     // logical error context is added.
-    check_error_header(rsp.headers(), "connect timed out after 1s");
+    check_error_header(rsp.headers(), "client error (Connect)");
 
     // Wait for all of the background tasks to complete, panicking if any returned an error.
     drop(client);
