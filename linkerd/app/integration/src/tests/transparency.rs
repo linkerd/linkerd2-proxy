@@ -1624,7 +1624,6 @@ async fn http2_request_without_authority() {
 }
 
 #[tokio::test]
-#[ignore = "TODO(kate): #8733 do not merge, outstanding test to fix."]
 async fn http2_rst_stream_is_propagated() {
     let _trace = trace_init();
 
@@ -1643,6 +1642,8 @@ async fn http2_rst_stream_is_propagated() {
         .expect_err("client request should error");
 
     let rst = err
+        .source()
+        .expect("error should have a source")
         .source()
         .expect("error should have a source")
         .downcast_ref::<h2::Error>()
