@@ -33,7 +33,7 @@ fn generate(out_dir: &std::path::Path) {
         .build_server(false)
         .emit_rerun_if_changed(false)
         .out_dir(out_dir)
-        .compile(iface_files, &["."])
+        .compile_protos(iface_files, &["."])
     {
         panic!("failed to compile protobuf: {error}")
     }
