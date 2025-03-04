@@ -405,7 +405,8 @@ async fn http_route_request_body_frames() {
     // Create a request whose body is backed by a channel that we can send chunks to.
     tracing::info!("creating request");
     let (req, tx) = {
-        let (tx, body) = hyper::Body::channel();
+        let (tx, body) =
+            http_body_util::channel::Channel::<bytes::Bytes, std::convert::Infallible>::new(1024);
         let body = BoxBody::new(body);
         let req = http::Request::builder()
             .uri("http://frame.count.test")
@@ -464,7 +465,7 @@ async fn http_route_request_body_frames() {
     // Read the response body.
     tracing::info!("reading response body");
     {
-        use http_body::Body;
+        use http_body_util::BodyExt;
         let (parts, body) = resp.into_parts();
         debug_assert_eq!(parts.status, 418);
         let bytes = body.collect().await.expect("resp body").to_bytes();
@@ -480,15 +481,17 @@ async fn http_route_request_body_frames() {
 
     /// Returns the next chunk from a boxed body.
     async fn read_chunk(body: &mut std::pin::Pin<Box<BoxBody>>) -> Vec<u8> {
-        use bytes::Buf;
-        use http_body::Body;
-        use std::task::{Context, Poll};
+        use {
+            bytes::Buf,
+            http_body::Body,
+            std::task::{Context, Poll},
+        };
         let mut ctx = Context::from_waker(futures_util::task::noop_waker_ref());
-        let data = match body.as_mut().poll_data(&mut ctx) {
-            Poll::Ready(Some(Ok(d))) => d,
+        let frame = match body.as_mut().poll_frame(&mut ctx) {
+            Poll::Ready(Some(Ok(f))) => f,
             _ => panic!("next chunk should be ready"),
         };
-        data.chunk().to_vec()
+        frame.into_data().ok().expect("data frame").chunk().to_vec()
     }
 
     // And now, send request body bytes.

@@ -196,7 +196,7 @@ mod tests {
                 .then_yield_data(Poll::Ready(Some(Ok("inter".into()))))
                 .then_yield_data(Poll::Ready(Some(Err("an error midstream".into()))))
                 .then_yield_data(Poll::Ready(Some(Ok("rupted".into()))))
-                .then_yield_trailer(Poll::Ready(Ok(Some(trailers))));
+                .then_yield_trailer(Poll::Ready(Some(Ok(trailers))));
             let rescue = MockRescue;
             let emit_headers = false;
             ResponseBody::grpc_rescue(inner, rescue, emit_headers)
@@ -226,7 +226,7 @@ mod tests {
                 .then_yield_data(Poll::Ready(Some(Ok("inter".into()))))
                 .then_yield_data(Poll::Ready(Some(Err("an error midstream".into()))))
                 .then_yield_data(Poll::Ready(Some(Ok("rupted".into()))))
-                .then_yield_trailer(Poll::Ready(Ok(Some(trailers))));
+                .then_yield_trailer(Poll::Ready(Some(Ok(trailers))));
             let rescue = MockRescue;
             let emit_headers = true;
             ResponseBody::grpc_rescue(inner, rescue, emit_headers)
@@ -280,7 +280,7 @@ mod tests {
             trls
         };
         let rescue = {
-            let inner = MockBody::default().then_yield_trailer(Poll::Ready(Ok(Some(trailers))));
+            let inner = MockBody::default().then_yield_trailer(Poll::Ready(Some(Ok(trailers))));
             let rescue = MockRescue;
             let emit_headers = false;
             ResponseBody::grpc_rescue(inner, rescue, emit_headers)
@@ -290,12 +290,13 @@ mod tests {
         assert_eq!(trailers.expect("has trailers")["trailer"], "caboose");
     }
 
-    async fn body_to_string<B>(body: B) -> (String, Option<HeaderMap>)
+    async fn body_to_string<B>(mut body: B) -> (String, Option<HeaderMap>)
     where
         B: http_body::Body + Unpin,
         B::Error: std::fmt::Debug,
     {
-        let mut body = linkerd_http_body_compat::ForwardCompatibleBody::new(body);
+        use http_body_util::BodyExt;
+
         let mut data = String::new();
         let mut trailers = None;
 

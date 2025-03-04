@@ -34,6 +34,8 @@ pub struct InboundSender(Tx<inbound::Server>);
 #[derive(Debug, Clone)]
 pub struct OutboundSender(Tx<outbound::OutboundPolicy>);
 
+struct RoutesSvc(grpc::service::Routes);
+
 type Tx<T> = mpsc::UnboundedSender<Result<T, grpc::Status>>;
 type Rx<T> = UnboundedReceiverStream<Result<T, grpc::Status>>;
 type WatchStream<T> = Pin<Box<dyn Stream<Item = Result<T, grpc::Status>> + Send + Sync + 'static>>;

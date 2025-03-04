@@ -1304,7 +1304,7 @@ async fn metrics_compression() {
 
             let mut body = {
                 let body = resp.into_body();
-                http_body::Body::collect(body)
+                http_body_util::BodyExt::collect(body)
                     .await
                     .expect("response body concat")
                     .aggregate()

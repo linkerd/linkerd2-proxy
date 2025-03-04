@@ -50,8 +50,8 @@ async fn h2_exercise_goaways_connections() {
         .into_iter()
         .map(Response::into_body)
         .map(|body| {
-            http_body::Body::collect(body)
-                .map_ok(http_body::Collected::aggregate)
+            http_body_util::BodyExt::collect(body)
+                .map_ok(http_body_util::Collected::aggregate)
                 // Make sure the bodies weren't cut off
                 .map_ok(|buf| assert_eq!(buf.remaining(), RESPONSE_SIZE))
         })

@@ -1,6 +1,7 @@
 use super::app_core::svc::http::TracingExecutor;
 use super::*;
 use http::{Request, Response};
+use linkerd_app_core::svc::http::BoxBody;
 use std::{
     io,
     sync::atomic::{AtomicUsize, Ordering},
@@ -58,8 +59,8 @@ pub struct Listening {
     pub(super) http_version: Option<Run>,
 }
 
-type RspFuture =
-    Pin<Box<dyn Future<Output = Result<Response<hyper::Body>, Error>> + Send + 'static>>;
+type RspFuture<B = BoxBody> =
+    Pin<Box<dyn Future<Output = Result<Response<B>, Error>> + Send + 'static>>;
 
 impl Listening {
     pub fn connections(&self) -> usize {
@@ -115,7 +116,7 @@ impl Server {
     /// to send back.
     pub fn route_fn<F>(self, path: &str, cb: F) -> Self
     where
-        F: Fn(Request<hyper::Body>) -> Response<hyper::Body> + Send + Sync + 'static,
+        F: Fn(Request<BoxBody>) -> Response<BoxBody> + Send + Sync + 'static,
     {
         self.route_async(path, move |req| {
             let res = cb(req);
@@ -127,8 +128,8 @@ impl Server {
     /// a response to send back.
     pub fn route_async<F, U>(mut self, path: &str, cb: F) -> Self
     where
-        F: Fn(Request<hyper::Body>) -> U + Send + Sync + 'static,
-        U: TryFuture<Ok = Response<hyper::Body>> + Send + 'static,
+        F: Fn(Request<BoxBody>) -> U + Send + Sync + 'static,
+        U: TryFuture<Ok = Response<BoxBody>> + Send + 'static,
         U::Error: Into<Error> + Send + 'static,
     {
         let func = move |req| Box::pin(cb(req).map_err(Into::into)) as RspFuture;
@@ -137,15 +138,15 @@ impl Server {
     }
 
     pub fn route_with_latency(self, path: &str, resp: &str, latency: Duration) -> Self {
-        let resp = Bytes::from(resp.to_string());
+        let body = BoxBody::new(http_body_util::Full::new(Bytes::from(resp.to_string())));
         self.route_async(path, move |_| {
-            let resp = resp.clone();
+            let body = resp.clone();
             async move {
                 tokio::time::sleep(latency).await;
                 Ok::<_, Error>(
                     http::Response::builder()
                         .status(StatusCode::OK)
-                        .body(hyper::Body::from(resp.clone()))
+                        .body(body)
                         .unwrap(),
                 )
             }
@@ -206,6 +207,8 @@ impl Server {
                     let f = async move {
                         tracing::trace!("serving...");
                         srv_conn_count.fetch_add(1, Ordering::Release);
+                        use hyper_util::{rt::TokioIo, service::TowerToHyperService};
+                        let (sock, svc) = (TokioIo::new(sock), TowerToHyperService::new(svc));
                         let result = match self.version {
                             Run::Http1 => hyper::server::conn::http1::Builder::new()
                                 .serve_connection(sock, svc)
@@ -258,16 +261,16 @@ pub(super) enum Run {
     Http2,
 }
 
-struct Route(Box<dyn Fn(Request<hyper::Body>) -> RspFuture + Send + Sync>);
+struct Route(Box<dyn Fn(Request<BoxBody>) -> RspFuture + Send + Sync>);
 
 impl Route {
     fn string(body: &str) -> Route {
-        let body = Bytes::from(body.to_string());
+        let body = BoxBody::new(http_body_util::Full::new(Bytes::from(body.to_string())));
         Route(Box::new(move |_| {
             Box::pin(future::ok(
                 http::Response::builder()
                     .status(StatusCode::OK)
-                    .body(hyper::Body::from(body.clone()))
+                    .body(body)
                     .unwrap(),
             ))
         }))
@@ -284,17 +287,25 @@ impl std::fmt::Debug for Route {
 struct Svc(Arc<HashMap<String, Route>>);
 
 impl Svc {
-    fn route(&mut self, req: Request<hyper::Body>) -> RspFuture {
+    fn route<B>(
+        &mut self,
+        req: Request<B>,
+    ) -> impl Future<Output = Result<Response<BoxBody>, crate::app_core::Error>> + Send + Sync
+    where
+        B: Body + Send + Sync,
+        B::Data: Send,
+        B::Error: std::error::Error + Send + Sync,
+    {
         match self.0.get(req.uri().path()) {
             Some(Route(ref func)) => {
                 tracing::trace!(path = %req.uri().path(), "found route for path");
-                func(req)
+                func(req.map(BoxBody::new))
             }
             None => {
                 tracing::warn!("server 404: {:?}", req.uri().path());
                 let res = http::Response::builder()
                     .status(StatusCode::NOT_FOUND)
-                    .body(Default::default())
+                    .body(BoxBody::empty())
                     .unwrap();
                 Box::pin(async move { Ok(res) })
             }
@@ -302,8 +313,13 @@ impl Svc {
     }
 }
 
-impl tower::Service<Request<hyper::Body>> for Svc {
-    type Response = Response<hyper::Body>;
+impl<B> tower::Service<Request<B>> for Svc
+where
+    B: Body + Send + Sync + 'static,
+    B::Data: Send,
+    B::Error: std::error::Error + Send + Sync,
+{
+    type Response = Response<BoxBody>;
     type Error = Error;
     type Future = RspFuture;
 
@@ -311,8 +327,8 @@ impl tower::Service<Request<hyper::Body>> for Svc {
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, req: Request<hyper::Body>) -> Self::Future {
-        self.route(req)
+    fn call(&mut self, req: Request<B>) -> Self::Future {
+        Box::pin(self.route(req))
     }
 }
 

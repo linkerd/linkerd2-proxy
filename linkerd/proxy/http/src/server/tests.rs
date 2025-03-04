@@ -168,12 +168,12 @@ struct TestServer {
     server: Handle,
 }
 
-type Mock = mock::Mock<http::Request<hyper::body::Incoming>, http::Response<BoxBody>>;
-type Handle = mock::Handle<http::Request<hyper::body::Incoming>, http::Response<BoxBody>>;
+type Mock = mock::Mock<http::Request<BoxBody>, http::Response<BoxBody>>;
+type Handle = mock::Handle<http::Request<BoxBody>, http::Response<BoxBody>>;
 
 /// Allows us to configure a server from the Params type.
 #[derive(Clone, Debug)]
-struct NewMock(mock::Mock<http::Request<hyper::body::Incoming>, http::Response<BoxBody>>);
+struct NewMock(mock::Mock<http::Request<BoxBody>, http::Response<BoxBody>>);
 
 impl NewService<()> for NewMock {
     type Service = NewMock;
@@ -214,23 +214,20 @@ impl TestServer {
             http2: h2,
         };
 
-        let (sio, cio) = {
-            let (sio, cio) = io::duplex(20 * 1024 * 1024); // 20 MB
-            (TokioIo::new(sio), TokioIo::new(cio))
-        };
+        let (sio, cio) = io::duplex(20 * 1024 * 1024); // 20 MB
 
         // Build the HTTP server with a mocked inner service so that we can handle
         // requests.
-        let (mock, server) = mock::pair();
+        let (mock, server) = mock::pair::<http::Request<BoxBody>, http::Response<BoxBody>>();
         let svc = NewServeHttp::new(CloneParam::from(params), NewMock(mock)).new_service(());
-        // fn bound<S: Service<T>, T>(_: &S) {}
-        // bound(&svc);
+        fn bound<S: Service<I>, I>(_: &S) {}
+        bound::<ServeHttp<NewMock>, linkerd_io::DuplexStream>(&svc);
         let fut = svc.oneshot(sio).instrument(info_span!("server"));
         tokio::spawn(fut);
 
         // Build a real HTTP/2 client using the mocked socket.
         let (client, task) = client
-            .handshake::<_, BoxBody>(cio)
+            .handshake::<_, BoxBody>(TokioIo::new(cio))
             .await
             .expect("client connect");
         tokio::spawn(task.instrument(info_span!("client")));
