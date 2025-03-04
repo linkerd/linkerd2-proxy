@@ -256,7 +256,7 @@ impl fmt::Display for HumanDuration {
 
 pub async fn cancelable<E: Send + 'static>(
     drain: drain::Watch,
-    f: impl Future<Output = Result<(), E>> + Send + 'static,
+    f: impl Future<Output = Result<(), E>>,
 ) -> Result<(), E> {
     tokio::select! {
         res = f => res,
