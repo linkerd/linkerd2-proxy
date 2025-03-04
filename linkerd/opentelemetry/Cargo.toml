@@ -8,7 +8,6 @@ publish = false
 
 [dependencies]
 futures = { version = "0.3", default-features = false }
-http = "0.2"
 http-body = { workspace = true }
 linkerd-error = { path = "../error" }
 linkerd-metrics = { path = "../metrics" }
