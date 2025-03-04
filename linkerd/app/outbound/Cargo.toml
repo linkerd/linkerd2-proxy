@@ -58,7 +58,7 @@ hyper = { workspace = true, features = ["backports", "deprecated", "http1", "htt
 tokio = { version = "1", features = ["macros", "sync", "time"] }
 tokio-rustls = { workspace = true }
 tokio-test = "0.4"
-tower-test = "0.4"
+tower-test = { workspace = true }
 
 linkerd-app-test = { path = "../test", features = ["client-policy"] }
 linkerd-http-body-compat = { path = "../../http/body-compat" }

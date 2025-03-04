@@ -19,4 +19,4 @@ linkerd-tracing = { path = "../tracing" }
 tokio = { version = "1", features = ["macros", "rt", "time"] }
 tokio-stream = { version = "0.1", features = ["time"] }
 tokio-test = "0.4"
-tower-test = "0.4"
+tower-test = { workspace = true }

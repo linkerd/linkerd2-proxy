@@ -115,6 +115,7 @@ tonic = { version = "0.10", default-features = false }
 tonic-build = { version = "0.10", default-features = false }
 tower = { version = "0.4.13", default-features = false }
 tower-service = { version = "0.3" }
+tower-test = { version = "0.4" }
 
 [workspace.dependencies.linkerd2-proxy-api]
 version = "0.15.0"

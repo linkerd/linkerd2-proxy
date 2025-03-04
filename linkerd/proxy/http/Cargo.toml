@@ -59,7 +59,7 @@ linkerd-stack = { path = "../../stack" }
 
 [dev-dependencies]
 tokio-test = "0.4"
-tower-test = "0.4"
+tower-test = { workspace = true }
 linkerd-tracing = { path = "../../tracing", features = ["ansi"] }
 
 [lints.rust]

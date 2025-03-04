@@ -27,5 +27,5 @@ linkerd-proxy-server-policy = { path = "../../proxy/server-policy" }
 tokio = { version = "1", features = ["rt", "macros"] }
 tokio-test = "0.4"
 tower = { workspace = true, default-features = false, features = ["util"] }
-tower-test = "0.4"
+tower-test = { workspace = true }
 linkerd-app-test = { path = "../test" }
