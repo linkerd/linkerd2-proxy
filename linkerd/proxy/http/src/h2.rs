@@ -86,6 +86,7 @@ where
             async move {
                 let (io, _meta) = connect.err_into::<Error>().await?;
                 let mut builder = hyper::client::conn::http2::Builder::new(TracingExecutor);
+                builder.timer(hyper_util::rt::TokioTimer::new());
                 match flow_control {
                     None => {}
                     Some(FlowControl::Adaptive) => {

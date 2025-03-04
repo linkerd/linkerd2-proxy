@@ -1606,6 +1606,7 @@ async fn http2_request_without_authority() {
         .await
         .expect("connect error");
     let (mut client, conn) = hyper::client::conn::http2::Builder::new(TracingExecutor)
+        .timer(hyper_util::rt::TokioTimer::new())
         .handshake(hyper_util::rt::TokioIo::new(io))
         .await
         .expect("handshake error");

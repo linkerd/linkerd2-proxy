@@ -212,10 +212,12 @@ impl Server {
                         let (sock, svc) = (TokioIo::new(sock), TowerToHyperService::new(svc));
                         let result = match self.version {
                             Run::Http1 => hyper::server::conn::http1::Builder::new()
+                                .timer(hyper_util::rt::TokioTimer::new())
                                 .serve_connection(sock, svc)
                                 .await
                                 .map_err(|e| tracing::error!("support/server error: {}", e)),
                             Run::Http2 => hyper::server::conn::http2::Builder::new(TracingExecutor)
+                                .timer(hyper_util::rt::TokioTimer::new())
                                 .serve_connection(sock, svc)
                                 .await
                                 .map_err(|e| tracing::error!("support/server error: {}", e)),

@@ -76,6 +76,7 @@ where
         } = h2;
 
         let mut http2 = hyper::server::conn::http2::Builder::new(TracingExecutor);
+        http2.timer(hyper_util::rt::TokioTimer::new());
         match flow_control {
             None => {}
             Some(h2::FlowControl::Adaptive) => {
@@ -109,13 +110,16 @@ where
             http2.max_send_buf_size(sz);
         }
 
+        let mut http1 = hyper::server::conn::http1::Builder::new();
+        http1.timer(hyper_util::rt::TokioTimer::new());
+
         debug!(?version, "Creating HTTP service");
         let inner = self.inner.new_service(target);
         ServeHttp {
             inner,
             version,
             drain,
-            http1: hyper::server::conn::http1::Builder::new(),
+            http1,
             http2,
         }
     }

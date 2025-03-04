@@ -30,7 +30,8 @@ async fn h2_connection_window_exhaustion() {
         // force window exhaustion.
         hyper::client::conn::http2::Builder::new(TracingExecutor)
             .initial_connection_window_size(CLIENT_CONN_WINDOW)
-            .initial_stream_window_size(CLIENT_STREAM_WINDOW),
+            .initial_stream_window_size(CLIENT_STREAM_WINDOW)
+            .timer(hyper_util::rt::TokioTimer::new()),
     )
     .await;
 
@@ -102,7 +103,8 @@ async fn h2_stream_window_exhaustion() {
         h2::ServerParams::default(),
         // An HTTP/2 client with stream windows to force window exhaustion.
         hyper::client::conn::http2::Builder::new(TracingExecutor)
-            .initial_stream_window_size(CLIENT_STREAM_WINDOW),
+            .initial_stream_window_size(CLIENT_STREAM_WINDOW)
+            .timer(hyper_util::rt::TokioTimer::new()),
     )
     .await;
 

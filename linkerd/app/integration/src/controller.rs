@@ -372,14 +372,16 @@ where
                 let _ = listening_tx.send(());
             }
 
-            let http = hyper::server::conn::http2::Builder::new(TracingExecutor);
+            let mut http = hyper::server::conn::http2::Builder::new(TracingExecutor);
             loop {
                 let (sock, addr) = listener.accept().await?;
                 let span = tracing::debug_span!("conn", %addr).or_current();
-                let serve = http.serve_connection(
-                    hyper_util::rt::TokioIo::new(sock),
-                    hyper_util::service::TowerToHyperService::new(svc.clone()),
-                );
+                let serve = http
+                    .timer(hyper_util::rt::TokioTimer::new())
+                    .serve_connection(
+                        hyper_util::rt::TokioIo::new(sock),
+                        hyper_util::service::TowerToHyperService::new(svc.clone()),
+                    );
                 let f = async move {
                     serve.await.map_err(|error| {
                         tracing::error!(

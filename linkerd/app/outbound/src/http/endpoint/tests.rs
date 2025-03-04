@@ -243,13 +243,17 @@ fn serve(version: ::http::Version) -> io::Result<io::BoxedIo> {
     let (client_io, server_io) = io::duplex(4096);
     match version {
         ::http::Version::HTTP_10 | ::http::Version::HTTP_11 => {
-            let http = hyper::server::conn::http1::Builder::new();
-            let fut = http.serve_connection(hyper_util::rt::TokioIo::new(server_io), svc);
+            let mut http = hyper::server::conn::http1::Builder::new();
+            let fut = http
+                .timer(hyper_util::rt::TokioTimer::new())
+                .serve_connection(hyper_util::rt::TokioIo::new(server_io), svc);
             tokio::spawn(fut);
         }
         ::http::Version::HTTP_2 => {
-            let http = hyper::server::conn::http2::Builder::new(TracingExecutor);
-            let fut = http.serve_connection(hyper_util::rt::TokioIo::new(server_io), svc);
+            let mut http = hyper::server::conn::http2::Builder::new(TracingExecutor);
+            let fut = http
+                .timer(hyper_util::rt::TokioTimer::new())
+                .serve_connection(hyper_util::rt::TokioIo::new(server_io), svc);
             tokio::spawn(fut);
         }
         _ => unreachable!("unsupported HTTP version {:?}", version),

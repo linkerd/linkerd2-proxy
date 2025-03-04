@@ -47,8 +47,10 @@ where
 
 #[tokio::test(flavor = "current_thread")]
 async fn unmeshed_http1_hello_world() {
-    let server = hyper::server::conn::http1::Builder::new();
+    let mut server = hyper::server::conn::http1::Builder::new();
+    server.timer(hyper_util::rt::TokioTimer::new());
     let mut client = hyper::client::conn::http1::Builder::new();
+
     let _trace = trace_init();
 
     // Build a mock "connector" that returns the upstream "server" IO.
@@ -91,8 +93,10 @@ async fn unmeshed_http1_hello_world() {
 #[tokio::test(flavor = "current_thread")]
 async fn downgrade_origin_form() {
     // Reproduces https://github.com/linkerd/linkerd2/issues/5298
-    let server = hyper::server::conn::http1::Builder::new();
-    let client = hyper::client::conn::http2::Builder::new(TracingExecutor);
+    let mut server = hyper::server::conn::http1::Builder::new();
+    server.timer(hyper_util::rt::TokioTimer::new());
+    let mut client = hyper::client::conn::http2::Builder::new(TracingExecutor);
+    client.timer(hyper_util::rt::TokioTimer::new());
     let _trace = trace_init();
 
     // Build a mock "connector" that returns the upstream "server" IO.
@@ -164,8 +168,10 @@ async fn downgrade_origin_form() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn downgrade_absolute_form() {
-    let client = hyper::client::conn::http2::Builder::new(TracingExecutor);
-    let server = hyper::server::conn::http1::Builder::new();
+    let mut client = hyper::client::conn::http2::Builder::new(TracingExecutor);
+    client.timer(hyper_util::rt::TokioTimer::new());
+    let mut server = hyper::server::conn::http1::Builder::new();
+    server.timer(hyper_util::rt::TokioTimer::new());
     let _trace = trace_init();
 
     // Build a mock "connector" that returns the upstream "server" IO.
@@ -436,6 +442,7 @@ async fn h2_response_meshed_error_header() {
 
     // Build a client using the connect that always errors.
     let mut client = hyper::client::conn::http2::Builder::new(TracingExecutor);
+    client.timer(hyper_util::rt::TokioTimer::new());
     let profiles = profile::resolver();
     let profile_tx =
         profiles.profile_tx(NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap());
@@ -476,6 +483,7 @@ async fn h2_response_unmeshed_error_header() {
 
     // Build a client using the connect that always errors.
     let mut client = hyper::client::conn::http2::Builder::new(TracingExecutor);
+    client.timer(hyper_util::rt::TokioTimer::new());
     let profiles = profile::resolver();
     let profile_tx =
         profiles.profile_tx(NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap());
@@ -518,6 +526,7 @@ async fn grpc_meshed_response_error_header() {
 
     // Build a client using the connect that always errors.
     let mut client = hyper::client::conn::http2::Builder::new(TracingExecutor);
+    client.timer(hyper_util::rt::TokioTimer::new());
     let profiles = profile::resolver();
     let profile_tx =
         profiles.profile_tx(NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap());
@@ -559,6 +568,7 @@ async fn grpc_unmeshed_response_error_header() {
 
     // Build a client using the connect that always errors.
     let mut client = hyper::client::conn::http2::Builder::new(TracingExecutor);
+    client.timer(hyper_util::rt::TokioTimer::new());
     let profiles = profile::resolver();
     let profile_tx =
         profiles.profile_tx(NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap());
@@ -599,7 +609,8 @@ async fn grpc_response_class() {
 
     // Build a mock connector serves a gRPC server that returns errors.
     let connect = {
-        let server = hyper::server::conn::http2::Builder::new(TracingExecutor);
+        let mut server = hyper::server::conn::http2::Builder::new(TracingExecutor);
+        server.timer(hyper_util::rt::TokioTimer::new());
         support::connect().endpoint_fn_boxed(
             Target::addr(),
             grpc_status_server(server, tonic::Code::Unknown),
@@ -608,6 +619,7 @@ async fn grpc_response_class() {
 
     // Build a client using the connect that always errors.
     let mut client = hyper::client::conn::http2::Builder::new(TracingExecutor);
+    client.timer(hyper_util::rt::TokioTimer::new());
     let profiles = profile::resolver();
     let profile_tx =
         profiles.profile_tx(NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap());
