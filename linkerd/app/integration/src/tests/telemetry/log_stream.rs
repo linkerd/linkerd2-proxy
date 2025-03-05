@@ -177,7 +177,7 @@ async fn get_log_stream(
             client
                 .request_builder(&format!("{}?{}", PATH, filter))
                 .method(http::Method::GET)
-                .body(hyper::Body::from(filter))
+                .body(http_body_util::Full::new(Bytes::from(filter)))
                 .unwrap(),
         )
         .await;
@@ -199,7 +199,7 @@ async fn query_log_stream(
             client
                 .request_builder(PATH)
                 .method("QUERY")
-                .body(hyper::Body::from(filter))
+                .body(http_body_util::Full::new(Bytes::from(filter)))
                 .unwrap(),
         )
         .await;

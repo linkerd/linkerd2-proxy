@@ -1,5 +1,5 @@
 use crate::*;
-use linkerd_app_core::svc::http::TracingExecutor;
+use linkerd_app_core::svc::http::{BoxBody, TracingExecutor};
 use std::error::Error as _;
 use tokio::time::timeout;
 
@@ -970,7 +970,7 @@ macro_rules! http1_tests {
             let req = client
                 .request_builder("/")
                 .method("POST")
-                .body("hello".into())
+                .body(linkerd_app_core::svc::http::BoxBody::from_static("hello"))
                 .unwrap();
 
             let resp = client.request_body(req).await;
@@ -1007,7 +1007,7 @@ macro_rules! http1_tests {
                 .request_builder("/")
                 .method("POST")
                 .header("transfer-encoding", "chunked")
-                .body("hello".into())
+                .body(linkerd_app_core::svc::http::BoxBody::from_static("hello"))
                 .unwrap();
 
             let resp = client.request_body(req).await;
@@ -1603,13 +1603,13 @@ async fn http2_request_without_authority() {
         .await
         .expect("connect error");
     let (mut client, conn) = hyper::client::conn::http2::Builder::new(TracingExecutor)
-        .handshake(io)
+        .handshake(hyper_util::rt::TokioIo::new(io))
         .await
         .expect("handshake error");
 
     tokio::spawn(conn.map_err(|e| tracing::info!("conn error: {:?}", e)));
 
-    let req = Request::new(hyper::Body::empty());
+    let req = Request::new(BoxBody::empty());
     // these properties are specifically what we want, and set by default
     assert_eq!(req.uri(), "/");
     assert_eq!(req.version(), http::Version::HTTP_11);
