@@ -93,7 +93,7 @@ impl<N> Inbound<N> {
         self,
         policies: impl policy::GetPolicy + Clone + Send + Sync + 'static,
         gateway: svc::ArcNewTcp<GatewayTransportHeader, GatewayIo<I>>,
-        http: svc::ArcNewTcp<LocalHttp, io::PrefixedIo<TlsIo<I>>>,
+        http: svc::ArcNewTcp<LocalHttp, SensorIo<io::PrefixedIo<TlsIo<I>>>>,
     ) -> Inbound<svc::ArcNewTcp<T, I>>
     where
         T: Param<Remote<ClientAddr>> + Param<OrigDstAddr>,
@@ -135,7 +135,14 @@ impl<N> Inbound<N> {
                 // forwarding, or we may be processing an HTTP gateway connection. HTTP gateway
                 // connections that have a transport header must provide a target name as a part of
                 // the header.
-                .push_switch(Ok::<Local, Infallible>, http)
+                .push_switch(
+                    Ok::<Local, Infallible>,
+                    svc::stack(http)
+                        .push(transport::metrics::NewServer::layer(
+                            rt.metrics.proxy.transport.clone(),
+                        ))
+                        .into_inner(),
+                )
                 .push_switch(
                     {
                         let policies = policies.clone();
