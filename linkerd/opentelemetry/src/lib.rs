@@ -3,11 +3,11 @@
 
 pub mod metrics;
 
+use self::metrics::Registry;
 use futures::stream::{Stream, StreamExt};
 use http_body::Body;
 use linkerd_error::Error;
-use linkerd_trace_context as trace_context;
-use metrics::Registry;
+use linkerd_trace_context::{self as trace_context, export::ExportSpan};
 pub use opentelemetry as otel;
 use opentelemetry::{
     trace::{SpanContext, SpanId, SpanKind, Status, TraceFlags, TraceId, TraceState},
@@ -23,12 +23,10 @@ use opentelemetry_proto::{
     },
     transform::{common::ResourceAttributesWithSchema, trace::group_spans_by_resource_and_scope},
 };
-pub use opentelemetry_sdk as sdk;
-pub use opentelemetry_sdk::trace::SpanData;
 use opentelemetry_sdk::trace::SpanLinks;
+pub use opentelemetry_sdk::{self as sdk, trace::SpanData};
 use tokio::{sync::mpsc, time};
 use tonic::{self as grpc, body::BoxBody, client::GrpcService};
-use trace_context::export::ExportSpan;
 use tracing::{debug, info, trace};
 
 pub async fn export_spans<T, S>(

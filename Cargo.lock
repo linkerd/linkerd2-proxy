@@ -2057,7 +2057,6 @@ name = "linkerd-opencensus"
 version = "0.1.0"
 dependencies = [
  "futures",
- "http",
  "http-body",
  "linkerd-error",
  "linkerd-metrics",
@@ -2074,7 +2073,6 @@ name = "linkerd-opentelemetry"
 version = "0.1.0"
 dependencies = [
  "futures",
- "http",
  "http-body",
  "linkerd-error",
  "linkerd-metrics",
@@ -2083,7 +2081,6 @@ dependencies = [
  "opentelemetry-proto",
  "opentelemetry_sdk",
  "tokio",
- "tokio-stream",
  "tonic",
  "tracing",
 ]

@@ -8,7 +8,6 @@ publish = false
 
 [dependencies]
 futures = { version = "0.3", default-features = false }
-http = "0.2"
 http-body = { workspace = true }
 linkerd-error = { path = "../error" }
 linkerd-metrics = { path = "../metrics" }
@@ -21,5 +20,4 @@ tonic = { workspace = true, default-features = false, features = [
     "codegen",
 ] }
 tokio = { version = "1", features = ["macros", "sync", "time"] }
-tokio-stream = { version = "0.1", features = ["sync"] }
 tracing = "0.1"

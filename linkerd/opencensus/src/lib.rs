@@ -3,11 +3,11 @@
 
 pub mod metrics;
 
+use self::metrics::Registry;
 use futures::stream::{Stream, StreamExt};
 use http_body::Body;
 use linkerd_error::Error;
 use linkerd_trace_context::export::{ExportSpan, SpanKind};
-use metrics::Registry;
 pub use opencensus_proto as proto;
 use opencensus_proto::{
     agent::{
