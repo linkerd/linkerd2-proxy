@@ -14,7 +14,7 @@ independently of the inbound and outbound proxy logic.
 
 [dependencies]
 bytes = { workspace = true }
-drain = { version = "0.1", features = ["retain"] }
+drain = { workspace = true, features = ["retain"] }
 http = { workspace = true }
 http-body = { workspace = true }
 hyper = { workspace = true, features = ["deprecated", "http1", "http2"] }

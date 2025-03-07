@@ -100,6 +100,7 @@ lto = true
 
 [workspace.dependencies]
 bytes = { version = "1" }
+drain = { version = "0.1", default-features = false }
 h2 = { version = "0.3" }
 http = { version = "0.2" }
 http-body = { version = "0.4" }
