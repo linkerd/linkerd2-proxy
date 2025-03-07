@@ -25,5 +25,5 @@ http-body = { workspace = true }
 pin-project = "1"
 prost = { workspace = true }
 tonic = { workspace = true, default-features = false }
-tower = { version = "0.4", default-features = false }
+tower = { workspace = true, default-features = false }
 tracing = "0.1"

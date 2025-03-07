@@ -36,7 +36,7 @@ pin-project = "1"
 rand = "0.9"
 thiserror = "2"
 tokio = { version = "1", features = ["rt", "sync", "time"] }
-tower = { version = "0.4", default-features = false }
+tower = { workspace = true, default-features = false }
 tracing = "0.1"
 try-lock = "0.2"
 
@@ -59,7 +59,7 @@ linkerd-stack = { path = "../../stack" }
 
 [dev-dependencies]
 tokio-test = "0.4"
-tower-test = "0.4"
+tower-test = { workspace = true }
 linkerd-tracing = { path = "../../tracing", features = ["ansi"] }
 
 [lints.rust]

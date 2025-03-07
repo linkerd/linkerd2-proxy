@@ -13,6 +13,6 @@ Tower middleware to insert parameters into HTTP extensions.
 futures = { version = "0.3", default-features = false }
 http = { workspace = true }
 pin-project = "1"
-tower = { version = "0.4", default-features = false }
+tower = { workspace = true, default-features = false }
 
 linkerd-stack = { path = "../../stack" }

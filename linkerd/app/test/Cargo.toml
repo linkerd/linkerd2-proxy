@@ -30,7 +30,7 @@ tokio = { version = "1", features = ["io-util", "net", "rt", "sync"] }
 tokio-test = "0.4"
 tokio-stream = { version = "0.1", features = ["sync"] }
 tonic = { workspace = true, default-features = false, optional = true }
-tower = { version = "0.4", default-features = false }
+tower = { workspace = true, default-features = false }
 tracing = "0.1"
 thiserror = "2"
 

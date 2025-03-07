@@ -9,10 +9,10 @@ publish = false
 [dependencies]
 linkerd-metrics = { path = "../../metrics" }
 parking_lot = "0.12"
-tower = { version = "0.4", default-features = false }
+tower = { workspace = true, default-features = false }
 tokio = { version = "1", features = ["time"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros"] }
 tokio-test = "0.4"
-tower-test = "0.4"
+tower-test = { workspace = true }

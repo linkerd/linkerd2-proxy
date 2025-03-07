@@ -9,7 +9,7 @@ publish = false
 parking_lot = "0.12"
 thiserror = "2"
 tokio = { version = "1", features = ["sync", "time"] }
-tower-test = "0.4"
+tower-test = { workspace = true }
 tracing = "0.1"
 
 linkerd-error = { path = "../../error" }
