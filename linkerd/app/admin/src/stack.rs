@@ -166,7 +166,7 @@ impl Config {
                         }
                         // If the connection failed HTTP detection, check if we detected TLS for
                         // another target. This might indicate that the client is confused/stale.
-                        http::Detection::Empty | http::Detection::NotHttp => match tcp.tls {
+                        http::Detection::NotHttp => match tcp.tls {
                             tls::ConditionalServerTls::Some(tls::ServerTls::Passthru { sni }) => {
                                 Err(UnexpectedSni(sni, tcp.client).into())
                             }
