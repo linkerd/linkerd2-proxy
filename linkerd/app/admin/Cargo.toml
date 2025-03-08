@@ -33,7 +33,7 @@ linkerd-app-inbound = { path = "../inbound" }
 linkerd-tracing = { path = "../../tracing" }
 
 [dependencies.tower]
-version = "0.4"
+workspace = true
 default-features = false
 features = [
     "buffer",

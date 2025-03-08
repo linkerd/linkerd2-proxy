@@ -20,6 +20,6 @@ linkerd-proxy-balance-queue = { path = "queue" }
 linkerd-stack = { path = "../../stack" }
 
 [dependencies.tower]
-version = "0.4.13"
+workspace = true
 default-features = false
 features = ["load"]
