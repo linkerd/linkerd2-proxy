@@ -1,5 +1,5 @@
 use crate::{http, Outbound};
-use linkerd_app_core::{detect, io, svc, Error, Infallible};
+use linkerd_app_core::{io, svc, Error, Infallible};
 use std::{fmt::Debug, hash::Hash};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -64,11 +64,17 @@ impl<N> Outbound<N> {
 
         let detect = http.clone().map_stack(|config, _, http| {
             http.push_switch(
-                |(result, parent): (detect::Result<http::Variant>, T)| -> Result<_, Infallible> {
-                    Ok(match detect::allow_timeout(result) {
-                        Some(version) => svc::Either::A(Http { version, parent }),
-                        None => svc::Either::B(parent),
-                    })
+                |(detected, parent): (http::Detection, T)| -> Result<_, Infallible> {
+                    match detected {
+                        http::Detection::Http(version) => {
+                            return Ok(svc::Either::A(Http { version, parent }));
+                        }
+                        http::Detection::ReadTimeout(timeout) => {
+                            tracing::info!("Continuing after timeout: {timeout:?}");
+                        }
+                        _ => {}
+                    }
+                    Ok(svc::Either::B(parent))
                 },
                 opaq.clone().into_inner(),
             )
@@ -77,8 +83,12 @@ impl<N> Outbound<N> {
             // unexpected reason) the inner service is not ready.
             .push_on_service(svc::LoadShed::layer())
             .push_on_service(svc::MapTargetLayer::new(io::EitherIo::Right))
-            .lift_new_with_target::<(detect::Result<http::Variant>, T)>()
-            .push(detect::NewDetectService::layer(config.proxy.detect_http()))
+            .lift_new_with_target::<(http::Detection, T)>()
+            .push(http::NewDetect::layer(svc::CloneParam::from(
+                http::DetectParams {
+                    read_timeout: config.proxy.detect_protocol_timeout,
+                },
+            )))
             .arc_new_tcp()
         });
 
