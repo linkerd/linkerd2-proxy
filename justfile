@@ -15,7 +15,7 @@ toolchain := ""
 
 features := ""
 
-export LINKERD2_PROXY_VERSION := env_var_or_default("LINKERD2_PROXY_VERSION", "0.0.0-dev." + `git rev-parse --short HEAD`)
+export LINKERD2_PROXY_VERSION := env_var_or_default("LINKERD2_PROXY_VERSION", "0.0.0-dev" + `git rev-parse --short HEAD`)
 export LINKERD2_PROXY_VENDOR := env_var_or_default("LINKERD2_PROXY_VENDOR", `whoami` + "@" + `hostname`)
 
 # The version name to use for packages.
