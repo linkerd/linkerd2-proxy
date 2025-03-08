@@ -34,7 +34,6 @@ pin-project = "1"
 linkerd-addr = { path = "../../addr" }
 linkerd-conditional = { path = "../../conditional" }
 linkerd-dns = { path = "../../dns" }
-linkerd-detect = { path = "../../detect" }
 linkerd-duplex = { path = "../../duplex" }
 linkerd-errno = { path = "../../errno" }
 linkerd-error = { path = "../../error" }

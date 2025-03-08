@@ -1,0 +1,22 @@
+[package]
+name = "linkerd-http-detect"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+bytes = { workspace = true }
+httparse = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["time"] }
+tracing = { version = "0.1" }
+
+linkerd-error = { path = "../../error" }
+linkerd-http-variant = { path = "../variant" }
+linkerd-io = { path = "../../io" }
+linkerd-stack = { path = "../../stack" }
+
+[dev-dependencies]
+tokio-test = "0.4"
+
+linkerd-tracing = { path = "../../tracing", features = ["ansi"] }

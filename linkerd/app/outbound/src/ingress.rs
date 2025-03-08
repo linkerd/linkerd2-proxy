@@ -1,6 +1,6 @@
 use crate::{http, opaq, policy, Discovery, Outbound, ParentRef};
 use linkerd_app_core::{
-    detect, errors, io, profiles,
+    errors, io, profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
@@ -274,8 +274,6 @@ impl<N> Outbound<N> {
         NSvc::Future: Send,
     {
         self.map_stack(|config, rt, inner| {
-            let detect_http = config.proxy.detect_http();
-
             // Route requests with destinations that can be discovered via the
             // `l5d-dst-override` header through the (load balanced) logical
             // stack. Route requests without the header through the endpoint
@@ -292,10 +290,12 @@ impl<N> Outbound<N> {
                 .push_on_service(
                     svc::layers()
                         .push(http::BoxRequest::layer())
-                        .push(http::strip_header::request::layer(DST_OVERRIDE_HEADER))
+                        .push(http::strip_header::request::layer(DST_OVERRIDE_HEADER)),
                 )
                 .lift_new()
-                .push(svc::NewOneshotRoute::layer_via(|t: &Http<T>| SelectTarget(t.clone())))
+                .push(svc::NewOneshotRoute::layer_via(|t: &Http<T>| {
+                    SelectTarget(t.clone())
+                }))
                 .check_new_service::<Http<T>, http::Request<_>>();
 
             // HTTP detection is **always** performed. If detection fails, then we
@@ -307,26 +307,33 @@ impl<N> Outbound<N> {
                     let h2 = config.proxy.server.http2.clone();
                     let drain = rt.drain.clone();
                     move |http: &Http<T>| http::ServerParams {
-                            version: http.version,
-                            http2: h2.clone(),
-                            drain: drain.clone()
+                        version: http.version,
+                        http2: h2.clone(),
+                        drain: drain.clone(),
                     }
                 }))
                 .check_new_service::<Http<T>, I>()
                 .push_switch(
-                    |(detected, target): (detect::Result<http::Variant>, T)| -> Result<_, Infallible> {
-                        if let Some(version) = detect::allow_timeout(detected) {
-                            return Ok(svc::Either::A(Http {
-                                version,
-                                parent: target,
-                            }));
+                    |(detected, parent): (http::Detection, T)| -> Result<_, Infallible> {
+                        match detected {
+                            http::Detection::Http(version) => {
+                                return Ok(svc::Either::A(Http { version, parent }));
+                            }
+                            http::Detection::ReadTimeout(timeout) => {
+                                tracing::info!("Continuing after timeout: {timeout:?}");
+                            }
+                            _ => {}
                         }
-                        Ok(svc::Either::B(target))
+                        Ok(svc::Either::B(parent))
                     },
                     fallback,
                 )
                 .lift_new_with_target()
-                .push(detect::NewDetectService::layer(detect_http))
+                .push(http::NewDetect::layer(svc::CloneParam::from(
+                    http::DetectParams {
+                        read_timeout: config.proxy.detect_protocol_timeout,
+                    },
+                )))
                 .arc_new_tcp()
         })
     }

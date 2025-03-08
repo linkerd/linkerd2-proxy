@@ -7,7 +7,6 @@ use linkerd_error::Error;
 pub mod balance;
 pub mod client;
 pub mod client_handle;
-pub mod detect;
 pub mod h1;
 pub mod h2;
 mod header_from_target;
@@ -24,7 +23,6 @@ pub use self::{
         NewInsertClassifyResponse,
     },
     client_handle::{ClientHandle, SetClientHandle},
-    detect::DetectHttp,
     header_from_target::NewHeaderFromTarget,
     normalize_uri::{MarkAbsoluteForm, NewNormalizeUri},
     server::{NewServeHttp, Params as ServerParams, ServeHttp},
@@ -38,6 +36,7 @@ pub use http::{
 pub use http_body::Body;
 pub use linkerd_http_box::{BoxBody, BoxRequest, BoxResponse, EraseResponse};
 pub use linkerd_http_classify as classify;
+pub use linkerd_http_detect::{DetectParams, Detection, NewDetect};
 pub use linkerd_http_executor::TracingExecutor;
 pub use linkerd_http_insert as insert;
 pub use linkerd_http_override_authority::{AuthorityOverride, NewOverrideAuthority};

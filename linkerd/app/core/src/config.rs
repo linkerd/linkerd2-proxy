@@ -1,7 +1,7 @@
 pub use crate::exp_backoff::ExponentialBackoff;
 use crate::{
-    proxy::http::{self, h1, h2},
-    svc::{queue, CloneParam, ExtractParam, Param},
+    proxy::http::{h1, h2},
+    svc::{queue, ExtractParam, Param},
     transport::{DualListenAddr, Keepalive, ListenAddr, UserTimeout},
 };
 use std::time::Duration;
@@ -56,14 +56,6 @@ impl<T> ExtractParam<queue::Timeout, T> for QueueConfig {
     #[inline]
     fn extract_param(&self, _: &T) -> queue::Timeout {
         queue::Timeout(self.failfast_timeout)
-    }
-}
-
-// === impl ProxyConfig ===
-
-impl ProxyConfig {
-    pub fn detect_http(&self) -> CloneParam<linkerd_detect::Config<http::DetectHttp>> {
-        linkerd_detect::Config::from_timeout(self.detect_protocol_timeout).into()
     }
 }
 

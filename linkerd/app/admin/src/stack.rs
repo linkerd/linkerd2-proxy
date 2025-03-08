@@ -1,7 +1,7 @@
 use linkerd_app_core::{
     classify,
     config::ServerConfig,
-    detect, drain, errors, identity,
+    drain, errors, identity,
     metrics::{self, FmtMetrics},
     proxy::http,
     serve,
@@ -136,11 +136,11 @@ impl Config {
             }))
             .push_filter(
                 |(http, tcp): (
-                    Result<Option<http::Variant>, detect::DetectTimeoutError<_>>,
+                    http::Detection,
                     Tcp,
                 )| {
                     match http {
-                        Ok(Some(version)) => Ok(Http { version, tcp }),
+                        http::Detection::Http(version) => Ok(Http { version, tcp }),
                         // If detection timed out, we can make an educated guess at the proper
                         // behavior:
                         // - If the connection was meshed, it was most likely transported over
@@ -148,7 +148,7 @@ impl Config {
                         // - If the connection was unmeshed, it was mostly likely HTTP/1.
                         // - If we received some unexpected SNI, the client is mostly likely
                         //   confused/stale.
-                        Err(_timeout) => {
+                        http::Detection::ReadTimeout(_timeout) => {
                             let version = match tcp.tls {
                                 tls::ConditionalServerTls::None(_) => http::Variant::Http1,
                                 tls::ConditionalServerTls::Some(tls::ServerTls::Established {
@@ -166,7 +166,7 @@ impl Config {
                         }
                         // If the connection failed HTTP detection, check if we detected TLS for
                         // another target. This might indicate that the client is confused/stale.
-                        Ok(None) => match tcp.tls {
+                        http::Detection::Empty | http::Detection::NotHttp => match tcp.tls {
                             tls::ConditionalServerTls::Some(tls::ServerTls::Passthru { sni }) => {
                                 Err(UnexpectedSni(sni, tcp.client).into())
                             }
@@ -177,8 +177,8 @@ impl Config {
             )
             .arc_new_tcp()
             .lift_new_with_target()
-            .push(detect::NewDetectService::layer(svc::stack::CloneParam::from(
-                detect::Config::<http::DetectHttp>::from_timeout(DETECT_TIMEOUT),
+            .push(http::NewDetect::layer(svc::stack::CloneParam::from(
+                http::DetectParams { read_timeout: DETECT_TIMEOUT }
             )))
             .push(transport::metrics::NewServer::layer(metrics.proxy.transport))
             .push_map_target(move |(tls, addrs): (tls::ConditionalServerTls, B::Addrs)| {
