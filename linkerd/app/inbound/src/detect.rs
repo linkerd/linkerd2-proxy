@@ -109,9 +109,7 @@ impl Inbound<svc::ArcNewTcp<Http, io::BoxedIo>> {
                     |(detected, Detect { tls, .. })| -> Result<_, Infallible> {
                         match detected {
                             http::Detection::Http(http) => Ok(svc::Either::A(Http { http, tls })),
-                            http::Detection::Empty | http::Detection::NotHttp => {
-                                Ok(svc::Either::B(tls))
-                            }
+                            http::Detection::NotHttp => Ok(svc::Either::B(tls)),
                             // When HTTP detection fails, forward the connection to the application as
                             // an opaque TCP stream.
                             http::Detection::ReadTimeout(timeout) => {
