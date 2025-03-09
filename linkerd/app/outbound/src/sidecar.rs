@@ -158,6 +158,12 @@ impl svc::Param<Protocol> for Sidecar {
     }
 }
 
+impl svc::Param<ParentRef> for Sidecar {
+    fn param(&self) -> ParentRef {
+        ParentRef(self.policy.borrow().parent.clone())
+    }
+}
+
 impl PartialEq for Sidecar {
     fn eq(&self, other: &Self) -> bool {
         self.orig_dst == other.orig_dst
