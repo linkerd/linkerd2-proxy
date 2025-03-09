@@ -3,7 +3,7 @@ use crate::{
     Inbound,
 };
 use linkerd_app_core::{
-    detect, identity, io,
+    identity, io,
     metrics::ServerLabel,
     proxy::http,
     svc, tls,
@@ -47,9 +47,6 @@ struct Detect {
     timeout: time::Duration,
     tls: Tls,
 }
-
-#[derive(Copy, Clone, Debug)]
-struct ConfigureHttpDetect;
 
 #[derive(Clone)]
 struct TlsParams {
@@ -111,42 +108,58 @@ impl Inbound<svc::ArcNewTcp<Http, io::BoxedIo>> {
                 .push_switch(
                     |(detected, Detect { tls, .. })| -> Result<_, Infallible> {
                         match detected {
-                            Ok(Some(http)) => Ok(svc::Either::A(Http { http, tls })),
-                            Ok(None) => Ok(svc::Either::B(tls)),
+                            http::Detection::Http(http) => Ok(svc::Either::A(Http { http, tls })),
+                            http::Detection::Empty | http::Detection::NotHttp => {
+                                Ok(svc::Either::B(tls))
+                            }
                             // When HTTP detection fails, forward the connection to the application as
                             // an opaque TCP stream.
-                            Err(timeout) => match tls.policy.protocol() {
-                                Protocol::Http1 { .. } => {
-                                    // If the protocol was hinted to be HTTP/1.1 but detection
-                                    // failed, we'll usually be handling HTTP/1, but we may actually
-                                    // be handling HTTP/2 via protocol upgrade. Our options are:
-                                    // handle the connection as HTTP/1, assuming it will be rare for
-                                    // a proxy to initiate TLS, etc and not send the 16B of
-                                    // connection header; or we can handle it as opaque--but there's
-                                    // no chance the server will be able to handle the H2 protocol
-                                    // upgrade. So, it seems best to assume it's HTTP/1 and let the
-                                    // proxy handle the protocol error if we're in an edge case.
-                                    info!(%timeout, "Handling connection as HTTP/1 due to policy");
-                                    Ok(svc::Either::A(Http {
-                                        http: http::Variant::Http1,
-                                        tls,
-                                    }))
+                            http::Detection::ReadTimeout(timeout) => {
+                                match tls.policy.protocol() {
+                                    Protocol::Http1 { .. } => {
+                                        // If the protocol was hinted to be HTTP/1.1 but detection
+                                        // failed, we'll usually be handling HTTP/1, but we may actually
+                                        // be handling HTTP/2 via protocol upgrade. Our options are:
+                                        // handle the connection as HTTP/1, assuming it will be rare for
+                                        // a proxy to initiate TLS, etc and not send the 16B of
+                                        // connection header; or we can handle it as opaque--but there's
+                                        // no chance the server will be able to handle the H2 protocol
+                                        // upgrade. So, it seems best to assume it's HTTP/1 and let the
+                                        // proxy handle the protocol error if we're in an edge case.
+                                        info!(
+                                            ?timeout,
+                                            "Handling connection as HTTP/1 due to policy"
+                                        );
+                                        Ok(svc::Either::A(Http {
+                                            http: http::Variant::Http1,
+                                            tls,
+                                        }))
+                                    }
+                                    // Otherwise, the protocol hint must have
+                                    // been `Detect` or the protocol was updated
+                                    // after detection was initiated, otherwise
+                                    // we would have avoided detection below.
+                                    // Continue handling the connection as if it
+                                    // were opaque.
+                                    _ => {
+                                        info!(
+                                            ?timeout,
+                                            "Handling connection as opaque due to policy"
+                                        );
+                                        Ok(svc::Either::B(tls))
+                                    }
                                 }
-                                // Otherwise, the protocol hint must have been `Detect` or the
-                                // protocol was updated after detection was initiated, otherwise we
-                                // would have avoided detection below. Continue handling the
-                                // connection as if it were opaque.
-                                _ => {
-                                    info!(%timeout, "Handling connection as opaque");
-                                    Ok(svc::Either::B(tls))
-                                }
-                            },
+                            }
                         }
                     },
                     forward.into_inner(),
                 )
                 .lift_new_with_target()
-                .push(detect::NewDetectService::layer(ConfigureHttpDetect))
+                .push(http::NewDetect::layer(|Detect { timeout, .. }: &Detect| {
+                    http::DetectParams {
+                        read_timeout: *timeout,
+                    }
+                }))
                 .arc_new_tcp();
 
             http.push_on_service(svc::MapTargetLayer::new(io::BoxedIo::new))
@@ -329,14 +342,6 @@ impl svc::Param<Remote<ClientAddr>> for Tls {
 impl svc::Param<tls::ConditionalServerTls> for Tls {
     fn param(&self) -> tls::ConditionalServerTls {
         self.status.clone()
-    }
-}
-
-// === impl ConfigureHttpDetect ===
-
-impl svc::ExtractParam<detect::Config<http::DetectHttp>, Detect> for ConfigureHttpDetect {
-    fn extract_param(&self, detect: &Detect) -> detect::Config<http::DetectHttp> {
-        detect::Config::from_timeout(detect.timeout)
     }
 }
 

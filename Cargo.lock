@@ -1350,7 +1350,6 @@ dependencies = [
  "ipnet",
  "linkerd-addr",
  "linkerd-conditional",
- "linkerd-detect",
  "linkerd-dns",
  "linkerd-duplex",
  "linkerd-errno",
@@ -1579,21 +1578,6 @@ name = "linkerd-conditional"
 version = "0.1.0"
 
 [[package]]
-name = "linkerd-detect"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "bytes",
- "linkerd-error",
- "linkerd-io",
- "linkerd-stack",
- "thiserror 2.0.11",
- "tokio",
- "tower",
- "tracing",
-]
-
-[[package]]
 name = "linkerd-distribute"
 version = "0.1.0"
 dependencies = [
@@ -1727,6 +1711,23 @@ dependencies = [
  "tokio",
  "tokio-test",
  "tower-test",
+ "tracing",
+]
+
+[[package]]
+name = "linkerd-http-detect"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "httparse",
+ "linkerd-error",
+ "linkerd-http-variant",
+ "linkerd-io",
+ "linkerd-stack",
+ "linkerd-tracing",
+ "thiserror 2.0.11",
+ "tokio",
+ "tokio-test",
  "tracing",
 ]
 
@@ -2265,11 +2266,11 @@ dependencies = [
  "httparse",
  "hyper",
  "hyper-balance",
- "linkerd-detect",
  "linkerd-duplex",
  "linkerd-error",
  "linkerd-http-box",
  "linkerd-http-classify",
+ "linkerd-http-detect",
  "linkerd-http-executor",
  "linkerd-http-h2",
  "linkerd-http-insert",
