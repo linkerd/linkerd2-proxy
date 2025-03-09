@@ -219,7 +219,11 @@ impl Config {
             span_sink: trace_collector.span_sink(),
             drain: drain_rx.clone(),
         };
-        let inbound = Inbound::new(inbound, runtime.clone());
+        let inbound = Inbound::new(
+            inbound,
+            runtime.clone(),
+            registry.sub_registry_with_prefix("inbound"),
+        );
         let outbound = Outbound::new(
             outbound,
             runtime,

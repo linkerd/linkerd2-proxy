@@ -25,16 +25,22 @@ pub struct InboundMetrics {
     /// Holds metrics that are common to both inbound and outbound proxies. These metrics are
     /// reported separately
     pub proxy: Proxy,
+
+    pub detect: crate::detect::MetricsFamilies,
 }
 
 impl InboundMetrics {
-    pub(crate) fn new(proxy: Proxy) -> Self {
+    pub(crate) fn new(proxy: Proxy, reg: &mut prom::Registry) -> Self {
+        let detect =
+            crate::detect::MetricsFamilies::register(reg.sub_registry_with_prefix("tcp_detect"));
+
         Self {
             http_authz: authz::HttpAuthzMetrics::default(),
             http_errors: error::HttpErrorMetrics::default(),
             tcp_authz: authz::TcpAuthzMetrics::default(),
             tcp_errors: error::TcpErrorMetrics::default(),
             proxy,
+            detect,
         }
     }
 }

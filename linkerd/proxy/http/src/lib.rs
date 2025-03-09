@@ -36,7 +36,9 @@ pub use http::{
 pub use http_body::Body;
 pub use linkerd_http_box::{BoxBody, BoxRequest, BoxResponse, EraseResponse};
 pub use linkerd_http_classify as classify;
-pub use linkerd_http_detect::{DetectParams, Detection, NewDetect};
+pub use linkerd_http_detect::{
+    DetectMetrics, DetectMetricsFamilies, DetectParams, Detection, NewDetect,
+};
 pub use linkerd_http_executor::TracingExecutor;
 pub use linkerd_http_insert as insert;
 pub use linkerd_http_override_authority::{AuthorityOverride, NewOverrideAuthority};

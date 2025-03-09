@@ -11,9 +11,14 @@ use std::{
 use tokio::time;
 use tracing::{debug, trace};
 
-#[derive(Copy, Clone, Debug)]
+mod metrics;
+
+pub use self::metrics::{DetectMetrics, DetectMetricsFamilies};
+
+#[derive(Clone, Debug, Default)]
 pub struct DetectParams {
     pub read_timeout: time::Duration,
+    pub metrics: metrics::DetectMetrics,
 }
 
 #[derive(Debug, Clone)]
@@ -34,13 +39,13 @@ pub enum Detection {
 /// This allows us to interoperate with protocols that send very small initial
 /// messages. In rare situations, we may fail to properly detect that a stream is
 /// HTTP.
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct Detect<N> {
     params: DetectParams,
     inner: N,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct NewDetect<P, N> {
     inner: N,
     params: P,
@@ -108,18 +113,17 @@ where
     }
 
     fn call(&mut self, mut io: I) -> Self::Future {
-        let params = self.params;
+        let params = self.params.clone();
         let inner = self.inner.clone();
         Box::pin(async move {
             let t0 = time::Instant::now();
             let mut buf = BytesMut::with_capacity(READ_CAPACITY);
-            let detection = detect(params, &mut io, &mut buf).await?;
-            debug!(
-                ?detection,
-                elapsed = ?time::Instant::now().saturating_duration_since(t0),
-                "Detected",
-            );
+            let result = detect(&params, &mut io, &mut buf).await;
+            let elapsed = time::Instant::now().saturating_duration_since(t0);
+            params.metrics.observe(&result, elapsed);
+            debug!(?result, ?elapsed, "Detected");
 
+            let detection = result?;
             trace!("Dispatching connection");
             let svc = inner.new_service(detection);
             let mut svc = svc.ready_oneshot().await.map_err(Into::into)?;
@@ -147,16 +151,16 @@ impl Detection {
 }
 
 async fn detect<I: io::AsyncRead + Send + Unpin + 'static>(
-    DetectParams { read_timeout }: DetectParams,
+    params: &DetectParams,
     io: &mut I,
     buf: &mut BytesMut,
 ) -> io::Result<Detection> {
     debug_assert!(buf.capacity() > 0, "buffer must have capacity");
 
-    trace!(capacity = buf.capacity(), timeout = ?read_timeout, "Reading");
-    let sz = match time::timeout(read_timeout, io.read_buf(buf)).await {
+    trace!(capacity = buf.capacity(), timeout = ?params.read_timeout, "Reading");
+    let sz = match time::timeout(params.read_timeout, io.read_buf(buf)).await {
         Ok(res) => res?,
-        Err(_) => return Ok(Detection::ReadTimeout(read_timeout)),
+        Err(_) => return Ok(Detection::ReadTimeout(params.read_timeout)),
     };
 
     trace!(sz, "Read");
@@ -207,10 +211,11 @@ mod tests {
 
         let params = DetectParams {
             read_timeout: time::Duration::from_millis(1),
+            ..Default::default()
         };
         let mut buf = BytesMut::with_capacity(1024);
         let mut io = io::Builder::new().wait(params.read_timeout * 2).build();
-        let kind = detect(params, &mut io, &mut buf).await.unwrap();
+        let kind = detect(&params, &mut io, &mut buf).await.unwrap();
         assert!(matches!(kind, Detection::ReadTimeout(_)), "{kind:?}");
     }
 
@@ -220,12 +225,13 @@ mod tests {
 
         let params = DetectParams {
             read_timeout: time::Duration::from_millis(1),
+            ..Default::default()
         };
         for read in &[H2_PREFACE, H2_AND_GARBAGE] {
             debug!(read = ?std::str::from_utf8(read).unwrap());
             let mut buf = BytesMut::with_capacity(1024);
             let mut io = io::Builder::new().read(read).build();
-            let kind = detect(params, &mut io, &mut buf).await.unwrap();
+            let kind = detect(&params, &mut io, &mut buf).await.unwrap();
             assert_eq!(kind.variant(), Some(Variant::H2), "{kind:?}");
         }
     }
@@ -236,19 +242,20 @@ mod tests {
 
         let params = DetectParams {
             read_timeout: time::Duration::from_millis(1),
+            ..Default::default()
         };
         for i in 1..SMALLEST_POSSIBLE_HTTP1_REQ.len() {
             debug!(read = ?std::str::from_utf8(&HTTP11_LINE[..i]).unwrap());
             let mut buf = BytesMut::with_capacity(1024);
             let mut io = io::Builder::new().read(&HTTP11_LINE[..i]).build();
-            let kind = detect(params, &mut io, &mut buf).await.unwrap();
+            let kind = detect(&params, &mut io, &mut buf).await.unwrap();
             assert!(matches!(kind, Detection::NotHttp), "{kind:?}");
         }
 
         debug!(read = ?std::str::from_utf8(HTTP11_LINE).unwrap());
         let mut buf = BytesMut::with_capacity(1024);
         let mut io = io::Builder::new().read(HTTP11_LINE).build();
-        let kind = detect(params, &mut io, &mut buf).await.unwrap();
+        let kind = detect(&params, &mut io, &mut buf).await.unwrap();
         assert_eq!(kind.variant(), Some(Variant::Http1), "{kind:?}");
 
         const REQ: &[u8] = b"GET /foo/bar/bar/blah HTTP/1.1\r\nHost: foob.example.com\r\n\r\n";
@@ -256,7 +263,7 @@ mod tests {
             debug!(read = ?std::str::from_utf8(&REQ[..i]).unwrap());
             let mut buf = BytesMut::with_capacity(1024);
             let mut io = io::Builder::new().read(&REQ[..i]).build();
-            let kind = detect(params, &mut io, &mut buf).await.unwrap();
+            let kind = detect(&params, &mut io, &mut buf).await.unwrap();
             assert_eq!(kind.variant(), Some(Variant::Http1), "{kind:?}");
             assert_eq!(buf[..], REQ[..i]);
         }
@@ -267,7 +274,7 @@ mod tests {
             let mut buf = BytesMut::with_capacity(1024);
             let mut io = io::Builder::new().read(&POST[..i]).build();
             debug!(read = ?std::str::from_utf8(&POST[..i]).unwrap());
-            let kind = detect(params, &mut io, &mut buf).await.unwrap();
+            let kind = detect(&params, &mut io, &mut buf).await.unwrap();
             assert_eq!(kind.variant(), Some(Variant::Http1), "{kind:?}");
             assert_eq!(buf[..], POST[..i]);
         }
@@ -279,16 +286,17 @@ mod tests {
 
         let params = DetectParams {
             read_timeout: time::Duration::from_millis(1),
+            ..Default::default()
         };
         let mut buf = BytesMut::with_capacity(1024);
         let mut io = io::Builder::new().read(b"foo.bar.blah\r\nbobo").build();
-        let kind = detect(params, &mut io, &mut buf).await.unwrap();
+        let kind = detect(&params, &mut io, &mut buf).await.unwrap();
         assert!(matches!(kind, Detection::NotHttp), "{kind:?}");
         assert_eq!(&buf[..], b"foo.bar.blah\r\nbobo");
 
         let mut buf = BytesMut::with_capacity(1024);
         let mut io = io::Builder::new().read(GARBAGE).build();
-        let kind = detect(params, &mut io, &mut buf).await.unwrap();
+        let kind = detect(&params, &mut io, &mut buf).await.unwrap();
         assert!(matches!(kind, Detection::NotHttp), "{kind:?}");
         assert_eq!(&buf[..], GARBAGE);
     }
@@ -299,10 +307,11 @@ mod tests {
 
         let params = DetectParams {
             read_timeout: time::Duration::from_millis(1),
+            ..Default::default()
         };
         let mut buf = BytesMut::with_capacity(1024);
         let mut io = io::Builder::new().build();
-        let err = detect(params, &mut io, &mut buf).await.unwrap_err();
+        let err = detect(&params, &mut io, &mut buf).await.unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::UnexpectedEof, "{err:?}");
         assert_eq!(&buf[..], b"");
     }
