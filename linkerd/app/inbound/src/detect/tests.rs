@@ -79,7 +79,7 @@ async fn detect_http_non_http() {
 
     inbound()
         .with_stack(new_panic("http stack must not be used"))
-        .push_detect_http(new_ok())
+        .push_detect_http(Default::default(), new_ok())
         .into_inner()
         .new_service(target)
         .oneshot(ior)
@@ -110,7 +110,7 @@ async fn detect_http() {
 
     inbound()
         .with_stack(new_ok())
-        .push_detect_http(new_panic("tcp stack must not be used"))
+        .push_detect_http(Default::default(), new_panic("tcp stack must not be used"))
         .into_inner()
         .new_service(target)
         .oneshot(ior)
@@ -136,7 +136,7 @@ async fn hinted_http1() {
 
     inbound()
         .with_stack(new_ok())
-        .push_detect_http(new_panic("tcp stack must not be used"))
+        .push_detect_http(Default::default(), new_panic("tcp stack must not be used"))
         .into_inner()
         .new_service(target)
         .oneshot(ior)
@@ -162,7 +162,7 @@ async fn hinted_http1_supports_http2() {
 
     inbound()
         .with_stack(new_ok())
-        .push_detect_http(new_panic("tcp stack must not be used"))
+        .push_detect_http(Default::default(), new_panic("tcp stack must not be used"))
         .into_inner()
         .new_service(target)
         .oneshot(ior)
@@ -187,7 +187,7 @@ async fn hinted_http2() {
 
     inbound()
         .with_stack(new_ok())
-        .push_detect_http(new_panic("tcp stack must not be used"))
+        .push_detect_http(Default::default(), new_panic("tcp stack must not be used"))
         .into_inner()
         .new_service(target)
         .oneshot(ior)
@@ -210,7 +210,11 @@ fn orig_dst_addr() -> OrigDstAddr {
 }
 
 fn inbound() -> Inbound<()> {
-    Inbound::new(test_util::default_config(), test_util::runtime().0)
+    Inbound::new(
+        test_util::default_config(),
+        test_util::runtime().0,
+        &mut Default::default(),
+    )
 }
 
 fn new_panic<T, I: 'static>(msg: &'static str) -> svc::ArcNewTcp<T, I> {

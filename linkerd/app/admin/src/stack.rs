@@ -122,6 +122,7 @@ impl Config {
             .push_on_service(http::BoxResponse::layer())
             .arc_new_clone_http();
 
+        let inbound::DetectMetrics(detect_metrics) = metrics.detect.clone();
         let tcp = http
             .unlift_new()
             .push(http::NewServeHttp::layer({
@@ -177,9 +178,12 @@ impl Config {
             )
             .arc_new_tcp()
             .lift_new_with_target()
-            .push(http::NewDetect::layer(svc::stack::CloneParam::from(
-                http::DetectParams { read_timeout: DETECT_TIMEOUT }
-            )))
+            .push(http::NewDetect::layer(move |tcp: &Tcp| {
+                http::DetectParams {
+                    read_timeout: DETECT_TIMEOUT,
+                    metrics: detect_metrics.metrics(tcp.policy.server_label())
+                }
+            }))
             .push(transport::metrics::NewServer::layer(metrics.proxy.transport))
             .push_map_target(move |(tls, addrs): (tls::ConditionalServerTls, B::Addrs)| {
                 Tcp {

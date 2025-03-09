@@ -274,6 +274,15 @@ impl<N> Outbound<N> {
         NSvc::Future: Send,
     {
         self.map_stack(|config, rt, inner| {
+            let detect_params = http::DetectParams {
+                read_timeout: config.proxy.detect_protocol_timeout,
+                metrics: rt
+                    .metrics
+                    .prom
+                    .http_detect
+                    .metrics(ParentRef(policy::Meta::new_default("ingress"))),
+            };
+
             // Route requests with destinations that can be discovered via the
             // `l5d-dst-override` header through the (load balanced) logical
             // stack. Route requests without the header through the endpoint
@@ -329,11 +338,7 @@ impl<N> Outbound<N> {
                     fallback,
                 )
                 .lift_new_with_target()
-                .push(http::NewDetect::layer(svc::CloneParam::from(
-                    http::DetectParams {
-                        read_timeout: config.proxy.detect_protocol_timeout,
-                    },
-                )))
+                .push(http::NewDetect::layer(svc::CloneParam::from(detect_params)))
                 .arc_new_tcp()
         })
     }

@@ -1,4 +1,4 @@
-use crate::{http, Outbound};
+use crate::{http, Outbound, ParentRef};
 use linkerd_app_core::{io, svc, Error, Infallible};
 use std::{fmt::Debug, hash::Hash};
 
@@ -35,6 +35,7 @@ impl<N> Outbound<N> {
     where
         // Target type indicating whether detection should be skipped.
         T: svc::Param<Protocol>,
+        T: svc::Param<ParentRef>,
         T: Eq + Hash + Clone + Debug + Send + Sync + 'static,
         // Server-side socket.
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
@@ -62,7 +63,10 @@ impl<N> Outbound<N> {
                 .arc_new_tcp()
         });
 
-        let detect = http.clone().map_stack(|config, _, http| {
+        let detect = http.clone().map_stack(|config, rt, http| {
+            let read_timeout = config.proxy.detect_protocol_timeout;
+            let metrics = rt.metrics.prom.http_detect.clone();
+
             http.push_switch(
                 |(detected, parent): (http::Detection, T)| -> Result<_, Infallible> {
                     match detected {
@@ -84,11 +88,12 @@ impl<N> Outbound<N> {
             .push_on_service(svc::LoadShed::layer())
             .push_on_service(svc::MapTargetLayer::new(io::EitherIo::Right))
             .lift_new_with_target::<(http::Detection, T)>()
-            .push(http::NewDetect::layer(svc::CloneParam::from(
+            .push(http::NewDetect::layer(move |parent: &T| {
                 http::DetectParams {
-                    read_timeout: config.proxy.detect_protocol_timeout,
-                },
-            )))
+                    read_timeout,
+                    metrics: metrics.metrics(parent.param()),
+                }
+            }))
             .arc_new_tcp()
         });
 
