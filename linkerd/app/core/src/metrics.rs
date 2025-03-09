@@ -73,7 +73,7 @@ pub struct InboundEndpointLabels {
 
 /// A label referencing an inbound `Server` (i.e. for policy).
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct ServerLabel(pub Arc<policy::Meta>);
+pub struct ServerLabel(pub Arc<policy::Meta>, pub u16);
 
 /// Labels referencing an inbound server and authorization.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -331,10 +331,11 @@ impl FmtLabels for ServerLabel {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "srv_group=\"{}\",srv_kind=\"{}\",srv_name=\"{}\"",
+            "srv_group=\"{}\",srv_kind=\"{}\",srv_name=\"{}\",srv_port=\"{}\"",
             self.0.group(),
             self.0.kind(),
-            self.0.name()
+            self.0.name(),
+            self.1
         )
     }
 }
@@ -351,6 +352,7 @@ impl EncodeLabelSetMut for ServerLabel {
         ("srv_group", self.0.group()).encode(enc.encode_label())?;
         ("srv_kind", self.0.kind()).encode(enc.encode_label())?;
         ("srv_name", self.0.name()).encode(enc.encode_label())?;
+        ("srv_port", self.1).encode(enc.encode_label())?;
         Ok(())
     }
 }

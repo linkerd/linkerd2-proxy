@@ -238,11 +238,14 @@ pub mod fuzz {
 
     impl svc::Param<policy::ServerLabel> for Target {
         fn param(&self) -> policy::ServerLabel {
-            policy::ServerLabel(Arc::new(policy::Meta::Resource {
-                group: "policy.linkerd.io".into(),
-                kind: "server".into(),
-                name: "testsrv".into(),
-            }))
+            policy::ServerLabel(
+                Arc::new(policy::Meta::Resource {
+                    group: "policy.linkerd.io".into(),
+                    kind: "server".into(),
+                    name: "testsrv".into(),
+                }),
+                1000,
+            )
         }
     }
 

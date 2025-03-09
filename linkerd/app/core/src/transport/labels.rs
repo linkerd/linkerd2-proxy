@@ -199,18 +199,21 @@ mod tests {
                 negotiated_protocol: None,
             }),
             ([192, 0, 2, 4], 40000).into(),
-            PolicyServerLabel(Arc::new(Meta::Resource {
-                group: "policy.linkerd.io".into(),
-                kind: "server".into(),
-                name: "testserver".into(),
-            })),
+            PolicyServerLabel(
+                Arc::new(Meta::Resource {
+                    group: "policy.linkerd.io".into(),
+                    kind: "server".into(),
+                    name: "testserver".into(),
+                }),
+                40000,
+            ),
         );
         assert_eq!(
             labels.to_string(),
             "direction=\"inbound\",peer=\"src\",\
             target_addr=\"192.0.2.4:40000\",target_ip=\"192.0.2.4\",target_port=\"40000\",\
             tls=\"true\",client_id=\"foo.id.example.com\",\
-            srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testserver\""
+            srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testserver\",srv_port=\"40000\""
         );
     }
 }
