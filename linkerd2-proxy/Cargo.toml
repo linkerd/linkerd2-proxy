@@ -8,11 +8,13 @@ publish = false
 description = "The main proxy executable"
 
 [features]
-default = ["multicore", "meshtls-rustls"]
+default = ["multicore", "meshtls-rustls-ring"]
 multicore = ["tokio/rt-multi-thread", "num_cpus"]
 meshtls-boring = ["linkerd-meshtls/boring"]
 meshtls-boring-fips = ["linkerd-meshtls/boring-fips"]
-meshtls-rustls = ["linkerd-meshtls/rustls"]
+meshtls-rustls-ring = ["linkerd-meshtls/rustls-ring"]
+meshtls-rustls-aws-lc = ["linkerd-meshtls/rustls-aws-lc"]
+meshtls-rustls-aws-lc-fips = ["linkerd-meshtls/rustls-aws-lc-fips"]
 log-streaming = ["linkerd-app/log-streaming"]
 pprof = ["linkerd-app/pprof"]
 
