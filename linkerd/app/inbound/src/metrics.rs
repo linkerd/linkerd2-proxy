@@ -27,12 +27,16 @@ pub struct InboundMetrics {
     pub proxy: Proxy,
 
     pub detect: crate::detect::MetricsFamilies,
+    pub direct: crate::direct::MetricsFamilies,
 }
 
 impl InboundMetrics {
     pub(crate) fn new(proxy: Proxy, reg: &mut prom::Registry) -> Self {
         let detect =
             crate::detect::MetricsFamilies::register(reg.sub_registry_with_prefix("tcp_detect"));
+        let direct = crate::direct::MetricsFamilies::register(
+            reg.sub_registry_with_prefix("tcp_transport_header"),
+        );
 
         Self {
             http_authz: authz::HttpAuthzMetrics::default(),
@@ -41,6 +45,7 @@ impl InboundMetrics {
             tcp_errors: error::TcpErrorMetrics::default(),
             proxy,
             detect,
+            direct,
         }
     }
 }
