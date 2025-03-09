@@ -25,8 +25,8 @@ struct RefusedNoHeader;
 pub struct RefusedNoIdentity(());
 
 #[derive(Debug, Error)]
-#[error("a named target must be provided on gateway connections")]
-struct RefusedNoTarget;
+#[error("direct connections require transport header negotiation")]
+struct TransportHeaderRequired(());
 
 #[derive(Debug, Clone)]
 pub(crate) struct LocalTcp {
@@ -222,7 +222,7 @@ impl<N> Inbound<N> {
                     if client.header_negotiated() {
                         Ok(client)
                     } else {
-                        Err(RefusedNoTarget.into())
+                        Err(TransportHeaderRequired(()).into())
                     }
                 })
                 .push(svc::ArcNewService::layer())
