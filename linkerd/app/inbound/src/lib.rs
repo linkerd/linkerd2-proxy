@@ -20,12 +20,15 @@ pub mod test_util;
 
 #[cfg(fuzzing)]
 pub use self::http::fuzz as http_fuzz;
-pub use self::{metrics::InboundMetrics, policy::DefaultPolicy};
+pub use self::{
+    detect::MetricsFamilies as DetectMetrics, metrics::InboundMetrics, policy::DefaultPolicy,
+};
 use linkerd_app_core::{
     config::{ConnectConfig, ProxyConfig, QueueConfig},
     drain,
     http_tracing::SpanSink,
     identity, io,
+    metrics::prom,
     proxy::{tap, tcp},
     svc,
     transport::{self, Remote, ServerAddr},
@@ -148,9 +151,9 @@ impl<S> Inbound<S> {
 }
 
 impl Inbound<()> {
-    pub fn new(config: Config, runtime: ProxyRuntime) -> Self {
+    pub fn new(config: Config, runtime: ProxyRuntime, prom: &mut prom::Registry) -> Self {
         let runtime = Runtime {
-            metrics: InboundMetrics::new(runtime.metrics),
+            metrics: InboundMetrics::new(runtime.metrics, prom),
             identity: runtime.identity,
             tap: runtime.tap,
             span_sink: runtime.span_sink,
@@ -166,7 +169,11 @@ impl Inbound<()> {
     #[cfg(any(test, feature = "test-util"))]
     pub fn for_test() -> (Self, drain::Signal) {
         let (rt, drain) = test_util::runtime();
-        let this = Self::new(test_util::default_config(), rt);
+        let this = Self::new(
+            test_util::default_config(),
+            rt,
+            &mut prom::Registry::default(),
+        );
         (this, drain)
     }
 
