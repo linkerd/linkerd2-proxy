@@ -116,15 +116,8 @@ where
                 Ok(rsp) => {
                     // Tap the response headers and use the response
                     // body taps to decorate the response body.
-                    let taps = rsp_taps.drain(..).map(|t| t.tap(&rsp)).collect();
-                    let rsp = rsp.map(move |inner| {
-                        use linkerd_proxy_http::Body as _;
-                        let mut body = Body { inner, taps };
-                        if body.is_end_stream() {
-                            eos(&mut body.taps, None);
-                        }
-                        body
-                    });
+                    let taps = rsp_taps.drain(..).map(|t| t.tap(&rsp)).collect::<Vec<_>>();
+                    let rsp = rsp.map(|inner| Body::new(inner, taps));
                     Ok(rsp)
                 }
                 Err(e) => {
@@ -139,6 +132,22 @@ where
 }
 
 // === Body ===
+
+impl<B, T> Body<B, T>
+where
+    B: linkerd_proxy_http::Body,
+    B::Error: HasH2Reason,
+    T: TapPayload,
+{
+    fn new(inner: B, mut taps: Vec<T>) -> Self {
+        // If the body is already finished, record the end of the stream.
+        if inner.is_end_stream() {
+            taps.drain(..).for_each(|t| t.eos(None));
+        }
+
+        Self { inner, taps }
+    }
+}
 
 // `T` need not implement Default.
 impl<B, T> Default for Body<B, T>
@@ -169,71 +178,44 @@ where
         self.inner.is_end_stream()
     }
 
-    fn poll_data(
-        mut self: Pin<&mut Self>,
+    fn poll_frame(
+        self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Self::Data, B::Error>>> {
-        let frame = ready!(self.as_mut().project().inner.poll_data(cx));
-        match frame {
-            Some(Err(e)) => {
-                let e = self.as_mut().project().err(e);
-                Poll::Ready(Some(Err(e)))
-            }
-            Some(Ok(body)) => {
-                self.as_mut().project().data(Some(&body));
-                Poll::Ready(Some(Ok(body)))
+    ) -> Poll<Option<Result<http_body::Frame<Self::Data>, Self::Error>>> {
+        let BodyProj { mut inner, taps } = self.project();
+
+        // Poll the inner body for the next frame.
+        let frame = match ready!(inner.as_mut().poll_frame(cx)) {
+            Some(Ok(frame)) => frame,
+            Some(Err(error)) => {
+                // If an error occurred, we have reached the end of the stream.
+                taps.drain(..).for_each(|t| t.fail(&error));
+                return Poll::Ready(Some(Err(error)));
             }
             None => {
-                self.as_mut().project().data(None);
-                Poll::Ready(None)
+                // If there is not another frame, we have reached the end of the stream.
+                taps.drain(..).for_each(|t| t.eos(None));
+                return Poll::Ready(None);
             }
-        }
-    }
+        };
 
-    fn poll_trailers(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<Option<http::HeaderMap>, B::Error>> {
-        let trailers = ready!(self.as_mut().project().inner.poll_trailers(cx))
-            .map_err(|e| self.as_mut().project().err(e))?;
-        self.as_mut().project().eos(trailers.as_ref());
-        Poll::Ready(Ok(trailers))
+        // If we received a trailers frame, we have reached the end of the stream.
+        if let trailers @ Some(_) = frame.trailers_ref() {
+            taps.drain(..).for_each(|t| t.eos(trailers));
+            return Poll::Ready(Some(Ok(frame)));
+        }
+
+        // Otherwise, we *may* reached the end of the stream. If so, there are no trailers.
+        if inner.is_end_stream() {
+            taps.drain(..).for_each(|t| t.eos(None));
+        }
+
+        Poll::Ready(Some(Ok(frame)))
     }
 
     #[inline]
     fn size_hint(&self) -> hyper::body::SizeHint {
         self.inner.size_hint()
-    }
-}
-
-impl<B, T> BodyProj<'_, B, T>
-where
-    B: linkerd_proxy_http::Body,
-    B::Error: HasH2Reason,
-    T: TapPayload,
-{
-    fn data(&mut self, frame: Option<&B::Data>) {
-        if let Some(f) = frame {
-            for ref mut tap in self.taps.iter_mut() {
-                tap.data(f);
-            }
-        }
-
-        if self.inner.is_end_stream() {
-            self.eos(None);
-        }
-    }
-
-    fn eos(&mut self, trailers: Option<&http::HeaderMap>) {
-        eos(self.taps, trailers)
-    }
-
-    fn err(&mut self, error: B::Error) -> B::Error {
-        for tap in self.taps.drain(..) {
-            tap.fail(&error);
-        }
-
-        error
     }
 }
 
@@ -245,12 +227,7 @@ where
     T: TapPayload,
 {
     fn drop(self: Pin<&mut Self>) {
-        self.project().eos(None);
-    }
-}
-
-fn eos<T: TapPayload>(taps: &mut Vec<T>, trailers: Option<&http::HeaderMap>) {
-    for tap in taps.drain(..) {
-        tap.eos(trailers);
+        let BodyProj { inner: _, taps } = self.project();
+        taps.drain(..).for_each(|t| t.eos(None));
     }
 }

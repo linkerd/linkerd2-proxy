@@ -142,6 +142,7 @@ async fn assert_rsp<T: std::fmt::Debug>(
 ) where
     bytes::Bytes: PartialEq<T>,
 {
+    use http_body_util::BodyExt;
     let rsp = rsp.await.expect("response must not fail");
     assert_eq!(rsp.status(), status, "expected status code to be {status}");
     let body = rsp
@@ -164,10 +165,9 @@ async fn serve(
     tracing::debug!(?req, "Received request");
 
     // Ensure the whole request is processed.
-    let (parts, mut body) = req
-        .map(linkerd_http_body_compat::ForwardCompatibleBody::new)
-        .into_parts();
+    let (parts, mut body) = req.into_parts();
     if !body.is_end_stream() {
+        use http_body_util::BodyExt;
         while body
             .frame()
             .await

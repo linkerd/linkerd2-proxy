@@ -177,7 +177,7 @@ async fn get_log_stream(
             client
                 .request_builder(&format!("{}?{}", PATH, filter))
                 .method(http::Method::GET)
-                .body(hyper::Body::from(filter))
+                .body(http_body_util::Full::new(Bytes::from(filter)))
                 .unwrap(),
         )
         .await;
@@ -199,7 +199,7 @@ async fn query_log_stream(
             client
                 .request_builder(PATH)
                 .method("QUERY")
-                .body(hyper::Body::from(filter))
+                .body(http_body_util::Full::new(Bytes::from(filter)))
                 .unwrap(),
         )
         .await;
@@ -210,12 +210,12 @@ async fn query_log_stream(
 
 /// Spawns a task to collect all the logs in a streaming body and parse them as
 /// JSON.
-fn collect_logs<B>(body: B) -> (JoinHandle<Vec<serde_json::Value>>, oneshot::Sender<()>)
+fn collect_logs<B>(mut body: B) -> (JoinHandle<Vec<serde_json::Value>>, oneshot::Sender<()>)
 where
     B: Body<Data = Bytes> + Send + Unpin + 'static,
     B::Error: std::error::Error,
 {
-    let mut body = linkerd_http_body_compat::ForwardCompatibleBody::new(body);
+    use http_body_util::BodyExt;
     let (done_tx, done_rx) = oneshot::channel();
     let result = tokio::spawn(async move {
         let mut result = Vec::new();
