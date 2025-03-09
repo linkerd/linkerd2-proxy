@@ -332,6 +332,7 @@ impl<N> Outbound<N> {
                 .push(http::NewDetect::layer(svc::CloneParam::from(
                     http::DetectParams {
                         read_timeout: config.proxy.detect_protocol_timeout,
+                        ..Default::default()
                     },
                 )))
                 .arc_new_tcp()

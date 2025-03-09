@@ -156,6 +156,7 @@ impl Inbound<svc::ArcNewTcp<Http, io::BoxedIo>> {
                 .push(http::NewDetect::layer(|Detect { timeout, .. }: &Detect| {
                     http::DetectParams {
                         read_timeout: *timeout,
+                        ..Default::default()
                     }
                 }))
                 .arc_new_tcp();

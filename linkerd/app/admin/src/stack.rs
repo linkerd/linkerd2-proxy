@@ -178,7 +178,10 @@ impl Config {
             .arc_new_tcp()
             .lift_new_with_target()
             .push(http::NewDetect::layer(svc::stack::CloneParam::from(
-                http::DetectParams { read_timeout: DETECT_TIMEOUT }
+                http::DetectParams {
+                    read_timeout: DETECT_TIMEOUT,
+                    ..Default::default()
+                },
             )))
             .push(transport::metrics::NewServer::layer(metrics.proxy.transport))
             .push_map_target(move |(tls, addrs): (tls::ConditionalServerTls, B::Addrs)| {
