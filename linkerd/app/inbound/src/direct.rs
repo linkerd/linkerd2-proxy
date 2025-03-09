@@ -15,6 +15,10 @@ use std::fmt::Debug;
 use thiserror::Error;
 use tracing::{debug_span, info_span};
 
+mod metrics;
+
+pub use self::metrics::MetricsFamilies;
+
 /// Creates I/O errors when a connection cannot be forwarded because no transport
 /// header was present.
 #[derive(Debug, Default)]
@@ -108,6 +112,7 @@ impl<N> Inbound<N> {
     {
         self.map_stack(|config, rt, inner| {
             let detect_timeout = config.proxy.detect_protocol_timeout;
+            let metrics = rt.metrics.direct.clone();
 
             let identity = rt
                 .identity
@@ -211,6 +216,7 @@ impl<N> Inbound<N> {
                 )
                 .check_new_service::<(TransportHeader, ClientInfo), _>()
                 // Use ALPN to determine whether a transport header should be read.
+                .push(metrics::NewRecord::layer(metrics))
                 .push(svc::ArcNewService::layer())
                 .push(NewTransportHeaderServer::layer(detect_timeout))
                 .check_new_service::<ClientInfo, _>()
