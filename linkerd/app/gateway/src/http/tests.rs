@@ -62,7 +62,7 @@ async fn upgraded_request_remains_relative_form() {
 
     impl svc::Param<ServerLabel> for Target {
         fn param(&self) -> ServerLabel {
-            ServerLabel(policy::Meta::new_default("test"))
+            ServerLabel(policy::Meta::new_default("test"), 4143)
         }
     }
 

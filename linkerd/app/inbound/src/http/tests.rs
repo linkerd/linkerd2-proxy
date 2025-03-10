@@ -655,11 +655,14 @@ async fn grpc_response_class() {
                 target_addr: "127.0.0.1:80".parse().unwrap(),
                 policy: metrics::RouteAuthzLabels {
                     route: metrics::RouteLabels {
-                        server: metrics::ServerLabel(Arc::new(policy::Meta::Resource {
-                            group: "policy.linkerd.io".into(),
-                            kind: "server".into(),
-                            name: "testsrv".into(),
-                        })),
+                        server: metrics::ServerLabel(
+                            Arc::new(policy::Meta::Resource {
+                                group: "policy.linkerd.io".into(),
+                                kind: "server".into(),
+                                name: "testsrv".into(),
+                            }),
+                            80,
+                        ),
                         route: policy::Meta::new_default("default"),
                     },
                     authz: Arc::new(policy::Meta::Resource {
@@ -889,11 +892,14 @@ impl svc::Param<policy::AllowPolicy> for Target {
 
 impl svc::Param<policy::ServerLabel> for Target {
     fn param(&self) -> policy::ServerLabel {
-        policy::ServerLabel(Arc::new(policy::Meta::Resource {
-            group: "policy.linkerd.io".into(),
-            kind: "server".into(),
-            name: "testsrv".into(),
-        }))
+        policy::ServerLabel(
+            Arc::new(policy::Meta::Resource {
+                group: "policy.linkerd.io".into(),
+                kind: "server".into(),
+                name: "testsrv".into(),
+            }),
+            80,
+        )
     }
 }
 

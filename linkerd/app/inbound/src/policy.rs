@@ -133,7 +133,7 @@ impl AllowPolicy {
 
     #[inline]
     pub fn server_label(&self) -> ServerLabel {
-        ServerLabel(self.server.borrow().meta.clone())
+        ServerLabel(self.server.borrow().meta.clone(), self.dst.port())
     }
 
     pub fn ratelimit_label(&self, error: &RateLimitError) -> HTTPLocalRateLimitLabels {
@@ -220,7 +220,7 @@ impl ServerPermit {
             protocol: server.protocol.clone(),
             labels: ServerAuthzLabels {
                 authz: authz.meta.clone(),
-                server: ServerLabel(server.meta.clone()),
+                server: ServerLabel(server.meta.clone(), dst.port()),
             },
         }
     }

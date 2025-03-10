@@ -15,7 +15,7 @@ use crate::{
 use linkerd_addr::Addr;
 pub use linkerd_metrics::*;
 use linkerd_proxy_server_policy as policy;
-use prometheus_client::encoding::EncodeLabelValue;
+use prometheus_client::encoding::{EncodeLabelSet, EncodeLabelValue};
 use std::{
     fmt::{self, Write},
     net::SocketAddr,
@@ -72,7 +72,7 @@ pub struct InboundEndpointLabels {
 
 /// A label referencing an inbound `Server` (i.e. for policy).
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct ServerLabel(pub Arc<policy::Meta>);
+pub struct ServerLabel(pub Arc<policy::Meta>, pub u16);
 
 /// Labels referencing an inbound server and authorization.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -330,11 +330,29 @@ impl FmtLabels for ServerLabel {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "srv_group=\"{}\",srv_kind=\"{}\",srv_name=\"{}\"",
+            "srv_group=\"{}\",srv_kind=\"{}\",srv_name=\"{}\",srv_port=\"{}\"",
             self.0.group(),
             self.0.kind(),
-            self.0.name()
+            self.0.name(),
+            self.1
         )
+    }
+}
+
+impl EncodeLabelSet for ServerLabel {
+    fn encode(&self, mut enc: prometheus_client::encoding::LabelSetEncoder<'_>) -> fmt::Result {
+        prom::EncodeLabelSetMut::encode_label_set(self, &mut enc)
+    }
+}
+
+impl prom::EncodeLabelSetMut for ServerLabel {
+    fn encode_label_set(&self, enc: &mut prom::encoding::LabelSetEncoder<'_>) -> fmt::Result {
+        use prometheus_client::encoding::EncodeLabel;
+        ("srv_group", self.0.group()).encode(enc.encode_label())?;
+        ("srv_kind", self.0.kind()).encode(enc.encode_label())?;
+        ("srv_name", self.0.name()).encode(enc.encode_label())?;
+        ("srv_port", self.1).encode(enc.encode_label())?;
+        Ok(())
     }
 }
 

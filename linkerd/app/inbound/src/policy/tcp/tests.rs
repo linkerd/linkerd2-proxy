@@ -43,11 +43,14 @@ async fn unauthenticated_allowed() {
                     kind: "serverauthorization".into(),
                     name: "unauth".into()
                 }),
-                server: ServerLabel(Arc::new(Meta::Resource {
-                    group: "policy.linkerd.io".into(),
-                    kind: "server".into(),
-                    name: "test".into()
-                }))
+                server: ServerLabel(
+                    Arc::new(Meta::Resource {
+                        group: "policy.linkerd.io".into(),
+                        kind: "server".into(),
+                        name: "test".into()
+                    }),
+                    1000
+                )
             },
         }
     );
@@ -96,11 +99,14 @@ async fn authenticated_identity() {
                     kind: "serverauthorization".into(),
                     name: "tls-auth".into()
                 }),
-                server: ServerLabel(Arc::new(Meta::Resource {
-                    group: "policy.linkerd.io".into(),
-                    kind: "server".into(),
-                    name: "test".into()
-                }))
+                server: ServerLabel(
+                    Arc::new(Meta::Resource {
+                        group: "policy.linkerd.io".into(),
+                        kind: "server".into(),
+                        name: "test".into()
+                    }),
+                    1000
+                )
             }
         }
     );
@@ -159,11 +165,14 @@ async fn authenticated_suffix() {
                     kind: "serverauthorization".into(),
                     name: "tls-auth".into()
                 }),
-                server: ServerLabel(Arc::new(Meta::Resource {
-                    group: "policy.linkerd.io".into(),
-                    kind: "server".into(),
-                    name: "test".into()
-                })),
+                server: ServerLabel(
+                    Arc::new(Meta::Resource {
+                        group: "policy.linkerd.io".into(),
+                        kind: "server".into(),
+                        name: "test".into()
+                    }),
+                    1000
+                ),
             }
         }
     );
@@ -219,11 +228,14 @@ async fn tls_unauthenticated() {
                     kind: "serverauthorization".into(),
                     name: "tls-unauth".into()
                 }),
-                server: ServerLabel(Arc::new(Meta::Resource {
-                    group: "policy.linkerd.io".into(),
-                    kind: "server".into(),
-                    name: "test".into()
-                })),
+                server: ServerLabel(
+                    Arc::new(Meta::Resource {
+                        group: "policy.linkerd.io".into(),
+                        kind: "server".into(),
+                        name: "test".into()
+                    }),
+                    1000
+                ),
             }
         }
     );
