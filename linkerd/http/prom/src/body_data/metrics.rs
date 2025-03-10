@@ -33,7 +33,7 @@ struct NewHisto;
 
 impl MetricConstructor<Histogram> for NewHisto {
     fn new_metric(&self) -> Histogram {
-        Histogram::new([128.0, 1024.0, 10240.0].into_iter())
+        Histogram::new([128.0, 1024.0, 10240.0])
     }
 }
 
