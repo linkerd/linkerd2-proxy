@@ -1725,6 +1725,7 @@ dependencies = [
  "linkerd-io",
  "linkerd-stack",
  "linkerd-tracing",
+ "prometheus-client",
  "thiserror 2.0.12",
  "tokio",
  "tokio-test",
