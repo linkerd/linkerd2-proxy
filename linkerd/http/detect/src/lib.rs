@@ -18,7 +18,6 @@ pub struct DetectParams {
 
 #[derive(Debug, Clone)]
 pub enum Detection {
-    Empty,
     NotHttp,
     Http(Variant),
     ReadTimeout(time::Duration),
@@ -154,7 +153,7 @@ async fn detect<I: io::AsyncRead + Send + Unpin + 'static>(
 ) -> io::Result<Detection> {
     debug_assert!(buf.capacity() > 0, "buffer must have capacity");
 
-    trace!(capacity = READ_CAPACITY, timeout = ?read_timeout, "Reading");
+    trace!(capacity = buf.capacity(), timeout = ?read_timeout, "Reading");
     let sz = match time::timeout(read_timeout, io.read_buf(buf)).await {
         Ok(res) => res?,
         Err(_) => return Ok(Detection::ReadTimeout(read_timeout)),
@@ -162,7 +161,10 @@ async fn detect<I: io::AsyncRead + Send + Unpin + 'static>(
 
     trace!(sz, "Read");
     if sz == 0 {
-        return Ok(Detection::Empty);
+        return Err(io::Error::new(
+            io::ErrorKind::UnexpectedEof,
+            "socket closed before protocol detection",
+        ));
     }
 
     // HTTP/2 checking is faster because it's a simple string match. If we
@@ -300,8 +302,8 @@ mod tests {
         };
         let mut buf = BytesMut::with_capacity(1024);
         let mut io = io::Builder::new().build();
-        let kind = detect(params, &mut io, &mut buf).await.unwrap();
-        assert!(matches!(kind, Detection::Empty), "{kind:?}");
+        let err = detect(params, &mut io, &mut buf).await.unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::UnexpectedEof, "{err:?}");
         assert_eq!(&buf[..], b"");
     }
 }
