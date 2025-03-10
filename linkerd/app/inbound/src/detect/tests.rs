@@ -48,17 +48,6 @@ fn allow(protocol: Protocol) -> AllowPolicy {
 }
 
 macro_rules! assert_contains_metric {
-    ($registry:expr, $metric:expr) => {{
-        let mut buf = String::new();
-        prom::encoding::text::encode_registry(&mut buf, $registry).expect("encode registry failed");
-        let lines = buf.split_terminator('\n').collect::<Vec<_>>();
-        assert!(
-            lines.iter().any(|l| *l.starts_with($metric)),
-            "metric '{}' not found in:\n{:?}",
-            $metric,
-            buf
-        );
-    }};
     ($registry:expr, $metric:expr, $value:expr) => {{
         let mut buf = String::new();
         prom::encoding::text::encode_registry(&mut buf, $registry).expect("encode registry failed");
