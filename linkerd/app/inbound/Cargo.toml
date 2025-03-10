@@ -58,7 +58,6 @@ http-body-util = { workspace = true }
 hyper = { workspace = true, features = ["http1", "http2"] }
 hyper-util = { workspace = true }
 linkerd-app-test = { path = "../test" }
-linkerd-http-body-compat = { path = "../../http/body-compat" }
 linkerd-http-metrics = { path = "../../http/metrics", features = ["test-util"] }
 linkerd-http-box = { path = "../../http/box" }
 linkerd-idle-cache = { path = "../../idle-cache", features = ["test-util"] }
