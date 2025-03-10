@@ -22,7 +22,6 @@ thiserror = "2"
 linkerd-http-box = { path = "../box" }
 linkerd-error = { path = "../../error" }
 linkerd-exp-backoff = { path = "../../exp-backoff" }
-linkerd-http-body-compat = { path = "../body-compat" }
 linkerd-metrics = { path = "../../metrics" }
 linkerd-stack = { path = "../../stack" }
 
