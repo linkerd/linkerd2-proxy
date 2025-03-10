@@ -34,9 +34,11 @@ pub struct NewQueueWithoutTimeout<X, Req, N> {
     _req: PhantomData<fn(Req)>,
 }
 
-pub type Queue<Req, Rsp, E = Error> = gate::Gate<Buffer<BoxService<Req, Rsp, E>, Req>>;
+pub type Queue<Req, Rsp, E = Error> =
+    gate::Gate<Buffer<Req, <BoxService<Req, Rsp, E> as tower::Service<Req>>::Future>>;
 
-pub type QueueWithoutTimeout<Req, Rsp, E = Error> = Buffer<BoxService<Req, Rsp, E>, Req>;
+pub type QueueWithoutTimeout<Req, Rsp, E = Error> =
+    Buffer<Req, <BoxService<Req, Rsp, E> as tower::Service<Req>>::Future>;
 
 // === impl NewQueue ===
 

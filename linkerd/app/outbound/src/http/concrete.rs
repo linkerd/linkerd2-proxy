@@ -120,28 +120,30 @@ impl<N> Outbound<N> {
                     move |parent: T| -> Result<_, Infallible> {
                         Ok(match parent.param() {
                             Dispatch::Balance(addr, ewma) => {
-                                svc::Either::A(svc::Either::A(balance::Balance {
+                                svc::Either::Left(svc::Either::Left(balance::Balance {
                                     addr,
                                     ewma,
                                     parent,
                                     queue,
                                 }))
                             }
-                            Dispatch::Forward(addr, metadata) => svc::Either::A(svc::Either::B({
-                                let is_local = inbound_ips.contains(&addr.ip());
-                                let http2 = http2.override_from(metadata.http2_client_params());
-                                Endpoint {
-                                    is_local,
-                                    addr,
-                                    metadata,
-                                    parent,
-                                    queue,
-                                    close_server_connection_on_remote_proxy_error: true,
-                                    http1,
-                                    http2,
-                                }
-                            })),
-                            Dispatch::Fail { message } => svc::Either::B(message),
+                            Dispatch::Forward(addr, metadata) => {
+                                svc::Either::Left(svc::Either::Right({
+                                    let is_local = inbound_ips.contains(&addr.ip());
+                                    let http2 = http2.override_from(metadata.http2_client_params());
+                                    Endpoint {
+                                        is_local,
+                                        addr,
+                                        metadata,
+                                        parent,
+                                        queue,
+                                        close_server_connection_on_remote_proxy_error: true,
+                                        http1,
+                                        http2,
+                                    }
+                                }))
+                            }
+                            Dispatch::Fail { message } => svc::Either::Right(message),
                         })
                     },
                     svc::stack(fail).check_new_clone().into_inner(),

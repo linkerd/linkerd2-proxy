@@ -26,8 +26,8 @@ impl<T, U> Predicate<(Option<T>, U)> for UnwrapOr<U> {
 
     fn check(&mut self, (t, u): (Option<T>, U)) -> Result<Either<(T, U), U>, Error> {
         match t {
-            Some(t) => Ok(Either::A((t, u))),
-            None => Ok(Either::B(u)),
+            Some(t) => Ok(Either::Left((t, u))),
+            None => Ok(Either::Right(u)),
         }
     }
 }
@@ -36,7 +36,8 @@ impl<T, U: Default> Predicate<Option<T>> for UnwrapOr<U> {
     type Request = Either<T, U>;
 
     fn check(&mut self, t: Option<T>) -> Result<Either<T, U>, Error> {
-        Ok(t.map(Either::A).unwrap_or_else(|| Either::B(U::default())))
+        Ok(t.map(Either::Left)
+            .unwrap_or_else(|| Either::Right(U::default())))
     }
 }
 

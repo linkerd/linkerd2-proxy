@@ -1,20 +1,24 @@
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
 
-use futures::future;
+use futures::future::{self, Either};
 use linkerd_error::{Error, Result};
 use linkerd_stack::{
     layer::{self, Layer},
     proxy::Proxy,
     util::AndThen,
-    Either, NewService, Service,
+    NewService, Service,
 };
 use std::{
     future::Future,
     task::{Context, Poll},
 };
-pub use tower::retry::{budget::Budget, Policy};
 use tracing::trace;
+
+pub use tower::retry::{
+    budget::{Budget, TpsBudget},
+    Policy,
+};
 
 /// A strategy for obtaining per-target retry polices.
 pub trait NewPolicy<T> {
@@ -26,7 +30,7 @@ pub trait NewPolicy<T> {
 /// An extension to [`tower::retry::Policy`] that adds a method to prepare a
 /// request to be retried, possibly changing its type.
 pub trait PrepareRetry<Req, Rsp>:
-    tower::retry::Policy<Self::RetryRequest, Self::RetryResponse, Error>
+    Sized + tower::retry::Policy<Self::RetryRequest, Self::RetryResponse, Error>
 {
     /// A request type that can be retried.
     ///
@@ -48,8 +52,8 @@ pub trait PrepareRetry<Req, Rsp>:
 
     /// Prepare an initial request for a potential retry.
     ///
-    /// If the request is retryable, this should return `Either::A`. Otherwise,
-    /// if this returns `Either::B`, the request will not be retried if it
+    /// If the request is retryable, this should return `Either::Left`. Otherwise,
+    /// if this returns `Either::Right`, the request will not be retried if it
     /// fails.
     ///
     /// If retrying requires a specific request type other than the input type
@@ -152,8 +156,8 @@ where
     fn call(&mut self, req: Req) -> Self::Future {
         let (policy, req) = match self.policy.clone() {
             Some(p) => match p.prepare_request(req) {
-                Either::A(req) => req,
-                Either::B(req) => {
+                Either::Left(req) => req,
+                Either::Right(req) => {
                     return future::Either::Left(self.proxy.proxy(&mut self.inner, req))
                 }
             },

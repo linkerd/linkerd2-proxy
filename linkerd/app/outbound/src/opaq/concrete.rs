@@ -222,7 +222,7 @@ impl<C> Outbound<C> {
                     move |parent: T| -> Result<_, Infallible> {
                         Ok(match parent.param() {
                             Dispatch::Balance(addr, ewma) => {
-                                svc::Either::A(svc::Either::A(Balance {
+                                svc::Either::Left(svc::Either::Left(Balance {
                                     addr,
                                     ewma,
                                     queue,
@@ -231,14 +231,14 @@ impl<C> Outbound<C> {
                             }
 
                             Dispatch::Forward(addr, meta) => {
-                                svc::Either::A(svc::Either::B(Endpoint {
+                                svc::Either::Left(svc::Either::Right(Endpoint {
                                     addr,
                                     is_local: false,
                                     metadata: meta,
                                     parent,
                                 }))
                             }
-                            Dispatch::Fail { message } => svc::Either::B(message),
+                            Dispatch::Fail { message } => svc::Either::Right(message),
                         })
                     },
                     svc::stack(fail).check_new_clone().into_inner(),

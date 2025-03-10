@@ -1044,7 +1044,7 @@ dependencies = [
  "pin-project",
  "tokio",
  "tokio-test",
- "tower 0.4.13",
+ "tower 0.5.2",
 ]
 
 [[package]]
@@ -1438,7 +1438,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tonic",
- "tower 0.4.13",
+ "tower 0.5.2",
  "tracing",
 ]
 
@@ -1461,7 +1461,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.12",
  "tokio",
- "tower 0.4.13",
+ "tower 0.5.2",
  "tracing",
 ]
 
@@ -1530,7 +1530,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tonic",
- "tower 0.4.13",
+ "tower 0.5.2",
  "tracing",
 ]
 
@@ -1551,7 +1551,7 @@ dependencies = [
  "tokio",
  "tokio-test",
  "tonic",
- "tower 0.4.13",
+ "tower 0.5.2",
  "tower-test",
  "tracing",
 ]
@@ -1590,7 +1590,7 @@ dependencies = [
  "tokio",
  "tokio-test",
  "tonic",
- "tower 0.4.13",
+ "tower 0.5.2",
  "tracing",
 ]
 
@@ -1626,7 +1626,7 @@ dependencies = [
  "tokio-rustls",
  "tokio-stream",
  "tonic",
- "tower 0.4.13",
+ "tower 0.5.2",
  "tracing",
  "tracing-subscriber",
 ]
@@ -1674,7 +1674,7 @@ dependencies = [
  "tokio-rustls",
  "tokio-test",
  "tonic",
- "tower 0.4.13",
+ "tower 0.5.2",
  "tower-test",
  "tracing",
 ]
@@ -1703,7 +1703,7 @@ dependencies = [
  "tokio-stream",
  "tokio-test",
  "tonic",
- "tower 0.4.13",
+ "tower 0.5.2",
  "tracing",
  "tracing-subscriber",
 ]
@@ -1880,7 +1880,7 @@ dependencies = [
  "http",
  "linkerd-stack",
  "pin-project",
- "tower 0.4.13",
+ "tower 0.5.2",
 ]
 
 [[package]]
@@ -1899,7 +1899,7 @@ dependencies = [
  "parking_lot",
  "pin-project",
  "tokio",
- "tower 0.4.13",
+ "tower 0.5.2",
  "tracing",
 ]
 
@@ -1909,7 +1909,7 @@ version = "0.1.0"
 dependencies = [
  "http",
  "linkerd-stack",
- "tower 0.4.13",
+ "tower 0.5.2",
  "tracing",
 ]
 
@@ -1940,7 +1940,7 @@ dependencies = [
  "http-body",
  "linkerd-stack",
  "pin-project",
- "tower 0.4.13",
+ "tower 0.5.2",
 ]
 
 [[package]]
@@ -1964,7 +1964,7 @@ dependencies = [
  "pin-project",
  "thiserror 2.0.12",
  "tokio",
- "tower 0.4.13",
+ "tower 0.5.2",
  "tracing",
 ]
 
@@ -2018,7 +2018,7 @@ dependencies = [
  "pin-project",
  "thiserror 2.0.12",
  "tokio",
- "tower 0.4.13",
+ "tower 0.5.2",
  "tracing",
  "try-lock",
 ]
@@ -2054,7 +2054,7 @@ dependencies = [
  "linkerd-tracing",
  "parking_lot",
  "tokio",
- "tower 0.4.13",
+ "tower 0.5.2",
  "tracing",
 ]
 
@@ -2257,7 +2257,7 @@ dependencies = [
  "rand 0.9.0",
  "tokio",
  "tokio-test",
- "tower 0.4.13",
+ "tower 0.5.2",
  "tower-test",
  "tracing",
 ]
@@ -2281,7 +2281,7 @@ dependencies = [
  "pin-project",
  "prost 0.13.5",
  "tonic",
- "tower 0.4.13",
+ "tower 0.5.2",
  "tracing",
 ]
 
@@ -2299,7 +2299,7 @@ dependencies = [
  "linkerd-stack",
  "rand 0.9.0",
  "tokio",
- "tower 0.4.13",
+ "tower 0.5.2",
  "tracing",
 ]
 
@@ -2364,7 +2364,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "linkerd-error",
- "tower 0.4.13",
+ "tower 0.5.2",
 ]
 
 [[package]]
@@ -2379,7 +2379,7 @@ dependencies = [
  "linkerd-stack",
  "tokio",
  "tokio-stream",
- "tower 0.4.13",
+ "tower 0.5.2",
  "tracing",
 ]
 
@@ -2422,7 +2422,7 @@ dependencies = [
  "thiserror 2.0.12",
  "tokio",
  "tokio-test",
- "tower 0.4.13",
+ "tower 0.5.2",
  "tower-test",
  "tracing",
  "try-lock",
@@ -2457,7 +2457,7 @@ dependencies = [
  "linkerd-proxy-core",
  "pin-project",
  "thiserror 2.0.12",
- "tower 0.4.13",
+ "tower 0.5.2",
  "tracing",
 ]
 
@@ -2496,7 +2496,7 @@ dependencies = [
  "tokio",
  "tokio-test",
  "tonic",
- "tower 0.4.13",
+ "tower 0.5.2",
  "tracing",
  "x509-parser",
 ]
@@ -2528,7 +2528,7 @@ dependencies = [
  "thiserror 2.0.12",
  "tokio",
  "tonic",
- "tower 0.4.13",
+ "tower 0.5.2",
  "tracing",
 ]
 
@@ -2544,7 +2544,7 @@ dependencies = [
  "pin-project",
  "rand 0.9.0",
  "tokio",
- "tower 0.4.13",
+ "tower 0.5.2",
 ]
 
 [[package]]
@@ -2575,7 +2575,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tokio-test",
- "tower 0.4.13",
+ "tower 0.5.2",
  "tower-test",
  "tracing",
 ]
@@ -2587,7 +2587,7 @@ dependencies = [
  "futures",
  "linkerd-error",
  "linkerd-stack",
- "tower 0.4.13",
+ "tower 0.5.2",
  "tracing",
 ]
 
@@ -2629,7 +2629,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tonic",
- "tower 0.4.13",
+ "tower 0.5.2",
  "tracing",
 ]
 
@@ -2654,7 +2654,7 @@ dependencies = [
  "tokio",
  "tokio-test",
  "tokio-util",
- "tower 0.4.13",
+ "tower 0.5.2",
  "tower-test",
  "tracing",
 ]
@@ -2667,7 +2667,7 @@ dependencies = [
  "parking_lot",
  "tokio",
  "tokio-test",
- "tower 0.4.13",
+ "tower 0.5.2",
  "tower-test",
 ]
 
@@ -2678,7 +2678,7 @@ dependencies = [
  "futures",
  "linkerd-error",
  "linkerd-stack",
- "tower 0.4.13",
+ "tower 0.5.2",
  "tracing",
 ]
 
@@ -2699,7 +2699,7 @@ dependencies = [
  "pin-project",
  "thiserror 2.0.12",
  "tokio",
- "tower 0.4.13",
+ "tower 0.5.2",
  "tracing",
  "untrusted",
 ]
@@ -2765,7 +2765,7 @@ dependencies = [
  "linkerd-stack",
  "rand 0.8.5",
  "thiserror 1.0.69",
- "tower 0.4.13",
+ "tower 0.5.2",
  "tracing",
 ]
 
@@ -4282,10 +4282,14 @@ checksum = "d039ad9159c98b70ecfd540b2573b97f7f52c3e8d9f8ad57a24b916a536975f9"
 dependencies = [
  "futures-core",
  "futures-util",
+ "indexmap 2.8.0",
  "pin-project-lite",
  "sync_wrapper",
+ "tokio",
+ "tokio-util",
  "tower-layer",
  "tower-service",
+ "tracing",
 ]
 
 [[package]]

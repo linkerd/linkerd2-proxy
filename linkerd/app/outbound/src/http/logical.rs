@@ -148,7 +148,7 @@ where
                                 );
                                 let parent_ref = ParentRef::from(ep.clone());
                                 let backend_ref = BackendRef::from(ep);
-                                svc::Either::A(Concrete {
+                                svc::Either::Left(Concrete {
                                     parent_ref,
                                     backend_ref,
                                     target: concrete::Dispatch::Forward(remote, meta),
@@ -157,8 +157,10 @@ where
                                     failure_accrual: Default::default(),
                                 })
                             }
-                            Self::Profile(profile) => svc::Either::B(svc::Either::A(profile)),
-                            Self::Policy(policy) => svc::Either::B(svc::Either::B(policy)),
+                            Self::Profile(profile) => {
+                                svc::Either::Right(svc::Either::Left(profile))
+                            }
+                            Self::Policy(policy) => svc::Either::Right(svc::Either::Right(policy)),
                         })
                     },
                     // Switch profile and policy routing.

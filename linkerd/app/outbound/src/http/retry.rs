@@ -1,11 +1,14 @@
-use futures::{future, FutureExt};
+use futures::{
+    future::{self, Either},
+    FutureExt,
+};
 use linkerd_app_core::{
     classify,
     http_metrics::retries::Handle,
     metrics::{self, ProfileRouteLabels},
     profiles::{self, http::Route},
     proxy::http::{Body, ClientHandle, EraseResponse},
-    svc::{layer, Either, Param},
+    svc::{layer, Param},
     Error, Result,
 };
 use linkerd_http_classify::{Classify, ClassifyEos, ClassifyResponse};
@@ -33,7 +36,7 @@ pub struct NewRetryPolicy {
 #[derive(Clone, Debug)]
 pub struct RetryPolicy {
     metrics: Handle,
-    budget: Arc<retry::Budget>,
+    budget: Arc<retry::TpsBudget>,
     response_classes: profiles::http::ResponseClasses,
 }
 
@@ -75,13 +78,15 @@ where
     ReqB::Error: Into<Error>,
     RspB: Body + Unpin,
 {
-    type Future = future::Ready<Self>;
+    type Future = future::Ready<()>;
 
     fn retry(
-        &self,
-        req: &http::Request<ReplayBody<ReqB>>,
-        result: Result<&http::Response<PeekTrailersBody<RspB>>, &Error>,
+        &mut self,
+        req: &mut http::Request<ReplayBody<ReqB>>,
+        result: &mut Result<http::Response<PeekTrailersBody<RspB>>, Error>,
     ) -> Option<Self::Future> {
+        use retry::Budget as _;
+
         let retryable = match result {
             Err(_) => false,
             Ok(rsp) => {
@@ -113,17 +118,17 @@ where
             return None;
         }
 
-        let withdrew = self.budget.withdraw().is_ok();
+        let withdrew = self.budget.withdraw();
         self.metrics.incr_retryable(withdrew);
         if !withdrew {
             return None;
         }
 
-        Some(future::ready(self.clone()))
+        Some(future::ready(()))
     }
 
     fn clone_request(
-        &self,
+        &mut self,
         req: &http::Request<ReplayBody<ReqB>>,
     ) -> Option<http::Request<ReplayBody<ReqB>>> {
         // Since the body is already wrapped in a ReplayBody, it must not be obviously too large to
@@ -177,13 +182,13 @@ where
                     size = body.size_hint().lower(),
                     "Body is too large to buffer"
                 );
-                return Either::B(http::Request::from_parts(head, body));
+                return Either::Right(http::Request::from_parts(head, body));
             }
         };
 
         // The body may still be too large to be buffered if the body's length was not known.
         // `ReplayBody` handles this gracefully.
-        Either::A((self, http::Request::from_parts(head, replay_body)))
+        Either::Left((self, http::Request::from_parts(head, replay_body)))
     }
 
     /// If the response is HTTP/2, return a future that checks for a `TRAILERS`
