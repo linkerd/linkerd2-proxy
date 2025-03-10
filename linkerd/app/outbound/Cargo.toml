@@ -64,7 +64,6 @@ tokio-test = "0.4"
 tower-test = { workspace = true }
 
 linkerd-app-test = { path = "../test", features = ["client-policy"] }
-linkerd-http-body-compat = { path = "../../http/body-compat" }
 linkerd-http-box = { path = "../../http/box" }
 linkerd-http-prom = { path = "../../http/prom", features = ["test-util"] }
 linkerd-io = { path = "../../io", features = ["tokio-test"] }

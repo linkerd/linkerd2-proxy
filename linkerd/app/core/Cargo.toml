@@ -83,6 +83,5 @@ features = ["make", "spawn-ready", "timeout", "util", "limit"]
 semver = "1"
 
 [dev-dependencies]
-linkerd-http-body-compat = { path = "../../http/body-compat" }
 linkerd-mock-http-body = { path = "../../mock/http-body" }
 quickcheck = { version = "1", default-features = false }
