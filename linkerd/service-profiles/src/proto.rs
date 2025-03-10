@@ -5,7 +5,7 @@ use linkerd_dns_name::Name;
 use linkerd_proxy_api_resolve::pb as resolve;
 use regex::Regex;
 use std::{str::FromStr, sync::Arc, time::Duration};
-use tower::retry::budget::Budget;
+use tower::retry::budget::TpsBudget;
 use tracing::warn;
 
 pub(super) fn convert_profile(proto: api::DestinationProfile, port: u16) -> Profile {
@@ -36,7 +36,7 @@ pub(super) fn convert_profile(proto: api::DestinationProfile, port: u16) -> Prof
 
 fn convert_route(
     orig: api::Route,
-    retry_budget: Option<&Arc<Budget>>,
+    retry_budget: Option<&Arc<TpsBudget>>,
 ) -> Option<(http::RequestMatch, http::Route)> {
     let req_match = orig.condition.and_then(convert_req_match)?;
     let rsp_classes = orig
@@ -65,7 +65,7 @@ fn convert_dst_override(orig: api::WeightedDst) -> Option<Target> {
     })
 }
 
-fn set_route_retry(route: &mut http::Route, retry_budget: Option<&Arc<Budget>>) {
+fn set_route_retry(route: &mut http::Route, retry_budget: Option<&Arc<TpsBudget>>) {
     let budget = match retry_budget {
         Some(budget) => budget.clone(),
         None => {
@@ -170,7 +170,7 @@ fn convert_rsp_match(orig: api::ResponseMatch) -> Option<http::ResponseMatch> {
     Some(m)
 }
 
-fn convert_retry_budget(orig: api::RetryBudget) -> Option<Arc<Budget>> {
+fn convert_retry_budget(orig: api::RetryBudget) -> Option<Arc<TpsBudget>> {
     let min_retries = if orig.min_retries_per_second <= i32::MAX as u32 {
         orig.min_retries_per_second
     } else {
@@ -217,7 +217,7 @@ fn convert_retry_budget(orig: api::RetryBudget) -> Option<Arc<Budget>> {
         }
     };
 
-    Some(Arc::new(Budget::new(ttl, min_retries, retry_ratio)))
+    Some(Arc::new(TpsBudget::new(ttl, min_retries, retry_ratio)))
 }
 
 #[cfg(test)]

@@ -7,7 +7,7 @@ use std::{
     sync::Arc,
     time::Duration,
 };
-use tower::retry::budget::Budget;
+use tower::retry::budget::TpsBudget;
 
 pub use self::proxy::NewProxyRouter;
 
@@ -56,7 +56,7 @@ pub enum ResponseMatch {
 
 #[derive(Clone, Debug)]
 pub struct Retries {
-    budget: Arc<Budget>,
+    budget: Arc<TpsBudget>,
 }
 
 #[derive(Clone, Default)]
@@ -107,7 +107,7 @@ impl Route {
         self.timeout
     }
 
-    pub fn set_retries(&mut self, budget: Arc<Budget>) {
+    pub fn set_retries(&mut self, budget: Arc<TpsBudget>) {
         self.retries = Some(Retries { budget });
     }
 
@@ -201,7 +201,7 @@ impl ResponseMatch {
 // === impl Retries ===
 
 impl Retries {
-    pub fn budget(&self) -> &Arc<Budget> {
+    pub fn budget(&self) -> &Arc<TpsBudget> {
         &self.budget
     }
 }
