@@ -1,10 +1,10 @@
 [package]
 name = "opentelemetry-proto"
-version = "0.1.0"
+version = { workspace = true }
 authors = ["The OpenTelemetry Authors"]
-license = "Apache-2.0"
-edition = "2021"
-publish = false
+license = { workspace = true }
+edition = { workspace = true }
+publish = { workspace = true }
 description = """
 gRPC bindings for OpenTelemetry.
 
