@@ -129,7 +129,7 @@ where
 impl Default for DetectMetrics {
     fn default() -> Self {
         Self {
-            duration: Histogram::new([0.001, 0.1].into_iter()),
+            duration: MkDurations.new_metric(),
             not_http: Counter::default(),
             http1: Counter::default(),
             h2: Counter::default(),
