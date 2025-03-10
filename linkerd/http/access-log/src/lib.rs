@@ -13,7 +13,7 @@ use std::{
     net::SocketAddr,
     pin::Pin,
     task::{Context, Poll},
-    time::{Duration, SystemTime},
+    time::Duration,
 };
 use svc::{NewService, Param};
 use tokio::time::Instant;
@@ -210,6 +210,6 @@ where
 }
 
 #[inline]
-fn now() -> humantime::Rfc3339Timestamp {
-    humantime::format_rfc3339(SystemTime::now())
+fn now() -> String {
+    jiff::Timestamp::now().to_string()
 }
