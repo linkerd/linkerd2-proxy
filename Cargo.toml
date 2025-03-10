@@ -106,7 +106,7 @@ publish = false
 
 [workspace.dependencies]
 bytes = { version = "1" }
-drain = { version = "0.1", default-features = false }
+drain = { version = "0.2", default-features = false }
 h2 = { version = "0.4" }
 http = { version = "1" }
 http-body = { version = "1" }
