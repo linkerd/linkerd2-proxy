@@ -481,12 +481,13 @@ dependencies = [
 
 [[package]]
 name = "drain"
-version = "0.1.2"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d105028bd2b5dfcb33318fd79a445001ead36004dd8dffef1bdd7e493d8bc1e"
+checksum = "599214ee8a1d13a3a422a016834d5cf71ff984a38ea463f30677e62348161b7f"
 dependencies = [
  "tokio",
- "tower 0.4.13",
+ "tower-layer",
+ "tower-service",
 ]
 
 [[package]]
