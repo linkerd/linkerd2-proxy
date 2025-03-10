@@ -13,6 +13,12 @@ const HTTP1: &[u8] = b"GET / HTTP/1.1\r\nhost: example.com\r\n\r\n";
 const HTTP2: &[u8] = b"PRI * HTTP/2.0\r\n";
 const NOT_HTTP: &[u8] = b"foo\r\nbar\r\nblah\r\n";
 
+const RESULTS_NOT_HTTP: &str = "results_total{result=\"not_http\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}";
+const RESULTS_HTTP1: &str = "results_total{result=\"http/1\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}";
+const RESULTS_HTTP2: &str = "results_total{result=\"http/2\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}";
+const RESULTS_READ_TIMEOUT: &str = "results_total{result=\"read_timeout\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}";
+const RESULTS_ERROR: &str = "results_total{result=\"error\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}";
+
 fn authzs() -> Arc<[Authorization]> {
     Arc::new([Authorization {
         authentication: Authentication::Unauthenticated,
@@ -127,11 +133,11 @@ async fn detect_http_non_http() {
         .await
         .expect("should succeed");
 
-    assert_contains_metric!(&registry, "results_total{result=\"not_http\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}", 1);
-    assert_contains_metric!(&registry, "results_total{result=\"http/1\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}", 0);
-    assert_contains_metric!(&registry, "results_total{result=\"http/2\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}", 0);
-    assert_contains_metric!(&registry, "results_total{result=\"read_timeout\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}", 0);
-    assert_contains_metric!(&registry, "results_total{result=\"error\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}", 0);
+    assert_contains_metric!(&registry, RESULTS_NOT_HTTP, 1);
+    assert_contains_metric!(&registry, RESULTS_HTTP1, 0);
+    assert_contains_metric!(&registry, RESULTS_HTTP2, 0);
+    assert_contains_metric!(&registry, RESULTS_READ_TIMEOUT, 0);
+    assert_contains_metric!(&registry, RESULTS_ERROR, 0);
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -168,11 +174,11 @@ async fn detect_http() {
         .await
         .expect("should succeed");
 
-    assert_contains_metric!(&registry, "results_total{result=\"not_http\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}", 0);
-    assert_contains_metric!(&registry, "results_total{result=\"http/1\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}", 1);
-    assert_contains_metric!(&registry, "results_total{result=\"http/2\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}", 0);
-    assert_contains_metric!(&registry, "results_total{result=\"read_timeout\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}", 0);
-    assert_contains_metric!(&registry, "results_total{result=\"error\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}", 0);
+    assert_contains_metric!(&registry, RESULTS_NOT_HTTP, 0);
+    assert_contains_metric!(&registry, RESULTS_HTTP1, 1);
+    assert_contains_metric!(&registry, RESULTS_HTTP2, 0);
+    assert_contains_metric!(&registry, RESULTS_READ_TIMEOUT, 0);
+    assert_contains_metric!(&registry, RESULTS_ERROR, 0);
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -204,11 +210,11 @@ async fn hinted_http1() {
         .await
         .expect("should succeed");
 
-    assert_contains_metric!(&registry, "results_total{result=\"not_http\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}", 0);
-    assert_contains_metric!(&registry, "results_total{result=\"http/1\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}", 1);
-    assert_contains_metric!(&registry, "results_total{result=\"http/2\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}", 0);
-    assert_contains_metric!(&registry, "results_total{result=\"read_timeout\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}", 0);
-    assert_contains_metric!(&registry, "results_total{result=\"error\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}", 0);
+    assert_contains_metric!(&registry, RESULTS_NOT_HTTP, 0);
+    assert_contains_metric!(&registry, RESULTS_HTTP1, 1);
+    assert_contains_metric!(&registry, RESULTS_HTTP2, 0);
+    assert_contains_metric!(&registry, RESULTS_READ_TIMEOUT, 0);
+    assert_contains_metric!(&registry, RESULTS_ERROR, 0);
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -240,11 +246,11 @@ async fn hinted_http1_supports_http2() {
         .await
         .expect("should succeed");
 
-    assert_contains_metric!(&registry, "results_total{result=\"not_http\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}", 0);
-    assert_contains_metric!(&registry, "results_total{result=\"http/1\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}", 0);
-    assert_contains_metric!(&registry, "results_total{result=\"http/2\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}", 1);
-    assert_contains_metric!(&registry, "results_total{result=\"read_timeout\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}", 0);
-    assert_contains_metric!(&registry, "results_total{result=\"error\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}", 0);
+    assert_contains_metric!(&registry, RESULTS_NOT_HTTP, 0);
+    assert_contains_metric!(&registry, RESULTS_HTTP1, 0);
+    assert_contains_metric!(&registry, RESULTS_HTTP2, 1);
+    assert_contains_metric!(&registry, RESULTS_READ_TIMEOUT, 0);
+    assert_contains_metric!(&registry, RESULTS_ERROR, 0);
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -276,11 +282,11 @@ async fn hinted_http2() {
         .expect("should succeed");
 
     // No detection is performed when HTTP/2 is hinted, so no metrics are recorded.
-    assert_not_contains_metric!(&registry, "results_total{result=\"not_http\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}");
-    assert_not_contains_metric!(&registry, "results_total{result=\"http/1\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}");
-    assert_not_contains_metric!(&registry, "results_total{result=\"http/2\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}");
-    assert_not_contains_metric!(&registry, "results_total{result=\"read_timeout\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}");
-    assert_not_contains_metric!(&registry, "results_total{result=\"error\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}");
+    assert_not_contains_metric!(&registry, RESULTS_NOT_HTTP);
+    assert_not_contains_metric!(&registry, RESULTS_HTTP1);
+    assert_not_contains_metric!(&registry, RESULTS_HTTP2);
+    assert_not_contains_metric!(&registry, RESULTS_READ_TIMEOUT);
+    assert_not_contains_metric!(&registry, RESULTS_ERROR);
 }
 
 fn client_id() -> tls::ClientId {
