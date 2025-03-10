@@ -173,7 +173,7 @@ where
             match self.result {
                 DetectResult::NotHttp => "not_http",
                 DetectResult::Http1 => "http/1",
-                DetectResult::H2 => "h2",
+                DetectResult::H2 => "http/2",
                 DetectResult::ReadTimeout => "read_timeout",
                 DetectResult::Error => "error",
             },
