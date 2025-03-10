@@ -41,6 +41,46 @@ fn allow(protocol: Protocol) -> AllowPolicy {
     allow
 }
 
+macro_rules! assert_contains_metric {
+    ($registry:expr, $metric:expr) => {{
+        let mut buf = String::new();
+        prom::encoding::text::encode_registry(&mut buf, $registry).expect("encode registry failed");
+        let lines = buf.split_terminator('\n').collect::<Vec<_>>();
+        assert!(
+            lines.iter().any(|l| *l.starts_with($metric)),
+            "metric '{}' not found in:\n{:?}",
+            $metric,
+            buf
+        );
+    }};
+    ($registry:expr, $metric:expr, $value:expr) => {{
+        let mut buf = String::new();
+        prom::encoding::text::encode_registry(&mut buf, $registry).expect("encode registry failed");
+        let lines = buf.split_terminator('\n').collect::<Vec<_>>();
+        assert_eq!(
+            lines.iter().find(|l| l.starts_with($metric)),
+            Some(&&*format!("{} {}", $metric, $value)),
+            "metric '{}' not found in:\n{:?}",
+            $metric,
+            buf
+        );
+    }};
+}
+
+macro_rules! assert_not_contains_metric {
+    ($registry:expr, $pattern:expr) => {{
+        let mut buf = String::new();
+        prom::encoding::text::encode_registry(&mut buf, $registry).expect("encode registry failed");
+        let lines = buf.split_terminator('\n').collect::<Vec<_>>();
+        assert!(
+            !lines.iter().any(|l| l.starts_with($pattern)),
+            "metric '{}' found in:\n{:?}",
+            $pattern,
+            buf
+        );
+    }};
+}
+
 #[tokio::test(flavor = "current_thread")]
 async fn detect_tls_opaque() {
     let _trace = trace::test::trace_init();
@@ -77,14 +117,21 @@ async fn detect_http_non_http() {
     let (ior, mut iow) = io::duplex(100);
     iow.write_all(NOT_HTTP).await.unwrap();
 
+    let mut registry = prom::Registry::default();
     inbound()
         .with_stack(new_panic("http stack must not be used"))
-        .push_detect_http(Default::default(), new_ok())
+        .push_detect_http(super::HttpDetectMetrics::register(&mut registry), new_ok())
         .into_inner()
         .new_service(target)
         .oneshot(ior)
         .await
         .expect("should succeed");
+
+    assert_contains_metric!(&registry, "results_total{result=\"not_http\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}", 1);
+    assert_contains_metric!(&registry, "results_total{result=\"http/1\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}", 0);
+    assert_contains_metric!(&registry, "results_total{result=\"http/2\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}", 0);
+    assert_contains_metric!(&registry, "results_total{result=\"read_timeout\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}", 0);
+    assert_contains_metric!(&registry, "results_total{result=\"error\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}", 0);
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -108,14 +155,24 @@ async fn detect_http() {
     let (ior, mut iow) = io::duplex(100);
     iow.write_all(HTTP1).await.unwrap();
 
+    let mut registry = prom::Registry::default();
     inbound()
         .with_stack(new_ok())
-        .push_detect_http(Default::default(), new_panic("tcp stack must not be used"))
+        .push_detect_http(
+            super::HttpDetectMetrics::register(&mut registry),
+            new_panic("tcp stack must not be used"),
+        )
         .into_inner()
         .new_service(target)
         .oneshot(ior)
         .await
         .expect("should succeed");
+
+    assert_contains_metric!(&registry, "results_total{result=\"not_http\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}", 0);
+    assert_contains_metric!(&registry, "results_total{result=\"http/1\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}", 1);
+    assert_contains_metric!(&registry, "results_total{result=\"http/2\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}", 0);
+    assert_contains_metric!(&registry, "results_total{result=\"read_timeout\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}", 0);
+    assert_contains_metric!(&registry, "results_total{result=\"error\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}", 0);
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -134,14 +191,24 @@ async fn hinted_http1() {
     let (ior, mut iow) = io::duplex(100);
     iow.write_all(HTTP1).await.unwrap();
 
+    let mut registry = prom::Registry::default();
     inbound()
         .with_stack(new_ok())
-        .push_detect_http(Default::default(), new_panic("tcp stack must not be used"))
+        .push_detect_http(
+            super::HttpDetectMetrics::register(&mut registry),
+            new_panic("tcp stack must not be used"),
+        )
         .into_inner()
         .new_service(target)
         .oneshot(ior)
         .await
         .expect("should succeed");
+
+    assert_contains_metric!(&registry, "results_total{result=\"not_http\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}", 0);
+    assert_contains_metric!(&registry, "results_total{result=\"http/1\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}", 1);
+    assert_contains_metric!(&registry, "results_total{result=\"http/2\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}", 0);
+    assert_contains_metric!(&registry, "results_total{result=\"read_timeout\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}", 0);
+    assert_contains_metric!(&registry, "results_total{result=\"error\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}", 0);
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -160,14 +227,24 @@ async fn hinted_http1_supports_http2() {
     let (ior, mut iow) = io::duplex(100);
     iow.write_all(HTTP2).await.unwrap();
 
+    let mut registry = prom::Registry::default();
     inbound()
         .with_stack(new_ok())
-        .push_detect_http(Default::default(), new_panic("tcp stack must not be used"))
+        .push_detect_http(
+            super::HttpDetectMetrics::register(&mut registry),
+            new_panic("tcp stack must not be used"),
+        )
         .into_inner()
         .new_service(target)
         .oneshot(ior)
         .await
         .expect("should succeed");
+
+    assert_contains_metric!(&registry, "results_total{result=\"not_http\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}", 0);
+    assert_contains_metric!(&registry, "results_total{result=\"http/1\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}", 0);
+    assert_contains_metric!(&registry, "results_total{result=\"http/2\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}", 1);
+    assert_contains_metric!(&registry, "results_total{result=\"read_timeout\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}", 0);
+    assert_contains_metric!(&registry, "results_total{result=\"error\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}", 0);
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -185,14 +262,25 @@ async fn hinted_http2() {
 
     let (ior, _) = io::duplex(100);
 
+    let mut registry = prom::Registry::default();
     inbound()
         .with_stack(new_ok())
-        .push_detect_http(Default::default(), new_panic("tcp stack must not be used"))
+        .push_detect_http(
+            super::HttpDetectMetrics::register(&mut registry),
+            new_panic("tcp stack must not be used"),
+        )
         .into_inner()
         .new_service(target)
         .oneshot(ior)
         .await
         .expect("should succeed");
+
+    // No detection is performed when HTTP/2 is hinted, so no metrics are recorded.
+    assert_not_contains_metric!(&registry, "results_total{result=\"not_http\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}");
+    assert_not_contains_metric!(&registry, "results_total{result=\"http/1\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}");
+    assert_not_contains_metric!(&registry, "results_total{result=\"http/2\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}");
+    assert_not_contains_metric!(&registry, "results_total{result=\"read_timeout\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}");
+    assert_not_contains_metric!(&registry, "results_total{result=\"error\",srv_group=\"policy.linkerd.io\",srv_kind=\"server\",srv_name=\"testsrv\",srv_port=\"1000\"}");
 }
 
 fn client_id() -> tls::ClientId {
