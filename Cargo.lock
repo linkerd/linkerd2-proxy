@@ -1782,14 +1782,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "linkerd-http-body-compat"
-version = "0.1.0"
-dependencies = [
- "http",
- "http-body",
-]
-
-[[package]]
 name = "linkerd-http-box"
 version = "0.1.0"
 dependencies = [
