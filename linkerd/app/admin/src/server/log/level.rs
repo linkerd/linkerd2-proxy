@@ -22,6 +22,7 @@ where
         }
 
         http::Method::PUT => {
+            use http_body_util::BodyExt;
             let body = req
                 .into_body()
                 .collect()
@@ -29,7 +30,7 @@ where
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?
                 .aggregate();
             match level.set_from(body.chunk()) {
-                Ok(_) => mk_rsp(StatusCode::NO_CONTENT, hyper::Body::empty()),
+                Ok(_) => mk_rsp(StatusCode::NO_CONTENT, BoxBody::empty()),
                 Err(error) => {
                     tracing::warn!(%error, "Setting log level failed");
                     mk_rsp(StatusCode::BAD_REQUEST, error)
@@ -41,7 +42,7 @@ where
             .status(StatusCode::METHOD_NOT_ALLOWED)
             .header(header::ALLOW, "GET")
             .header(header::ALLOW, "PUT")
-            .body(BoxBody::new(hyper::Body::empty()))
+            .body(BoxBody::empty())
             .expect("builder with known status code must not fail"),
     })
 }

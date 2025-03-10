@@ -1,4 +1,5 @@
 use super::*;
+use http_body_util::BodyExt;
 use linkerd_app_core::{
     errors,
     proxy::http::{self, StatusCode},
@@ -352,7 +353,6 @@ async fn grpc_internal() {
     .await
     .expect("response")
     .expect("response ok")
-    .map(linkerd_http_body_compat::ForwardCompatibleBody::new)
     .into_parts();
     assert_eq!(parts.status, StatusCode::OK);
     let trailers = loop {
@@ -427,7 +427,6 @@ async fn grpc_timeout() {
     .await
     .expect("response")
     .expect("response ok")
-    .map(linkerd_http_body_compat::ForwardCompatibleBody::new)
     .into_parts();
     assert_eq!(parts.status, StatusCode::OK);
     let trailers = loop {

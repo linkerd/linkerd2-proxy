@@ -343,7 +343,7 @@ pub(crate) async fn run<T, B>(
     delay: Option<Pin<Box<dyn Future<Output = ()> + Send>>>,
 ) -> Listening
 where
-    T: tower::Service<http::Request<hyper::body::Body>, Response = http::Response<B>>,
+    T: tower::Service<http::Request<hyper::body::Incoming>, Response = http::Response<B>>,
     T: Clone + Send + 'static,
     T::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
     T::Future: Send,
@@ -372,11 +372,16 @@ where
                 let _ = listening_tx.send(());
             }
 
-            let http = hyper::server::conn::http2::Builder::new(TracingExecutor);
+            let mut http = hyper::server::conn::http2::Builder::new(TracingExecutor);
             loop {
                 let (sock, addr) = listener.accept().await?;
                 let span = tracing::debug_span!("conn", %addr).or_current();
-                let serve = http.serve_connection(sock, svc.clone());
+                let serve = http
+                    .timer(hyper_util::rt::TokioTimer::new())
+                    .serve_connection(
+                        hyper_util::rt::TokioIo::new(sock),
+                        hyper_util::service::TowerToHyperService::new(svc.clone()),
+                    );
                 let f = async move {
                     serve.await.map_err(|error| {
                         tracing::error!(

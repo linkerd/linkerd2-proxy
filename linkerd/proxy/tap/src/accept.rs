@@ -43,10 +43,12 @@ impl AcceptPermittedClients {
         T: Tap + Send + 'static,
         T::ObserveStream: Send + 'static,
     {
+        use hyper_util::{rt::TokioIo, service::TowerToHyperService};
         let svc = TapServer::new(tap);
         Box::pin(async move {
             hyper::server::conn::http2::Builder::new(TracingExecutor)
-                .serve_connection(io, svc)
+                .timer(hyper_util::rt::TokioTimer::new())
+                .serve_connection(TokioIo::new(io), TowerToHyperService::new(svc))
                 .await
                 .map_err(Into::into)
         })

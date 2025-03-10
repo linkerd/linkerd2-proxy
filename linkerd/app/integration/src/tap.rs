@@ -2,6 +2,7 @@ use super::*;
 use futures::stream;
 use http_body::Body;
 use linkerd2_proxy_api::tap as pb;
+use linkerd_app_core::svc::http::BoxBody;
 
 pub fn client(addr: SocketAddr) -> Client {
     let api = pb::tap_client::TapClient::new(SyncSvc(client::http2(addr, "localhost")));
@@ -177,14 +178,14 @@ impl TapEventExt for pb::TapEvent {
 struct SyncSvc(client::Client);
 
 type ResponseFuture =
-    Pin<Box<dyn Future<Output = Result<http::Response<hyper::Body>, String>> + Send>>;
+    Pin<Box<dyn Future<Output = Result<http::Response<hyper::body::Incoming>, String>> + Send>>;
 
 impl<B> tower::Service<http::Request<B>> for SyncSvc
 where
     B: Body,
     B::Error: std::fmt::Debug,
 {
-    type Response = http::Response<hyper::Body>;
+    type Response = http::Response<hyper::body::Incoming>;
     type Error = String;
     type Future = ResponseFuture;
 
@@ -193,8 +194,9 @@ where
     }
 
     fn call(&mut self, req: http::Request<B>) -> Self::Future {
+        use http_body_util::Full;
         let Self(client) = self;
-        let req = req.map(Self::collect_body).map(Into::into);
+        let req = req.map(Self::collect_body).map(Full::new).map(BoxBody::new);
         let fut = client.send_req(req).map_err(|err| err.to_string());
         Box::pin(fut)
     }
@@ -212,6 +214,7 @@ impl SyncSvc {
         B::Error: std::fmt::Debug,
     {
         futures::executor::block_on(async move {
+            use http_body_util::BodyExt;
             body.collect()
                 .await
                 .expect("body should not fail")

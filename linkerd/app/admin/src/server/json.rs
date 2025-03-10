@@ -57,7 +57,7 @@ fn mk_rsp(status: StatusCode, val: &impl serde::Serialize) -> http::Response<Box
     // Serialize the value into JSON, and then place the bytes in a boxed response body.
     let json = serde_json::to_vec(val)
         .map(Bytes::from)
-        .map(http_body::Full::new)
+        .map(http_body_util::Full::new)
         .map(BoxBody::new);
 
     match json {

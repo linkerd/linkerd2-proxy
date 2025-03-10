@@ -47,8 +47,10 @@ where
 
 #[tokio::test(flavor = "current_thread")]
 async fn unmeshed_http1_hello_world() {
-    let server = hyper::server::conn::http1::Builder::new();
+    let mut server = hyper::server::conn::http1::Builder::new();
+    server.timer(hyper_util::rt::TokioTimer::new());
     let mut client = hyper::client::conn::http1::Builder::new();
+
     let _trace = trace_init();
 
     // Build a mock "connector" that returns the upstream "server" IO.
@@ -68,7 +70,7 @@ async fn unmeshed_http1_hello_world() {
     let req = Request::builder()
         .method(http::Method::GET)
         .uri("http://foo.svc.cluster.local:5550")
-        .body(hyper::Body::default())
+        .body(BoxBody::default())
         .unwrap();
     let rsp = client
         .send_request(req)
@@ -91,8 +93,10 @@ async fn unmeshed_http1_hello_world() {
 #[tokio::test(flavor = "current_thread")]
 async fn downgrade_origin_form() {
     // Reproduces https://github.com/linkerd/linkerd2/issues/5298
-    let server = hyper::server::conn::http1::Builder::new();
-    let client = hyper::client::conn::http2::Builder::new(TracingExecutor);
+    let mut server = hyper::server::conn::http1::Builder::new();
+    server.timer(hyper_util::rt::TokioTimer::new());
+    let mut client = hyper::client::conn::http2::Builder::new(TracingExecutor);
+    client.timer(hyper_util::rt::TokioTimer::new());
     let _trace = trace_init();
 
     // Build a mock "connector" that returns the upstream "server" IO.
@@ -112,7 +116,7 @@ async fn downgrade_origin_form() {
         let (client_io, server_io) = io::duplex(4096);
 
         let (client, conn) = client
-            .handshake(client_io)
+            .handshake(hyper_util::rt::TokioIo::new(client_io))
             .await
             .expect("Client must connect");
 
@@ -142,7 +146,7 @@ async fn downgrade_origin_form() {
         .uri("/")
         .header(http::header::HOST, "foo.svc.cluster.local")
         .header("l5d-orig-proto", "HTTP/1.1")
-        .body(hyper::Body::default())
+        .body(BoxBody::empty())
         .unwrap();
     let rsp = client
         .send_request(req)
@@ -164,8 +168,10 @@ async fn downgrade_origin_form() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn downgrade_absolute_form() {
-    let client = hyper::client::conn::http2::Builder::new(TracingExecutor);
-    let server = hyper::server::conn::http1::Builder::new();
+    let mut client = hyper::client::conn::http2::Builder::new(TracingExecutor);
+    client.timer(hyper_util::rt::TokioTimer::new());
+    let mut server = hyper::server::conn::http1::Builder::new();
+    server.timer(hyper_util::rt::TokioTimer::new());
     let _trace = trace_init();
 
     // Build a mock "connector" that returns the upstream "server" IO.
@@ -186,7 +192,7 @@ async fn downgrade_absolute_form() {
         let (client_io, server_io) = io::duplex(4096);
 
         let (client, conn) = client
-            .handshake(client_io)
+            .handshake(hyper_util::rt::TokioIo::new(client_io))
             .await
             .expect("Client must connect");
 
@@ -216,7 +222,7 @@ async fn downgrade_absolute_form() {
         .uri("http://foo.svc.cluster.local:5550/")
         .header(http::header::HOST, "foo.svc.cluster.local")
         .header("l5d-orig-proto", "HTTP/1.1; absolute-form")
-        .body(hyper::Body::default())
+        .body(BoxBody::empty())
         .unwrap();
     let rsp = client
         .send_request(req)
@@ -260,7 +266,7 @@ async fn http1_bad_gateway_meshed_response_error_header() {
     let req = Request::builder()
         .method(http::Method::GET)
         .uri("http://foo.svc.cluster.local:5550")
-        .body(hyper::Body::default())
+        .body(BoxBody::default())
         .unwrap();
     let rsp = client
         .send_request(req)
@@ -272,7 +278,7 @@ async fn http1_bad_gateway_meshed_response_error_header() {
     // because we don't build a real HTTP endpoint stack, which adds error
     // context to this error, and the client rescue layer is below where the
     // logical error context is added.
-    check_error_header(rsp.headers(), "server is not listening");
+    check_error_header(rsp.headers(), "client error (Connect)");
 
     // Wait for all of the background tasks to complete, panicking if any returned an error.
     drop(client);
@@ -307,7 +313,7 @@ async fn http1_bad_gateway_unmeshed_response() {
     let req = Request::builder()
         .method(http::Method::GET)
         .uri("http://foo.svc.cluster.local:5550")
-        .body(hyper::Body::default())
+        .body(BoxBody::default())
         .unwrap();
     let rsp = client
         .send_request(req)
@@ -355,7 +361,7 @@ async fn http1_connect_timeout_meshed_response_error_header() {
     let req = Request::builder()
         .method(http::Method::GET)
         .uri("http://foo.svc.cluster.local:5550")
-        .body(hyper::Body::default())
+        .body(BoxBody::default())
         .unwrap();
     let rsp = client
         .send_request(req)
@@ -368,7 +374,7 @@ async fn http1_connect_timeout_meshed_response_error_header() {
     // because we don't build a real HTTP endpoint stack, which adds error
     // context to this error, and the client rescue layer is below where the
     // logical error context is added.
-    check_error_header(rsp.headers(), "connect timed out after 1s");
+    check_error_header(rsp.headers(), "client error (Connect)");
 
     // Wait for all of the background tasks to complete, panicking if any returned an error.
     drop(client);
@@ -405,7 +411,7 @@ async fn http1_connect_timeout_unmeshed_response_error_header() {
     let req = Request::builder()
         .method(http::Method::GET)
         .uri("http://foo.svc.cluster.local:5550")
-        .body(hyper::Body::default())
+        .body(BoxBody::empty())
         .unwrap();
     let rsp = client
         .send_request(req)
@@ -436,6 +442,7 @@ async fn h2_response_meshed_error_header() {
 
     // Build a client using the connect that always errors.
     let mut client = hyper::client::conn::http2::Builder::new(TracingExecutor);
+    client.timer(hyper_util::rt::TokioTimer::new());
     let profiles = profile::resolver();
     let profile_tx =
         profiles.profile_tx(NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap());
@@ -450,7 +457,7 @@ async fn h2_response_meshed_error_header() {
     let req = Request::builder()
         .method(http::Method::GET)
         .uri("http://foo.svc.cluster.local:5550")
-        .body(hyper::Body::default())
+        .body(BoxBody::empty())
         .unwrap();
     let rsp = client
         .send_request(req)
@@ -476,6 +483,7 @@ async fn h2_response_unmeshed_error_header() {
 
     // Build a client using the connect that always errors.
     let mut client = hyper::client::conn::http2::Builder::new(TracingExecutor);
+    client.timer(hyper_util::rt::TokioTimer::new());
     let profiles = profile::resolver();
     let profile_tx =
         profiles.profile_tx(NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap());
@@ -490,7 +498,7 @@ async fn h2_response_unmeshed_error_header() {
     let req = Request::builder()
         .method(http::Method::GET)
         .uri("http://foo.svc.cluster.local:5550")
-        .body(hyper::Body::default())
+        .body(BoxBody::default())
         .unwrap();
     let rsp = client
         .send_request(req)
@@ -518,6 +526,7 @@ async fn grpc_meshed_response_error_header() {
 
     // Build a client using the connect that always errors.
     let mut client = hyper::client::conn::http2::Builder::new(TracingExecutor);
+    client.timer(hyper_util::rt::TokioTimer::new());
     let profiles = profile::resolver();
     let profile_tx =
         profiles.profile_tx(NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap());
@@ -533,7 +542,7 @@ async fn grpc_meshed_response_error_header() {
         .method(http::Method::GET)
         .uri("http://foo.svc.cluster.local:5550")
         .header(http::header::CONTENT_TYPE, "application/grpc")
-        .body(hyper::Body::default())
+        .body(BoxBody::default())
         .unwrap();
     let rsp = client
         .send_request(req)
@@ -559,6 +568,7 @@ async fn grpc_unmeshed_response_error_header() {
 
     // Build a client using the connect that always errors.
     let mut client = hyper::client::conn::http2::Builder::new(TracingExecutor);
+    client.timer(hyper_util::rt::TokioTimer::new());
     let profiles = profile::resolver();
     let profile_tx =
         profiles.profile_tx(NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap());
@@ -574,7 +584,7 @@ async fn grpc_unmeshed_response_error_header() {
         .method(http::Method::GET)
         .uri("http://foo.svc.cluster.local:5550")
         .header(http::header::CONTENT_TYPE, "application/grpc")
-        .body(hyper::Body::default())
+        .body(BoxBody::default())
         .unwrap();
     let rsp = client
         .send_request(req)
@@ -599,7 +609,8 @@ async fn grpc_response_class() {
 
     // Build a mock connector serves a gRPC server that returns errors.
     let connect = {
-        let server = hyper::server::conn::http2::Builder::new(TracingExecutor);
+        let mut server = hyper::server::conn::http2::Builder::new(TracingExecutor);
+        server.timer(hyper_util::rt::TokioTimer::new());
         support::connect().endpoint_fn_boxed(
             Target::addr(),
             grpc_status_server(server, tonic::Code::Unknown),
@@ -608,6 +619,7 @@ async fn grpc_response_class() {
 
     // Build a client using the connect that always errors.
     let mut client = hyper::client::conn::http2::Builder::new(TracingExecutor);
+    client.timer(hyper_util::rt::TokioTimer::new());
     let profiles = profile::resolver();
     let profile_tx =
         profiles.profile_tx(NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap());
@@ -628,7 +640,7 @@ async fn grpc_response_class() {
         .method(http::Method::POST)
         .uri("http://foo.svc.cluster.local:5550")
         .header(http::header::CONTENT_TYPE, "application/grpc")
-        .body(hyper::Body::default())
+        .body(BoxBody::default())
         .unwrap();
 
     let rsp = client
@@ -638,7 +650,8 @@ async fn grpc_response_class() {
     tracing::info!(?rsp);
     assert_eq!(rsp.status(), http::StatusCode::OK);
 
-    let mut body = linkerd_http_body_compat::ForwardCompatibleBody::new(rsp.into_body());
+    use http_body_util::BodyExt;
+    let mut body = rsp.into_body();
     let trls = body
         .frame()
         .await
@@ -690,13 +703,14 @@ fn hello_server(
         let _e = span.enter();
         tracing::info!("mock connecting");
         let (client_io, server_io) = support::io::duplex(4096);
-        let hello_svc = hyper::service::service_fn(|request: Request<hyper::Body>| async move {
-            tracing::info!(?request);
-            Ok::<_, io::Error>(Response::new(BoxBody::from_static("Hello world!")))
-        });
+        let hello_svc =
+            hyper::service::service_fn(|request: Request<hyper::body::Incoming>| async move {
+                tracing::info!(?request);
+                Ok::<_, io::Error>(Response::new(BoxBody::from_static("Hello world!")))
+            });
         tokio::spawn(
             server
-                .serve_connection(server_io, hello_svc)
+                .serve_connection(hyper_util::rt::TokioIo::new(server_io), hello_svc)
                 .in_current_span(),
         );
         Ok(io::BoxedIo::new(client_io))
@@ -716,26 +730,29 @@ fn grpc_status_server(
         tokio::spawn(
             server
                 .serve_connection(
-                    server_io,
-                    hyper::service::service_fn(move |request: Request<hyper::Body>| async move {
-                        tracing::info!(?request);
-                        let (mut tx, rx) = hyper::Body::channel();
-                        tokio::spawn(async move {
-                            let mut trls = ::http::HeaderMap::new();
-                            trls.insert(
-                                "grpc-status",
-                                (status as u32).to_string().parse().unwrap(),
-                            );
-                            tx.send_trailers(trls).await
-                        });
-                        Ok::<_, io::Error>(
-                            http::Response::builder()
-                                .version(::http::Version::HTTP_2)
-                                .header("content-type", "application/grpc")
-                                .body(rx)
-                                .unwrap(),
-                        )
-                    }),
+                    hyper_util::rt::TokioIo::new(server_io),
+                    hyper::service::service_fn(
+                        move |request: Request<hyper::body::Incoming>| async move {
+                            tracing::info!(?request);
+                            let (mut tx, rx) =
+                                http_body_util::channel::Channel::<bytes::Bytes, Error>::new(1024);
+                            tokio::spawn(async move {
+                                let mut trls = ::http::HeaderMap::new();
+                                trls.insert(
+                                    "grpc-status",
+                                    (status as u32).to_string().parse().unwrap(),
+                                );
+                                tx.send_trailers(trls).await
+                            });
+                            Ok::<_, io::Error>(
+                                http::Response::builder()
+                                    .version(::http::Version::HTTP_2)
+                                    .header("content-type", "application/grpc")
+                                    .body(rx)
+                                    .unwrap(),
+                            )
+                        },
+                    ),
                 )
                 .in_current_span(),
         );

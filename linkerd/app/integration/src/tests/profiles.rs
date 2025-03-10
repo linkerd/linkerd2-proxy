@@ -1,3 +1,5 @@
+use linkerd_app_core::svc::http::BoxBody;
+
 use crate::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -71,7 +73,10 @@ impl TestBuilder {
             // This route is just called by the test setup, to trigger the proxy
             // to start fetching the ServiceProfile.
             .route_fn("/load-profile", |_| {
-                Response::builder().status(201).body("".into()).unwrap()
+                Response::builder()
+                    .status(201)
+                    .body(BoxBody::empty())
+                    .unwrap()
             });
 
         if self.default_routes {
@@ -121,7 +126,7 @@ impl TestBuilder {
             ::std::thread::sleep(Duration::from_secs(1));
             Response::builder()
                 .status(200)
-                .body("slept".into())
+                .body(BoxBody::from_static("slept"))
                 .unwrap()
         })
         .route_async("/0.5", move |req| {
@@ -129,17 +134,20 @@ impl TestBuilder {
             async move {
                 // Read the entire body before responding, so that the
                 // client doesn't fail when writing it out.
-                let body = http_body::Body::collect(req.into_body())
+                let body = http_body_util::BodyExt::collect(req.into_body())
                     .await
-                    .map(http_body::Collected::to_bytes);
+                    .map(http_body_util::Collected::to_bytes);
                 let bytes = body.as_ref().map(Bytes::len);
                 tracing::debug!(?bytes, "recieved body");
                 Ok::<_, Error>(if fail {
-                    Response::builder().status(533).body("nope".into()).unwrap()
+                    Response::builder()
+                        .status(533)
+                        .body(BoxBody::from_static("nope"))
+                        .unwrap()
                 } else {
                     Response::builder()
                         .status(200)
-                        .body("retried".into())
+                        .body(BoxBody::from_static("retried"))
                         .unwrap()
                 })
             }
@@ -147,11 +155,14 @@ impl TestBuilder {
         .route_fn("/0.5/sleep", move |_req| {
             ::std::thread::sleep(Duration::from_secs(1));
             if counter2.fetch_add(1, Ordering::Relaxed) % 2 == 0 {
-                Response::builder().status(533).body("nope".into()).unwrap()
+                Response::builder()
+                    .status(533)
+                    .body(BoxBody::from_static("nope"))
+                    .unwrap()
             } else {
                 Response::builder()
                     .status(200)
-                    .body("retried".into())
+                    .body(BoxBody::from_static("retried"))
                     .unwrap()
             }
         })
@@ -159,12 +170,15 @@ impl TestBuilder {
             if counter3.fetch_add(1, Ordering::Relaxed) % 2 == 0 {
                 Response::builder()
                     .status(533)
-                    .body(vec![b'x'; 1024 * 100].into())
+                    .body(BoxBody::new(http_body_util::Full::new(Bytes::from(vec![
+                            b'x';
+                            1024 * 100
+                        ]))))
                     .unwrap()
             } else {
                 Response::builder()
                     .status(200)
-                    .body("retried".into())
+                    .body(BoxBody::from_static("retried"))
                     .unwrap()
             }
         })
@@ -185,6 +199,8 @@ impl TestBuilder {
 }
 
 mod cross_version {
+    use std::convert::Infallible;
+
     use super::*;
 
     pub(super) async fn retry_if_profile_allows(version: server::Server) {
@@ -248,7 +264,7 @@ mod cross_version {
         let req = client
             .request_builder("/0.5")
             .method(http::Method::POST)
-            .body("req has a body".into())
+            .body(BoxBody::from_static("req has a body"))
             .unwrap();
         let res = client.request_body(req).await;
         assert_eq!(res.status(), 200);
@@ -269,7 +285,7 @@ mod cross_version {
         let req = client
             .request_builder("/0.5")
             .method(http::Method::PUT)
-            .body("req has a body".into())
+            .body(BoxBody::from_static("req has a body"))
             .unwrap();
         let res = client.request_body(req).await;
         assert_eq!(res.status(), 200);
@@ -287,7 +303,7 @@ mod cross_version {
             .await;
 
         let client = test.client;
-        let (mut tx, body) = hyper::body::Body::channel();
+        let (mut tx, body) = http_body_util::channel::Channel::<Bytes, Infallible>::new(1024);
         let req = client
             .request_builder("/0.5")
             .method("POST")
@@ -365,7 +381,9 @@ mod cross_version {
         let req = client
             .request_builder("/0.5")
             .method("POST")
-            .body(hyper::Body::from(&[1u8; 64 * 1024 + 1][..]))
+            .body(BoxBody::new(http_body_util::Full::new(Bytes::from(
+                &[1u8; 64 * 1024 + 1][..],
+            ))))
             .unwrap();
         let res = client.request_body(req).await;
         assert_eq!(res.status(), 533);
@@ -387,7 +405,7 @@ mod cross_version {
             .await;
 
         let client = test.client;
-        let (mut tx, body) = hyper::body::Body::channel();
+        let (mut tx, body) = http_body_util::channel::Channel::<Bytes, Infallible>::new(1024);
         let req = client
             .request_builder("/0.5")
             .method("POST")
@@ -592,6 +610,8 @@ mod http2 {
 }
 
 mod grpc_retry {
+    use std::convert::Infallible;
+
     use super::*;
     use http::header::{HeaderName, HeaderValue};
     static GRPC_STATUS: HeaderName = HeaderName::from_static("grpc-status");
@@ -615,7 +635,7 @@ mod grpc_retry {
                 let rsp = Response::builder()
                     .header(GRPC_STATUS.clone(), header)
                     .status(200)
-                    .body(hyper::Body::empty())
+                    .body(BoxBody::empty())
                     .unwrap();
                 tracing::debug!(headers = ?rsp.headers());
                 rsp
@@ -663,9 +683,16 @@ mod grpc_retry {
                     let mut trailers = HeaderMap::with_capacity(1);
                     trailers.insert(GRPC_STATUS.clone(), status);
                     tracing::debug!(?trailers);
-                    let (mut tx, body) = hyper::body::Body::channel();
+                    let (mut tx, body) =
+                        http_body_util::channel::Channel::<Bytes, Error>::new(1024);
                     tx.send_trailers(trailers).await.unwrap();
-                    Ok::<_, Error>(Response::builder().status(200).body(body).unwrap())
+                    Ok::<_, Error>(
+                        Response::builder()
+                            .status(200)
+                            .body(body)
+                            .unwrap()
+                            .map(BoxBody::new),
+                    )
                 }
             }
         });
@@ -684,9 +711,7 @@ mod grpc_retry {
         assert_eq!(res.status(), 200);
         assert_eq!(res.headers().get(&GRPC_STATUS), None);
 
-        let mut body = res
-            .map(linkerd_http_body_compat::ForwardCompatibleBody::new)
-            .into_body();
+        let mut body = res.into_body();
         let trailers = trailers(&mut body).await;
         assert_eq!(trailers.get(&GRPC_STATUS), Some(&GRPC_STATUS_OK));
         assert_eq!(retries.load(Ordering::Relaxed), 2);
@@ -708,10 +733,17 @@ mod grpc_retry {
                     let mut trailers = HeaderMap::with_capacity(1);
                     trailers.insert(GRPC_STATUS.clone(), GRPC_STATUS_OK.clone());
                     tracing::debug!(?trailers);
-                    let (mut tx, body) = hyper::body::Body::channel();
+                    let (mut tx, body) =
+                        http_body_util::channel::Channel::<Bytes, Error>::new(1024);
                     tx.send_data("hello world".into()).await.unwrap();
                     tx.send_trailers(trailers).await.unwrap();
-                    Ok::<_, Error>(Response::builder().status(200).body(body).unwrap())
+                    Ok::<_, Error>(
+                        Response::builder()
+                            .status(200)
+                            .body(body)
+                            .unwrap()
+                            .map(BoxBody::new),
+                    )
                 }
             }
         });
@@ -730,9 +762,7 @@ mod grpc_retry {
         assert_eq!(res.status(), 200);
         assert_eq!(res.headers().get(&GRPC_STATUS), None);
 
-        let mut body = res
-            .map(linkerd_http_body_compat::ForwardCompatibleBody::new)
-            .into_body();
+        let mut body = res.into_body();
 
         let data = data(&mut body).await;
         assert_eq!(data, Bytes::from("hello world"));
@@ -758,13 +788,20 @@ mod grpc_retry {
                     let mut trailers = HeaderMap::with_capacity(1);
                     trailers.insert(GRPC_STATUS.clone(), GRPC_STATUS_OK.clone());
                     tracing::debug!(?trailers);
-                    let (mut tx, body) = hyper::body::Body::channel();
+                    let (mut tx, body) =
+                        http_body_util::channel::Channel::<Bytes, Infallible>::new(1024);
                     tokio::spawn(async move {
                         tx.send_data("hello".into()).await.unwrap();
                         tx.send_data("world".into()).await.unwrap();
                         tx.send_trailers(trailers).await.unwrap();
                     });
-                    Ok::<_, Error>(Response::builder().status(200).body(body).unwrap())
+                    Ok::<_, Error>(
+                        Response::builder()
+                            .status(200)
+                            .body(body)
+                            .unwrap()
+                            .map(BoxBody::new),
+                    )
                 }
             }
         });
@@ -783,9 +820,7 @@ mod grpc_retry {
         assert_eq!(res.status(), 200);
         assert_eq!(res.headers().get(&GRPC_STATUS), None);
 
-        let mut body = res
-            .map(linkerd_http_body_compat::ForwardCompatibleBody::new)
-            .into_body();
+        let mut body = res.into_body();
 
         let frame1 = data(&mut body).await;
         assert_eq!(frame1, Bytes::from("hello"));
@@ -798,12 +833,13 @@ mod grpc_retry {
         assert_eq!(retries.load(Ordering::Relaxed), 1);
     }
 
-    async fn data<B>(body: &mut linkerd_http_body_compat::ForwardCompatibleBody<B>) -> B::Data
+    async fn data<B>(body: &mut B) -> B::Data
     where
         B: http_body::Body + Unpin,
         B::Data: std::fmt::Debug,
         B::Error: std::fmt::Debug,
     {
+        use http_body_util::BodyExt;
         let data = body
             .frame()
             .await
@@ -815,13 +851,12 @@ mod grpc_retry {
         data
     }
 
-    async fn trailers<B>(
-        body: &mut linkerd_http_body_compat::ForwardCompatibleBody<B>,
-    ) -> http::HeaderMap
+    async fn trailers<B>(body: &mut B) -> http::HeaderMap
     where
         B: http_body::Body + Unpin,
         B::Error: std::fmt::Debug,
     {
+        use http_body_util::BodyExt;
         let trailers = body
             .frame()
             .await
