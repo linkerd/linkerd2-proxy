@@ -1386,7 +1386,6 @@ dependencies = [
  "linkerd-stack",
  "linkerd-stack-metrics",
  "linkerd-stack-tracing",
- "linkerd-system",
  "linkerd-tls",
  "linkerd-trace-context",
  "linkerd-tracing",
