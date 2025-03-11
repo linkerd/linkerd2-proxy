@@ -8,14 +8,14 @@ mod fmt;
 mod gauge;
 mod histogram;
 pub mod latency;
-#[cfg(feature = "linkerd-stack")]
+#[cfg(feature = "stack")]
 mod new_metrics;
 #[cfg(feature = "process")]
 pub mod process;
 mod serve;
 mod store;
 
-#[cfg(feature = "linkerd-stack")]
+#[cfg(feature = "stack")]
 pub use self::new_metrics::NewMetrics;
 pub use self::{
     counter::Counter,

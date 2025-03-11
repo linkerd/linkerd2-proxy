@@ -8,8 +8,8 @@ publish = false
 
 [features]
 default = []
-process = ["linkerd-system"]
-stack = ["linkerd-stack"]
+process = ["dep:linkerd-system"]
+stack = ["dep:linkerd-stack"]
 test_util = []
 
 [dependencies]
@@ -17,13 +17,14 @@ deflate = { version = "1", features = ["gzip"] }
 http = { workspace = true }
 http-body = { workspace = true }
 hyper = { workspace = true, features = ["deprecated", "http1", "http2"] }
-linkerd-http-box = { path = "../http/box" }
-linkerd-stack = { path = "../stack", optional = true }
-linkerd-system = { path = "../system", optional = true }
 parking_lot = "0.12"
 prometheus-client = "0.22"
 tokio = { version = "1", features = ["time"] }
 tracing = "0.1"
+
+linkerd-http-box = { path = "../http/box" }
+linkerd-stack = { path = "../stack", optional = true }
+linkerd-system = { path = "../system", optional = true }
 
 [dev-dependencies]
 quickcheck = { version = "1", default-features = false }
