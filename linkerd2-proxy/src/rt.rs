@@ -48,7 +48,7 @@ pub(crate) fn build() -> Runtime {
         .and_then(|v| {
             let opt = v.parse::<f64>().ok().filter(|n| *n > 0.0 && *n <= 1.0);
             if opt.is_none() {
-                warn!(LINKERD2_PROXY_CORES = %v, "Ignoring invalid configuration");
+                warn!(LINKERD2_PROXY_CORES_MAX_RATIO = %v, "Ignoring invalid configuration");
             }
             opt
         });
