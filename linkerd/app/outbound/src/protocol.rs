@@ -2,6 +2,12 @@ use crate::{http, Outbound, ParentRef};
 use linkerd_app_core::{io, svc, Error, Infallible};
 use std::{fmt::Debug, hash::Hash};
 
+mod metrics;
+#[cfg(test)]
+mod tests;
+
+pub use self::metrics::MetricsFamilies;
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Http<T> {
     version: http::Variant,
@@ -9,7 +15,7 @@ pub struct Http<T> {
 }
 
 /// Parameter type indicating how the proxy should handle a connection.
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Protocol {
     Http1,
     Http2,
@@ -97,7 +103,7 @@ impl<N> Outbound<N> {
             .arc_new_tcp()
         });
 
-        http.map_stack(|_, _, http| {
+        http.map_stack(|_, rt, http| {
             // First separate traffic that needs protocol detection. Then switch
             // between traffic that is known to be HTTP or opaque.
             let known = http.push_switch(
@@ -131,6 +137,7 @@ impl<N> Outbound<N> {
                     },
                     detect.into_inner(),
                 )
+                .push(metrics::NewRecord::layer(rt.metrics.prom.protocol.clone()))
                 .arc_new_tcp()
         })
     }
