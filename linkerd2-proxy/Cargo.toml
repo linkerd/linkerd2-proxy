@@ -18,7 +18,7 @@ pprof = ["linkerd-app/pprof"]
 
 [dependencies]
 futures = { version = "0.3", default-features = false }
-kubert-prometheus-tokio = { version = "0.2.0-alpha1", features = ["rt"] }
+kubert-prometheus-tokio = { version = "0.2.0", features = ["rt"] }
 linkerd-app = { path = "../linkerd/app" }
 linkerd-metrics = { path = "../linkerd/metrics" }
 # We don't actually use code from this crate in `main`; it's here only so we can
