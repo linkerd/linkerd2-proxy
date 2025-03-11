@@ -87,6 +87,7 @@ members = [
     "linkerd/tracing",
     "linkerd/transport-header",
     "linkerd/transport-metrics",
+    "linkerd/workers",
     "linkerd2-proxy",
     "opencensus-proto",
     "opentelemetry-proto",

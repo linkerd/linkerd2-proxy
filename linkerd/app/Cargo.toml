@@ -27,6 +27,7 @@ linkerd-error = { path = "../error" }
 linkerd-opencensus = { path = "../opencensus" }
 linkerd-opentelemetry = { path = "../opentelemetry" }
 linkerd-tonic-stream = { path = "../tonic-stream" }
+linkerd-workers = { path = "../workers" }
 rangemap = "1"
 regex = "1"
 thiserror = "2"

@@ -1305,6 +1305,7 @@ dependencies = [
  "linkerd-opencensus",
  "linkerd-opentelemetry",
  "linkerd-tonic-stream",
+ "linkerd-workers",
  "rangemap",
  "regex",
  "thiserror 2.0.12",
@@ -2692,6 +2693,10 @@ dependencies = [
  "tokio",
  "tracing",
 ]
+
+[[package]]
+name = "linkerd-workers"
+version = "0.1.0"
 
 [[package]]
 name = "linkerd2-proxy"
