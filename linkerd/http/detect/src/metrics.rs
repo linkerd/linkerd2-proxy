@@ -190,6 +190,6 @@ where
 
 impl MetricConstructor<Histogram> for MkDurations {
     fn new_metric(&self) -> Histogram {
-        Histogram::new([0.001, 0.1].into_iter())
+        Histogram::new([0.001, 0.1])
     }
 }
