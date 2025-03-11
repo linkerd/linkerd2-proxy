@@ -1232,6 +1232,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "kubert-prometheus-process"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5b89e2a641a3f74c2e7366eb050282ac4a6194b63dae5294084215c457237e47"
+dependencies = [
+ "libc",
+ "procfs",
+ "prometheus-client",
+ "tracing",
+]
+
+[[package]]
 name = "kubert-prometheus-tokio"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1272,7 +1284,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc2f4eb4bc735547cfed7c0a4922cbd04a4655978c09b54f1f7b228750664c34"
 dependencies = [
  "cfg-if",
- "windows-targets 0.52.0",
+ "windows-targets 0.48.5",
 ]
 
 [[package]]
@@ -2029,9 +2041,9 @@ dependencies = [
  "http",
  "http-body",
  "hyper",
+ "kubert-prometheus-process",
  "linkerd-http-box",
  "linkerd-stack",
- "linkerd-system",
  "parking_lot",
  "prometheus-client",
  "quickcheck",
@@ -2546,15 +2558,6 @@ dependencies = [
  "linkerd-error",
  "linkerd-stack",
  "tower",
- "tracing",
-]
-
-[[package]]
-name = "linkerd-system"
-version = "0.1.0"
-dependencies = [
- "libc",
- "procfs",
  "tracing",
 ]
 

@@ -10,10 +10,11 @@ mod histogram;
 pub mod latency;
 #[cfg(feature = "stack")]
 mod new_metrics;
-#[cfg(feature = "process")]
-pub mod process;
 mod serve;
 mod store;
+
+#[cfg(feature = "process")]
+pub use kubert_prometheus_process as process;
 
 #[cfg(feature = "stack")]
 pub use self::new_metrics::NewMetrics;

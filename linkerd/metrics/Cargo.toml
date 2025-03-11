@@ -8,7 +8,7 @@ publish = false
 
 [features]
 default = []
-process = ["dep:linkerd-system"]
+process = ["dep:kubert-prometheus-process"]
 stack = ["dep:linkerd-stack"]
 test_util = []
 
@@ -17,6 +17,7 @@ deflate = { version = "1", features = ["gzip"] }
 http = { workspace = true }
 http-body = { workspace = true }
 hyper = { workspace = true, features = ["deprecated", "http1", "http2"] }
+kubert-prometheus-process = { version = "0.2", optional = true }
 parking_lot = "0.12"
 prometheus-client = "0.23"
 tokio = { version = "1", features = ["time"] }
@@ -24,7 +25,6 @@ tracing = "0.1"
 
 linkerd-http-box = { path = "../http/box" }
 linkerd-stack = { path = "../stack", optional = true }
-linkerd-system = { path = "../system", optional = true }
 
 [dev-dependencies]
 quickcheck = { version = "1", default-features = false }
