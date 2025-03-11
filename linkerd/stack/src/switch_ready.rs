@@ -1,4 +1,5 @@
 use super::NewService;
+use futures::future::Either;
 use linkerd_error::Error;
 use std::{
     future::Future,
@@ -6,7 +7,7 @@ use std::{
     task::{Context, Poll},
 };
 use tokio::time;
-use tower::{spawn_ready::SpawnReady, util::Either};
+use tower::spawn_ready::SpawnReady;
 use tracing::{debug, trace};
 
 /// A service which falls back to a secondary service if the primary service
@@ -100,12 +101,13 @@ where
     Req: 'static,
     A: tower::Service<Req> + Send + 'static,
     A::Error: Into<Error>,
-    B: tower::Service<Req, Response = A::Response>,
+    B: tower::Service<Req, Response = A::Response, Error = Error>,
     B::Error: Into<Error>,
 {
     type Response = A::Response;
     type Error = Error;
-    type Future = Either<<SpawnReady<A> as tower::Service<Req>>::Future, B::Future>;
+    type Future =
+        Either<<SpawnReady<A> as tower::Service<Req>>::Future, <B as tower::Service<Req>>::Future>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         loop {
@@ -165,8 +167,8 @@ where
     fn call(&mut self, req: Req) -> Self::Future {
         trace!(state = ?self.state, "SwitchReady::call");
         match self.state {
-            State::Primary => Either::A(self.primary.call(req)),
-            State::Secondary => Either::B(self.secondary.call(req)),
+            State::Primary => Either::Left(self.primary.call(req)),
+            State::Secondary => Either::Right(self.secondary.call(req)),
             State::Waiting => panic!("called before ready!"),
         }
     }
