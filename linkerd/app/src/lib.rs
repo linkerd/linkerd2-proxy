@@ -35,7 +35,7 @@ use tokio::{
     sync::mpsc,
     time::{self, Duration},
 };
-use tracing::{debug, info, info_span, Instrument};
+use tracing::{debug, error, info, info_span, Instrument};
 
 /// Spawns a sidecar proxy.
 ///
@@ -293,7 +293,10 @@ impl Config {
             })
         };
 
-        metrics::process::register(registry.sub_registry_with_prefix("process"));
+        if let Err(error) = metrics::process::register(registry.sub_registry_with_prefix("process"))
+        {
+            error!(%error, "Failed to register process metrics");
+        }
         registry.register("proxy_build_info", "Proxy build info", BUILD_INFO.metric());
 
         let admin = {
