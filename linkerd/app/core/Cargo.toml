@@ -77,9 +77,6 @@ workspace = true
 default-features = false
 features = ["make", "spawn-ready", "timeout", "util", "limit"]
 
-[target.'cfg(target_os = "linux")'.dependencies]
-linkerd-system = { path = "../../system" }
-
 [build-dependencies]
 semver = "1"
 
