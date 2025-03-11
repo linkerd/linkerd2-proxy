@@ -1,6 +1,12 @@
-use crate::{http, Outbound};
+use crate::{http, Outbound, ParentRef};
 use linkerd_app_core::{io, svc, Error, Infallible};
 use std::{fmt::Debug, hash::Hash};
+
+mod metrics;
+#[cfg(test)]
+mod tests;
+
+pub use self::metrics::MetricsFamilies;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Http<T> {
@@ -9,7 +15,7 @@ pub struct Http<T> {
 }
 
 /// Parameter type indicating how the proxy should handle a connection.
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Protocol {
     Http1,
     Http2,
@@ -35,6 +41,7 @@ impl<N> Outbound<N> {
     where
         // Target type indicating whether detection should be skipped.
         T: svc::Param<Protocol>,
+        T: svc::Param<ParentRef>,
         T: Eq + Hash + Clone + Debug + Send + Sync + 'static,
         // Server-side socket.
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
@@ -62,7 +69,10 @@ impl<N> Outbound<N> {
                 .arc_new_tcp()
         });
 
-        let detect = http.clone().map_stack(|config, _, http| {
+        let detect = http.clone().map_stack(|config, rt, http| {
+            let read_timeout = config.proxy.detect_protocol_timeout;
+            let metrics = rt.metrics.prom.http_detect.clone();
+
             http.push_switch(
                 |(detected, parent): (http::Detection, T)| -> Result<_, Infallible> {
                     match detected {
@@ -84,15 +94,16 @@ impl<N> Outbound<N> {
             .push_on_service(svc::LoadShed::layer())
             .push_on_service(svc::MapTargetLayer::new(io::EitherIo::Right))
             .lift_new_with_target::<(http::Detection, T)>()
-            .push(http::NewDetect::layer(svc::CloneParam::from(
+            .push(http::NewDetect::layer(move |parent: &T| {
                 http::DetectParams {
-                    read_timeout: config.proxy.detect_protocol_timeout,
-                },
-            )))
+                    read_timeout,
+                    metrics: metrics.metrics(parent.param()),
+                }
+            }))
             .arc_new_tcp()
         });
 
-        http.map_stack(|_, _, http| {
+        http.map_stack(|_, rt, http| {
             // First separate traffic that needs protocol detection. Then switch
             // between traffic that is known to be HTTP or opaque.
             let known = http.push_switch(
@@ -126,6 +137,7 @@ impl<N> Outbound<N> {
                     },
                     detect.into_inner(),
                 )
+                .push(metrics::NewRecord::layer(rt.metrics.prom.protocol.clone()))
                 .arc_new_tcp()
         })
     }

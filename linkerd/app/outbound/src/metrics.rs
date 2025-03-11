@@ -36,6 +36,8 @@ pub struct OutboundMetrics {
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct PromMetrics {
+    pub(crate) protocol: crate::protocol::MetricsFamilies,
+    pub(crate) http_detect: crate::http::DetectMetricsFamilies<ParentRef>,
     pub(crate) http: crate::http::HttpMetrics,
     pub(crate) opaq: crate::opaq::OpaqMetrics,
     pub(crate) tls: crate::tls::TlsMetrics,
@@ -88,6 +90,14 @@ where
 
 impl PromMetrics {
     pub fn register(registry: &mut prom::Registry) -> Self {
+        let protocol = crate::protocol::MetricsFamilies::register(
+            registry.sub_registry_with_prefix("tcp_protocol"),
+        );
+        let http_detect = crate::http::DetectMetricsFamilies::register(
+            // Scoped consistently with the inbound metrics.
+            registry.sub_registry_with_prefix("tcp_detect_http"),
+        );
+
         // NOTE: HTTP metrics are scoped internally, since this configures both
         // HTTP and gRPC scopes.
         let http = crate::http::HttpMetrics::register(registry);
@@ -97,6 +107,8 @@ impl PromMetrics {
         let tls = crate::tls::TlsMetrics::register(registry.sub_registry_with_prefix("tls"));
 
         Self {
+            protocol,
+            http_detect,
             http,
             opaq,
             tls,

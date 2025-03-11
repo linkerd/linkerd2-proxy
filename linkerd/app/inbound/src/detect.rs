@@ -4,7 +4,7 @@ use crate::{
 };
 use linkerd_app_core::{
     identity, io,
-    metrics::ServerLabel,
+    metrics::{prom, ServerLabel},
     proxy::http,
     svc, tls,
     transport::{
@@ -19,6 +19,10 @@ use tracing::info;
 
 #[cfg(test)]
 mod tests;
+
+#[derive(Clone, Debug)]
+pub struct MetricsFamilies(pub HttpDetectMetrics);
+pub type HttpDetectMetrics = http::DetectMetricsFamilies<ServerLabel>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Forward {
@@ -61,7 +65,11 @@ type TlsIo<I> = tls::server::Io<identity::ServerIo<tls::server::DetectIo<I>>, I>
 impl Inbound<svc::ArcNewTcp<Http, io::BoxedIo>> {
     /// Builds a stack that terminates mesh TLS and detects whether the traffic is HTTP (as hinted
     /// by policy).
-    pub(crate) fn push_detect<T, I, F, FSvc>(self, forward: F) -> Inbound<svc::ArcNewTcp<T, I>>
+    pub(crate) fn push_detect<T, I, F, FSvc>(
+        self,
+        MetricsFamilies(metrics): MetricsFamilies,
+        forward: F,
+    ) -> Inbound<svc::ArcNewTcp<T, I>>
     where
         T: svc::Param<OrigDstAddr> + svc::Param<Remote<ClientAddr>> + svc::Param<AllowPolicy>,
         T: Clone + Send + 'static,
@@ -72,14 +80,18 @@ impl Inbound<svc::ArcNewTcp<Http, io::BoxedIo>> {
         FSvc::Error: Into<Error>,
         FSvc::Future: Send,
     {
-        self.push_detect_http(forward.clone())
+        self.push_detect_http(metrics, forward.clone())
             .push_detect_tls(forward)
     }
 
     /// Builds a stack that handles HTTP detection once TLS detection has been performed. If the
     /// connection is determined to be HTTP, the inner stack is used; otherwise the connection is
     /// passed to the provided 'forward' stack.
-    fn push_detect_http<I, F, FSvc>(self, forward: F) -> Inbound<svc::ArcNewTcp<Tls, I>>
+    fn push_detect_http<I, F, FSvc>(
+        self,
+        metrics: HttpDetectMetrics,
+        forward: F,
+    ) -> Inbound<svc::ArcNewTcp<Tls, I>>
     where
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
         I: Debug + Send + Sync + Unpin + 'static,
@@ -153,11 +165,12 @@ impl Inbound<svc::ArcNewTcp<Http, io::BoxedIo>> {
                     forward.into_inner(),
                 )
                 .lift_new_with_target()
-                .push(http::NewDetect::layer(|Detect { timeout, .. }: &Detect| {
-                    http::DetectParams {
+                .push(http::NewDetect::layer(
+                    move |Detect { timeout, tls }: &Detect| http::DetectParams {
                         read_timeout: *timeout,
-                    }
-                }))
+                        metrics: metrics.metrics(tls.policy.server_label()),
+                    },
+                ))
                 .arc_new_tcp();
 
             http.push_on_service(svc::MapTargetLayer::new(io::BoxedIo::new))
@@ -443,5 +456,15 @@ impl<T> svc::InsertParam<tls::ConditionalServerTls, T> for TlsParams {
     #[inline]
     fn insert_param(&self, tls: tls::ConditionalServerTls, target: T) -> Self::Target {
         (tls, target)
+    }
+}
+
+// === impl MetricsFamilies ===
+
+impl MetricsFamilies {
+    pub fn register(reg: &mut prom::Registry) -> Self {
+        Self(http::DetectMetricsFamilies::register(
+            reg.sub_registry_with_prefix("http"),
+        ))
     }
 }

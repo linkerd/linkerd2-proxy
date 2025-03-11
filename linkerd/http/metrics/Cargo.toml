@@ -23,5 +23,5 @@ tracing = "0.1"
 
 linkerd-error = { path = "../../error" }
 linkerd-http-classify = { path = "../classify" }
-linkerd-metrics = { path = "../../metrics", features = ["linkerd-stack"] }
+linkerd-metrics = { path = "../../metrics", features = ["stack"] }
 linkerd-stack = { path = "../../stack" }

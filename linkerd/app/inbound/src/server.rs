@@ -55,6 +55,8 @@ impl Inbound<()> {
         I: Debug + Unpin + Send + Sync + 'static,
         P: profiles::GetProfile<Error = Error>,
     {
+        let detect_metrics = self.runtime.metrics.detect.clone();
+
         // Handles connections to ports that can't be determined to be HTTP.
         let forward = self
             .clone()
@@ -97,7 +99,7 @@ impl Inbound<()> {
         // Determines how to handle an inbound connection, dispatching it to the appropriate
         // stack.
         http.push_http_tcp_server()
-            .push_detect(forward)
+            .push_detect(detect_metrics, forward)
             .push_accept(addr.port(), policies, direct)
             .into_inner()
     }
