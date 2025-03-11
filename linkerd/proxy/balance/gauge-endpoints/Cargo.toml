@@ -6,6 +6,6 @@ license = "Apache-2.0"
 publish = false
 
 [dependencies]
-prometheus-client = "0.23"
+prometheus-client = { workspace = true }
 
 linkerd-stack = { path = "../../../stack" }

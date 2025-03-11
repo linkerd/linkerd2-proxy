@@ -10,7 +10,7 @@ publish = false
 ahash = "0.8"
 futures = { version = "0.3", default-features = false }
 indexmap = "2"
-prometheus-client = "0.23"
+prometheus-client = { workspace = true }
 rand = { version = "0.9", features = ["small_rng"] }
 tokio = { version = "1", features = ["rt", "sync", "time"] }
 tracing = "0.1"
