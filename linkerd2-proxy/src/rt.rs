@@ -1,7 +1,6 @@
 use tokio::runtime::{Builder, Runtime};
 use tracing::{info, warn};
 
-#[cfg(feature = "multicore")]
 pub(crate) fn build() -> Runtime {
     // The proxy creates an additional admin thread, but it would be wasteful to
     // allocate a whole core to it; so we let the main runtime consume all
@@ -53,16 +52,6 @@ pub(crate) fn build() -> Runtime {
                 .expect("failed to build threaded runtime!")
         }
     }
-}
-
-#[cfg(not(feature = "multicore"))]
-pub(crate) fn build() -> Runtime {
-    Builder::new()
-        .enable_all()
-        .thread_name("proxy")
-        .basic_scheduler()
-        .build()
-        .expect("failed to build basic runtime!")
 }
 
 /// Spawns a task to scrape metrics for the given runtime at a regular interval.
