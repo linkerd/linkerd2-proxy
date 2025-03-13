@@ -138,20 +138,29 @@ mod tests {
 
         let (service, mut handle) = mock::pair::<(), ()>();
         let service = LoadShed::new(Buffer::new(service, 3));
+        let spawn_svc = |id: &'static str| {
+            use tracing::{error_span, Instrument};
+            task::spawn(
+                service
+                    .clone()
+                    .oneshot(())
+                    .instrument(error_span!("worker", %id)),
+            )
+        };
 
         // The inner starts unavailable...
         handle.allow(0);
         // ...but the buffer will accept requests while it has capacity.
-        let mut oneshot1 = task::spawn(service.clone().oneshot(()));
+        let mut oneshot1 = spawn_svc("oneshot1");
         assert_pending!(oneshot1.poll());
-        let mut oneshot2 = task::spawn(service.clone().oneshot(()));
+        let mut oneshot2 = spawn_svc("oneshot2");
         assert_pending!(oneshot2.poll());
-        let mut oneshot3 = task::spawn(service.clone().oneshot(()));
+        let mut oneshot3 = spawn_svc("oneshot3");
         assert_pending!(oneshot3.poll());
 
         // The buffer is now full, so the loadshed service should fail this
         // request.
-        let mut oneshot4 = task::spawn(service.clone().oneshot(()));
+        let mut oneshot4 = spawn_svc("oneshot4");
         assert_ready_err!(oneshot4.poll());
 
         // Complete one request.
@@ -166,13 +175,13 @@ mod tests {
 
         // Now that there's space in the buffer, the service should no longer be
         // shedding load.
-        let mut oneshot5 = task::spawn(service.clone().oneshot(()));
+        let mut oneshot5 = spawn_svc("oneshot5");
         assert_pending!(oneshot5.poll());
 
         // The buffer is now full, so the loadshed service should fail any
         // additional requests.
-        let mut oneshot6 = task::spawn(service.clone().oneshot(()));
-        let mut oneshot7 = task::spawn(service.clone().oneshot(()));
+        let mut oneshot6 = spawn_svc("oneshot6");
+        let mut oneshot7 = spawn_svc("oneshot7");
         assert_ready_err!(oneshot6.poll());
         assert_ready_err!(oneshot7.poll());
 
