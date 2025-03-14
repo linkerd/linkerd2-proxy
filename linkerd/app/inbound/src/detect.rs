@@ -120,8 +120,10 @@ impl Inbound<svc::ArcNewTcp<Http, io::BoxedIo>> {
                 .push_switch(
                     |(detected, Detect { tls, .. })| -> Result<_, Infallible> {
                         match detected {
-                            http::Detection::Http(http) => Ok(svc::Either::A(Http { http, tls })),
-                            http::Detection::NotHttp => Ok(svc::Either::B(tls)),
+                            http::Detection::Http(http) => {
+                                Ok(svc::Either::Left(Http { http, tls }))
+                            }
+                            http::Detection::NotHttp => Ok(svc::Either::Right(tls)),
                             // When HTTP detection fails, forward the connection to the application as
                             // an opaque TCP stream.
                             http::Detection::ReadTimeout(timeout) => {
@@ -140,7 +142,7 @@ impl Inbound<svc::ArcNewTcp<Http, io::BoxedIo>> {
                                             ?timeout,
                                             "Handling connection as HTTP/1 due to policy"
                                         );
-                                        Ok(svc::Either::A(Http {
+                                        Ok(svc::Either::Left(Http {
                                             http: http::Variant::Http1,
                                             tls,
                                         }))
@@ -156,7 +158,7 @@ impl Inbound<svc::ArcNewTcp<Http, io::BoxedIo>> {
                                             ?timeout,
                                             "Handling connection as opaque due to policy"
                                         );
-                                        Ok(svc::Either::B(tls))
+                                        Ok(svc::Either::Right(tls))
                                     }
                                 }
                             }
@@ -183,7 +185,7 @@ impl Inbound<svc::ArcNewTcp<Http, io::BoxedIo>> {
                     move |tls: Tls| -> Result<_, Infallible> {
                         let http = match tls.policy.protocol() {
                             Protocol::Detect { timeout, .. } => {
-                                return Ok(svc::Either::B(Detect { timeout, tls }));
+                                return Ok(svc::Either::Right(Detect { timeout, tls }));
                             }
                             // Meshed HTTP/1 services may actually be transported over HTTP/2 connections
                             // between proxies, so we have to do detection.
@@ -191,7 +193,7 @@ impl Inbound<svc::ArcNewTcp<Http, io::BoxedIo>> {
                             // TODO(ver) outbound clients should hint this with ALPN so we don't
                             // have to detect this situation.
                             Protocol::Http1 { .. } if tls.status.is_some() => {
-                                return Ok(svc::Either::B(Detect {
+                                return Ok(svc::Either::Right(Detect {
                                     timeout: detect_timeout,
                                     tls,
                                 }));
@@ -202,7 +204,7 @@ impl Inbound<svc::ArcNewTcp<Http, io::BoxedIo>> {
                             Protocol::Http2 { .. } | Protocol::Grpc { .. } => http::Variant::H2,
                             _ => unreachable!("opaque protocols must not hit the HTTP stack"),
                         };
-                        Ok(svc::Either::A(Http { http, tls }))
+                        Ok(svc::Either::Left(Http { http, tls }))
                     },
                     detect.into_inner(),
                 )
@@ -256,10 +258,10 @@ impl<I> Inbound<svc::ArcNewTcp<Tls, TlsIo<I>>> {
                         // whether app TLS was employed, but we use this as a signal that we should
                         // not perform additional protocol detection.
                         if matches!(protocol, Protocol::Tls { .. }) {
-                            return Ok(svc::Either::B(tls));
+                            return Ok(svc::Either::Right(tls));
                         }
 
-                        Ok(svc::Either::A(tls))
+                        Ok(svc::Either::Left(tls))
                     },
                     forward
                         .clone()
@@ -283,14 +285,14 @@ impl<I> Inbound<svc::ArcNewTcp<Tls, TlsIo<I>>> {
                         if matches!(policy.protocol(), Protocol::Opaque { .. }) {
                             const TLS_PORT_SKIPPED: tls::ConditionalServerTls =
                                 tls::ConditionalServerTls::None(tls::NoServerTls::PortSkipped);
-                            return Ok(svc::Either::B(Tls {
+                            return Ok(svc::Either::Right(Tls {
                                 client_addr: t.param(),
                                 orig_dst_addr: t.param(),
                                 status: TLS_PORT_SKIPPED,
                                 policy,
                             }));
                         }
-                        Ok(svc::Either::A(t))
+                        Ok(svc::Either::Left(t))
                     },
                     forward
                         .push_on_service(svc::MapTargetLayer::new(io::BoxedIo::new))

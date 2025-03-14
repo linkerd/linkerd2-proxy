@@ -72,8 +72,8 @@ where
             http.push_switch(
                 |pp: Policy<T>| {
                     Ok::<_, Infallible>(match pp {
-                        Self::Http(http) => svc::Either::A(http),
-                        Self::Grpc(grpc) => svc::Either::B(grpc),
+                        Self::Http(http) => svc::Either::Left(http),
+                        Self::Grpc(grpc) => svc::Either::Right(grpc),
                     })
                 },
                 grpc.into_inner(),

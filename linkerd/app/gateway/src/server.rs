@@ -64,10 +64,10 @@ impl Gateway {
                             SessionProtocol::Http1 => http::Variant::Http1,
                             SessionProtocol::Http2 => http::Variant::H2,
                         };
-                        return Ok(svc::Either::A(Http { parent, version }));
+                        return Ok(svc::Either::Left(Http { parent, version }));
                     }
 
-                    Ok(svc::Either::B(Opaq(parent)))
+                    Ok(svc::Either::Right(Opaq(parent)))
                 },
                 opaq,
             )

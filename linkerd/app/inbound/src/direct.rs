@@ -157,14 +157,14 @@ impl<N> Inbound<N> {
                                     port,
                                     name: None,
                                     protocol,
-                                } => Ok(svc::Either::A({
+                                } => Ok(svc::Either::Left({
                                     // When the transport header targets an alternate port (but does
                                     // not identify an alternate target name), we check the new
                                     // target's policy (rather than the inbound proxy's address).
                                     let addr = (client.local_addr.ip(), port).into();
                                     let policy = policies.get_policy(OrigDstAddr(addr));
                                     match protocol {
-                                        None => svc::Either::A(LocalTcp {
+                                        None => svc::Either::Left(LocalTcp {
                                             server_addr: Remote(ServerAddr(addr)),
                                             client_addr: client.client_addr,
                                             client_id: client.client_id,
@@ -174,7 +174,7 @@ impl<N> Inbound<N> {
                                             // When TransportHeader includes the protocol, but does not
                                             // include an alternate name we go through the Inbound HTTP
                                             // stack.
-                                            svc::Either::B(LocalHttp {
+                                            svc::Either::Right(LocalHttp {
                                                 addr: Remote(ServerAddr(addr)),
                                                 policy,
                                                 protocol,
@@ -188,7 +188,7 @@ impl<N> Inbound<N> {
                                     port,
                                     name: Some(name),
                                     protocol,
-                                } => Ok(svc::Either::B({
+                                } => Ok(svc::Either::Right({
                                     // When the transport header provides an alternate target, the
                                     // connection is a gateway connection. We check the _gateway
                                     // address's_ policy (rather than the target address).

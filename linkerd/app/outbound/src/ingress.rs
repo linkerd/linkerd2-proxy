@@ -326,14 +326,14 @@ impl<N> Outbound<N> {
                     |(detected, parent): (http::Detection, T)| -> Result<_, Infallible> {
                         match detected {
                             http::Detection::Http(version) => {
-                                return Ok(svc::Either::A(Http { version, parent }));
+                                return Ok(svc::Either::Left(Http { version, parent }));
                             }
                             http::Detection::ReadTimeout(timeout) => {
                                 tracing::info!("Continuing after timeout: {timeout:?}");
                             }
                             _ => {}
                         }
-                        Ok(svc::Either::B(parent))
+                        Ok(svc::Either::Right(parent))
                     },
                     fallback,
                 )

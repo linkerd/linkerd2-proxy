@@ -53,12 +53,12 @@ impl<N> Inbound<N> {
                     move |t: T| -> Result<_, Error> {
                         let addr: OrigDstAddr = t.param();
                         if addr.port() == proxy_port {
-                            return Ok(svc::Either::B(t));
+                            return Ok(svc::Either::Right(t));
                         }
 
                         let policy = policies.get_policy(addr);
                         tracing::debug!(policy = ?&*policy.borrow(), "Accepted");
-                        Ok(svc::Either::A(Accept {
+                        Ok(svc::Either::Left(Accept {
                             client_addr: t.param(),
                             orig_dst_addr: addr,
                             policy,

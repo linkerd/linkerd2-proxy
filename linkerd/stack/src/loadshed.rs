@@ -177,13 +177,15 @@ mod tests {
         // shedding load.
         let mut oneshot5 = spawn_svc("oneshot5");
         assert_pending!(oneshot5.poll());
+        let mut oneshot6 = spawn_svc("oneshot6");
+        assert_pending!(oneshot6.poll());
 
         // The buffer is now full, so the loadshed service should fail any
         // additional requests.
-        let mut oneshot6 = spawn_svc("oneshot6");
         let mut oneshot7 = spawn_svc("oneshot7");
-        assert_ready_err!(oneshot6.poll());
+        let mut oneshot8 = spawn_svc("oneshot8");
         assert_ready_err!(oneshot7.poll());
+        assert_ready_err!(oneshot8.poll());
 
         // Complete all remaining requests
         handle.allow(3);
