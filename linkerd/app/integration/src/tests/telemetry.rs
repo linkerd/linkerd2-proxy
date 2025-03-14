@@ -319,6 +319,7 @@ async fn test_http_count(metric: &str, fixture: impl Future<Output = Fixture>) {
 mod response_classification {
     use super::Fixture;
     use crate::*;
+    use linkerd_app_core::svc::http::BoxBody;
     use tracing::info;
 
     const REQ_STATUS_HEADER: &str = "x-test-status-requested";
@@ -353,7 +354,7 @@ mod response_classification {
                     // TODO: tests for grpc statuses
                     unreachable!("not called in test")
                 } else {
-                    Response::new("".into())
+                    Response::new(BoxBody::empty())
                 };
                 *rsp.status_mut() = status;
                 rsp
@@ -1304,7 +1305,7 @@ async fn metrics_compression() {
 
             let mut body = {
                 let body = resp.into_body();
-                http_body::Body::collect(body)
+                http_body_util::BodyExt::collect(body)
                     .await
                     .expect("response body concat")
                     .aggregate()

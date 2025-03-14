@@ -17,7 +17,9 @@ bytes = { workspace = true }
 drain = { workspace = true, features = ["retain"] }
 http = { workspace = true }
 http-body = { workspace = true }
-hyper = { workspace = true, features = ["deprecated", "http1", "http2"] }
+http-body-util = { workspace = true }
+hyper = { workspace = true, features = ["http1", "http2"] }
+hyper-util = { workspace = true }
 futures = { version = "0.3", default-features = false }
 ipnet = "2.11"
 prometheus-client = { workspace = true }
@@ -81,6 +83,5 @@ features = ["make", "spawn-ready", "timeout", "util", "limit"]
 semver = "1"
 
 [dev-dependencies]
-linkerd-http-body-compat = { path = "../../http/body-compat" }
 linkerd-mock-http-body = { path = "../../mock/http-body" }
 quickcheck = { version = "1", default-features = false }

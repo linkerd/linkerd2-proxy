@@ -55,13 +55,11 @@ skip = [
     # `linkerd-trace-context`, `rustls-pemfile` and `tonic` depend on `base64`
     # v0.13.1 while `rcgen` depends on v0.21.5
     { name = "base64" },
-    # https://github.com/hawkw/matchers/pull/4
-    { name = "regex-automata", version = "0.1" },
-    { name = "regex-syntax", version = "0.6" },
-    # Some dependencies still use indexmap v1.
-    { name = "indexmap", version = "1" },
-    { name = "hashbrown", version = "0.12" },
-
+    # itertools still uses itertools v0.13.
+    { name = "itertools", version = "0.13" },
+    # tonic/axum depend on a newer `tower`, which we are still catching up to.
+    # see #3744.
+    { name = "tower", version = "0.5" },
 ]
 skip-tree = [
     # thiserror v2 is still propagating through the ecosystem
@@ -70,9 +68,14 @@ skip-tree = [
     { name = "rand", version = "0.8" },
     # rust v1.0 is still propagating through the ecosystem
     { name = "rustix", version = "0.38" },
+    # `pprof` uses a number of old dependencies. for now, we skip its subtree.
+    { name = "pprof" }
 ]
 
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
-allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-registry = [
+    "https://github.com/rust-lang/crates.io-index",
+    "https://github.com/linkerd/linkerd2-proxy-api",
+]

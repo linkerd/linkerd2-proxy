@@ -8,6 +8,7 @@ use linkerd_app_core::{
     svc::{http::TracingExecutor, NewService, ServiceExt},
     Infallible,
 };
+use linkerd_http_box::BoxBody;
 use std::net::SocketAddr;
 
 static WAS_ORIG_PROTO: &str = "request-orig-proto";
@@ -175,7 +176,7 @@ async fn orig_proto_skipped_on_http_upgrade() {
         // The request has upgrade headers
         .header(CONNECTION, "upgrade")
         .header(UPGRADE, "linkerdrocks")
-        .body(hyper::Body::default())
+        .body(BoxBody::default())
         .unwrap();
     let rsp = svc.oneshot(req).await.unwrap();
     assert_eq!(rsp.status(), http::StatusCode::NO_CONTENT);
@@ -236,19 +237,23 @@ fn serve(version: ::http::Version) -> io::Result<io::BoxedIo> {
             .fold(rsp, |rsp, orig_proto| {
                 rsp.header(WAS_ORIG_PROTO, orig_proto)
             });
-        future::ok::<_, Infallible>(rsp.body(hyper::Body::default()).unwrap())
+        future::ok::<_, Infallible>(rsp.body(BoxBody::default()).unwrap())
     });
 
     let (client_io, server_io) = io::duplex(4096);
     match version {
         ::http::Version::HTTP_10 | ::http::Version::HTTP_11 => {
-            let http = hyper::server::conn::http1::Builder::new();
-            let fut = http.serve_connection(server_io, svc);
+            let mut http = hyper::server::conn::http1::Builder::new();
+            let fut = http
+                .timer(hyper_util::rt::TokioTimer::new())
+                .serve_connection(hyper_util::rt::TokioIo::new(server_io), svc);
             tokio::spawn(fut);
         }
         ::http::Version::HTTP_2 => {
-            let http = hyper::server::conn::http2::Builder::new(TracingExecutor);
-            let fut = http.serve_connection(server_io, svc);
+            let mut http = hyper::server::conn::http2::Builder::new(TracingExecutor);
+            let fut = http
+                .timer(hyper_util::rt::TokioTimer::new())
+                .serve_connection(hyper_util::rt::TokioIo::new(server_io), svc);
             tokio::spawn(fut);
         }
         _ => unreachable!("unsupported HTTP version {:?}", version),
