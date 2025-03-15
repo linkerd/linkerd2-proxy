@@ -1,8 +1,10 @@
 [package]
 name = "linkerd-http-detect"
-version = "0.1.0"
-edition = "2021"
-publish = false
+version = { workspace = true }
+authors = { workspace = true }
+license = { workspace = true }
+edition = { workspace = true }
+publish = { workspace = true }
 
 [dependencies]
 bytes = { workspace = true }

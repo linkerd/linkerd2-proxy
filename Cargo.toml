@@ -98,6 +98,13 @@ members = [
 debug = 1
 lto = true
 
+[workspace.package]
+version = "0.1.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+license = "Apache-2.0"
+edition = "2021"
+publish = false
+
 [workspace.dependencies]
 bytes = { version = "1" }
 drain = { version = "0.1", default-features = false }
