@@ -166,8 +166,10 @@ where
 
 /// Checks responses to determine if they are successful HTTP upgrades.
 fn is_upgrade<B>(rsp: &http::Response<B>, is_http_connect: bool) -> bool {
+    use http::Version;
+
     // Upgrades were introduced in HTTP/1.1
-    if rsp.version() != http::Version::HTTP_11 {
+    if rsp.version() != Version::HTTP_11 {
         if is_http_connect && rsp.status().is_success() {
             tracing::warn!(
                 "A successful response to a CONNECT request had an incorrect HTTP version \
