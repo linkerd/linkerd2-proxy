@@ -1,14 +1,11 @@
-use futures::{
-    future::{self, Either},
-    FutureExt,
-};
+use futures::{future, FutureExt};
 use linkerd_app_core::{
     classify,
     http_metrics::retries::Handle,
     metrics::{self, ProfileRouteLabels},
     profiles::{self, http::Route},
     proxy::http::{Body, ClientHandle, EraseResponse},
-    svc::{layer, Param},
+    svc::{layer, Either, Param},
     Error, Result,
 };
 use linkerd_http_classify::{Classify, ClassifyEos, ClassifyResponse};

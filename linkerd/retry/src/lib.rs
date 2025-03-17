@@ -1,13 +1,13 @@
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
 
-use futures::future::{self, Either};
+use futures::future;
 use linkerd_error::{Error, Result};
 use linkerd_stack::{
     layer::{self, Layer},
     proxy::Proxy,
     util::AndThen,
-    NewService, Service,
+    Either, NewService, Service,
 };
 use std::{
     future::Future,
