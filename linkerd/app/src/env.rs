@@ -146,6 +146,9 @@ pub const ENV_OUTBOUND_MAX_IN_FLIGHT: &str = "LINKERD2_PROXY_OUTBOUND_MAX_IN_FLI
 const ENV_OUTBOUND_DISABLE_INFORMATIONAL_HEADERS: &str =
     "LINKERD2_PROXY_OUTBOUND_DISABLE_INFORMATIONAL_HEADERS";
 
+const ENV_OUTBOUND_METRICS_HOSTNAME_LABELS: &str =
+    "LINKERD2_PROXY_OUTBOUND_METRICS_HOSTNAME_LABELS";
+
 const ENV_TRACE_ATTRIBUTES_PATH: &str = "LINKERD2_PROXY_TRACE_ATTRIBUTES_PATH";
 const ENV_TRACE_PROTOCOL: &str = "LINKERD2_PROXY_TRACE_PROTOCOL";
 const ENV_TRACE_SERVICE_NAME: &str = "LINKERD2_PROXY_TRACE_SERVICE_NAME";
@@ -791,11 +794,14 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 },
             }
         };
+        let export_hostname_labels =
+            parse(strings, ENV_OUTBOUND_METRICS_HOSTNAME_LABELS, parse_bool)?.unwrap_or(false);
 
         policy::Config {
             control,
             workload,
             limits,
+            export_hostname_labels,
         }
     };
 

@@ -174,6 +174,7 @@ impl Config {
         }?;
 
         debug!("Building Policy client");
+        let export_hostname_labels = policy.export_hostname_labels;
         let policies = {
             let control_metrics =
                 ControlMetrics::register(registry.sub_registry_with_prefix("control_policy"));
@@ -243,6 +244,7 @@ impl Config {
             policies.client.clone(),
             policies.backoff,
             policies.limits,
+            export_hostname_labels,
         );
 
         let dst_addr = dst.addr.clone();

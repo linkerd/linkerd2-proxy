@@ -6,11 +6,11 @@
 #![allow(opaque_hidden_inferred_bound)]
 #![forbid(unsafe_code)]
 
-use linkerd_app_core::http_tracing::SpanSink;
 use linkerd_app_core::{
     config::{ProxyConfig, QueueConfig},
     drain,
     exp_backoff::ExponentialBackoff,
+    http_tracing::SpanSink,
     identity, io,
     metrics::prom,
     profiles,
@@ -143,6 +143,7 @@ impl Outbound<()> {
         client: C,
         backoff: ExponentialBackoff,
         limits: ReceiveLimits,
+        export_hostname_labels: bool,
     ) -> impl policy::GetPolicy
     where
         C: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error>,
@@ -151,12 +152,18 @@ impl Outbound<()> {
         C::ResponseBody: Send + 'static,
         C::Future: Send,
     {
-        policy::Api::new(workload, limits, Duration::from_secs(10), client)
-            .into_watch(backoff)
-            .map_result(|response| match response {
-                Err(e) => Err(e.into()),
-                Ok(rsp) => Ok(rsp.into_inner()),
-            })
+        policy::Api::new(
+            workload,
+            limits,
+            Duration::from_secs(10),
+            export_hostname_labels,
+            client,
+        )
+        .into_watch(backoff)
+        .map_result(|res| match res {
+            Err(e) => Err(e.into()),
+            Ok(rsp) => Ok(rsp.into_inner()),
+        })
     }
 
     #[cfg(any(test, feature = "test-util"))]

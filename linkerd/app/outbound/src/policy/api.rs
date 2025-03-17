@@ -8,7 +8,7 @@ use linkerd_app_core::{
     svc::Service,
     Addr, Error, Recover, Result,
 };
-use linkerd_proxy_client_policy::ClientPolicy;
+use linkerd_proxy_client_policy::{ClientPolicy, ClientPolicyOverrides};
 use linkerd_tonic_stream::{LimitReceiveFuture, ReceiveLimits};
 use linkerd_tonic_watch::StreamWatch;
 use std::sync::Arc;
@@ -19,6 +19,7 @@ pub(crate) struct Api<S> {
     workload: Arc<str>,
     limits: ReceiveLimits,
     default_detect_timeout: time::Duration,
+    export_hostname_labels: bool,
     client: Client<S>,
 }
 
@@ -39,12 +40,14 @@ where
         workload: Arc<str>,
         limits: ReceiveLimits,
         default_detect_timeout: time::Duration,
+        export_hostname_labels: bool,
         client: S,
     ) -> Self {
         Self {
             workload,
             limits,
             default_detect_timeout,
+            export_hostname_labels,
             client: Client::new(client),
         }
     }
@@ -86,6 +89,9 @@ where
         };
 
         let detect_timeout = self.default_detect_timeout;
+        let overrides = ClientPolicyOverrides {
+            export_hostname_labels: self.export_hostname_labels,
+        };
         let limits = self.limits;
         let mut client = self.client.clone();
         Box::pin(async move {
@@ -96,7 +102,7 @@ where
                     // If the server returned an invalid client policy, we
                     // default to using an invalid policy that causes all
                     // requests to report an internal error.
-                    let policy = ClientPolicy::try_from(up).unwrap_or_else(|error| {
+                    let policy = ClientPolicy::try_from(overrides, up).unwrap_or_else(|error| {
                         tracing::warn!(%error, "Client policy misconfigured");
                         INVALID_POLICY
                             .get_or_init(|| ClientPolicy::invalid(detect_timeout))

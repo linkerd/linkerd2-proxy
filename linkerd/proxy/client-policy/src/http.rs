@@ -125,7 +125,7 @@ pub mod proto {
         proto::{
             BackendSet, InvalidBackend, InvalidDistribution, InvalidFailureAccrual, InvalidMeta,
         },
-        Meta, RouteBackend, RouteDistribution,
+        ClientPolicyOverrides, Meta, RouteBackend, RouteDistribution,
     };
     use linkerd2_proxy_api::outbound::{self, http_route};
     use linkerd_http_route::http::{
@@ -217,13 +217,15 @@ pub mod proto {
         }
     }
 
-    impl TryFrom<outbound::proxy_protocol::Http1> for Http1 {
-        type Error = InvalidHttpRoute;
-        fn try_from(proto: outbound::proxy_protocol::Http1) -> Result<Self, Self::Error> {
+    impl Http1 {
+        pub fn try_from(
+            overrides: ClientPolicyOverrides,
+            proto: outbound::proxy_protocol::Http1,
+        ) -> Result<Self, InvalidHttpRoute> {
             let routes = proto
                 .routes
                 .into_iter()
-                .map(try_route)
+                .map(|p| try_route(overrides, p))
                 .collect::<Result<Arc<[_]>, _>>()?;
             Ok(Self {
                 routes,
@@ -232,13 +234,15 @@ pub mod proto {
         }
     }
 
-    impl TryFrom<outbound::proxy_protocol::Http2> for Http2 {
-        type Error = InvalidHttpRoute;
-        fn try_from(proto: outbound::proxy_protocol::Http2) -> Result<Self, Self::Error> {
+    impl Http2 {
+        pub fn try_from(
+            overrides: ClientPolicyOverrides,
+            proto: outbound::proxy_protocol::Http2,
+        ) -> Result<Self, InvalidHttpRoute> {
             let routes = proto
                 .routes
                 .into_iter()
-                .map(try_route)
+                .map(|p| try_route(overrides, p))
                 .collect::<Result<Arc<[_]>, _>>()?;
             Ok(Self {
                 routes,
@@ -247,7 +251,10 @@ pub mod proto {
         }
     }
 
-    fn try_route(proto: outbound::HttpRoute) -> Result<Route, InvalidHttpRoute> {
+    fn try_route(
+        overrides: ClientPolicyOverrides,
+        proto: outbound::HttpRoute,
+    ) -> Result<Route, InvalidHttpRoute> {
         let outbound::HttpRoute {
             hosts,
             rules,
@@ -265,7 +272,7 @@ pub mod proto {
 
         let rules = rules
             .into_iter()
-            .map(|rule| try_rule(&meta, rule))
+            .map(|rule| try_rule(&meta, overrides, rule))
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(Route { hosts, rules })
@@ -273,6 +280,7 @@ pub mod proto {
 
     fn try_rule(
         meta: &Arc<Meta>,
+        overrides: ClientPolicyOverrides,
         proto: outbound::http_route::Rule,
     ) -> Result<Rule, InvalidHttpRoute> {
         #[allow(deprecated)]
@@ -300,13 +308,8 @@ pub mod proto {
             .ok_or(InvalidHttpRoute::Missing("distribution"))?
             .try_into()?;
 
-        let export_hostname_labels = false;
-        let mut params = RouteParams::try_from_proto(
-            timeouts,
-            retry,
-            allow_l5d_request_headers,
-            export_hostname_labels,
-        )?;
+        let mut params =
+            RouteParams::try_from_proto(timeouts, retry, allow_l5d_request_headers, overrides)?;
         let legacy = request_timeout.map(TryInto::try_into).transpose()?;
         params.timeouts.request = params.timeouts.request.or(legacy);
 
@@ -326,7 +329,7 @@ pub mod proto {
             timeouts: Option<linkerd2_proxy_api::http_route::Timeouts>,
             retry: Option<http_route::Retry>,
             allow_l5d_request_headers: bool,
-            export_hostname_labels: bool,
+            overrides: ClientPolicyOverrides,
         ) -> Result<Self, InvalidHttpRoute> {
             Ok(Self {
                 retry: retry.map(Retry::try_from).transpose()?,
@@ -335,7 +338,7 @@ pub mod proto {
                     .transpose()?
                     .unwrap_or_default(),
                 allow_l5d_request_headers,
-                export_hostname_labels,
+                export_hostname_labels: overrides.export_hostname_labels,
             })
         }
     }
