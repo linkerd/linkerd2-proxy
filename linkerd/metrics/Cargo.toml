@@ -16,7 +16,7 @@ test_util = []
 deflate = { version = "1", features = ["gzip"] }
 http = { workspace = true }
 http-body = { workspace = true }
-hyper = { workspace = true, features = ["deprecated", "http1", "http2"] }
+hyper = { workspace = true, features = ["http1", "http2"] }
 kubert-prometheus-process = { version = "0.2", optional = true }
 parking_lot = "0.12"
 prometheus-client = { workspace = true }

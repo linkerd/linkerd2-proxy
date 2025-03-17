@@ -23,11 +23,8 @@ h2 = { workspace = true }
 http = { workspace = true }
 http-body = { workspace = true }
 hyper = { workspace = true, features = [
-    "backports",
-    "deprecated",
     "http1",
     "http2",
-    "stream",
     "client",
     "server",
 ] }
