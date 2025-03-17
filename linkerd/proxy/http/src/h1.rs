@@ -178,18 +178,13 @@ fn is_upgrade<B>(res: &http::Response<B>, is_http_connect: bool) -> bool {
         return false;
     }
 
-    // 101 Switching Protocols
-    if res.status() == http::StatusCode::SWITCHING_PROTOCOLS {
-        return true;
+    match res.status() {
+        http::StatusCode::SWITCHING_PROTOCOLS => true,
+        // CONNECT requests are complete if status code is 2xx.
+        status if is_http_connect && status.is_success() => true,
+        // Just a regular HTTP response...
+        _ => false,
     }
-
-    // CONNECT requests are complete if status code is 2xx.
-    if is_http_connect && res.status().is_success() {
-        return true;
-    }
-
-    // Just a regular HTTP response...
-    false
 }
 
 /// Returns if the request target is in `absolute-form`.
