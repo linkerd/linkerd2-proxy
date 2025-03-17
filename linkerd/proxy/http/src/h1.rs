@@ -165,20 +165,20 @@ where
 }
 
 /// Checks responses to determine if they are successful HTTP upgrades.
-fn is_upgrade<B>(res: &http::Response<B>, is_http_connect: bool) -> bool {
+fn is_upgrade<B>(rsp: &http::Response<B>, is_http_connect: bool) -> bool {
     // Upgrades were introduced in HTTP/1.1
-    if res.version() != http::Version::HTTP_11 {
-        if is_http_connect && res.status().is_success() {
+    if rsp.version() != http::Version::HTTP_11 {
+        if is_http_connect && rsp.status().is_success() {
             tracing::warn!(
                 "A successful response to a CONNECT request had an incorrect HTTP version \
                 (expected HTTP/1.1, got {:?})",
-                res.version()
+                rsp.version()
             );
         }
         return false;
     }
 
-    match res.status() {
+    match rsp.status() {
         http::StatusCode::SWITCHING_PROTOCOLS => true,
         // CONNECT requests are complete if status code is 2xx.
         status if is_http_connect && status.is_success() => true,
