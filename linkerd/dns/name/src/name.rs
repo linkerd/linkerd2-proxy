@@ -118,8 +118,9 @@ impl<'a> NameRef<'a> {
             return Err(InvalidName);
         }
 
-        let s = std::str::from_utf8(dns_name).map_err(|_| InvalidName)?;
-        Ok(Self(s))
+        std::str::from_utf8(dns_name)
+            .map(Self)
+            .map_err(|_| InvalidName)
     }
 
     pub fn try_from_ascii_str(n: &'a str) -> Result<Self, InvalidName> {
