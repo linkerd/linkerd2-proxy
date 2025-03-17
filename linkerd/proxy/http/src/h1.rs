@@ -169,8 +169,8 @@ fn is_upgrade<B>(rsp: &http::Response<B>, is_http_connect: bool) -> bool {
     use http::Version;
 
     match rsp.version() {
-        // Upgrades were introduced in HTTP/1.1
         Version::HTTP_11 => match rsp.status() {
+            // `101 Switching Protocols` indicates an upgrade.
             http::StatusCode::SWITCHING_PROTOCOLS => true,
             // CONNECT requests are complete if status code is 2xx.
             status if is_http_connect && status.is_success() => true,
@@ -178,6 +178,9 @@ fn is_upgrade<B>(rsp: &http::Response<B>, is_http_connect: bool) -> bool {
             _ => false,
         },
         version => {
+            // Upgrades are specific to HTTP/1.1. They are not included in HTTP/1.0, nor are they
+            // supported in HTTP/2. If this response is associated with any protocol version
+            // besides HTTP/1.1, it is not applicable to an upgrade.
             if is_http_connect && rsp.status().is_success() {
                 tracing::warn!(
                     "A successful response to a CONNECT request had an incorrect HTTP version \
