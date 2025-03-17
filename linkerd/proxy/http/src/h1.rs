@@ -6,10 +6,7 @@ use http::{
 };
 use linkerd_error::{Error, Result};
 use linkerd_http_box::BoxBody;
-use linkerd_http_upgrade::{
-    glue::HyperConnect,
-    upgrade::{Http11Upgrade, HttpConnect},
-};
+use linkerd_http_upgrade::{glue::HyperConnect, upgrade::Http11Upgrade};
 use linkerd_stack::MakeConnection;
 use std::{pin::Pin, time::Duration};
 use tracing::{debug, trace};
@@ -139,12 +136,6 @@ where
         Box::pin(async move {
             let mut rsp = rsp_fut.await?;
             if is_http_connect {
-                // Add an extension to indicate that this a response to a CONNECT request.
-                debug_assert!(
-                    upgrade.is_some(),
-                    "Upgrade extension must be set on CONNECT requests"
-                );
-                rsp.extensions_mut().insert(HttpConnect);
                 // Strip headers that may not be transmitted to the server, per RFC 9110:
                 //
                 // > A server MUST NOT send any `Transfer-Encoding` or `Content-Length` header
@@ -159,7 +150,7 @@ where
                 }
             }
 
-            if is_upgrade(&rsp) {
+            if is_upgrade(&rsp, is_http_connect) {
                 trace!("Client response is HTTP/1.1 upgrade");
                 if let Some(upgrade) = upgrade {
                     upgrade.insert_half(hyper::upgrade::on(&mut rsp))?;
@@ -174,15 +165,15 @@ where
 }
 
 /// Checks responses to determine if they are successful HTTP upgrades.
-fn is_upgrade<B>(res: &http::Response<B>) -> bool {
+fn is_upgrade<B>(res: &http::Response<B>, is_http_connect: bool) -> bool {
     #[inline]
-    fn is_connect_success<B>(res: &http::Response<B>) -> bool {
-        res.extensions().get::<HttpConnect>().is_some() && res.status().is_success()
+    fn is_connect_success<B>(res: &http::Response<B>, is_http_connect: bool) -> bool {
+        is_http_connect && res.status().is_success()
     }
 
     // Upgrades were introduced in HTTP/1.1
     if res.version() != http::Version::HTTP_11 {
-        if is_connect_success(res) {
+        if is_connect_success(res, is_http_connect) {
             tracing::warn!(
                 "A successful response to a CONNECT request had an incorrect HTTP version \
                 (expected HTTP/1.1, got {:?})",
@@ -198,7 +189,7 @@ fn is_upgrade<B>(res: &http::Response<B>) -> bool {
     }
 
     // CONNECT requests are complete if status code is 2xx.
-    if is_connect_success(res) {
+    if is_connect_success(res, is_http_connect) {
         return true;
     }
 
