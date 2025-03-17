@@ -50,8 +50,8 @@ _target := if os + '-' + arch == "linux-amd64" {
 _cargo := 'just-cargo profile=' + profile + ' target=' + _target + ' toolchain=' + toolchain
 
 _target_dir := "target" / _target / profile
-_target_bin := _target_dir / "linkerd2-proxy"
-_package_name := "linkerd2-proxy-" + package_version + "-" + arch + (if libc == 'musl' { '-static' } else { '' }) + (if os == 'windows' { '.exe' } else { '' })
+_target_bin := _target_dir / "linkerd2-proxy" + if os == 'windows' { '.exe' } else { '' }
+_package_name := "linkerd2-proxy-" + package_version + "-" + os + "-" + arch + if libc == 'musl' { '-static' } else { '' }
 _package_dir := "target/package" / _package_name
 shasum := "shasum -a 256"
 
