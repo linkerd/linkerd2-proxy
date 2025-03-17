@@ -168,24 +168,25 @@ where
 fn is_upgrade<B>(rsp: &http::Response<B>, is_http_connect: bool) -> bool {
     use http::Version;
 
-    // Upgrades were introduced in HTTP/1.1
-    if rsp.version() != Version::HTTP_11 {
-        if is_http_connect && rsp.status().is_success() {
-            tracing::warn!(
-                "A successful response to a CONNECT request had an incorrect HTTP version \
-                (expected HTTP/1.1, got {:?})",
-                rsp.version()
-            );
+    match rsp.version() {
+        // Upgrades were introduced in HTTP/1.1
+        Version::HTTP_11 => match rsp.status() {
+            http::StatusCode::SWITCHING_PROTOCOLS => true,
+            // CONNECT requests are complete if status code is 2xx.
+            status if is_http_connect && status.is_success() => true,
+            // Just a regular HTTP response...
+            _ => false,
+        },
+        version => {
+            if is_http_connect && rsp.status().is_success() {
+                tracing::warn!(
+                    "A successful response to a CONNECT request had an incorrect HTTP version \
+                    (expected HTTP/1.1, got {:?})",
+                    version
+                );
+            }
+            false
         }
-        return false;
-    }
-
-    match rsp.status() {
-        http::StatusCode::SWITCHING_PROTOCOLS => true,
-        // CONNECT requests are complete if status code is 2xx.
-        status if is_http_connect && status.is_success() => true,
-        // Just a regular HTTP response...
-        _ => false,
     }
 }
 
