@@ -70,6 +70,7 @@ jobs:
           if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
             echo version="0.0.0-test.${GITHUB_SHA:0:7}"
             echo archs='["amd64"]'
+            echo oses='["linux"]'
             exit 0
           fi >> "$GITHUB_OUTPUT"
           if ! [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+)?(\+[0-9A-Za-z-]+)?$ ]]; then
@@ -78,6 +79,7 @@ jobs:
           fi
           ( echo version="${VERSION#v}"
             echo archs='["amd64", "arm64", "arm"]'
+            echo oses='["linux", "windows"]'
           ) >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -93,6 +95,7 @@ jobs:
 
     outputs:
       archs: ${{ steps.meta.outputs.archs }}
+      oses: ${{ steps.meta.outputs.oses }}
       version: ${{ steps.meta.outputs.version }}
       package: ${{ github.event_name == 'workflow_dispatch' || steps.changed.outputs.any_changed == 'true' }}
       profile: ${{ inputs.profile || 'release' }}
@@ -126,7 +129,13 @@ jobs:
     strategy:
       matrix:
         arch: ${{ fromJson(needs.meta.outputs.archs) }}
+        os: ${{ fromJson(needs.meta.outputs.oses) }}
         libc: [gnu] # musl
+        exclude:
+          - os: windows
+            arch: arm64
+          - os: windows
+            arch: arm  
 
     # If we're not actually building on a release tag, don't short-circuit on
     # errors. This helps us know whether a failure is platform-specific.
@@ -138,6 +147,10 @@ jobs:
       LINKERD2_PROXY_VENDOR: ${{ github.repository_owner }}
       LINKERD2_PROXY_VERSION: ${{ needs.meta.outputs.version }}
     steps:
+      # TODO: add to dev image
+      - name: Install MiniGW
+        if: matrix.os == 'windows'
+        run: apt-get update && apt-get install mingw-w64 -y
       - name: Configure git
         run: git config --global --add safe.directory "$PWD" # actions/runner#2033
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -147,12 +160,12 @@ jobs:
         with:
           key: ${{ matrix.arch }}
       - run: just fetch
-      - run: just arch=${{ matrix.arch }} libc=${{ matrix.libc }} rustup
-      - run: just arch=${{ matrix.arch }} libc=${{ matrix.libc }} profile=${{ needs.meta.outputs.profile }} build
-      - run: just arch=${{ matrix.arch }} libc=${{ matrix.libc }} profile=${{ needs.meta.outputs.profile }} package
+      - run: just arch=${{ matrix.arch }} libc=${{ matrix.libc }} os=${{ matrix.os }} rustup
+      - run: just arch=${{ matrix.arch }} libc=${{ matrix.libc }} os=${{ matrix.os }} profile=${{ needs.meta.outputs.profile }} build
+      - run: just arch=${{ matrix.arch }} libc=${{ matrix.libc }} os=${{ matrix.os }} profile=${{ needs.meta.outputs.profile }} package
       - uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1
         with:
-          name: ${{ matrix.arch }}-artifacts
+          name: ${{ matrix.arch }}-${{ matrix.os }}-artifacts
           path: target/package/*
 
   publish:
