@@ -105,7 +105,7 @@ pub mod proto {
         proto::{
             BackendSet, InvalidBackend, InvalidDistribution, InvalidFailureAccrual, InvalidMeta,
         },
-        Meta, RouteBackend, RouteDistribution,
+        ClientPolicyOverrides, Meta, RouteBackend, RouteDistribution,
     };
     use linkerd2_proxy_api::outbound::{self, grpc_route};
     use linkerd_http_route::{
@@ -184,22 +184,22 @@ pub mod proto {
         Redirect(#[from] InvalidRequestRedirect),
     }
 
-    impl TryFrom<outbound::proxy_protocol::Grpc> for Grpc {
-        type Error = InvalidGrpcRoute;
-        fn try_from(proto: outbound::proxy_protocol::Grpc) -> Result<Self, Self::Error> {
+    impl Grpc {
+        pub fn try_from(
+            overrides: ClientPolicyOverrides,
+            proto: outbound::proxy_protocol::Grpc,
+        ) -> Result<Self, InvalidGrpcRoute> {
             let routes = proto
                 .routes
                 .into_iter()
-                .map(try_route)
+                .map(|p| try_route(overrides, p))
                 .collect::<Result<Arc<[_]>, _>>()?;
             Ok(Self {
                 routes,
                 failure_accrual: proto.failure_accrual.try_into()?,
             })
         }
-    }
 
-    impl Grpc {
         pub fn fill_backends(&self, set: &mut BackendSet) {
             for Route { ref rules, .. } in &*self.routes {
                 for Rule { ref policy, .. } in rules {
@@ -209,7 +209,10 @@ pub mod proto {
         }
     }
 
-    fn try_route(proto: outbound::GrpcRoute) -> Result<Route, InvalidGrpcRoute> {
+    fn try_route(
+        overrides: ClientPolicyOverrides,
+        proto: outbound::GrpcRoute,
+    ) -> Result<Route, InvalidGrpcRoute> {
         let outbound::GrpcRoute {
             hosts,
             rules,
@@ -227,7 +230,7 @@ pub mod proto {
 
         let rules = rules
             .into_iter()
-            .map(|rule| try_rule(&meta, rule))
+            .map(|rule| try_rule(&meta, overrides, rule))
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(Route { hosts, rules })
@@ -235,6 +238,7 @@ pub mod proto {
 
     fn try_rule(
         meta: &Arc<Meta>,
+        overrides: ClientPolicyOverrides,
         proto: outbound::grpc_route::Rule,
     ) -> Result<Rule, InvalidGrpcRoute> {
         #[allow(deprecated)]
@@ -262,13 +266,8 @@ pub mod proto {
             .ok_or(InvalidGrpcRoute::Missing("distribution"))?
             .try_into()?;
 
-        let export_hostname_labels = false;
-        let mut params = RouteParams::try_from_proto(
-            timeouts,
-            retry,
-            allow_l5d_request_headers,
-            export_hostname_labels,
-        )?;
+        let mut params =
+            RouteParams::try_from_proto(timeouts, retry, allow_l5d_request_headers, overrides)?;
         let legacy = request_timeout.map(TryInto::try_into).transpose()?;
         params.timeouts.request = params.timeouts.request.or(legacy);
 
@@ -288,7 +287,7 @@ pub mod proto {
             timeouts: Option<linkerd2_proxy_api::http_route::Timeouts>,
             retry: Option<grpc_route::Retry>,
             allow_l5d_request_headers: bool,
-            export_hostname_labels: bool,
+            overrides: ClientPolicyOverrides,
         ) -> Result<Self, InvalidGrpcRoute> {
             Ok(Self {
                 retry: retry.map(Retry::try_from).transpose()?,
@@ -297,7 +296,7 @@ pub mod proto {
                     .transpose()?
                     .unwrap_or_default(),
                 allow_l5d_request_headers,
-                export_hostname_labels,
+                export_hostname_labels: overrides.export_hostname_labels,
             })
         }
     }

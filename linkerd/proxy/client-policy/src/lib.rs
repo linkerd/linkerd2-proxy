@@ -19,6 +19,11 @@ pub struct ClientPolicy {
     pub backends: Arc<[Backend]>,
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct ClientPolicyOverrides {
+    pub export_hostname_labels: bool,
+}
+
 // TODO additional server configs (e.g. concurrency limits, window sizes, etc)
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Protocol {
@@ -430,10 +435,11 @@ pub mod proto {
         Missing(&'static str),
     }
 
-    impl TryFrom<outbound::OutboundPolicy> for ClientPolicy {
-        type Error = InvalidPolicy;
-
-        fn try_from(policy: outbound::OutboundPolicy) -> Result<Self, Self::Error> {
+    impl ClientPolicy {
+        pub fn try_from(
+            overrides: ClientPolicyOverrides,
+            policy: outbound::OutboundPolicy,
+        ) -> Result<Self, InvalidPolicy> {
             use outbound::proxy_protocol;
 
             let parent = policy
@@ -459,16 +465,18 @@ pub mod proto {
                             "Detect missing protocol detection timeout",
                         ))?
                         .try_into()?;
-                    let http1: http::Http1 = http1
-                        .ok_or(InvalidPolicy::Protocol(
+                    let http1 = http::Http1::try_from(
+                        overrides,
+                        http1.ok_or(InvalidPolicy::Protocol(
                             "Detect missing HTTP/1 configuration",
-                        ))?
-                        .try_into()?;
-                    let http2: http::Http2 = http2
-                        .ok_or(InvalidPolicy::Protocol(
+                        ))?,
+                    )?;
+                    let http2 = http::Http2::try_from(
+                        overrides,
+                        http2.ok_or(InvalidPolicy::Protocol(
                             "Detect missing HTTP/2 configuration",
-                        ))?
-                        .try_into()?;
+                        ))?,
+                    )?;
                     let opaque: opaq::Opaque = opaque
                         .ok_or(InvalidPolicy::Protocol(
                             "Detect missing opaque configuration",
@@ -483,10 +491,16 @@ pub mod proto {
                     }
                 }
 
-                proxy_protocol::Kind::Http1(http) => Protocol::Http1(http.try_into()?),
-                proxy_protocol::Kind::Http2(http) => Protocol::Http2(http.try_into()?),
+                proxy_protocol::Kind::Http1(http) => {
+                    Protocol::Http1(http::Http1::try_from(overrides, http)?)
+                }
+                proxy_protocol::Kind::Http2(http) => {
+                    Protocol::Http2(http::Http2::try_from(overrides, http)?)
+                }
                 proxy_protocol::Kind::Opaque(opaque) => Protocol::Opaque(opaque.try_into()?),
-                proxy_protocol::Kind::Grpc(grpc) => Protocol::Grpc(grpc.try_into()?),
+                proxy_protocol::Kind::Grpc(grpc) => {
+                    Protocol::Grpc(grpc::Grpc::try_from(overrides, grpc)?)
+                }
                 proxy_protocol::Kind::Tls(tls) => Protocol::Tls(tls.try_into()?),
             };
 

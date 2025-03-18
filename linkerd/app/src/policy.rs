@@ -15,6 +15,7 @@ pub struct Config {
     pub control: control::Config,
     pub workload: String,
     pub limits: ReceiveLimits,
+    pub export_hostname_labels: bool,
 }
 
 /// Handles to policy service clients.
