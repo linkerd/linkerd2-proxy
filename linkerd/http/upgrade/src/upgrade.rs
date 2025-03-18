@@ -37,11 +37,6 @@ struct Http11UpgradeHalves {
     client: Http11Upgrade,
 }
 
-/// A marker type inserted into Extensions to signal it was an HTTP CONNECT
-/// request.
-#[derive(Debug)]
-pub struct HttpConnect;
-
 struct Inner {
     server: TryLock<Option<OnUpgrade>>,
     client: TryLock<Option<OnUpgrade>>,
