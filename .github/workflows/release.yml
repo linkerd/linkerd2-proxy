@@ -67,18 +67,9 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s extglob
-          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+          (
             echo version="0.0.0-test.${GITHUB_SHA:0:7}"
             echo archs='["amd64"]'
-            echo oses='["linux"]'
-            exit 0
-          fi >> "$GITHUB_OUTPUT"
-          if ! [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+)?(\+[0-9A-Za-z-]+)?$ ]]; then
-            echo "Invalid version: $VERSION" >&2
-            exit 1
-          fi
-          ( echo version="${VERSION#v}"
-            echo archs='["amd64", "arm64", "arm"]'
             echo oses='["linux", "windows"]'
           ) >> "$GITHUB_OUTPUT"
 
