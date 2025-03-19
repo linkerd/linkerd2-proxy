@@ -103,6 +103,43 @@ jobs:
         env:
           NEXTEST_RETRIES: 3
 
+  rust-windows:
+    needs: meta
+    runs-on: windows-2022
+    permissions:
+      contents: read
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Install Rust (rustup)
+        run: rustup update stable --no-self-update && rustup default stable
+        shell: bash
+      - name: Install nextest
+        run: curl -LsSf https://get.nexte.st/latest/windows-tar | tar zxf - -C ${CARGO_HOME:-~/.cargo}/bin
+        shell: bash
+      - name: Add windows target
+        run: rustup target add x86_64-pc-windows-gnu
+      - name: Install nasm
+        run: choco install nasm
+        shell: cmd
+      - name: Install protoc
+        run: choco install protoc
+        shell: cmd
+      - name: Install LLVM and Clang
+        uses: KyleMayes/install-llvm-action@6ba6e2cd3813def9879be378609d87cb3ef3bac3
+        with:
+          version: "19.1.7"
+          directory: ${{ runner.temp }}/llvm
+      - name: Set LIBCLANG_PATH
+        run: echo "LIBCLANG_PATH=$((gcm clang).source -replace "clang.exe")" >> $env:GITHUB_ENV
+      - run: cargo fetch --locked
+      - run: cargo fmt -- --check
+      - run: cargo clippy --target=x86_64-pc-windows-gnu --workspace --all-targets --frozen
+      - run: cargo nextest run --target=x86_64-pc-windows-gnu --workspace --frozen --exclude=linkerd2-proxy --no-run
+      - run: cargo nextest run --target=x86_64-pc-windows-gnu --workspace --frozen --exclude=linkerd2-proxy
+        env:
+          NEXTEST_RETRIES: 3
+
   rust-crates:
     needs: meta
     if: needs.meta.outputs.cargo_changed == 'true'
