@@ -2,9 +2,7 @@
 #![forbid(unsafe_code)]
 
 pub use hickory_resolver::config::ResolverOpts;
-use hickory_resolver::{
-    config::ResolverConfig, error, proto::rr::rdata, system_conf, AsyncResolver, TokioAsyncResolver,
-};
+use hickory_resolver::{config::ResolverConfig, proto::rr::rdata, system_conf, TokioResolver};
 use linkerd_dns_name::NameRef;
 pub use linkerd_dns_name::{InvalidName, Name, Suffix};
 use std::{fmt, net};
@@ -14,7 +12,7 @@ use tracing::{debug, trace};
 
 #[derive(Clone)]
 pub struct Resolver {
-    dns: TokioAsyncResolver,
+    dns: TokioResolver,
 }
 
 pub trait ConfigureResolver {
@@ -27,14 +25,14 @@ struct InvalidSrv(rdata::SRV);
 
 #[derive(Debug, Error)]
 #[error("failed to resolve A record: {0}")]
-struct ARecordError(#[from] error::ResolveError);
+struct ARecordError(#[from] hickory_resolver::ResolveError);
 
 #[derive(Debug, Error)]
 enum SrvRecordError {
     #[error(transparent)]
     Invalid(#[from] InvalidSrv),
     #[error("failed to resolve SRV record: {0}")]
-    Resolve(#[from] error::ResolveError),
+    Resolve(#[from] hickory_resolver::ResolveError),
 }
 
 #[derive(Debug, Error)]
@@ -68,7 +66,16 @@ impl Resolver {
         opts.cache_size = 0;
         // This function is synchronous, but needs to be called within the Tokio
         // 0.2 runtime context, since it gets a handle.
-        let dns = AsyncResolver::tokio(config, opts);
+        let provider = hickory_resolver::name_server::TokioConnectionProvider::default();
+        let mut builder = hickory_resolver::Resolver::builder_with_config(config, provider);
+        *builder.options_mut() = opts;
+        let dns = builder.build();
+        /* TODO(kate): this can be used if/when hickory-dns/hickory-dns#2877 is released.
+        let dns = hickory_resolver::Resolver::builder_with_config(config, provider)
+            .with_options(opts)
+            .build();
+        */
+
         Resolver { dns }
     }
 
@@ -149,7 +156,7 @@ impl Resolver {
     }
 }
 
-/// Note: `AsyncResolver` does not implement `Debug`, so we must manually
+/// Note: `hickory_resolver::Resolver` does not implement `Debug`, so we must manually
 ///       implement this.
 impl fmt::Debug for Resolver {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -165,19 +172,23 @@ impl ResolveError {
     /// Returns the amount of time that the resolver should wait before
     /// retrying.
     pub fn negative_ttl(&self) -> Option<time::Duration> {
-        if let error::ResolveErrorKind::NoRecordsFound {
+        if let Some(hickory_resolver::proto::ProtoErrorKind::NoRecordsFound {
             negative_ttl: Some(ttl_secs),
             ..
-        } = self.a_error.0.kind()
+        }) = self
+            .a_error
+            .0
+            .proto()
+            .map(hickory_resolver::proto::ProtoError::kind)
         {
             return Some(time::Duration::from_secs(*ttl_secs as u64));
         }
 
         if let SrvRecordError::Resolve(error) = &self.srv_error {
-            if let error::ResolveErrorKind::NoRecordsFound {
+            if let Some(hickory_resolver::proto::ProtoErrorKind::NoRecordsFound {
                 negative_ttl: Some(ttl_secs),
                 ..
-            } = error.kind()
+            }) = error.proto().map(hickory_resolver::proto::ProtoError::kind)
             {
                 return Some(time::Duration::from_secs(*ttl_secs as u64));
             }
