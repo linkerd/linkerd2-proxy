@@ -6,7 +6,7 @@ use futures::prelude::*;
 use linkerd_error::Result;
 use linkerd_io as io;
 use linkerd_stack::Param;
-use std::pin::Pin;
+use std::{net::SocketAddr, pin::Pin};
 use tokio::net::TcpStream;
 
 #[derive(Copy, Clone, Debug, Default)]
@@ -83,27 +83,32 @@ where
 
         let incoming = incoming.map(|res| {
             let (inner, tcp) = res?;
-            let (orig_dst, tcp) = orig_dst(tcp)?;
+
+            let sock = {
+                let stream = tokio::net::TcpStream::into_std(tcp)?;
+                socket2::Socket::from(stream)
+            };
+
+            let orig_dst = match inner.param() {
+                // IPv4-mapped IPv6 addresses are unwrapped by BindTcp::bind() and received here as
+                // SocketAddr::V4. We must call getsockopt with IPv4 constants (via
+                // orig_dst_addr_v4) even if it originally was an IPv6
+                Remote(ClientAddr(SocketAddr::V4(_))) => sock.original_dst()?,
+                Remote(ClientAddr(SocketAddr::V6(_))) => sock.original_dst_ipv6()?,
+            };
+
+            let orig_dst = orig_dst.as_socket().ok_or(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Invalid address format",
+            ))?;
+
+            let stream: std::net::TcpStream = socket2::Socket::into(sock);
+            let stream = tokio::net::TcpStream::from_std(stream)?;
+            let orig_dst = OrigDstAddr(orig_dst);
             let addrs = Addrs { inner, orig_dst };
-            Ok((addrs, tcp))
+            Ok((addrs, stream))
         });
 
         Ok((addr, Box::pin(incoming)))
     }
-}
-
-fn orig_dst(sock: TcpStream) -> io::Result<(OrigDstAddr, TcpStream)> {
-    let sock = {
-        let stream = tokio::net::TcpStream::into_std(sock)?;
-        socket2::Socket::from(stream)
-    };
-
-    let orig_dst = sock.original_dst()?.as_socket().ok_or(io::Error::new(
-        io::ErrorKind::InvalidInput,
-        "Invalid address format",
-    ))?;
-
-    let stream: std::net::TcpStream = socket2::Socket::into(sock);
-    let stream = tokio::net::TcpStream::from_std(stream)?;
-    Ok((OrigDstAddr(orig_dst), stream))
 }
