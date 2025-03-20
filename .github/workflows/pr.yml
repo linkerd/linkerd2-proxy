@@ -18,20 +18,20 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - id: build
-        uses: tj-actions/changed-files@0b975f61488402a699abcebd6a1e25924cf85218
+        uses: tj-actions/changed-files@6482371e862961013f9584015cf362c4f664b20c
         with:
           files: |
             .github/workflows/pr.yml
             justfile
             Dockerfile
       - id: actions
-        uses: tj-actions/changed-files@0b975f61488402a699abcebd6a1e25924cf85218
+        uses: tj-actions/changed-files@6482371e862961013f9584015cf362c4f664b20c
         with:
           files: |
             .github/workflows/**
             .devcontainer/*
       - id: cargo
-        uses: tj-actions/changed-files@0b975f61488402a699abcebd6a1e25924cf85218
+        uses: tj-actions/changed-files@6482371e862961013f9584015cf362c4f664b20c
         with:
           files_ignore: "Cargo.toml"
           files: |
@@ -40,7 +40,7 @@ jobs:
         if: steps.cargo.outputs.any_changed == 'true'
         run: ./.github/list-crates.sh ${{ steps.cargo.outputs.all_changed_files }}
       - id: rust
-        uses: tj-actions/changed-files@0b975f61488402a699abcebd6a1e25924cf85218
+        uses: tj-actions/changed-files@6482371e862961013f9584015cf362c4f664b20c
         with:
           files: |
             **/*.rs
