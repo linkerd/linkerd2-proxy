@@ -10,6 +10,7 @@ publish = { workspace = true }
 bytes = { workspace = true }
 futures = { version = "0.3", default-features = false }
 http-body = { workspace = true }
+http-body-util = { workspace = true }
 http = { workspace = true }
 parking_lot = "0.12"
 pin-project = "1"
@@ -21,12 +22,11 @@ thiserror = "2"
 linkerd-http-box = { path = "../box" }
 linkerd-error = { path = "../../error" }
 linkerd-exp-backoff = { path = "../../exp-backoff" }
-linkerd-http-body-compat = { path = "../body-compat" }
 linkerd-metrics = { path = "../../metrics" }
 linkerd-stack = { path = "../../stack" }
 
 [dev-dependencies]
-hyper = { workspace = true, features = ["deprecated"] }
+hyper = { workspace = true }
 linkerd-tracing = { path = "../../tracing", features = ["ansi"] }
 linkerd-mock-http-body = { path = "../../mock/http-body" }
 tokio = { version = "1", features = ["macros", "rt"] }

@@ -10,7 +10,7 @@ publish = { workspace = true }
 futures = { version = "0.3", default-features = false }
 http = { workspace = true }
 http-body = { workspace = true }
-hyper = { workspace = true, features = ["deprecated"] }
+hyper = { workspace = true }
 pin-project = "1"
 tower = { workspace = true, default-features = false, features = ["load"] }
 tokio = { version = "1", features = ["macros"] }

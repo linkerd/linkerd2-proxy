@@ -28,7 +28,7 @@ fn generate(out_dir: &std::path::Path) {
         .emit_rerun_if_changed(false)
         .disable_package_emission()
         .out_dir(out_dir)
-        .compile(iface_files, &["."])
+        .compile_protos(iface_files, &["."])
     {
         panic!("failed to compile protobuf: {error}")
     }

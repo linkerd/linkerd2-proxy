@@ -1,3 +1,5 @@
+use linkerd_app_core::svc::http::BoxBody;
+
 use crate::*;
 
 #[tokio::test]
@@ -26,10 +28,13 @@ async fn h2_exercise_goaways_connections() {
 
     let (shdn, rx) = shutdown_signal();
 
-    let body = Bytes::from(vec![b'1'; RESPONSE_SIZE]);
+    let body = http_body_util::Full::new(Bytes::from(vec![b'1'; RESPONSE_SIZE]));
     let srv = server::http2()
         .route_fn("/", move |_req| {
-            Response::builder().body(body.clone().into()).unwrap()
+            Response::builder()
+                .body(body.clone())
+                .unwrap()
+                .map(BoxBody::new)
         })
         .run()
         .await;
@@ -50,8 +55,8 @@ async fn h2_exercise_goaways_connections() {
         .into_iter()
         .map(Response::into_body)
         .map(|body| {
-            http_body::Body::collect(body)
-                .map_ok(http_body::Collected::aggregate)
+            http_body_util::BodyExt::collect(body)
+                .map_ok(http_body_util::Collected::aggregate)
                 // Make sure the bodies weren't cut off
                 .map_ok(|buf| assert_eq!(buf.remaining(), RESPONSE_SIZE))
         })
@@ -72,7 +77,7 @@ async fn http1_closes_idle_connections() {
     let (shdn, rx) = shutdown_signal();
 
     const RESPONSE_SIZE: usize = 1024 * 16;
-    let body = Bytes::from(vec![b'1'; RESPONSE_SIZE]);
+    let body = http_body_util::Full::new(Bytes::from(vec![b'1'; RESPONSE_SIZE]));
 
     let shdn = Arc::new(Mutex::new(Some(shdn)));
     let srv = server::http1()
@@ -80,7 +85,10 @@ async fn http1_closes_idle_connections() {
             // Trigger a shutdown signal while the request is made
             // but a response isn't returned yet.
             shdn.lock().take().expect("only 1 request").signal();
-            Response::builder().body(body.clone().into()).unwrap()
+            Response::builder()
+                .body(body.clone())
+                .unwrap()
+                .map(BoxBody::new)
         })
         .run()
         .await;

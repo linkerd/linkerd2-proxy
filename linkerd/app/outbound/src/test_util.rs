@@ -73,6 +73,7 @@ pub use self::mock_body::MockBody;
 
 mod mock_body {
     use bytes::Bytes;
+    use http_body::Frame;
     use linkerd_app_core::proxy::http::Body;
     use linkerd_app_core::{Error, Result};
     use std::{
@@ -87,7 +88,7 @@ mod mock_body {
         #[pin]
         data: Option<futures::future::BoxFuture<'static, Result<()>>>,
         #[pin]
-        trailers: Option<futures::future::BoxFuture<'static, Result<Option<http::HeaderMap>>>>,
+        trailers: Option<futures::future::BoxFuture<'static, Option<Result<http::HeaderMap>>>>,
     }
 
     impl MockBody {
@@ -119,7 +120,7 @@ mod mock_body {
                 trailers.insert("grpc-status", status);
                 trailers
             };
-            let fut = futures::future::ready(Ok(Some(trailers)));
+            let fut = futures::future::ready(Some(Ok(trailers)));
 
             Self {
                 data: None,
@@ -132,30 +133,25 @@ mod mock_body {
         type Data = Bytes;
         type Error = Error;
 
-        fn poll_data(
+        fn poll_frame(
             self: Pin<&mut Self>,
             cx: &mut Context<'_>,
-        ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
+        ) -> Poll<Option<std::result::Result<Frame<Self::Data>, Self::Error>>> {
             let mut this = self.project();
+
             if let Some(rx) = this.data.as_mut().as_pin_mut() {
                 let ready = futures::ready!(rx.poll(cx));
                 *this.data = None;
                 return Poll::Ready(ready.err().map(Err));
             }
-            Poll::Ready(None)
-        }
 
-        fn poll_trailers(
-            self: Pin<&mut Self>,
-            cx: &mut Context<'_>,
-        ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
-            let mut this = self.project();
             if let Some(rx) = this.trailers.as_mut().as_pin_mut() {
-                let ready = futures::ready!(rx.poll(cx));
+                let ready = futures::ready!(rx.poll(cx)).map(|o| o.map(Frame::trailers));
                 *this.trailers = None;
                 return Poll::Ready(ready);
             }
-            Poll::Ready(Ok(None))
+
+            Poll::Ready(None)
         }
 
         fn is_end_stream(&self) -> bool {

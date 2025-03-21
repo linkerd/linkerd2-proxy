@@ -102,30 +102,18 @@ where
         self.body.is_end_stream()
     }
 
-    fn poll_data(
+    fn poll_frame(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
+    ) -> Poll<Option<Result<http_body::Frame<Self::Data>, Self::Error>>> {
         let this = self.project();
-        let ret = futures::ready!(this.body.poll_data(cx));
+        let ret = futures::ready!(this.body.poll_frame(cx));
 
-        // Once a data frame is received, the handle is dropped. On subsequent calls, this
+        // Once a frame is received, the handle is dropped. On subsequent calls, this
         // is a noop.
         drop(this.handle.take());
 
         Poll::Ready(ret)
-    }
-
-    fn poll_trailers(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
-        let this = self.project();
-        // If this is being called, the handle definitely should have been dropped
-        // already.
-        drop(this.handle.take());
-
-        this.body.poll_trailers(cx)
     }
 
     #[inline]
@@ -157,35 +145,21 @@ impl<T: Send + 'static, B: Body> Body for PendingUntilEosBody<T, B> {
         self.body.is_end_stream()
     }
 
-    fn poll_data(
+    fn poll_frame(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
+    ) -> Poll<Option<Result<http_body::Frame<Self::Data>, Self::Error>>> {
         let mut this = self.project();
         let body = &mut this.body;
         tokio::pin!(body);
-        let ret = futures::ready!(body.poll_data(cx));
+        let frame = futures::ready!(body.poll_frame(cx));
 
         // If this was the last frame, then drop the handle immediately.
         if this.body.is_end_stream() {
             drop(this.handle.take());
         }
 
-        Poll::Ready(ret)
-    }
-
-    fn poll_trailers(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
-        let this = self.project();
-        let ret = futures::ready!(this.body.poll_trailers(cx));
-
-        // Once trailers are received, the handle is dropped immediately (in case the body
-        // is retained longer for some reason).
-        drop(this.handle.take());
-
-        Poll::Ready(ret)
+        Poll::Ready(frame)
     }
 
     #[inline]
@@ -198,7 +172,7 @@ impl<T: Send + 'static, B: Body> Body for PendingUntilEosBody<T, B> {
 mod tests {
     use super::{PendingUntilEos, PendingUntilFirstData};
     use futures::future::poll_fn;
-    use http_body::Body;
+    use http_body::{Body, Frame};
     use std::collections::VecDeque;
     use std::io::Cursor;
     use std::pin::Pin;
@@ -225,11 +199,13 @@ mod tests {
         assert_ready!(task::spawn(poll_fn(|cx| {
             let body = &mut body;
             tokio::pin!(body);
-            body.poll_data(cx)
+            body.poll_frame(cx)
         }))
         .poll())
-        .expect("data some")
-        .expect("data ok");
+        .expect("frame is some")
+        .expect("frame is ok")
+        .into_data()
+        .expect("frame is data");
         assert!(wk.upgrade().is_none());
     }
 
@@ -282,10 +258,10 @@ mod tests {
         let res = assert_ready!(task::spawn(poll_fn(|cx| {
             let body = &mut body;
             tokio::pin!(body);
-            body.poll_data(cx)
+            body.poll_frame(cx)
         }))
         .poll());
-        assert!(res.expect("data is some").is_err());
+        assert!(res.expect("frame is some").is_err());
         assert!(wk.upgrade().is_none());
     }
 
@@ -308,21 +284,21 @@ mod tests {
         assert_ready!(task::spawn(poll_fn(|cx| {
             let body = &mut body;
             tokio::pin!(body);
-            body.poll_data(cx)
+            body.poll_frame(cx)
         }))
         .poll())
-        .expect("data some")
-        .expect("data ok");
+        .expect("frame is some")
+        .expect("frame is ok");
         assert!(wk.upgrade().is_some());
 
         assert_ready!(task::spawn(poll_fn(|cx| {
             let body = &mut body;
             tokio::pin!(body);
-            body.poll_data(cx)
+            body.poll_frame(cx)
         }))
         .poll())
-        .expect("data some")
-        .expect("data ok");
+        .expect("frame is some")
+        .expect("frame is ok");
         assert!(wk.upgrade().is_none());
     }
 
@@ -355,40 +331,42 @@ mod tests {
         assert_ready!(task::spawn(poll_fn(|cx| {
             let body = &mut body;
             tokio::pin!(body);
-            body.poll_data(cx)
+            body.poll_frame(cx)
         }))
         .poll())
-        .expect("data")
-        .expect("data ok");
+        .expect("frame is some")
+        .expect("frame is ok");
         assert!(wk.upgrade().is_some());
 
         assert_ready!(task::spawn(poll_fn(|cx| {
             let body = &mut body;
             tokio::pin!(body);
-            body.poll_data(cx)
+            body.poll_frame(cx)
         }))
         .poll())
-        .expect("data")
-        .expect("data ok");
+        .expect("frame is some")
+        .expect("frame is ok");
         assert!(wk.upgrade().is_some());
+
+        assert_ready!(task::spawn(poll_fn(|cx| {
+            let body = &mut body;
+            tokio::pin!(body);
+            body.poll_frame(cx)
+        }))
+        .poll())
+        .expect("frame is some")
+        .expect("frame is ok")
+        .into_trailers()
+        .expect("is trailers");
+        assert!(wk.upgrade().is_none());
 
         let poll = assert_ready!(task::spawn(poll_fn(|cx| {
             let body = &mut body;
             tokio::pin!(body);
-            body.poll_data(cx)
+            body.poll_frame(cx)
         }))
         .poll());
         assert!(poll.is_none());
-        assert!(wk.upgrade().is_some());
-
-        assert_ready!(task::spawn(poll_fn(|cx| {
-            let body = &mut body;
-            tokio::pin!(body);
-            body.poll_trailers(cx)
-        }))
-        .poll())
-        .expect("trailers ok")
-        .expect("trailers");
         assert!(wk.upgrade().is_none());
     }
 
@@ -411,7 +389,7 @@ mod tests {
         let poll = assert_ready!(task::spawn(poll_fn(|cx| {
             let body = &mut body;
             tokio::pin!(body);
-            body.poll_data(cx)
+            body.poll_frame(cx)
         }))
         .poll());
         assert!(poll.expect("some").is_err());
@@ -437,20 +415,21 @@ mod tests {
             self.0.is_empty() & self.1.is_none()
         }
 
-        fn poll_data(
+        fn poll_frame(
             mut self: Pin<&mut Self>,
             _: &mut Context<'_>,
-        ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
-            Poll::Ready(self.as_mut().0.pop_front().map(Cursor::new).map(Ok))
-        }
-
-        fn poll_trailers(
-            mut self: Pin<&mut Self>,
-            _: &mut Context<'_>,
-        ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
+        ) -> Poll<Option<Result<http_body::Frame<Self::Data>, Self::Error>>> {
             let mut this = self.as_mut();
-            assert!(this.0.is_empty());
-            Poll::Ready(Ok(this.1.take()))
+
+            // Return the next data frame from the sequence of chunks.
+            if let Some(chunk) = this.0.pop_front() {
+                let frame = Some(Ok(Frame::data(Cursor::new(chunk))));
+                return Poll::Ready(frame);
+            }
+
+            // Yield the trailers once all data frames have been yielded.
+            let trailers = this.1.take().map(Frame::<Self::Data>::trailers).map(Ok);
+            Poll::Ready(trailers)
         }
     }
 
@@ -464,18 +443,13 @@ mod tests {
             self.0.is_none()
         }
 
-        fn poll_data(
+        fn poll_frame(
             mut self: Pin<&mut Self>,
             _: &mut Context<'_>,
-        ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
-            Poll::Ready(Some(Err(self.as_mut().0.take().expect("err"))))
-        }
+        ) -> Poll<Option<Result<http_body::Frame<Self::Data>, Self::Error>>> {
+            let err = self.as_mut().0.take().expect("err");
 
-        fn poll_trailers(
-            mut self: Pin<&mut Self>,
-            _: &mut Context<'_>,
-        ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
-            Poll::Ready(Err(self.as_mut().0.take().expect("err")))
+            Poll::Ready(Some(Err(err)))
         }
     }
 }

@@ -13,7 +13,7 @@ Configures and runs the outbound proxy
 default = []
 allow-loopback = []
 test-subscriber = []
-test-util = ["linkerd-app-test", "linkerd-meshtls-rustls/test-util"]
+test-util = ["linkerd-app-test", "linkerd-meshtls-rustls/test-util", "dep:http-body"]
 
 prometheus-client-rust-242 = [] # TODO
 
@@ -21,6 +21,7 @@ prometheus-client-rust-242 = [] # TODO
 ahash = "0.8"
 bytes = { workspace = true }
 http = { workspace = true }
+http-body = { workspace = true, optional = true }
 futures = { version = "0.3", default-features = false }
 linkerd2-proxy-api = { workspace = true, features = ["outbound"] }
 once_cell = "1"
@@ -54,14 +55,16 @@ linkerd-tonic-watch = { path = "../../tonic-watch" }
 [dev-dependencies]
 futures-util = "0.3"
 http-body = { workspace = true }
-hyper = { workspace = true, features = ["backports", "deprecated", "http1", "http2"] }
+http-body-util = { workspace = true, features = ["channel"] }
+hyper = { workspace = true, features = ["http1", "http2"] }
+hyper-util = { workspace = true }
 tokio = { version = "1", features = ["macros", "sync", "time"] }
 tokio-rustls = { workspace = true }
 tokio-test = "0.4"
 tower-test = { workspace = true }
 
 linkerd-app-test = { path = "../test", features = ["client-policy"] }
-linkerd-http-body-compat = { path = "../../http/body-compat" }
+linkerd-http-box = { path = "../../http/box" }
 linkerd-http-prom = { path = "../../http/prom", features = ["test-util"] }
 linkerd-io = { path = "../../io", features = ["tokio-test"] }
 linkerd-meshtls = { path = "../../meshtls", features = ["rustls"] }

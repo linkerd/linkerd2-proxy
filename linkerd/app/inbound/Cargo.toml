@@ -45,7 +45,7 @@ path = "../../proxy/server-policy"
 features = ["proto"]
 
 [target.'cfg(fuzzing)'.dependencies]
-hyper = { workspace = true, features = ["deprecated", "http1", "http2"] }
+hyper = { workspace = true, features = ["http1", "http2"] }
 linkerd-app-test = { path = "../test" }
 arbitrary = { version = "1", features = ["derive"] }
 libfuzzer-sys = { version = "0.4", features = ["arbitrary-derive"] }
@@ -54,10 +54,12 @@ linkerd-meshtls-rustls = { path = "../../meshtls/rustls", features = [
 ] }
 
 [dev-dependencies]
-hyper = { workspace = true, features = ["deprecated", "http1", "http2"] }
+http-body-util = { workspace = true }
+hyper = { workspace = true, features = ["http1", "http2"] }
+hyper-util = { workspace = true }
 linkerd-app-test = { path = "../test" }
-linkerd-http-body-compat = { path = "../../http/body-compat" }
 linkerd-http-metrics = { path = "../../http/metrics", features = ["test-util"] }
+linkerd-http-box = { path = "../../http/box" }
 linkerd-idle-cache = { path = "../../idle-cache", features = ["test-util"] }
 linkerd-io = { path = "../../io", features = ["tokio-test"] }
 linkerd-meshtls = { path = "../../meshtls", features = ["rustls"] }

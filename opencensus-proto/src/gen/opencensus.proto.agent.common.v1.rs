@@ -3,7 +3,6 @@
 /// Note, this is not the metadata about the Node or service that is described by associated spans.
 /// In the future we plan to extend the identifier proto definition to support
 /// additional information (e.g cloud id, etc.)
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Node {
     /// Identifier that uniquely identifies a process within a VM/container.
@@ -23,7 +22,6 @@ pub struct Node {
     >,
 }
 /// Identifier that uniquely identifies a process within a VM/container.
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ProcessIdentifier {
     /// The host name. Usually refers to the machine/container name.
@@ -38,7 +36,6 @@ pub struct ProcessIdentifier {
     pub start_timestamp: ::core::option::Option<::prost_types::Timestamp>,
 }
 /// Information on OpenCensus Library.
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LibraryInfo {
     /// Language of OpenCensus Library.
@@ -85,17 +82,17 @@ pub mod library_info {
         /// (if the ProtoBuf definition does not change) and safe for programmatic use.
         pub fn as_str_name(&self) -> &'static str {
             match self {
-                Language::Unspecified => "LANGUAGE_UNSPECIFIED",
-                Language::Cpp => "CPP",
-                Language::CSharp => "C_SHARP",
-                Language::Erlang => "ERLANG",
-                Language::GoLang => "GO_LANG",
-                Language::Java => "JAVA",
-                Language::NodeJs => "NODE_JS",
-                Language::Php => "PHP",
-                Language::Python => "PYTHON",
-                Language::Ruby => "RUBY",
-                Language::WebJs => "WEB_JS",
+                Self::Unspecified => "LANGUAGE_UNSPECIFIED",
+                Self::Cpp => "CPP",
+                Self::CSharp => "C_SHARP",
+                Self::Erlang => "ERLANG",
+                Self::GoLang => "GO_LANG",
+                Self::Java => "JAVA",
+                Self::NodeJs => "NODE_JS",
+                Self::Php => "PHP",
+                Self::Python => "PYTHON",
+                Self::Ruby => "RUBY",
+                Self::WebJs => "WEB_JS",
             }
         }
         /// Creates an enum from field names used in the ProtoBuf definition.
@@ -118,7 +115,6 @@ pub mod library_info {
     }
 }
 /// Additional service information.
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ServiceInfo {
     /// Name of the service.
