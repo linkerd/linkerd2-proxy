@@ -6,7 +6,7 @@ use futures::prelude::*;
 use linkerd_error::Result;
 use linkerd_io as io;
 use linkerd_stack::Param;
-use std::pin::Pin;
+use std::{net::SocketAddr, pin::Pin};
 use tokio::net::TcpStream;
 
 #[derive(Copy, Clone, Debug, Default)]
@@ -83,7 +83,8 @@ where
 
         let incoming = incoming.map(|res| {
             let (inner, tcp) = res?;
-            let (orig_dst, tcp) = orig_dst(tcp)?;
+            let Remote(client_addr) = inner.param();
+            let (orig_dst, tcp) = orig_dst(tcp, client_addr)?;
             let addrs = Addrs { inner, orig_dst };
             Ok((addrs, tcp))
         });
@@ -92,13 +93,21 @@ where
     }
 }
 
-fn orig_dst(sock: TcpStream) -> io::Result<(OrigDstAddr, TcpStream)> {
+fn orig_dst(sock: TcpStream, client_addr: ClientAddr) -> io::Result<(OrigDstAddr, TcpStream)> {
     let sock = {
         let stream = tokio::net::TcpStream::into_std(sock)?;
         socket2::Socket::from(stream)
     };
 
-    let orig_dst = sock.original_dst()?.as_socket().ok_or(io::Error::new(
+    let orig_dst = match client_addr {
+        // IPv4-mapped IPv6 addresses are unwrapped by BindTcp::bind() and received here as
+        // SocketAddr::V4. We must call getsockopt with IPv4 constants (via
+        // orig_dst_addr_v4) even if it originally was an IPv6
+        ClientAddr(SocketAddr::V4(_)) => sock.original_dst()?,
+        ClientAddr(SocketAddr::V6(_)) => sock.original_dst_ipv6()?,
+    };
+
+    let orig_dst = orig_dst.as_socket().ok_or(io::Error::new(
         io::ErrorKind::InvalidInput,
         "Invalid address format",
     ))?;
