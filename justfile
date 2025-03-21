@@ -258,6 +258,12 @@ _tag-set:
 _k3d-ready:
     @just-k3d ready
 
+export K3D_CLUSTER_NAME := "l5d-proxy"
+export K3D_CREATE_FLAGS := "--no-lb"
+export K3S_DISABLE := "local-storage,traefik,servicelb,metrics-server@server:*"
+k3d-create: && _k3d-ready
+    @just-k3d create
+
 k3d-load-linkerd: _tag-set _k3d-ready
     for i in \
         '{{ _controller-image }}:{{ linkerd-tag }}' \
