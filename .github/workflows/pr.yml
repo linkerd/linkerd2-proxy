@@ -138,7 +138,7 @@ jobs:
           echo "LINKERD_TAG=$tag" >> "$GITHUB_ENV"
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - run: just docker
-      - run: just-k3d create
+      - run: just k3d-create
       - run: just k3d-load-linkerd
       - run: just linkerd-install
       - run: just linkerd-check-control-plane-proxy
