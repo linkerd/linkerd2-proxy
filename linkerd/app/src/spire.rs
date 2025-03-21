@@ -1,4 +1,3 @@
-use futures::TryFutureExt;
 use linkerd_app_core::{exp_backoff::ExponentialBackoff, Error};
 use std::sync::Arc;
 use tokio::sync::watch;
@@ -69,6 +68,7 @@ impl tower::Service<()> for Client {
             // as the request to the `MakeConnection`.
             let chan = Endpoint::try_from(TONIC_DEFAULT_URI)?
                 .connect_with_connector(tower::util::service_fn(move |_: Uri| {
+                    use futures::TryFutureExt;
                     UnixStream::connect(stripped_path.clone()).map_ok(hyper_util::rt::TokioIo::new)
                 }))
                 .await?;
