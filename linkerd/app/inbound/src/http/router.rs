@@ -163,14 +163,14 @@ impl<C> Inbound<C> {
                     |(rx, logical): (Option<profiles::Receiver>, Logical)| -> Result<_, Infallible> {
                         if let Some(rx) = rx {
                             if let Some(addr) = rx.logical_addr() {
-                                return Ok(svc::Either::A(Profile {
+                                return Ok(svc::Either::Left(Profile {
                                     addr,
                                     logical,
                                     profiles: rx,
                                 }));
                             }
                         }
-                        Ok(svc::Either::B(logical))
+                        Ok(svc::Either::Right(logical))
                     },
                     http.clone().into_inner(),
                 )
@@ -189,7 +189,7 @@ impl<C> Inbound<C> {
                         // discovery (so that we skip the profile stack above).
                         let addr = match logical.logical.clone() {
                             Some(addr) => addr,
-                            None => return Ok(svc::Either::B((None, logical))),
+                            None => return Ok(svc::Either::Right((None, logical))),
                         };
                         if !allow_profile.matches(addr.name()) {
                             tracing::debug!(
@@ -197,9 +197,9 @@ impl<C> Inbound<C> {
                                 suffixes = %allow_profile,
                                 "Skipping discovery, address not in configured DNS suffixes",
                             );
-                            return Ok(svc::Either::B((None, logical)));
+                            return Ok(svc::Either::Right((None, logical)));
                         }
-                        Ok(svc::Either::A(logical))
+                        Ok(svc::Either::Left(logical))
                     },
                     router
                         .check_new_service::<(Option<profiles::Receiver>, Logical), http::Request<_>>()

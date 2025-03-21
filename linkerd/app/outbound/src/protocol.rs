@@ -77,14 +77,14 @@ impl<N> Outbound<N> {
                 |(detected, parent): (http::Detection, T)| -> Result<_, Infallible> {
                     match detected {
                         http::Detection::Http(version) => {
-                            return Ok(svc::Either::A(Http { version, parent }));
+                            return Ok(svc::Either::Left(Http { version, parent }));
                         }
                         http::Detection::ReadTimeout(timeout) => {
                             tracing::info!("Continuing after timeout: {timeout:?}");
                         }
                         _ => {}
                     }
-                    Ok(svc::Either::B(parent))
+                    Ok(svc::Either::Right(parent))
                 },
                 opaq.clone().into_inner(),
             )
@@ -118,21 +118,21 @@ impl<N> Outbound<N> {
                 .push_switch(
                     |parent: T| -> Result<_, Infallible> {
                         match parent.param() {
-                            Protocol::Http1 => Ok(svc::Either::A(svc::Either::A(Http {
+                            Protocol::Http1 => Ok(svc::Either::Left(svc::Either::Left(Http {
                                 version: http::Variant::Http1,
                                 parent,
                             }))),
-                            Protocol::Http2 => Ok(svc::Either::A(svc::Either::A(Http {
+                            Protocol::Http2 => Ok(svc::Either::Left(svc::Either::Left(Http {
                                 version: http::Variant::H2,
                                 parent,
                             }))),
-                            Protocol::Opaque => {
-                                Ok(svc::Either::A(svc::Either::B(svc::Either::A(parent))))
-                            }
-                            Protocol::Tls => {
-                                Ok(svc::Either::A(svc::Either::B(svc::Either::B(parent))))
-                            }
-                            Protocol::Detect => Ok(svc::Either::B(parent)),
+                            Protocol::Opaque => Ok(svc::Either::Left(svc::Either::Right(
+                                svc::Either::Left(parent),
+                            ))),
+                            Protocol::Tls => Ok(svc::Either::Left(svc::Either::Right(
+                                svc::Either::Right(parent),
+                            ))),
+                            Protocol::Detect => Ok(svc::Either::Right(parent)),
                         }
                     },
                     detect.into_inner(),

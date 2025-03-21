@@ -1,5 +1,8 @@
 use crate::{layer, NewService};
-pub use tower::util::Either;
+
+// pub use tower::util::Either;
+pub use self::vendor::Either;
+mod vendor;
 
 #[derive(Clone, Debug)]
 pub struct NewEither<L, R> {
@@ -30,8 +33,8 @@ where
 
     fn new_service(&self, target: Either<T, U>) -> Self::Service {
         match target {
-            Either::A(t) => Either::A(self.left.new_service(t)),
-            Either::B(t) => Either::B(self.right.new_service(t)),
+            Either::Left(t) => Either::Left(self.left.new_service(t)),
+            Either::Right(t) => Either::Right(self.right.new_service(t)),
         }
     }
 }
@@ -47,8 +50,8 @@ where
 
     fn new_service(&self, target: T) -> Self::Service {
         match self {
-            Either::A(n) => Either::A(n.new_service(target)),
-            Either::B(n) => Either::B(n.new_service(target)),
+            Either::Left(n) => Either::Left(n.new_service(target)),
+            Either::Right(n) => Either::Right(n.new_service(target)),
         }
     }
 }
