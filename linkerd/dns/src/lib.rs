@@ -85,7 +85,7 @@ impl Resolver {
         &self,
         name: NameRef<'_>,
         default_port: u16,
-    ) -> Result<(Vec<net::SocketAddr>, time::Sleep), ResolveError> {
+    ) -> Result<(Vec<net::SocketAddr>, Instant), ResolveError> {
         match self.resolve_srv(name).await {
             Ok(res) => Ok(res),
             Err(srv_error) => {
@@ -108,18 +108,18 @@ impl Resolver {
     async fn resolve_a_or_aaaa(
         &self,
         name: NameRef<'_>,
-    ) -> Result<(Vec<net::IpAddr>, time::Sleep), ARecordError> {
+    ) -> Result<(Vec<net::IpAddr>, Instant), ARecordError> {
         debug!(%name, "Resolving an A/AAAA record");
         let lookup = self.dns.lookup_ip(name.as_str()).await?;
-        let valid_until = Instant::from_std(lookup.valid_until());
         let ips = lookup.iter().collect::<Vec<_>>();
-        Ok((ips, time::sleep_until(valid_until)))
+        let valid_until = Instant::from_std(lookup.valid_until());
+        Ok((ips, valid_until))
     }
 
     async fn resolve_srv(
         &self,
         name: NameRef<'_>,
-    ) -> Result<(Vec<net::SocketAddr>, time::Sleep), SrvRecordError> {
+    ) -> Result<(Vec<net::SocketAddr>, Instant), SrvRecordError> {
         debug!(%name, "Resolving a SRV record");
         let srv = self.dns.srv_lookup(name.as_str()).await?;
 
@@ -128,9 +128,9 @@ impl Resolver {
             .into_iter()
             .map(Self::srv_to_socket_addr)
             .collect::<Result<_, InvalidSrv>>()?;
-        debug!(ttl = ?valid_until - time::Instant::now(), ?addrs);
+        debug!(ttl = ?valid_until - Instant::now(), ?addrs);
 
-        Ok((addrs, time::sleep_until(valid_until)))
+        Ok((addrs, valid_until))
     }
 
     // XXX We need to convert the SRV records to an IP addr manually,

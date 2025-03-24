@@ -80,7 +80,7 @@ async fn resolution(dns: dns::Resolver, na: NameAddr) -> Result<UpdateStream, Er
                 trace!("Closed");
                 return;
             }
-            expiry.await;
+            tokio::time::sleep_until(expiry).await;
 
             loop {
                 match dns.resolve_addrs(na.name().as_ref(), na.port()).await {
@@ -91,7 +91,7 @@ async fn resolution(dns: dns::Resolver, na: NameAddr) -> Result<UpdateStream, Er
                             trace!("Closed");
                             return;
                         }
-                        expiry.await;
+                        tokio::time::sleep_until(expiry).await;
                     }
                     Err(error) => {
                         debug!(%error);
