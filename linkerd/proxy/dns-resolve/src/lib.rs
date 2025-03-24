@@ -80,7 +80,7 @@ async fn resolution(dns: dns::Resolver, na: NameAddr) -> Result<UpdateStream, Er
                 trace!("Closed");
                 return;
             }
-            tokio::time::sleep_until(expiry).await;
+            sleep_until_expired(expiry).await;
 
             loop {
                 match dns.resolve_addrs(na.name().as_ref(), na.port()).await {
@@ -91,7 +91,7 @@ async fn resolution(dns: dns::Resolver, na: NameAddr) -> Result<UpdateStream, Er
                             trace!("Closed");
                             return;
                         }
-                        tokio::time::sleep_until(expiry).await;
+                        sleep_until_expired(expiry).await;
                     }
                     Err(error) => {
                         debug!(%error);
@@ -106,4 +106,27 @@ async fn resolution(dns: dns::Resolver, na: NameAddr) -> Result<UpdateStream, Er
     );
 
     Ok(Box::pin(ReceiverStream::new(rx)))
+}
+
+/// Sleep for the provided [`Duration`][tokio::time::Duration].
+///
+/// NB: This enforces a lower-bound for TTL's to prevent [`resolution()`], above, from spinning
+/// in a hot-loop.
+#[tracing::instrument(level = "debug")]
+async fn sleep_until_expired(valid_until: tokio::time::Instant) {
+    use tokio::time::{sleep_until, Duration, Instant};
+
+    /// The minimum TTL duration that will be respected.
+    const MINIMUM_TTL: Duration = Duration::from_secs(5);
+    let minimum = Instant::now() + MINIMUM_TTL;
+
+    // Choose a deadline; if the expiry is too short, fall back to the minimum TTL.
+    let deadline = if valid_until >= minimum {
+        valid_until
+    } else {
+        debug!(ttl.min = ?MINIMUM_TTL, "Given TTL too short, using a minimum TTL");
+        minimum
+    };
+
+    sleep_until(deadline).await;
 }
