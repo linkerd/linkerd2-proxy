@@ -12,8 +12,8 @@ http-body = { workspace = true }
 linkerd-error = { path = "../error" }
 linkerd-metrics = { path = "../metrics" }
 linkerd-trace-context = { path = "../trace-context" }
-opentelemetry = { version = "0.28", default-features = false, features = ["trace"] }
-opentelemetry_sdk = { version = "0.28", default-features = false, features = ["trace"] }
+opentelemetry = { version = "0.29", default-features = false, features = ["trace"] }
+opentelemetry_sdk = { version = "0.29", default-features = false, features = ["trace"] }
 opentelemetry-proto = { path = "../../opentelemetry-proto" }
 tonic = { workspace = true, default-features = false, features = [
     "prost",
