@@ -281,10 +281,10 @@ impl TryFrom<observe_request::r#match::Http> for HttpMatch {
 
         m.r#match.ok_or(InvalidMatch::Empty).and_then(|m| match m {
             Pb::Scheme(s) => s.r#type.ok_or(InvalidMatch::Empty).and_then(|s| match s {
-                Type::Registered(reg) if reg == Registered::Http.into() => {
+                Type::Registered(reg) if reg == i32::from(Registered::Http) => {
                     Ok(HttpMatch::Scheme(http::uri::Scheme::HTTP))
                 }
-                Type::Registered(reg) if reg == Registered::Https.into() => {
+                Type::Registered(reg) if reg == i32::from(Registered::Https) => {
                     Ok(HttpMatch::Scheme(http::uri::Scheme::HTTPS))
                 }
                 Type::Registered(_) => Err(InvalidMatch::InvalidScheme),
