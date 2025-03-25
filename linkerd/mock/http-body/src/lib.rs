@@ -23,13 +23,15 @@ pub struct MockBody {
 // === impl MockBody ===
 
 impl MockBody {
-    /// Appends a poll outcome for [`Body::poll_data()`].
+    /// Appends a poll outcome for [`Body::poll_frame()`].
     pub fn then_yield_data(mut self, poll: Poll<Option<Result<Bytes, Error>>>) -> Self {
         self.data_polls.push_back(poll);
         self
     }
 
-    /// Appends a poll outcome for [`Body::poll_trailers()`].
+    /// Appends a [`Poll`] outcome for [`Body::poll_frame()`].
+    ///
+    /// These this will be yielded after data has been polled.
     pub fn then_yield_trailer(
         mut self,
         poll: Poll<Option<Result<http::HeaderMap, Error>>>,
