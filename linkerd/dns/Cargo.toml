@@ -11,6 +11,7 @@ futures = { version = "0.3", default-features = false }
 hickory-resolver = "0.25.1"
 linkerd-dns-name = { path = "./name" }
 linkerd-error = { path = "../error" }
+prometheus-client = { workspace = true }
 thiserror = "2"
 tokio = { version = "1", features = ["rt", "sync", "time"] }
 tracing = "0.1"

@@ -5,6 +5,7 @@ pub use hickory_resolver::config::ResolverOpts;
 use hickory_resolver::{config::ResolverConfig, proto::rr::rdata, system_conf, TokioResolver};
 use linkerd_dns_name::NameRef;
 pub use linkerd_dns_name::{InvalidName, Name, Suffix};
+use prometheus_client::metrics::counter::Counter;
 use std::{fmt, net};
 use thiserror::Error;
 use tokio::time::{self, Instant};
@@ -13,6 +14,7 @@ use tracing::{debug, trace};
 #[derive(Clone)]
 pub struct Resolver {
     dns: TokioResolver,
+    dns_records_resolved: Option<prometheus_client::metrics::counter::Counter>,
 }
 
 pub trait ConfigureResolver {
@@ -76,7 +78,18 @@ impl Resolver {
             .build();
         */
 
-        Resolver { dns }
+        Resolver {
+            dns,
+            dns_records_resolved: None,
+        }
+    }
+
+    /// Installs a counter tracking the number of DNS records resolved.
+    pub fn with_dns_records_resolved_counter(self, counter: Counter) -> Self {
+        Self {
+            dns_records_resolved: Some(counter),
+            ..self
+        }
     }
 
     /// Resolves a name to a set of addresses, preferring SRV records to normal A/AAAA
@@ -110,6 +123,7 @@ impl Resolver {
         name: NameRef<'_>,
     ) -> Result<(Vec<net::IpAddr>, Instant), ARecordError> {
         debug!(%name, "Resolving an A/AAAA record");
+        self.dns_records_resolved.as_ref().map(Counter::inc);
         let lookup = self.dns.lookup_ip(name.as_str()).await?;
         let ips = lookup.iter().collect::<Vec<_>>();
         let valid_until = Instant::from_std(lookup.valid_until());
@@ -121,6 +135,7 @@ impl Resolver {
         name: NameRef<'_>,
     ) -> Result<(Vec<net::SocketAddr>, Instant), SrvRecordError> {
         debug!(%name, "Resolving a SRV record");
+        self.dns_records_resolved.as_ref().map(Counter::inc);
         let srv = self.dns.srv_lookup(name.as_str()).await?;
 
         let valid_until = Instant::from_std(srv.as_lookup().valid_until());
