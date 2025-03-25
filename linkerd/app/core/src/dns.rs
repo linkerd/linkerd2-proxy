@@ -24,14 +24,20 @@ pub struct Dns {
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 struct Labels {
     client: &'static str,
-    outcome: Outcome,
+    record_type: RecordType,
+    result: Outcome,
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+enum RecordType {
+    A,
+    Srv,
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 enum Outcome {
-    A,
-    Srv,
-    Failure,
+    Ok,
+    NotFound,
 }
 
 // === impl Dns ===
@@ -39,23 +45,45 @@ enum Outcome {
 impl Dns {
     /// Returns a new [`Resolver`].
     pub fn resolver(&self, client: &'static str) -> Resolver {
-        let Self {
-            resolver,
-            dns_resolutions_total,
-        } = self;
+        let metrics = self.metrics(client);
 
-        let get_counter = |outcome| {
-            dns_resolutions_total
-                .get_or_create(&Labels { client, outcome })
-                .clone()
-        };
-        let metrics = Metrics {
-            a_records_resolved: get_counter(Outcome::A),
-            srv_records_resolved: get_counter(Outcome::Srv),
-            lookups_failed: get_counter(Outcome::Failure),
-        };
+        self.resolver.clone().with_metrics(metrics)
+    }
 
-        resolver.clone().with_metrics(metrics)
+    fn metrics(&self, client: &'static str) -> Metrics {
+        let family = &self.dns_resolutions_total;
+
+        let a_records_resolved = (*family.get_or_create(&Labels {
+            client,
+            record_type: RecordType::A,
+            result: Outcome::Ok,
+        }))
+        .clone();
+        let a_records_not_found = (*family.get_or_create(&Labels {
+            client,
+            record_type: RecordType::A,
+            result: Outcome::NotFound,
+        }))
+        .clone();
+        let srv_records_resolved = (*family.get_or_create(&Labels {
+            client,
+            record_type: RecordType::Srv,
+            result: Outcome::Ok,
+        }))
+        .clone();
+        let srv_records_not_found = (*family.get_or_create(&Labels {
+            client,
+            record_type: RecordType::Srv,
+            result: Outcome::NotFound,
+        }))
+        .clone();
+
+        Metrics {
+            a_records_resolved,
+            a_records_not_found,
+            srv_records_resolved,
+            srv_records_not_found,
+        }
     }
 }
 
@@ -94,10 +122,15 @@ impl ConfigureResolver for Config {
 
 impl EncodeLabelSet for Labels {
     fn encode(&self, mut encoder: LabelSetEncoder<'_>) -> Result<(), std::fmt::Error> {
-        let Self { client, outcome } = self;
+        let Self {
+            client,
+            record_type,
+            result,
+        } = self;
 
         ("client", *client).encode(encoder.encode_label())?;
-        ("outcome", outcome).encode(encoder.encode_label())?;
+        ("record_type", record_type).encode(encoder.encode_label())?;
+        ("result", result).encode(encoder.encode_label())?;
 
         Ok(())
     }
@@ -114,9 +147,25 @@ impl EncodeLabelValue for &Outcome {
 impl Display for Outcome {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
+            Self::Ok => "ok",
+            Self::NotFound => "not_found",
+        })
+    }
+}
+
+// === impl RecordType ===
+
+impl EncodeLabelValue for &RecordType {
+    fn encode(&self, encoder: &mut LabelValueEncoder<'_>) -> Result<(), std::fmt::Error> {
+        encoder.write_str(self.to_string().as_str())
+    }
+}
+
+impl Display for RecordType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
             Self::A => "A/AAAA",
             Self::Srv => "SRV",
-            Self::Failure => "failure",
         })
     }
 }

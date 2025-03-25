@@ -23,12 +23,14 @@ pub trait ConfigureResolver {
 
 #[derive(Clone)]
 pub struct Metrics {
-    /// A [`Counter`] tracking the number of A/AAAA records resolved.
+    /// A [`Counter`] tracking the number of A/AAAA records successfully resolved.
     pub a_records_resolved: Counter,
-    /// A [`Counter`] tracking the number of SRV records resolved.
+    /// A [`Counter`] tracking the number of A/AAAA records not found.
+    pub a_records_not_found: Counter,
+    /// A [`Counter`] tracking the number of SRV records successfully resolved.
     pub srv_records_resolved: Counter,
-    /// A [`Counter`] tracking the number of DNS lookups that failed.
-    pub lookups_failed: Counter,
+    /// A [`Counter`] tracking the number of SRV records not found.
+    pub srv_records_not_found: Counter,
 }
 
 #[derive(Debug, Clone, Error)]
@@ -108,30 +110,24 @@ impl Resolver {
     ) -> Result<(Vec<net::SocketAddr>, Instant), ResolveError> {
         match self.resolve_srv(name).await {
             Ok(res) => {
-                self.metrics
-                    .as_ref()
-                    .map(|m| &m.srv_records_resolved)
-                    .map(Counter::inc);
+                self.metrics.as_ref().map(Metrics::inc_srv_records_resolved);
                 Ok(res)
             }
             Err(srv_error) => {
                 // If the SRV lookup failed for any reason, fall back to A/AAAA
                 // record resolution.
                 debug!(srv.error = %srv_error, "Falling back to A/AAAA record lookup");
+                self.metrics
+                    .as_ref()
+                    .map(Metrics::inc_srv_records_not_found);
                 let (ips, delay) = match self.resolve_a_or_aaaa(name).await {
                     Ok(res) => res,
                     Err(a_error) => {
-                        self.metrics
-                            .as_ref()
-                            .map(|m| &m.lookups_failed)
-                            .map(Counter::inc);
+                        self.metrics.as_ref().map(Metrics::inc_a_records_not_found);
                         return Err(ResolveError { a_error, srv_error });
                     }
                 };
-                self.metrics
-                    .as_ref()
-                    .map(|m| &m.a_records_resolved)
-                    .map(Counter::inc);
+                self.metrics.as_ref().map(Metrics::inc_a_records_resolved);
                 let addrs = ips
                     .into_iter()
                     .map(|ip| net::SocketAddr::new(ip, default_port))
@@ -231,6 +227,26 @@ impl ResolveError {
         }
 
         None
+    }
+}
+
+// === impl Metrics ===
+
+impl Metrics {
+    fn inc_a_records_resolved(&self) {
+        self.a_records_resolved.inc();
+    }
+
+    fn inc_a_records_not_found(&self) {
+        self.a_records_not_found.inc();
+    }
+
+    fn inc_srv_records_resolved(&self) {
+        self.srv_records_resolved.inc();
+    }
+
+    fn inc_srv_records_not_found(&self) {
+        self.srv_records_not_found.inc();
     }
 }
 
