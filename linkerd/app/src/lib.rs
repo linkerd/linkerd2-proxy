@@ -190,7 +190,7 @@ impl Config {
             })
         }?;
 
-        debug!(config = ?trace_collector, "Building client");
+        debug!(config = ?trace_collector, "Building trace collector");
         let trace_collector = {
             let control_metrics = if let Some(prefix) = trace_collector.metrics_prefix() {
                 ControlMetrics::register(registry.sub_registry_with_prefix(prefix))
