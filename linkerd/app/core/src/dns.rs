@@ -1,8 +1,7 @@
 use linkerd_metrics::prom::{
-    encoding::{EncodeLabelSet, EncodeLabelValue, LabelSetEncoder, LabelValueEncoder},
+    encoding::{EncodeLabel, EncodeLabelSet, EncodeLabelValue, LabelSetEncoder, LabelValueEncoder},
     Counter, Family, Registry,
 };
-use prometheus_client::encoding::EncodeLabel;
 use std::{
     fmt::{Display, Write},
     time::Duration,
