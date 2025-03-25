@@ -49,15 +49,13 @@ impl Dns {
                 .get_or_create(&Labels { client, outcome })
                 .clone()
         };
-        let a_records_resolved = get_counter(Outcome::A);
-        let srv_records_resolved = get_counter(Outcome::Srv);
-        let lookups_failed = get_counter(Outcome::Failure);
+        let metrics = Metrics {
+            a_records_resolved: get_counter(Outcome::A),
+            srv_records_resolved: get_counter(Outcome::Srv),
+            lookups_failed: get_counter(Outcome::Failure),
+        };
 
-        resolver
-            .clone()
-            .with_a_records_resolved_counter(a_records_resolved)
-            .with_srv_records_resolved_counter(srv_records_resolved)
-            .with_lookups_failed_counter(lookups_failed)
+        resolver.clone().with_metrics(metrics)
     }
 }
 

@@ -14,16 +14,21 @@ use tracing::{debug, trace};
 #[derive(Clone)]
 pub struct Resolver {
     dns: TokioResolver,
-    /// A [`Counter`] tracking the number of A/AAAA records resolved.
-    a_records_resolved: Option<Counter>,
-    /// A [`Counter`] tracking the number of SRV records resolved.
-    srv_records_resolved: Option<Counter>,
-    /// A [`Counter`] tracking the number of DNS lookups that failed.
-    lookups_failed: Option<Counter>,
+    metrics: Option<Metrics>,
 }
 
 pub trait ConfigureResolver {
     fn configure_resolver(&self, _: &mut ResolverOpts);
+}
+
+#[derive(Clone)]
+pub struct Metrics {
+    /// A [`Counter`] tracking the number of A/AAAA records resolved.
+    pub a_records_resolved: Counter,
+    /// A [`Counter`] tracking the number of SRV records resolved.
+    pub srv_records_resolved: Counter,
+    /// A [`Counter`] tracking the number of DNS lookups that failed.
+    pub lookups_failed: Counter,
 }
 
 #[derive(Debug, Clone, Error)]
@@ -83,34 +88,13 @@ impl Resolver {
             .build();
         */
 
-        Resolver {
-            dns,
-            a_records_resolved: None,
-            srv_records_resolved: None,
-            lookups_failed: None,
-        }
+        Resolver { dns, metrics: None }
     }
 
     /// Installs a counter tracking the number of A/AAAA records resolved.
-    pub fn with_a_records_resolved_counter(self, counter: Counter) -> Self {
+    pub fn with_metrics(self, metrics: Metrics) -> Self {
         Self {
-            a_records_resolved: Some(counter),
-            ..self
-        }
-    }
-
-    /// Installs a counter tracking the number of SRV records resolved.
-    pub fn with_srv_records_resolved_counter(self, counter: Counter) -> Self {
-        Self {
-            srv_records_resolved: Some(counter),
-            ..self
-        }
-    }
-
-    /// Installs a counter tracking the number of lookups that failed.
-    pub fn with_lookups_failed_counter(self, counter: Counter) -> Self {
-        Self {
-            lookups_failed: Some(counter),
+            metrics: Some(metrics),
             ..self
         }
     }
@@ -122,16 +106,12 @@ impl Resolver {
         name: NameRef<'_>,
         default_port: u16,
     ) -> Result<(Vec<net::SocketAddr>, Instant), ResolveError> {
-        let Self {
-            a_records_resolved,
-            srv_records_resolved,
-            lookups_failed,
-            ..
-        } = self;
-
         match self.resolve_srv(name).await {
             Ok(res) => {
-                srv_records_resolved.as_ref().map(Counter::inc);
+                self.metrics
+                    .as_ref()
+                    .map(|m| &m.srv_records_resolved)
+                    .map(Counter::inc);
                 Ok(res)
             }
             Err(srv_error) => {
@@ -141,11 +121,17 @@ impl Resolver {
                 let (ips, delay) = match self.resolve_a_or_aaaa(name).await {
                     Ok(res) => res,
                     Err(a_error) => {
-                        lookups_failed.as_ref().map(Counter::inc);
+                        self.metrics
+                            .as_ref()
+                            .map(|m| &m.lookups_failed)
+                            .map(Counter::inc);
                         return Err(ResolveError { a_error, srv_error });
                     }
                 };
-                a_records_resolved.as_ref().map(Counter::inc);
+                self.metrics
+                    .as_ref()
+                    .map(|m| &m.a_records_resolved)
+                    .map(Counter::inc);
                 let addrs = ips
                     .into_iter()
                     .map(|ip| net::SocketAddr::new(ip, default_port))
