@@ -55,8 +55,6 @@ skip = [
     # `linkerd-trace-context`, `rustls-pemfile` and `tonic` depend on `base64`
     # v0.13.1 while `rcgen` depends on v0.21.5
     { name = "base64" },
-    # itertools still uses itertools v0.13.
-    { name = "itertools", version = "0.13" },
     # tonic/axum depend on a newer `tower`, which we are still catching up to.
     # see #3744.
     { name = "tower", version = "0.5" },
