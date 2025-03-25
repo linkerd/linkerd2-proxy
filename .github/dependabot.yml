@@ -22,12 +22,12 @@ updates:
       boring:
         patterns:
           - "boring*"
-      hickory:
-        patterns:
-          - "hickory*"
       futures:
         patterns:
           - "futures*"
+      hickory:
+        patterns:
+          - "hickory*"
       icu4x:
         patterns:
           - "icu_collections"
