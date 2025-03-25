@@ -145,7 +145,7 @@ impl Config {
 
             info_span!("identity").in_scope(|| {
                 identity.build(
-                    dns.resolver("control_identity"),
+                    dns.resolver("identity"),
                     metrics.control.clone(),
                     id_metrics,
                 )
@@ -166,7 +166,7 @@ impl Config {
             let control_metrics =
                 ControlMetrics::register(registry.sub_registry_with_prefix("control_destination"));
             let metrics = metrics.control.clone();
-            let dns = dns.resolver("control_destination");
+            let dns = dns.resolver("destination");
             info_span!("dst").in_scope(|| {
                 dst.build(
                     dns,
@@ -182,7 +182,7 @@ impl Config {
         let policies = {
             let control_metrics =
                 ControlMetrics::register(registry.sub_registry_with_prefix("control_policy"));
-            let dns = dns.resolver("control_policy");
+            let dns = dns.resolver("policy");
             let metrics = metrics.control.clone();
             info_span!("policy").in_scope(|| {
                 policy.build(
