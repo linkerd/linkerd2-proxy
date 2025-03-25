@@ -18,7 +18,7 @@ pub struct Config {
 
 pub struct Dns {
     resolver: Resolver,
-    dns_records_resolved: Family<Labels, Counter>,
+    dns_resolutions_total: Family<Labels, Counter>,
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -41,11 +41,11 @@ impl Dns {
     pub fn resolver(&self, client: &'static str) -> Resolver {
         let Self {
             resolver,
-            dns_records_resolved,
+            dns_resolutions_total,
         } = self;
 
         let get_counter = |outcome| {
-            dns_records_resolved
+            dns_resolutions_total
                 .get_or_create(&Labels { client, outcome })
                 .clone()
         };
@@ -63,18 +63,18 @@ impl Dns {
 
 impl Config {
     pub fn build(self, registry: &mut Registry) -> Dns {
-        let dns_records_resolved = Family::default();
+        let dns_resolutions_total = Family::default();
         registry.register(
-            "dns_records_resolved",
+            "dns_resolutions_total",
             "Counts the number of DNS records that have been resolved.",
-            dns_records_resolved.clone(),
+            dns_resolutions_total.clone(),
         );
 
         let resolver =
             Resolver::from_system_config_with(&self).expect("system DNS config must be valid");
         Dns {
             resolver,
-            dns_records_resolved,
+            dns_resolutions_total,
         }
     }
 }
