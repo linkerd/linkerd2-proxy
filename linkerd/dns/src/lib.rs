@@ -5,6 +5,7 @@ pub use hickory_resolver::config::ResolverOpts;
 use hickory_resolver::{config::ResolverConfig, proto::rr::rdata, system_conf, TokioResolver};
 use linkerd_dns_name::NameRef;
 pub use linkerd_dns_name::{InvalidName, Name, Suffix};
+use prometheus_client::metrics::counter::Counter;
 use std::{fmt, net};
 use thiserror::Error;
 use tokio::time::{self, Instant};
@@ -13,6 +14,12 @@ use tracing::{debug, trace};
 #[derive(Clone)]
 pub struct Resolver {
     dns: TokioResolver,
+    /// A [`Counter`] tracking the number of A/AAAA records resolved.
+    a_records_resolved: Option<Counter>,
+    /// A [`Counter`] tracking the number of SRV records resolved.
+    srv_records_resolved: Option<Counter>,
+    /// A [`Counter`] tracking the number of DNS lookups that failed.
+    lookups_failed: Option<Counter>,
 }
 
 pub trait ConfigureResolver {
@@ -76,7 +83,36 @@ impl Resolver {
             .build();
         */
 
-        Resolver { dns }
+        Resolver {
+            dns,
+            a_records_resolved: None,
+            srv_records_resolved: None,
+            lookups_failed: None,
+        }
+    }
+
+    /// Installs a counter tracking the number of A/AAAA records resolved.
+    pub fn with_a_records_resolved_counter(self, counter: Counter) -> Self {
+        Self {
+            a_records_resolved: Some(counter),
+            ..self
+        }
+    }
+
+    /// Installs a counter tracking the number of SRV records resolved.
+    pub fn with_srv_records_resolved_counter(self, counter: Counter) -> Self {
+        Self {
+            srv_records_resolved: Some(counter),
+            ..self
+        }
+    }
+
+    /// Installs a counter tracking the number of lookups that failed.
+    pub fn with_lookups_failed_counter(self, counter: Counter) -> Self {
+        Self {
+            lookups_failed: Some(counter),
+            ..self
+        }
     }
 
     /// Resolves a name to a set of addresses, preferring SRV records to normal A/AAAA
@@ -86,16 +122,30 @@ impl Resolver {
         name: NameRef<'_>,
         default_port: u16,
     ) -> Result<(Vec<net::SocketAddr>, Instant), ResolveError> {
+        let Self {
+            a_records_resolved,
+            srv_records_resolved,
+            lookups_failed,
+            ..
+        } = self;
+
         match self.resolve_srv(name).await {
-            Ok(res) => Ok(res),
+            Ok(res) => {
+                srv_records_resolved.as_ref().map(Counter::inc);
+                Ok(res)
+            }
             Err(srv_error) => {
                 // If the SRV lookup failed for any reason, fall back to A/AAAA
                 // record resolution.
                 debug!(srv.error = %srv_error, "Falling back to A/AAAA record lookup");
                 let (ips, delay) = match self.resolve_a_or_aaaa(name).await {
                     Ok(res) => res,
-                    Err(a_error) => return Err(ResolveError { a_error, srv_error }),
+                    Err(a_error) => {
+                        lookups_failed.as_ref().map(Counter::inc);
+                        return Err(ResolveError { a_error, srv_error });
+                    }
                 };
+                a_records_resolved.as_ref().map(Counter::inc);
                 let addrs = ips
                     .into_iter()
                     .map(|ip| net::SocketAddr::new(ip, default_port))
