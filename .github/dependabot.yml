@@ -28,6 +28,18 @@ updates:
       futures:
         patterns:
           - "futures*"
+      icu4x:
+        patterns:
+          - "icu_collections"
+          - "icu_locid"
+          - "icu_locid_transform"
+          - "icu_locid_transform_data"
+          - "icu_normalizer"
+          - "icu_normalizer_data"
+          - "icu_properties"
+          - "icu_properties_data"
+          - "icu_provider"
+          - "icu_provider_macros"
       opentelemetry:
         patterns:
           - "opentelemetry*"
