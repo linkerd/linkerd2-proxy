@@ -39,6 +39,9 @@ updates:
           - "tokio-rustls"
           - "rustls*"
           - "ring"
+      tonic:
+        patterns:
+          - "tonic*"
       tracing:
         patterns:
           - "tracing*"
