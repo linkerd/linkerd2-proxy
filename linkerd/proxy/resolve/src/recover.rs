@@ -147,14 +147,12 @@ where
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.project();
         loop {
-            // XXX(eliza): note that this match was originally an `if let`,
-            // but that doesn't work with `#[project]` for some kinda reason
-            #[allow(clippy::single_match)]
-            match this.inner.state {
-                State::Connected {
-                    ref mut resolution,
-                    ref mut is_initial,
-                } => {
+            if let State::Connected {
+                ref mut resolution,
+                ref mut is_initial,
+            } = this.inner.state
+            {
+                {
                     tracing::trace!("polling");
                     match ready!(resolution.try_poll_next_unpin(cx)) {
                         Some(Ok(Update::Remove(_))) if *is_initial => {
@@ -189,7 +187,6 @@ where
                         }
                     }
                 }
-                _ => {}
             }
 
             ready!(this.inner.poll_connected(cx))?;
