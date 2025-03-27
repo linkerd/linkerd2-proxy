@@ -11,7 +11,7 @@ proto = ["linkerd-http-route/proto", "linkerd2-proxy-api", "prost-types"]
 test-util = []
 
 [dependencies]
-governor = { version = "0.8", default-features = false, features = ["std"] }
+governor = { version = "0.10", default-features = false, features = ["std"] }
 ipnet = "2"
 http = { workspace = true }
 prost-types = { workspace = true, optional = true }
