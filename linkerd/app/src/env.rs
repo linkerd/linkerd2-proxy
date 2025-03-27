@@ -248,7 +248,6 @@ pub const ENV_DESTINATION_PROFILE_INITIAL_TIMEOUT: &str =
     "LINKERD2_PROXY_DESTINATION_PROFILE_INITIAL_TIMEOUT";
 
 pub const ENV_TAP_SVC_NAME: &str = "LINKERD2_PROXY_TAP_SVC_NAME";
-const ENV_RESOLV_CONF: &str = "LINKERD2_PROXY_RESOLV_CONF";
 
 /// Configures a minimum value for the TTL of DNS lookups.
 ///
@@ -299,8 +298,6 @@ const DEFAULT_OUTBOUND_CONNECT_BACKOFF: ExponentialBackoff =
 
 const DEFAULT_CONTROL_QUEUE_CAPACITY: usize = 100;
 const DEFAULT_CONTROL_FAILFAST_TIMEOUT: Duration = Duration::from_secs(10);
-
-const DEFAULT_RESOLV_CONF: &str = "/etc/resolv.conf";
 
 const DEFAULT_INITIAL_STREAM_WINDOW_SIZE: u32 = 65_535; // Protocol default
 const DEFAULT_INITIAL_CONNECTION_WINDOW_SIZE: u32 = 1048576; // 1MB ~ 16 streams at capacity
@@ -428,8 +425,6 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     let shutdown_endpoint_enabled = parse(strings, ENV_SHUTDOWN_ENDPOINT_ENABLED, parse_bool);
 
     // DNS
-
-    let resolv_conf_path = strings.get(ENV_RESOLV_CONF);
 
     let dns_min_ttl = parse(strings, ENV_DNS_MIN_TTL, parse_duration);
     let dns_max_ttl = parse(strings, ENV_DNS_MAX_TTL, parse_duration);
@@ -825,9 +820,6 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     let dns = dns::Config {
         min_ttl: dns_min_ttl?,
         max_ttl: dns_max_ttl?,
-        resolv_conf_path: resolv_conf_path?
-            .unwrap_or_else(|| DEFAULT_RESOLV_CONF.into())
-            .into(),
     };
 
     let trace_collector = match trace_collector_addr? {

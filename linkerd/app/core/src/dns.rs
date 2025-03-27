@@ -1,12 +1,10 @@
 pub use linkerd_dns::*;
-use std::path::PathBuf;
 use std::time::Duration;
 
 #[derive(Clone, Debug)]
 pub struct Config {
     pub min_ttl: Option<Duration>,
     pub max_ttl: Option<Duration>,
-    pub resolv_conf_path: PathBuf,
 }
 
 pub struct Dns {
