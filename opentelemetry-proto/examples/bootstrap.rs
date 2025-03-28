@@ -3,7 +3,7 @@
 //! It can be run via:
 //!
 //! ```no_run
-//! cargo test -p opentelmetry-proto --test=bootstrap
+//! cargo test -p opentelemetry-proto --test=bootstrap
 //! ```
 
 /// Generates protobuf bindings into src/gen and fails if the generated files do
