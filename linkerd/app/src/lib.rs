@@ -134,7 +134,7 @@ impl Config {
         let (metrics, report) = Metrics::new(admin.metrics_retain_idle);
 
         debug!("Building DNS client");
-        let dns = dns.build();
+        let dns = dns.build(&mut registry);
 
         // Ensure that we've obtained a valid identity before binding any servers.
         debug!("Building Identity client");

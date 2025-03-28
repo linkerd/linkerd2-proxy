@@ -1,4 +1,5 @@
 pub use linkerd_dns::*;
+use linkerd_metrics::prom::{Counter, Registry};
 use std::time::Duration;
 
 #[derive(Clone, Debug)]
@@ -14,9 +15,17 @@ pub struct Dns {
 // === impl Config ===
 
 impl Config {
-    pub fn build(self) -> Dns {
-        let resolver =
-            Resolver::from_system_config_with(&self).expect("system DNS config must be valid");
+    pub fn build(self, registry: &mut Registry) -> Dns {
+        let dns_records_resolved = Counter::default();
+        registry.register(
+            "dns_records_resolved",
+            "Counts the number of DNS records that have been resolved.",
+            dns_records_resolved.clone(),
+        );
+
+        let resolver = Resolver::from_system_config_with(&self)
+            .expect("system DNS config must be valid")
+            .with_dns_records_resolved_counter(dns_records_resolved);
         Dns { resolver }
     }
 }
