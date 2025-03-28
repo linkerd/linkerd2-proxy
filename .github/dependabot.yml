@@ -25,6 +25,10 @@ updates:
       futures:
         patterns:
           - "futures*"
+      grpc:
+        patterns:
+          - "prost*"
+          - "tonic*"
       hickory:
         patterns:
           - "hickory*"
@@ -34,17 +38,11 @@ updates:
       opentelemetry:
         patterns:
           - "opentelemetry*"
-      prost:
-        patterns:
-          - "prost*"
       rustls:
         patterns:
           - "tokio-rustls"
           - "rustls*"
           - "ring"
-      tonic:
-        patterns:
-          - "tonic*"
       tracing:
         patterns:
           - "tracing*"
