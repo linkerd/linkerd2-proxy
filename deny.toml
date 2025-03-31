@@ -18,14 +18,12 @@ allow = [
     "ISC",
     "MIT",
     "Unicode-3.0",
+    "Zlib",
 ]
 # Ignore local workspace license values for unpublished crates.
 private = { ignore = true }
 confidence-threshold = 0.8
 exceptions = [
-    { allow = [
-        "Zlib",
-    ], name = "adler32", version = "*" },
     { allow = [
         "ISC",
         "MIT",
@@ -67,7 +65,7 @@ skip-tree = [
     # rust v1.0 is still propagating through the ecosystem
     { name = "rustix", version = "0.38" },
     # `pprof` uses a number of old dependencies. for now, we skip its subtree.
-    { name = "pprof" }
+    { name = "pprof" },
 ]
 
 [sources]
@@ -75,5 +73,4 @@ unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = [
     "https://github.com/rust-lang/crates.io-index",
-    "https://github.com/linkerd/linkerd2-proxy-api",
 ]
