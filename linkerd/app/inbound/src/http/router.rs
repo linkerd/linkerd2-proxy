@@ -85,6 +85,7 @@ impl<C> Inbound<C> {
             let allow_profile = config.allow_discovery.clone();
             let h1_params = config.proxy.connect.http1;
             let h2_params = config.proxy.connect.http2.clone();
+            let unsafe_authority_labels = false;
 
             // Creates HTTP clients for each inbound port & HTTP settings.
             let http = connect
@@ -122,7 +123,9 @@ impl<C> Inbound<C> {
                     rt.metrics
                         .proxy
                         .http_endpoint
-                        .to_layer::<classify::Response, _, _>(),
+                        .to_layer_via::<classify::Response, _, _, _>(
+                            endpoint_labels(unsafe_authority_labels),
+                        ),
                 )
                 .push_on_service(http_tracing::client(rt.span_sink.clone(), super::trace_labels()))
                 .push_on_service(http::BoxResponse::layer())
@@ -387,13 +390,17 @@ impl Param<transport::labels::Key> for Logical {
     }
 }
 
-impl Param<metrics::EndpointLabels> for Logical {
-    fn param(&self) -> metrics::EndpointLabels {
+fn endpoint_labels(
+    unsafe_authority_labels: bool,
+) -> impl svc::ExtractParam<metrics::EndpointLabels, Logical> + Clone {
+    move |t: &Logical| -> metrics::EndpointLabels {
         metrics::InboundEndpointLabels {
-            tls: self.tls.clone(),
-            authority: self.logical.as_ref().map(|d| d.as_http_authority()),
-            target_addr: self.addr.into(),
-            policy: self.permit.labels.clone(),
+            tls: t.tls.clone(),
+            authority: unsafe_authority_labels
+                .then(|| t.logical.as_ref().map(|d| d.as_http_authority()))
+                .flatten(),
+            target_addr: t.addr.into(),
+            policy: t.permit.labels.clone(),
         }
         .into()
     }
