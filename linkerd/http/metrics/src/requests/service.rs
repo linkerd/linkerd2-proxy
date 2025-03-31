@@ -18,8 +18,8 @@ use std::{
 use tokio::time::Instant;
 
 /// Wraps services to record metrics.
-pub type NewHttpMetrics<N, K, C, Class, S> =
-    NewMetrics<N, K, Mutex<Metrics<Class>>, HttpMetrics<S, C>>;
+pub type NewHttpMetrics<N, K, X, C, Class, S> =
+    NewMetrics<N, K, X, Mutex<Metrics<Class>>, HttpMetrics<S, C>>;
 
 /// A middleware that records HTTP metrics.
 #[pin_project]

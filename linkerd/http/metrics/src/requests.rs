@@ -59,13 +59,25 @@ impl<T: Hash + Eq, C: Hash + Eq> Requests<T, C> {
 
     pub fn to_layer<L, N, Tgt>(
         &self,
-    ) -> impl layer::Layer<N, Service = NewHttpMetrics<N, T, L, C, N::Service>> + Clone
+    ) -> impl layer::Layer<N, Service = NewHttpMetrics<N, T, (), L, C, N::Service>> + Clone
     where
         L: ClassifyResponse<Class = C> + Send + Sync + 'static,
         N: svc::NewService<Tgt>,
     {
+        self.to_layer_via(())
+    }
+
+    pub fn to_layer_via<L, N, Tgt, X>(
+        &self,
+        params: X,
+    ) -> impl layer::Layer<N, Service = NewHttpMetrics<N, T, X, L, C, N::Service>> + Clone
+    where
+        L: ClassifyResponse<Class = C> + Send + Sync + 'static,
+        N: svc::NewService<Tgt>,
+        X: Clone,
+    {
         let reg = self.0.clone();
-        NewMetrics::layer(reg)
+        NewMetrics::layer_via(reg, params)
     }
 }
 
