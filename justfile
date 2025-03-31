@@ -280,7 +280,8 @@ k3d-load-linkerd: _tag-set _k3d-ready
 
 # Install crds on the test cluster.
 _linkerd-crds-install: _k3d-ready
-    {{ _linkerd }} install --crds --set installGatewayAPI=true \
+    {{ _kubectl }} apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.1/standard-install.yaml
+    {{ _linkerd }} install --crds \
         | {{ _kubectl }} apply -f -
     {{ _kubectl }} wait crd --for condition=established \
         --selector='linkerd.io/control-plane-ns' \
