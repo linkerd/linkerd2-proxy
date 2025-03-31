@@ -55,6 +55,9 @@ pub struct Config {
 
     /// Configures how HTTP requests are buffered *for each inbound port*.
     pub http_request_queue: QueueConfig,
+
+    /// Enables unsafe authority labels.
+    pub unsafe_authority_labels: bool,
 }
 
 #[derive(Clone)]

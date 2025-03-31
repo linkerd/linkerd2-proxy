@@ -95,6 +95,9 @@ pub enum ParseError {
     InvalidTrustAnchors,
     #[error("not a valid port policy: {0}")]
     InvalidPortPolicy(String),
+
+    #[error("authority labels may only be set to 'unsafe'")]
+    NotAnAuthorityLabelsSetting,
 }
 
 // Environment variables to look at when loading the configuration
@@ -148,6 +151,8 @@ const ENV_OUTBOUND_DISABLE_INFORMATIONAL_HEADERS: &str =
 
 const ENV_OUTBOUND_METRICS_HOSTNAME_LABELS: &str =
     "LINKERD2_PROXY_OUTBOUND_METRICS_HOSTNAME_LABELS";
+const ENV_INBOUND_METRICS_AUTHORITY_LABELS: &str =
+    "LINKERD2_PROXY_INBOUND_METRICS_AUTHORITY_LABELS";
 
 const ENV_TRACE_ATTRIBUTES_PATH: &str = "LINKERD2_PROXY_TRACE_ATTRIBUTES_PATH";
 const ENV_TRACE_PROTOCOL: &str = "LINKERD2_PROXY_TRACE_PROTOCOL";
@@ -638,6 +643,17 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         let detect_protocol_timeout =
             inbound_detect_timeout?.unwrap_or(DEFAULT_INBOUND_DETECT_TIMEOUT);
 
+        let unsafe_authority_labels = parse(strings, ENV_INBOUND_METRICS_AUTHORITY_LABELS, |s| {
+            if s.is_empty() {
+                Ok(false)
+            } else if s.eq_ignore_ascii_case("unsafe") {
+                Ok(true)
+            } else {
+                Err(ParseError::NotAnAuthorityLabelsSetting)
+            }
+        })?
+        .unwrap_or(false);
+
         // Ensure that connections that directly target the inbound port are secured (unless
         // identity is disabled).
         let policy = {
@@ -724,6 +740,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 failfast_timeout: inbound_http_failfast_timeout?
                     .unwrap_or(DEFAULT_INBOUND_HTTP_FAILFAST_TIMEOUT),
             },
+            unsafe_authority_labels,
         }
     };
 

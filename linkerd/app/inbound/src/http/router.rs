@@ -83,9 +83,9 @@ impl<C> Inbound<C> {
     {
         self.map_stack(|config, rt, connect| {
             let allow_profile = config.allow_discovery.clone();
+            let unsafe_authority_labels = config.unsafe_authority_labels;
             let h1_params = config.proxy.connect.http1;
             let h2_params = config.proxy.connect.http2.clone();
-            let unsafe_authority_labels = false;
 
             // Creates HTTP clients for each inbound port & HTTP settings.
             let http = connect
