@@ -12,7 +12,7 @@ use linkerd_app_core::{
     errors::header::L5D_PROXY_ERROR,
     identity, io, metrics,
     proxy::http::{self, BoxBody},
-    svc::{self, http::TracingExecutor, NewService, Param},
+    svc::{self, http::TokioExecutor, NewService, Param},
     tls,
     transport::{ClientAddr, OrigDstAddr, Remote, ServerAddr},
     Error, NameAddr, ProxyRuntime,
@@ -95,7 +95,7 @@ async fn downgrade_origin_form() {
     // Reproduces https://github.com/linkerd/linkerd2/issues/5298
     let mut server = hyper::server::conn::http1::Builder::new();
     server.timer(hyper_util::rt::TokioTimer::new());
-    let mut client = hyper::client::conn::http2::Builder::new(TracingExecutor);
+    let mut client = hyper::client::conn::http2::Builder::new(TokioExecutor::new());
     client.timer(hyper_util::rt::TokioTimer::new());
     let _trace = trace_init();
 
@@ -168,7 +168,7 @@ async fn downgrade_origin_form() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn downgrade_absolute_form() {
-    let mut client = hyper::client::conn::http2::Builder::new(TracingExecutor);
+    let mut client = hyper::client::conn::http2::Builder::new(TokioExecutor::new());
     client.timer(hyper_util::rt::TokioTimer::new());
     let mut server = hyper::server::conn::http1::Builder::new();
     server.timer(hyper_util::rt::TokioTimer::new());
@@ -441,7 +441,7 @@ async fn h2_response_meshed_error_header() {
     let connect = support::connect().endpoint_fn_boxed(Target::addr(), connect_error());
 
     // Build a client using the connect that always errors.
-    let mut client = hyper::client::conn::http2::Builder::new(TracingExecutor);
+    let mut client = hyper::client::conn::http2::Builder::new(TokioExecutor::new());
     client.timer(hyper_util::rt::TokioTimer::new());
     let profiles = profile::resolver();
     let profile_tx =
@@ -482,7 +482,7 @@ async fn h2_response_unmeshed_error_header() {
     let connect = support::connect().endpoint_fn_boxed(Target::addr(), connect_error());
 
     // Build a client using the connect that always errors.
-    let mut client = hyper::client::conn::http2::Builder::new(TracingExecutor);
+    let mut client = hyper::client::conn::http2::Builder::new(TokioExecutor::new());
     client.timer(hyper_util::rt::TokioTimer::new());
     let profiles = profile::resolver();
     let profile_tx =
@@ -525,7 +525,7 @@ async fn grpc_meshed_response_error_header() {
     let connect = support::connect().endpoint_fn_boxed(Target::addr(), connect_error());
 
     // Build a client using the connect that always errors.
-    let mut client = hyper::client::conn::http2::Builder::new(TracingExecutor);
+    let mut client = hyper::client::conn::http2::Builder::new(TokioExecutor::new());
     client.timer(hyper_util::rt::TokioTimer::new());
     let profiles = profile::resolver();
     let profile_tx =
@@ -567,7 +567,7 @@ async fn grpc_unmeshed_response_error_header() {
     let connect = support::connect().endpoint_fn_boxed(Target::addr(), connect_error());
 
     // Build a client using the connect that always errors.
-    let mut client = hyper::client::conn::http2::Builder::new(TracingExecutor);
+    let mut client = hyper::client::conn::http2::Builder::new(TokioExecutor::new());
     client.timer(hyper_util::rt::TokioTimer::new());
     let profiles = profile::resolver();
     let profile_tx =
@@ -609,7 +609,7 @@ async fn grpc_response_class() {
 
     // Build a mock connector serves a gRPC server that returns errors.
     let connect = {
-        let mut server = hyper::server::conn::http2::Builder::new(TracingExecutor);
+        let mut server = hyper::server::conn::http2::Builder::new(TokioExecutor::new());
         server.timer(hyper_util::rt::TokioTimer::new());
         support::connect().endpoint_fn_boxed(
             Target::addr(),
@@ -618,7 +618,7 @@ async fn grpc_response_class() {
     };
 
     // Build a client using the connect that always errors.
-    let mut client = hyper::client::conn::http2::Builder::new(TracingExecutor);
+    let mut client = hyper::client::conn::http2::Builder::new(TokioExecutor::new());
     client.timer(hyper_util::rt::TokioTimer::new());
     let profiles = profile::resolver();
     let profile_tx =
@@ -818,7 +818,7 @@ fn hello_server(
 
 #[tracing::instrument]
 fn grpc_status_server(
-    server: hyper::server::conn::http2::Builder<TracingExecutor>,
+    server: hyper::server::conn::http2::Builder<TokioExecutor>,
     status: tonic::Code,
 ) -> impl Fn(Remote<ServerAddr>) -> io::Result<io::BoxedIo> {
     move |endpoint| {

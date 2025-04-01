@@ -1,5 +1,5 @@
 use crate::*;
-use linkerd_app_core::svc::http::{BoxBody, TracingExecutor};
+use linkerd_app_core::svc::http::{BoxBody, TokioExecutor};
 use std::error::Error as _;
 use tokio::time::timeout;
 
@@ -1605,7 +1605,7 @@ async fn http2_request_without_authority() {
     let io = tokio::net::TcpStream::connect(&addr)
         .await
         .expect("connect error");
-    let (mut client, conn) = hyper::client::conn::http2::Builder::new(TracingExecutor)
+    let (mut client, conn) = hyper::client::conn::http2::Builder::new(TokioExecutor::new())
         .timer(hyper_util::rt::TokioTimer::new())
         .handshake(hyper_util::rt::TokioIo::new(io))
         .await

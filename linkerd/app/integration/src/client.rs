@@ -1,6 +1,6 @@
 use super::*;
 use http::{Request, Response};
-use linkerd_app_core::{proxy::http::TracingExecutor, svc::http::BoxBody};
+use linkerd_app_core::{proxy::http::TokioExecutor, svc::http::BoxBody};
 use parking_lot::Mutex;
 use std::io;
 use tokio::{net::TcpStream, task::JoinHandle};
@@ -272,7 +272,7 @@ fn run(
 
     let span = info_span!("test client", peer_addr = %addr, ?version, test = %test_name);
     let work = async move {
-        let client = hyper_util::client::legacy::Client::builder(TracingExecutor)
+        let client = hyper_util::client::legacy::Client::builder(TokioExecutor::new())
             .http2_only(http2_only)
             .build::<Conn, BoxBody>(conn);
         tracing::trace!("client task started");

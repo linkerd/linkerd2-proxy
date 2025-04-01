@@ -1,4 +1,5 @@
-use crate::{client_handle::SetClientHandle, h2, BoxBody, ClientHandle, TracingExecutor, Variant};
+use crate::{client_handle::SetClientHandle, h2, BoxBody, ClientHandle, Variant};
+use hyper_util::rt::tokio::TokioExecutor;
 use linkerd_error::Error;
 use linkerd_http_box::BoxRequest;
 use linkerd_io::{self as io, PeerAddr};
@@ -34,7 +35,7 @@ pub struct NewServeHttp<X, N> {
 pub struct ServeHttp<N> {
     version: Variant,
     http1: hyper::server::conn::http1::Builder,
-    http2: hyper::server::conn::http2::Builder<TracingExecutor>,
+    http2: hyper::server::conn::http2::Builder<TokioExecutor>,
     inner: N,
     drain: drain::Watch,
 }
@@ -75,7 +76,7 @@ where
             max_pending_accept_reset_streams,
         } = h2;
 
-        let mut http2 = hyper::server::conn::http2::Builder::new(TracingExecutor);
+        let mut http2 = hyper::server::conn::http2::Builder::new(TokioExecutor::new());
         http2.timer(hyper_util::rt::TokioTimer::new());
         match flow_control {
             None => {}

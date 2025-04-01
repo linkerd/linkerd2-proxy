@@ -1880,15 +1880,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "linkerd-http-executor"
-version = "0.1.0"
-dependencies = [
- "hyper",
- "tokio",
- "tracing",
-]
-
-[[package]]
 name = "linkerd-http-h2"
 version = "0.1.0"
 
@@ -2424,7 +2415,6 @@ dependencies = [
  "linkerd-http-box",
  "linkerd-http-classify",
  "linkerd-http-detect",
- "linkerd-http-executor",
  "linkerd-http-h2",
  "linkerd-http-insert",
  "linkerd-http-override-authority",

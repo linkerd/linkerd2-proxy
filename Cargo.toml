@@ -27,7 +27,6 @@ members = [
     "linkerd/http/box",
     "linkerd/http/classify",
     "linkerd/http/detect",
-    "linkerd/http/executor",
     "linkerd/http/h2",
     "linkerd/http/insert",
     "linkerd/http/metrics",
@@ -111,7 +110,6 @@ h2 = { version = "0.4" }
 http = { version = "1" }
 http-body = { version = "1" }
 hyper = { version = "1", default-features = false }
-hyper-util = { version = "0.1", default-features = false }
 prometheus-client = { version = "0.23" }
 prost = { version = "0.13" }
 prost-build = { version = "0.13", default-features = false }
@@ -130,6 +128,11 @@ tower-test = { version = "0.4" }
 version = "0.1.3"
 default-features = false
 features = ["channel"]
+
+[workspace.dependencies.hyper-util]
+version = "0.1"
+default-features = false
+features = ["tokio", "tracing"]
 
 [workspace.dependencies.linkerd2-proxy-api]
 version = "0.16.0"

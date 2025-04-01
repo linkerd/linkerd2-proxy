@@ -1,11 +1,10 @@
-use std::vec;
-
 use super::*;
 use bytes::Bytes;
 use futures::FutureExt;
 use http_body_util::BodyExt;
 use linkerd_io as io;
 use linkerd_stack::CloneParam;
+use std::vec;
 use tokio::time;
 use tower::ServiceExt;
 use tower_test::mock;
@@ -28,7 +27,7 @@ async fn h2_connection_window_exhaustion() {
         h2::ServerParams::default(),
         // An HTTP/2 client with constrained connection and stream windows to
         // force window exhaustion.
-        hyper::client::conn::http2::Builder::new(TracingExecutor)
+        hyper::client::conn::http2::Builder::new(TokioExecutor::new())
             .initial_connection_window_size(CLIENT_CONN_WINDOW)
             .initial_stream_window_size(CLIENT_STREAM_WINDOW)
             .timer(hyper_util::rt::TokioTimer::new()),
@@ -102,7 +101,7 @@ async fn h2_stream_window_exhaustion() {
         // A basic HTTP/2 server configuration with no overrides.
         h2::ServerParams::default(),
         // An HTTP/2 client with stream windows to force window exhaustion.
-        hyper::client::conn::http2::Builder::new(TracingExecutor)
+        hyper::client::conn::http2::Builder::new(TokioExecutor::new())
             .initial_stream_window_size(CLIENT_STREAM_WINDOW)
             .timer(hyper_util::rt::TokioTimer::new()),
     )
@@ -206,7 +205,7 @@ impl TestServer {
     #[tracing::instrument(skip_all)]
     async fn connect_h2(
         h2: h2::ServerParams,
-        client: &mut hyper::client::conn::http2::Builder<TracingExecutor>,
+        client: &mut hyper::client::conn::http2::Builder<TokioExecutor>,
     ) -> Self {
         let params = Params {
             drain: drain(),

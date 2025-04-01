@@ -1,4 +1,4 @@
-use crate::{Body, TracingExecutor};
+use crate::{Body, TokioExecutor};
 use futures::prelude::*;
 use linkerd_error::{Error, Result};
 use linkerd_stack::{MakeConnection, Service};
@@ -85,7 +85,7 @@ where
         Box::pin(
             async move {
                 let (io, _meta) = connect.err_into::<Error>().await?;
-                let mut builder = hyper::client::conn::http2::Builder::new(TracingExecutor);
+                let mut builder = hyper::client::conn::http2::Builder::new(TokioExecutor::new());
                 builder.timer(hyper_util::rt::TokioTimer::new());
                 match flow_control {
                     None => {}
