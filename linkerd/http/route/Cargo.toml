@@ -14,7 +14,7 @@ http = { workspace = true }
 regex = "1"
 rand = "0.9"
 thiserror = "2"
-tracing = "0.1"
+tracing = { workspace = true }
 url = "2"
 
 [dependencies.linkerd2-proxy-api]

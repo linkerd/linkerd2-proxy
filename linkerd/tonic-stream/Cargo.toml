@@ -12,7 +12,7 @@ linkerd-stack = { path = "../stack" }
 pin-project = "1"
 tonic = { workspace = true, default-features = false }
 tokio = { version = "1", features = ["time"] }
-tracing = "0.1"
+tracing = { workspace = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros"] }

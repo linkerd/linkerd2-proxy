@@ -13,7 +13,7 @@ indexmap = "2"
 prometheus-client = { workspace = true }
 rand = { version = "0.9", features = ["small_rng"] }
 tokio = { version = "1", features = ["rt", "sync", "time"] }
-tracing = "0.1"
+tracing = { workspace = true }
 
 linkerd-error = { path = "../../error" }
 linkerd-metrics = { path = "../../metrics" }
