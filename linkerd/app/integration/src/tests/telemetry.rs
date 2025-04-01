@@ -57,9 +57,7 @@ impl Fixture {
         let client = client::new(proxy.inbound, "tele.test.svc.cluster.local");
         let tcp_dst_labels = metrics::labels().label("direction", "inbound");
         let tcp_src_labels = tcp_dst_labels.clone().label("target_addr", orig_dst);
-        let labels = tcp_dst_labels
-            .clone()
-            .label("authority", "tele.test.svc.cluster.local");
+        let labels = tcp_dst_labels.clone().label("target_port", orig_dst.port());
         let tcp_src_labels = tcp_src_labels.label("peer", "src");
         let tcp_dst_labels = tcp_dst_labels.label("peer", "dst");
         Fixture {
@@ -294,7 +292,7 @@ async fn metrics_endpoint_outbound_response_count() {
     test_http_count("response_total", Fixture::outbound()).await
 }
 
-async fn test_http_count(metric: &str, fixture: impl Future<Output = Fixture>) {
+async fn test_http_count(metric_name: &str, fixture: impl Future<Output = Fixture>) {
     let _trace = trace_init();
     let Fixture {
         client,
@@ -307,9 +305,13 @@ async fn test_http_count(metric: &str, fixture: impl Future<Output = Fixture>) {
         ..
     } = fixture.await;
 
-    let metric = labels.metric(metric);
+    let metric = labels.metric(metric_name);
 
-    assert!(metric.is_not_in(metrics.get("/metrics").await));
+    let scrape = metrics.get("/metrics").await;
+    assert!(
+        metric.is_not_in(scrape),
+        "{metric:?} should not be in /metrics"
+    );
 
     info!("client.get(/)");
     assert_eq!(client.get("/").await, "hello");
