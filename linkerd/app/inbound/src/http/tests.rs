@@ -665,6 +665,7 @@ async fn grpc_response_class() {
         .get_response_total(
             &metrics::EndpointLabels::Inbound(metrics::InboundEndpointLabels {
                 tls: Target::meshed_h2().1,
+                authority: None,
                 target_addr: "127.0.0.1:80".parse().unwrap(),
                 policy: metrics::RouteAuthzLabels {
                     route: metrics::RouteLabels {
@@ -687,6 +688,104 @@ async fn grpc_response_class() {
             }),
             Some(http::StatusCode::OK),
             &classify::Class::Grpc(Err(tonic::Code::Unknown)),
+        )
+        .expect("response_total not found");
+    assert_eq!(response_total, 1.0);
+
+    drop(bg);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn unsafe_authority_labels_true() {
+    let _trace = trace_init();
+
+    let mut cfg = default_config();
+    cfg.unsafe_authority_labels = true;
+    test_unsafe_authority_labels(cfg, Some("foo.svc.cluster.local:5550".parse().unwrap())).await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn unsafe_authority_labels_false() {
+    let _trace = trace_init();
+
+    let cfg = default_config();
+    test_unsafe_authority_labels(cfg, None).await;
+}
+
+async fn test_unsafe_authority_labels(
+    cfg: Config,
+    expected_authority: Option<http::uri::Authority>,
+) {
+    let connect = {
+        let mut server = hyper::server::conn::http1::Builder::new();
+        server.timer(hyper_util::rt::TokioTimer::new());
+        support::connect().endpoint_fn_boxed(Target::addr(), hello_server(server))
+    };
+
+    // Build a client using the connect that always errors.
+    let mut client = hyper::client::conn::http1::Builder::new();
+    let profiles = profile::resolver();
+    let profile_tx =
+        profiles.profile_tx(NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap());
+    profile_tx.send(profile::Profile::default()).unwrap();
+
+    let (rt, _shutdown) = runtime();
+    let metrics = rt
+        .metrics
+        .clone()
+        .http_endpoint
+        .into_report(time::Duration::from_secs(3600));
+    let server = build_server(cfg, rt, profiles, connect).new_service(Target::meshed_http1());
+    let (mut client, bg) = http_util::connect_and_accept_http1(&mut client, server).await;
+
+    // Send a request and assert that it is OK with the expected header
+    // message.
+    let req = Request::builder()
+        .method(http::Method::POST)
+        .uri("http://foo.svc.cluster.local:5550")
+        .header(http::header::CONTENT_TYPE, "text/plain")
+        .body(BoxBody::default())
+        .unwrap();
+
+    let rsp = client
+        .send_request(req)
+        .await
+        .expect("HTTP client request failed");
+    tracing::info!(?rsp);
+    assert_eq!(rsp.status(), http::StatusCode::OK);
+
+    use http_body_util::BodyExt;
+    let mut body = rsp.into_body();
+    while let Some(Ok(_)) = body.frame().await {}
+
+    tracing::info!("{metrics:#?}");
+    let response_total = metrics
+        .get_response_total(
+            &metrics::EndpointLabels::Inbound(metrics::InboundEndpointLabels {
+                tls: Target::meshed_http1().1,
+                authority: expected_authority,
+                target_addr: "127.0.0.1:80".parse().unwrap(),
+                policy: metrics::RouteAuthzLabels {
+                    route: metrics::RouteLabels {
+                        server: metrics::ServerLabel(
+                            Arc::new(policy::Meta::Resource {
+                                group: "policy.linkerd.io".into(),
+                                kind: "server".into(),
+                                name: "testsrv".into(),
+                            }),
+                            80,
+                        ),
+                        route: policy::Meta::new_default("default"),
+                    },
+                    authz: Arc::new(policy::Meta::Resource {
+                        group: "policy.linkerd.io".into(),
+                        kind: "serverauthorization".into(),
+                        name: "testsaz".into(),
+                    }),
+                },
+            }),
+            Some(http::StatusCode::OK),
+            &classify::Class::Http(Ok(http::StatusCode::OK)),
         )
         .expect("response_total not found");
     assert_eq!(response_total, 1.0);

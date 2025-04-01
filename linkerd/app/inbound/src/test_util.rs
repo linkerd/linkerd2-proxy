@@ -89,6 +89,7 @@ pub fn default_config() -> Config {
         },
         discovery_idle_timeout: Duration::from_secs(20),
         profile_skip_timeout: Duration::from_secs(1),
+        unsafe_authority_labels: false,
     }
 }
 
