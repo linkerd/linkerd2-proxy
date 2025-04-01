@@ -1,4 +1,4 @@
-use super::app_core::svc::http::TracingExecutor;
+use super::app_core::svc::http::TokioExecutor;
 use super::*;
 use http::{Request, Response};
 use linkerd_app_core::svc::http::BoxBody;
@@ -216,11 +216,13 @@ impl Server {
                                 .serve_connection(sock, svc)
                                 .await
                                 .map_err(|e| tracing::error!("support/server error: {}", e)),
-                            Run::Http2 => hyper::server::conn::http2::Builder::new(TracingExecutor)
-                                .timer(hyper_util::rt::TokioTimer::new())
-                                .serve_connection(sock, svc)
-                                .await
-                                .map_err(|e| tracing::error!("support/server error: {}", e)),
+                            Run::Http2 => {
+                                hyper::server::conn::http2::Builder::new(TokioExecutor::new())
+                                    .timer(hyper_util::rt::TokioTimer::new())
+                                    .serve_connection(sock, svc)
+                                    .await
+                                    .map_err(|e| tracing::error!("support/server error: {}", e))
+                            }
                         };
                         tracing::trace!(?result, "serve done");
                         result

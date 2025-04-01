@@ -5,7 +5,7 @@ use linkerd_app_core::metrics::OutboundZoneLocality;
 use linkerd_app_core::{
     io,
     proxy::api_resolve::ProtocolHint,
-    svc::{http::TracingExecutor, NewService, ServiceExt},
+    svc::{http::TokioExecutor, NewService, ServiceExt},
     Infallible,
 };
 use linkerd_http_box::BoxBody;
@@ -250,7 +250,7 @@ fn serve(version: ::http::Version) -> io::Result<io::BoxedIo> {
             tokio::spawn(fut);
         }
         ::http::Version::HTTP_2 => {
-            let mut http = hyper::server::conn::http2::Builder::new(TracingExecutor);
+            let mut http = hyper::server::conn::http2::Builder::new(TokioExecutor::new());
             let fut = http
                 .timer(hyper_util::rt::TokioTimer::new())
                 .serve_connection(hyper_util::rt::TokioIo::new(server_io), svc);

@@ -1,6 +1,6 @@
 use crate::{
     app_core::{
-        svc::{self, http::TracingExecutor},
+        svc::{self, http::TokioExecutor},
         Error,
     },
     io, ContextError,
@@ -71,7 +71,7 @@ where
 ///
 /// [send]: hyper::client::conn::http2::SendRequest
 pub async fn connect_and_accept_http2<B>(
-    client_settings: &mut hyper::client::conn::http2::Builder<TracingExecutor>,
+    client_settings: &mut hyper::client::conn::http2::Builder<TokioExecutor>,
     server: BoxServer,
 ) -> (
     hyper::client::conn::http2::SendRequest<B>,

@@ -34,12 +34,12 @@ pub use http::{
     uri, Method, Request, Response, StatusCode,
 };
 pub use http_body::Body;
+pub use hyper_util::rt::tokio::TokioExecutor;
 pub use linkerd_http_box::{BoxBody, BoxRequest, BoxResponse, EraseResponse};
 pub use linkerd_http_classify as classify;
 pub use linkerd_http_detect::{
     DetectMetrics, DetectMetricsFamilies, DetectParams, Detection, NewDetect,
 };
-pub use linkerd_http_executor::TracingExecutor;
 pub use linkerd_http_insert as insert;
 pub use linkerd_http_override_authority::{AuthorityOverride, NewOverrideAuthority};
 pub use linkerd_http_retain::{self as retain, Retain};

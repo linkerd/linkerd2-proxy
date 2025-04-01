@@ -1,4 +1,4 @@
-use crate::TracingExecutor;
+use crate::TokioExecutor;
 use futures::prelude::*;
 use http::{
     header::{CONTENT_LENGTH, TRANSFER_ENCODING},
@@ -91,7 +91,7 @@ where
             // ish, so we just build a one-off client for the connection.
             // There's no real reason to hold the client for re-use.
             debug!(use_absolute_form, is_missing_host, "Using one-off client");
-            hyper_util::client::legacy::Client::builder(TracingExecutor)
+            hyper_util::client::legacy::Client::builder(TokioExecutor::new())
                 .pool_max_idle_per_host(0)
                 .set_host(use_absolute_form)
                 .build(HyperConnect::new(
@@ -116,7 +116,7 @@ where
             if client.is_none() {
                 debug!(use_absolute_form, "Caching new client");
                 *client = Some(
-                    hyper_util::client::legacy::Client::builder(TracingExecutor)
+                    hyper_util::client::legacy::Client::builder(TokioExecutor::new())
                         .pool_max_idle_per_host(self.pool.max_idle)
                         .pool_idle_timeout(self.pool.idle_timeout)
                         .set_host(use_absolute_form)

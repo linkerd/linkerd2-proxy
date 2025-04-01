@@ -32,6 +32,8 @@ hyper-util = { workspace = true, default-features = false, features = [
     "client-legacy",
     "http1",
     "service",
+    "tokio",
+    "tracing",
 ] }
 parking_lot = "0.12"
 pin-project = "1"
@@ -47,7 +49,6 @@ linkerd-error = { path = "../../error" }
 linkerd-http-box = { path = "../../http/box" }
 linkerd-http-classify = { path = "../../http/classify" }
 linkerd-http-detect = { path = "../../http/detect" }
-linkerd-http-executor = { path = "../../http/executor" }
 linkerd-http-h2 = { path = "../../http/h2" }
 linkerd-http-insert = { path = "../../http/insert" }
 linkerd-http-override-authority = { path = "../../http/override-authority" }

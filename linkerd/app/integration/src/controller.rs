@@ -2,7 +2,7 @@ use super::*;
 
 pub use linkerd2_proxy_api::destination as pb;
 use linkerd2_proxy_api::net;
-use linkerd_app_core::proxy::http::TracingExecutor;
+use linkerd_app_core::proxy::http::TokioExecutor;
 use parking_lot::Mutex;
 use std::collections::VecDeque;
 use std::net::IpAddr;
@@ -372,7 +372,7 @@ where
                 let _ = listening_tx.send(());
             }
 
-            let mut http = hyper::server::conn::http2::Builder::new(TracingExecutor);
+            let mut http = hyper::server::conn::http2::Builder::new(TokioExecutor::new());
             loop {
                 let (sock, addr) = listener.accept().await?;
                 let span = tracing::debug_span!("conn", %addr).or_current();

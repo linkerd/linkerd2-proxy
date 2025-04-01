@@ -1,11 +1,11 @@
 use crate::grpc::Server;
 use futures::future;
+use hyper_util::rt::tokio::TokioExecutor;
 use linkerd2_proxy_api::tap::tap_server::{Tap, TapServer};
 use linkerd_conditional::Conditional;
 use linkerd_error::Error;
 use linkerd_io as io;
 use linkerd_meshtls as meshtls;
-use linkerd_proxy_http::TracingExecutor;
 use linkerd_tls as tls;
 use std::{
     collections::HashSet,
@@ -46,7 +46,7 @@ impl AcceptPermittedClients {
         use hyper_util::{rt::TokioIo, service::TowerToHyperService};
         let svc = TapServer::new(tap);
         Box::pin(async move {
-            hyper::server::conn::http2::Builder::new(TracingExecutor)
+            hyper::server::conn::http2::Builder::new(TokioExecutor::new())
                 .timer(hyper_util::rt::TokioTimer::new())
                 .serve_connection(TokioIo::new(io), TowerToHyperService::new(svc))
                 .await
