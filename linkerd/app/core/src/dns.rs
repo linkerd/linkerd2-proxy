@@ -1,5 +1,10 @@
-pub use linkerd_dns::*;
+use self::metrics::Labels;
+use linkerd_metrics::prom::{Counter, Family, Registry};
 use std::time::Duration;
+
+pub use linkerd_dns::*;
+
+mod metrics;
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -8,16 +13,38 @@ pub struct Config {
 }
 
 pub struct Dns {
-    pub resolver: Resolver,
+    resolver: Resolver,
+    resolutions: Family<Labels, Counter>,
+}
+
+// === impl Dns ===
+
+impl Dns {
+    /// Returns a new [`Resolver`].
+    pub fn resolver(&self, client: &'static str) -> Resolver {
+        let metrics = self.metrics(client);
+
+        self.resolver.clone().with_metrics(metrics)
+    }
 }
 
 // === impl Config ===
 
 impl Config {
-    pub fn build(self) -> Dns {
+    pub fn build(self, registry: &mut Registry) -> Dns {
+        let resolutions = Family::default();
+        registry.register(
+            "resolutions",
+            "Counts the number of DNS records that have been resolved.",
+            resolutions.clone(),
+        );
+
         let resolver =
             Resolver::from_system_config_with(&self).expect("system DNS config must be valid");
-        Dns { resolver }
+        Dns {
+            resolver,
+            resolutions,
+        }
     }
 }
 

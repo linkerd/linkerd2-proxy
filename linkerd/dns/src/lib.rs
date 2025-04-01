@@ -5,6 +5,7 @@ pub use hickory_resolver::config::ResolverOpts;
 use hickory_resolver::{config::ResolverConfig, proto::rr::rdata, system_conf, TokioResolver};
 use linkerd_dns_name::NameRef;
 pub use linkerd_dns_name::{InvalidName, Name, Suffix};
+use prometheus_client::metrics::counter::Counter;
 use std::{fmt, net};
 use thiserror::Error;
 use tokio::time::{self, Instant};
@@ -13,10 +14,23 @@ use tracing::{debug, trace};
 #[derive(Clone)]
 pub struct Resolver {
     dns: TokioResolver,
+    metrics: Option<Metrics>,
 }
 
 pub trait ConfigureResolver {
     fn configure_resolver(&self, _: &mut ResolverOpts);
+}
+
+#[derive(Clone)]
+pub struct Metrics {
+    /// A [`Counter`] tracking the number of A/AAAA records successfully resolved.
+    pub a_records_resolved: Counter,
+    /// A [`Counter`] tracking the number of A/AAAA records not found.
+    pub a_records_not_found: Counter,
+    /// A [`Counter`] tracking the number of SRV records successfully resolved.
+    pub srv_records_resolved: Counter,
+    /// A [`Counter`] tracking the number of SRV records not found.
+    pub srv_records_not_found: Counter,
 }
 
 #[derive(Debug, Clone, Error)]
@@ -76,7 +90,15 @@ impl Resolver {
             .build();
         */
 
-        Resolver { dns }
+        Resolver { dns, metrics: None }
+    }
+
+    /// Installs a counter tracking the number of A/AAAA records resolved.
+    pub fn with_metrics(self, metrics: Metrics) -> Self {
+        Self {
+            metrics: Some(metrics),
+            ..self
+        }
     }
 
     /// Resolves a name to a set of addresses, preferring SRV records to normal A/AAAA
@@ -87,15 +109,25 @@ impl Resolver {
         default_port: u16,
     ) -> Result<(Vec<net::SocketAddr>, Instant), ResolveError> {
         match self.resolve_srv(name).await {
-            Ok(res) => Ok(res),
+            Ok(res) => {
+                self.metrics.as_ref().map(Metrics::inc_srv_records_resolved);
+                Ok(res)
+            }
             Err(srv_error) => {
                 // If the SRV lookup failed for any reason, fall back to A/AAAA
                 // record resolution.
                 debug!(srv.error = %srv_error, "Falling back to A/AAAA record lookup");
+                self.metrics
+                    .as_ref()
+                    .map(Metrics::inc_srv_records_not_found);
                 let (ips, delay) = match self.resolve_a_or_aaaa(name).await {
                     Ok(res) => res,
-                    Err(a_error) => return Err(ResolveError { a_error, srv_error }),
+                    Err(a_error) => {
+                        self.metrics.as_ref().map(Metrics::inc_a_records_not_found);
+                        return Err(ResolveError { a_error, srv_error });
+                    }
                 };
+                self.metrics.as_ref().map(Metrics::inc_a_records_resolved);
                 let addrs = ips
                     .into_iter()
                     .map(|ip| net::SocketAddr::new(ip, default_port))
@@ -195,6 +227,26 @@ impl ResolveError {
         }
 
         None
+    }
+}
+
+// === impl Metrics ===
+
+impl Metrics {
+    fn inc_a_records_resolved(&self) {
+        self.a_records_resolved.inc();
+    }
+
+    fn inc_a_records_not_found(&self) {
+        self.a_records_not_found.inc();
+    }
+
+    fn inc_srv_records_resolved(&self) {
+        self.srv_records_resolved.inc();
+    }
+
+    fn inc_srv_records_not_found(&self) {
+        self.srv_records_not_found.inc();
     }
 }
 

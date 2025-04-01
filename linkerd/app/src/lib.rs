@@ -134,7 +134,7 @@ impl Config {
         let (metrics, report) = Metrics::new(admin.metrics_retain_idle);
 
         debug!("Building DNS client");
-        let dns = dns.build();
+        let dns = dns.build(registry.sub_registry_with_prefix("control_dns"));
 
         // Ensure that we've obtained a valid identity before binding any servers.
         debug!("Building Identity client");
@@ -144,7 +144,11 @@ impl Config {
             );
 
             info_span!("identity").in_scope(|| {
-                identity.build(dns.resolver.clone(), metrics.control.clone(), id_metrics)
+                identity.build(
+                    dns.resolver("identity"),
+                    metrics.control.clone(),
+                    id_metrics,
+                )
             })?
         };
 
@@ -162,7 +166,7 @@ impl Config {
             let control_metrics =
                 ControlMetrics::register(registry.sub_registry_with_prefix("control_destination"));
             let metrics = metrics.control.clone();
-            let dns = dns.resolver.clone();
+            let dns = dns.resolver("destination");
             info_span!("dst").in_scope(|| {
                 dst.build(
                     dns,
@@ -178,7 +182,7 @@ impl Config {
         let policies = {
             let control_metrics =
                 ControlMetrics::register(registry.sub_registry_with_prefix("control_policy"));
-            let dns = dns.resolver.clone();
+            let dns = dns.resolver("policy");
             let metrics = metrics.control.clone();
             info_span!("policy").in_scope(|| {
                 policy.build(
@@ -198,7 +202,7 @@ impl Config {
                 ControlMetrics::register(&mut prom::Registry::default())
             };
             let identity = identity.receiver().new_client();
-            let dns = dns.resolver;
+            let dns = dns.resolver("trace_collector");
             let client_metrics = metrics.control.clone();
             let otel_metrics = metrics.opentelemetry;
             let oc_metrics = metrics.opencensus;

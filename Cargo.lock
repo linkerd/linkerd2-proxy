@@ -1753,6 +1753,7 @@ dependencies = [
  "hickory-resolver",
  "linkerd-dns-name",
  "linkerd-error",
+ "prometheus-client",
  "thiserror 2.0.12",
  "tokio",
  "tracing",
