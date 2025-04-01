@@ -18,7 +18,7 @@ linkerd-stack = { path = "../../stack" }
 tokio = { version = "1", features = ["time", "sync"] }
 tonic = { workspace = true }
 tower = { workspace = true }
-tracing = "0.1"
+tracing = { workspace = true }
 x509-parser = "0.17.0"
 asn1 = { version = "0.6", package = "simple_asn1" }
 thiserror = "2"
