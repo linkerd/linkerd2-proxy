@@ -21,6 +21,7 @@ updates:
     groups:
       boring:
         patterns:
+          - "tokio-boring"
           - "boring*"
       futures:
         patterns:
