@@ -26,4 +26,4 @@ pin-project = "1"
 prost = { workspace = true }
 tonic = { workspace = true, default-features = false }
 tower = { workspace = true, default-features = false }
-tracing = "0.1"
+tracing = { workspace = true }

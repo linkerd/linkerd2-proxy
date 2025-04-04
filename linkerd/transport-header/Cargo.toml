@@ -16,7 +16,7 @@ linkerd-io = { path = "../io" }
 linkerd-stack = { path = "../stack" }
 prost = { workspace = true }
 tokio = { version = "1", features = ["time"] }
-tracing = "0.1"
+tracing = { workspace = true }
 
 [target.'cfg(fuzzing)'.dependencies]
 arbitrary = { version = "1", features = ["derive"] }
