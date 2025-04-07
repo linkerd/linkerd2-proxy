@@ -882,7 +882,7 @@ dependencies = [
  "futures-core",
  "futures-sink",
  "http",
- "indexmap 2.8.0",
+ "indexmap 2.9.0",
  "slab",
  "tokio",
  "tokio-util",
@@ -1249,9 +1249,9 @@ dependencies = [
 
 [[package]]
 name = "indexmap"
-version = "2.8.0"
+version = "2.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3954d50fe15b02142bf25d3b8bdadb634ec3948f103d04ffe3031bc8fe9d7058"
+checksum = "cea70ddb795996207ad57735b50c5982d8844f38ba9ee5f1aedcfb708a2aa11e"
 dependencies = [
  "equivalent",
  "hashbrown 0.15.2",
@@ -1422,7 +1422,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc2f4eb4bc735547cfed7c0a4922cbd04a4655978c09b54f1f7b228750664c34"
 dependencies = [
  "cfg-if",
- "windows-targets 0.48.5",
+ "windows-targets 0.52.6",
 ]
 
 [[package]]
@@ -2256,7 +2256,7 @@ dependencies = [
  "ahash",
  "futures",
  "futures-util",
- "indexmap 2.8.0",
+ "indexmap 2.9.0",
  "linkerd-error",
  "linkerd-metrics",
  "linkerd-pool",
@@ -3226,7 +3226,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4c5cc86750666a3ed20bdaf5ca2a0344f9c67674cae0515bec2da16fbaa47db"
 dependencies = [
  "fixedbitset",
- "indexmap 2.8.0",
+ "indexmap 2.9.0",
 ]
 
 [[package]]
@@ -4287,7 +4287,7 @@ checksum = "d039ad9159c98b70ecfd540b2573b97f7f52c3e8d9f8ad57a24b916a536975f9"
 dependencies = [
  "futures-core",
  "futures-util",
- "indexmap 2.8.0",
+ "indexmap 2.9.0",
  "pin-project-lite",
  "sync_wrapper",
  "tokio",
