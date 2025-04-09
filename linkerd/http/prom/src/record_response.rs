@@ -268,6 +268,8 @@ where
             Some(Ok(frame)) => {
                 if let trls @ Some(_) = frame.trailers_ref() {
                     end_stream(this.state, Ok(trls));
+                } else if this.inner.is_end_stream() {
+                    end_stream(this.state, Ok(None));
                 }
             }
             Some(Err(error)) => end_stream(this.state, Err(error)),
@@ -278,7 +280,9 @@ where
     }
 
     fn is_end_stream(&self) -> bool {
-        self.inner.is_end_stream()
+        // If the inner response state is still in place, the end of the stream has not been
+        // classified and recorded yet.
+        self.state.is_none()
     }
 }
 
