@@ -1675,6 +1675,7 @@ dependencies = [
  "linkerd-io",
  "linkerd-meshtls",
  "linkerd-meshtls-rustls",
+ "linkerd-mock-http-body",
  "linkerd-opaq-route",
  "linkerd-proxy-client-policy",
  "linkerd-retry",
