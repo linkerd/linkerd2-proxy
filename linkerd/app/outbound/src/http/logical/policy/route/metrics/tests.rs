@@ -521,6 +521,160 @@ async fn http_route_request_body_frames() {
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn http_response_body_drop_on_eos() {
+    use linkerd_app_core::svc::{Service, ServiceExt};
+
+    const EXPORT_HOSTNAME_LABELS: bool = false;
+    let _trace = linkerd_tracing::test::trace_init();
+
+    let super::HttpRouteMetrics {
+        requests,
+        body_data,
+        ..
+    } = super::HttpRouteMetrics::default();
+    let parent_ref = crate::ParentRef(policy::Meta::new_default("parent"));
+    let route_ref = crate::RouteRef(policy::Meta::new_default("route"));
+    let (mut svc, mut handle) = mock_http_route_metrics(
+        &requests,
+        &body_data,
+        &parent_ref,
+        &route_ref,
+        EXPORT_HOSTNAME_LABELS,
+    );
+
+    // Define a request and a response.
+    let req = http::Request::default();
+    let rsp = http::Response::builder()
+        .status(200)
+        .body(BoxBody::from_static("contents"))
+        .unwrap();
+
+    // Two counters for 200 responses that do/don't have an error.
+    let ok = requests.get_statuses(&labels::Rsp(
+        labels::Route::new(parent_ref.clone(), route_ref.clone(), None),
+        labels::HttpRsp {
+            status: Some(http::StatusCode::OK),
+            error: None,
+        },
+    ));
+    let err = requests.get_statuses(&labels::Rsp(
+        labels::Route::new(parent_ref.clone(), route_ref.clone(), None),
+        labels::HttpRsp {
+            status: Some(http::StatusCode::OK),
+            error: Some(labels::Error::Unknown),
+        },
+    ));
+    debug_assert_eq!(ok.get(), 0);
+    debug_assert_eq!(err.get(), 0);
+
+    // Send the request, and obtain the response.
+    let mut body = {
+        handle.allow(1);
+        svc.ready().await.expect("ready");
+        let mut call = svc.call(req);
+        let (_req, tx) = tokio::select! {
+            _ = (&mut call) => unreachable!(),
+            res = handle.next_request() => res.unwrap(),
+        };
+        assert_eq!(ok.get(), 0);
+        tx.send_response(rsp);
+        call.await.unwrap().into_body()
+    };
+
+    // The counters are not incremented yet.
+    assert_eq!(ok.get(), 0);
+    assert_eq!(err.get(), 0);
+
+    // Poll a frame out of the body.
+    let data = body
+        .frame()
+        .await
+        .expect("yields a result")
+        .expect("yields a frame")
+        .into_data()
+        .ok()
+        .expect("yields data");
+    assert_eq!(data.chunk(), "contents".as_bytes());
+    assert_eq!(data.remaining(), "contents".len());
+
+    // Show that the body reports itself as being complete.
+    debug_assert!(body.is_end_stream());
+    assert_eq!(ok.get(), 1);
+    assert_eq!(err.get(), 0);
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn http_response_body_drop_early() {
+    use linkerd_app_core::svc::{Service, ServiceExt};
+
+    const EXPORT_HOSTNAME_LABELS: bool = false;
+    let _trace = linkerd_tracing::test::trace_init();
+
+    let super::HttpRouteMetrics {
+        requests,
+        body_data,
+        ..
+    } = super::HttpRouteMetrics::default();
+    let parent_ref = crate::ParentRef(policy::Meta::new_default("parent"));
+    let route_ref = crate::RouteRef(policy::Meta::new_default("route"));
+    let (mut svc, mut handle) = mock_http_route_metrics(
+        &requests,
+        &body_data,
+        &parent_ref,
+        &route_ref,
+        EXPORT_HOSTNAME_LABELS,
+    );
+
+    // Define a request and a response.
+    let req = http::Request::default();
+    let rsp = http::Response::builder()
+        .status(200)
+        .body(BoxBody::from_static("contents"))
+        .unwrap();
+
+    // Two counters for 200 responses that do/don't have an error.
+    let ok = requests.get_statuses(&labels::Rsp(
+        labels::Route::new(parent_ref.clone(), route_ref.clone(), None),
+        labels::HttpRsp {
+            status: Some(http::StatusCode::OK),
+            error: None,
+        },
+    ));
+    let err = requests.get_statuses(&labels::Rsp(
+        labels::Route::new(parent_ref.clone(), route_ref.clone(), None),
+        labels::HttpRsp {
+            status: Some(http::StatusCode::OK),
+            error: Some(labels::Error::Unknown),
+        },
+    ));
+    debug_assert_eq!(ok.get(), 0);
+    debug_assert_eq!(err.get(), 0);
+
+    // Send the request, and obtain the response.
+    let body = {
+        handle.allow(1);
+        svc.ready().await.expect("ready");
+        let mut call = svc.call(req);
+        let (_req, tx) = tokio::select! {
+            _ = (&mut call) => unreachable!(),
+            res = handle.next_request() => res.unwrap(),
+        };
+        assert_eq!(ok.get(), 0);
+        tx.send_response(rsp);
+        call.await.unwrap().into_body()
+    };
+
+    // The counters are not incremented yet.
+    assert_eq!(ok.get(), 0);
+    assert_eq!(err.get(), 0);
+
+    // The body reports an error if it was not completed.
+    drop(body);
+    assert_eq!(ok.get(), 0);
+    assert_eq!(err.get(), 1);
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn grpc_request_statuses_ok() {
     const EXPORT_HOSTNAME_LABELS: bool = true;
     let _trace = linkerd_tracing::test::trace_init();
