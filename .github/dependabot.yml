@@ -44,6 +44,9 @@ updates:
           - "tokio-rustls"
           - "rustls*"
           - "ring"
+      symbolic:
+        patterns:
+          - "symbolic-*"
       tracing:
         patterns:
           - "tracing*"
