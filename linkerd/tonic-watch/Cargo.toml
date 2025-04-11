@@ -15,7 +15,7 @@ linkerd-error = { path = "../error" }
 linkerd-stack = { path = "../stack" }
 tonic = { workspace = true, default-features = false }
 tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
-tracing = "0.1"
+tracing = { workspace = true }
 
 [dev-dependencies]
 linkerd-tracing = { path = "../tracing" }

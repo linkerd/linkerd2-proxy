@@ -12,7 +12,7 @@ http = { workspace = true }
 jiff = { version = "0.2", features = ["std"] }
 pin-project = "1"
 tokio = { version = "1", features = ["time"] }
-tracing = "0.1"
+tracing = { workspace = true }
 
 linkerd-stack = { path = "../../stack" }
 linkerd-identity = { path = "../../identity" }
