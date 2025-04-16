@@ -396,10 +396,6 @@ fn endpoint_labels(
     move |t: &Logical| -> metrics::EndpointLabels {
         metrics::InboundEndpointLabels {
             tls: t.tls.clone(),
-            authority: unsafe_authority_labels
-                .then(|| t.logical.as_ref().map(|d| d.as_http_authority()))
-                .flatten(),
-            target_addr: t.addr.into(),
             policy: t.permit.labels.clone(),
         }
         .into()

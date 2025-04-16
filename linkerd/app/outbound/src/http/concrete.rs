@@ -9,7 +9,7 @@ use crate::{
 };
 use linkerd_app_core::{
     config::{ConnectConfig, QueueConfig},
-    metrics::{prefix_labels, EndpointLabels, OutboundEndpointLabels, OutboundZoneLocality},
+    metrics::{prefix_outbound_endpoint_labels, EndpointLabels, OutboundEndpointLabels, OutboundZoneLocality},
     profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata, ProtocolHint},
@@ -219,11 +219,9 @@ where
 {
     fn param(&self) -> OutboundEndpointLabels {
         OutboundEndpointLabels {
-            authority: self.parent.param(),
-            labels: prefix_labels("dst", self.metadata.labels().iter()),
+            labels: prefix_outbound_endpoint_labels(self.metadata.labels().iter()),
             zone_locality: self.param(),
             server_id: self.param(),
-            target_addr: self.addr.into(),
         }
     }
 }

@@ -49,7 +49,7 @@ env:
   CARGO_INCREMENTAL: 0
   CARGO_NET_RETRY: 10
   RUSTFLAGS: "-D warnings -A deprecated --cfg tokio_unstable"
-  RUSTUP_MAX_RETRIES: 10
+  RUSTUP_MAX_RETRIES: 11
 
 concurrency:
   group: ${{ github.workflow }}-${{ inputs.ref || github.head_ref }}
@@ -135,7 +135,7 @@ jobs:
           - os: windows
             arch: arm64
           - os: windows
-            arch: arm  
+            arch: arm
 
     # If we're not actually building on a release tag, don't short-circuit on
     # errors. This helps us know whether a failure is platform-specific.

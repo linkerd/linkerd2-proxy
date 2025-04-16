@@ -454,14 +454,12 @@ mod http2 {
         // Simulate the first server falling over without discovery
         // knowing about it...
         tracing::info!(%alpha.addr, "Stopping");
-        let alpha_addr = alpha.addr;
         alpha.join().await;
 
         // Wait until the proxy has seen the `alpha` disconnect...
         metrics::metric("tcp_close_total")
             .label("peer", "dst")
             .label("direction", "outbound")
-            .label("target_addr", alpha_addr.to_string())
             .value(1u64)
             .assert_in(&metrics)
             .await;

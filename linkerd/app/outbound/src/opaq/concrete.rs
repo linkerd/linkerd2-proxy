@@ -352,19 +352,10 @@ where
     T: svc::Param<Logical>,
 {
     fn param(&self) -> metrics::OutboundEndpointLabels {
-        let authority = self
-            .parent
-            .param()
-            .addr
-            .name_addr()
-            .map(|a| a.as_http_authority());
-
         metrics::OutboundEndpointLabels {
-            authority,
             labels: metrics::prefix_labels("dst", self.metadata.labels().iter()),
             zone_locality: self.param(),
             server_id: self.param(),
-            target_addr: self.addr.into(),
         }
     }
 }
