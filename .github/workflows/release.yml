@@ -49,7 +49,7 @@ env:
   CARGO_INCREMENTAL: 0
   CARGO_NET_RETRY: 10
   RUSTFLAGS: "-D warnings -A deprecated --cfg tokio_unstable"
-  RUSTUP_MAX_RETRIES: 11
+  RUSTUP_MAX_RETRIES: 12
 
 concurrency:
   group: ${{ github.workflow }}-${{ inputs.ref || github.head_ref }}

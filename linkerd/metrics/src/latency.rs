@@ -6,14 +6,7 @@ use super::histogram::{Bounds, Bucket, Histogram};
 /// milliseconds.
 pub const BOUNDS: &Bounds = &Bounds(&[
     Bucket::Le(1.0),
-    Bucket::Le(2.0),
-    Bucket::Le(3.0),
-    Bucket::Le(4.0),
-    Bucket::Le(5.0),
     Bucket::Le(10.0),
-    Bucket::Le(20.0),
-    Bucket::Le(30.0),
-    Bucket::Le(40.0),
     Bucket::Le(50.0),
     Bucket::Le(100.0),
     Bucket::Le(200.0),
@@ -21,15 +14,8 @@ pub const BOUNDS: &Bounds = &Bounds(&[
     Bucket::Le(400.0),
     Bucket::Le(500.0),
     Bucket::Le(1_000.0),
-    Bucket::Le(2_000.0),
-    Bucket::Le(3_000.0),
-    Bucket::Le(4_000.0),
     Bucket::Le(5_000.0),
     Bucket::Le(10_000.0),
-    Bucket::Le(20_000.0),
-    Bucket::Le(30_000.0),
-    Bucket::Le(40_000.0),
-    Bucket::Le(50_000.0),
     // A final upper bound.
     Bucket::Inf,
 ]);
