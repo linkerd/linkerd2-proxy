@@ -47,7 +47,7 @@ pub(crate) mod proto {
     use super::*;
     use crate::{
         proto::{BackendSet, InvalidBackend, InvalidDistribution, InvalidMeta},
-        Meta, RouteBackend, RouteDistribution,
+        ClientPolicyOverrides, Meta, RouteBackend, RouteDistribution,
     };
     use linkerd2_proxy_api::outbound::{self, tls_route};
     use linkerd_tls_route::sni::proto::InvalidSniMatch;
@@ -88,20 +88,20 @@ pub(crate) mod proto {
         Missing,
     }
 
-    impl TryFrom<outbound::proxy_protocol::Tls> for Tls {
-        type Error = InvalidTlsRoute;
-        fn try_from(proto: outbound::proxy_protocol::Tls) -> Result<Self, Self::Error> {
+    impl Tls {
+        pub fn try_from(
+            overrides: ClientPolicyOverrides,
+            proto: outbound::proxy_protocol::Tls,
+        ) -> Result<Self, InvalidTlsRoute> {
             let routes = proto
                 .routes
                 .into_iter()
-                .map(try_route)
+                .map(|p| try_route(overrides, p))
                 .collect::<Result<Arc<[_]>, _>>()?;
 
             Ok(Self { routes })
         }
-    }
 
-    impl Tls {
         pub fn fill_backends(&self, set: &mut BackendSet) {
             for Route { ref policy, .. } in &*self.routes {
                 policy.distribution.fill_backends(set);
@@ -109,7 +109,10 @@ pub(crate) mod proto {
         }
     }
 
-    fn try_route(proto: outbound::TlsRoute) -> Result<Route, InvalidTlsRoute> {
+    fn try_route(
+        overrides: ClientPolicyOverrides,
+        proto: outbound::TlsRoute,
+    ) -> Result<Route, InvalidTlsRoute> {
         let outbound::TlsRoute {
             rules,
             snis,
@@ -135,7 +138,7 @@ pub(crate) mod proto {
 
         let policy = rules
             .into_iter()
-            .map(|rule| try_rule(&meta, rule))
+            .map(|rule| try_rule(&meta, overrides, rule))
             .next()
             .ok_or(InvalidTlsRoute::OnlyOneRule(0))??;
 
@@ -144,6 +147,7 @@ pub(crate) mod proto {
 
     fn try_rule(
         meta: &Arc<Meta>,
+        overrides: ClientPolicyOverrides,
         tls_route::Rule { backends, filters }: tls_route::Rule,
     ) -> Result<Policy, InvalidTlsRoute> {
         let distribution = backends
@@ -158,7 +162,9 @@ pub(crate) mod proto {
         Ok(Policy {
             meta: meta.clone(),
             filters,
-            params: Default::default(),
+            params: RouteParams {
+                export_hostname_labels: overrides.export_hostname_labels,
+            },
             distribution,
         })
     }

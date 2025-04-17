@@ -501,7 +501,9 @@ pub mod proto {
                 proxy_protocol::Kind::Grpc(grpc) => {
                     Protocol::Grpc(grpc::Grpc::try_from(overrides, grpc)?)
                 }
-                proxy_protocol::Kind::Tls(tls) => Protocol::Tls(tls.try_into()?),
+                proxy_protocol::Kind::Tls(tls) => {
+                    Protocol::Tls(tls::Tls::try_from(overrides, tls)?)
+                }
             };
 
             let mut backends = BackendSet::default();
