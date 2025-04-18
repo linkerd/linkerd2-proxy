@@ -23,7 +23,7 @@ tokio-stream = { version = "0.1", features = ["sync"] }
 tonic = { workspace = true, default-features = false }
 tower = { workspace = true, features = ["retry", "util"] }
 thiserror = "2"
-tracing = "0.1"
+tracing = { workspace = true }
 
 linkerd-addr = { path = "../addr" }
 linkerd-dns-name = { path = "../dns/name" }

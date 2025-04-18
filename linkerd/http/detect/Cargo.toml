@@ -12,7 +12,7 @@ httparse = "1"
 prometheus-client = { workspace = true }
 thiserror = "2"
 tokio = { version = "1", features = ["time"] }
-tracing = { version = "0.1" }
+tracing = { workspace = true }
 
 linkerd-error = { path = "../../error" }
 linkerd-http-variant = { path = "../variant" }

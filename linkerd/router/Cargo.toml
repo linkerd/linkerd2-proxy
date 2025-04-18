@@ -11,6 +11,6 @@ ahash = "0.8"
 futures = { version = "0.3", default-features = false }
 parking_lot = "0.12"
 thiserror = "2"
-tracing = "0.1"
+tracing = { workspace = true }
 linkerd-error = { path = "../error" }
 linkerd-stack = { path = "../stack" }
