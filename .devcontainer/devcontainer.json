@@ -23,7 +23,15 @@
 				"zxh404.vscode-proto3"
 			],
 			"settings": {
-				"files.insertFinalNewline": true
+				"files.insertFinalNewline": true,
+				"[git-commit]": {
+					"editor.rulers": [
+						72,
+						80
+					],
+					"editor.wordWrap": "wordWrapColumn",
+					"editor.wordWrapColumn": 80
+				}
 			}
 		}
 	},
