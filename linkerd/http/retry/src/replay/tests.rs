@@ -340,8 +340,6 @@ async fn eos_only_when_fully_replayed() {
         .expect("yields a frame")
         .into_data()
         .expect("yields a data frame");
-    // TODO(kate): the initial body doesn't report ending until it has (not) yielded trailers.
-    assert!(initial.frame().await.is_none());
     assert!(initial.is_end_stream());
     assert!(!replay.is_end_stream());
     drop(initial);
@@ -611,8 +609,6 @@ async fn size_hint_is_correct_across_replays() {
 
     // Read the body, check the size hint again.
     assert_eq!(chunk(&mut initial).await.as_deref(), Some(BODY));
-    // TODO(kate): the initial body doesn't report ending until it has (not) yielded trailers.
-    assert!(initial.frame().await.is_none());
     debug_assert!(initial.is_end_stream());
     // TODO(kate): this currently misreports the *remaining* size of the body.
     // let size = initial.size_hint();
