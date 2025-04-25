@@ -29,6 +29,14 @@ exceptions = [
         "MIT",
         "OpenSSL",
     ], name = "ring", version = "*" },
+    { allow = [
+        "ISC",
+        "OpenSSL",
+    ], name = "aws-lc-sys", version = "*" },
+    { allow = [
+        "ISC",
+        "OpenSSL",
+    ], name = "aws-lc-fips-sys", version = "*" },
 ]
 
 [[licenses.clarify]]
@@ -66,6 +74,8 @@ skip-tree = [
     { name = "rustix", version = "0.38" },
     # `pprof` uses a number of old dependencies. for now, we skip its subtree.
     { name = "pprof" },
+    # aws-lc-rs uses a slightly outdated version of bindgen
+    { name = "bindgen", version = "0.69.5" },
 ]
 
 [sources]

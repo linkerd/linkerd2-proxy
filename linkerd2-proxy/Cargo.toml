@@ -8,10 +8,12 @@ publish = { workspace = true }
 description = "The main proxy executable"
 
 [features]
-default = ["meshtls-rustls"]
+default = ["meshtls-rustls-ring"]
 meshtls-boring = ["linkerd-meshtls/boring"]
 meshtls-boring-fips = ["linkerd-meshtls/boring-fips"]
-meshtls-rustls = ["linkerd-meshtls/rustls"]
+meshtls-rustls-aws-lc = ["linkerd-meshtls/rustls-aws-lc"]
+meshtls-rustls-aws-lc-fips = ["linkerd-meshtls/rustls-aws-lc-fips"]
+meshtls-rustls-ring = ["linkerd-meshtls/rustls-ring"]
 log-streaming = ["linkerd-app/log-streaming"]
 pprof = ["linkerd-app/pprof"]
 
