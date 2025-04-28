@@ -7,13 +7,17 @@ edition = "2018"
 publish = { workspace = true }
 
 [features]
+default = ["ring"]
+ring = ["tokio-rustls/ring", "rustls-webpki/ring"]
+aws-lc = ["tokio-rustls/aws-lc-rs", "rustls-webpki/aws-lc-rs"]
+aws-lc-fips = ["aws-lc", "tokio-rustls/fips"]
 test-util = ["linkerd-tls-test-util"]
 
 [dependencies]
 futures = { version = "0.3", default-features = false }
 ring = { version = "0.17", features = ["std"] }
 rustls-pemfile = "2.2"
-rustls-webpki = { version = "0.103.1", features = ["std"] }
+rustls-webpki = { version = "0.103.1", default-features = false, features = ["std"] }
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt", "sync"] }
 tokio-rustls = { workspace = true }
