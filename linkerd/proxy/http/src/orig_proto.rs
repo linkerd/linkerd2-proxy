@@ -67,7 +67,14 @@ where
 
     #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.h2.poll_ready(cx).map_err(downgrade_h2_error)
+        let Self { http1, h2 } = self;
+
+        match http1.poll_ready(cx) {
+            Poll::Ready(Ok(())) => {}
+            poll => return poll,
+        }
+
+        h2.poll_ready(cx).map_err(downgrade_h2_error)
     }
 
     fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
@@ -78,7 +85,7 @@ where
             .is_some()
         {
             debug!("Skipping orig-proto upgrade due to HTTP/1.1 upgrade");
-            return Box::pin(self.http1.request(req).map_ok(|rsp| rsp.map(BoxBody::new)));
+            return Box::pin(self.http1.call(req).map_ok(|rsp| rsp.map(BoxBody::new)));
         }
 
         let orig_version = req.version();

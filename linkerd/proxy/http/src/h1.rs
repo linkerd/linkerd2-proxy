@@ -61,7 +61,7 @@ impl<C: Clone, T: Clone, B> Clone for Client<C, T, B> {
 
 type RspFuture = Pin<Box<dyn Future<Output = Result<http::Response<BoxBody>>> + Send + 'static>>;
 
-impl<C, T, B> Client<C, T, B>
+impl<C, T, B> tower::Service<http::Request<B>> for Client<C, T, B>
 where
     T: Clone + Send + Sync + 'static,
     C: MakeConnection<(crate::Variant, T)> + Clone + Send + Sync + 'static,
@@ -71,7 +71,15 @@ where
     B::Data: Send,
     B::Error: Into<Error> + Send + Sync,
 {
-    pub(crate) fn request(&mut self, mut req: http::Request<B>) -> RspFuture {
+    type Response = http::Response<BoxBody>;
+    type Error = Error;
+    type Future = RspFuture;
+
+    fn poll_ready(&mut self, _: &mut std::task::Context<'_>) -> std::task::Poll<Result<()>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, mut req: http::Request<B>) -> RspFuture {
         // Marked by `upgrade`.
         let upgrade = req.extensions_mut().remove::<Http11Upgrade>();
         let is_http_connect = req.method() == http::Method::CONNECT;
