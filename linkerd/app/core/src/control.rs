@@ -114,8 +114,10 @@ impl Config {
                 warn!(error, "Failed to resolve control-plane component");
                 if let Some(e) = crate::errors::cause_ref::<dns::ResolveError>(&*error) {
                     if let Some(ttl) = e.negative_ttl() {
+                        let min_duration = time::Duration::from_millis(100);
+                        let interval = std::cmp::max(ttl, min_duration);
                         return Ok::<_, Error>(Either::Left(
-                            IntervalStream::new(time::interval(ttl)).map(|_| ()),
+                            IntervalStream::new(time::interval(interval)).map(|_| ()),
                         ));
                     }
                 }
