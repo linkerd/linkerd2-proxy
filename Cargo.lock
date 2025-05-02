@@ -1377,9 +1377,9 @@ dependencies = [
 
 [[package]]
 name = "jiff"
-version = "0.2.10"
+version = "0.2.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a064218214dc6a10fbae5ec5fa888d80c45d611aba169222fc272072bf7aef6"
+checksum = "27e77966151130221b079bcec80f1f34a9e414fa489d99152a201c07fd2182bc"
 dependencies = [
  "jiff-static",
  "jiff-tzdb-platform",
@@ -1392,9 +1392,9 @@ dependencies = [
 
 [[package]]
 name = "jiff-static"
-version = "0.2.10"
+version = "0.2.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "199b7932d97e325aff3a7030e141eafe7f2c6268e1d1b24859b753a627f45254"
+checksum = "97265751f8a9a4228476f2fc17874a9e7e70e96b893368e42619880fe143b48a"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1493,7 +1493,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc2f4eb4bc735547cfed7c0a4922cbd04a4655978c09b54f1f7b228750664c34"
 dependencies = [
  "cfg-if",
- "windows-targets 0.48.5",
+ "windows-targets 0.52.6",
 ]
 
 [[package]]
