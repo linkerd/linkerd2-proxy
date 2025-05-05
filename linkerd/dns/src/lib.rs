@@ -43,7 +43,7 @@ struct ARecordError(#[from] hickory_resolver::ResolveError);
 
 #[derive(Debug, Error)]
 enum SrvRecordError {
-    #[error(transparent)]
+    #[error("{0}")]
     Invalid(#[from] InvalidSrv),
     #[error("failed to resolve SRV record: {0}")]
     Resolve(#[from] hickory_resolver::ResolveError),
