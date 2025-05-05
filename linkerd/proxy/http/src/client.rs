@@ -135,7 +135,7 @@ where
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<()>> {
         match self {
             Self::H2(ref mut svc) => svc.poll_ready(cx).map_err(Into::into),
-            Self::OrigProtoUpgrade(ref mut svc) => svc.poll_ready(cx),
+            Self::OrigProtoUpgrade(ref mut svc) => svc.poll_ready(cx).map_err(Into::into),
             Self::Http1(ref mut svc) => svc.poll_ready(cx),
         }
     }
@@ -156,7 +156,7 @@ where
 
             match self {
                 Self::Http1(ref mut svc) => svc.call(req),
-                Self::OrigProtoUpgrade(ref mut svc) => svc.call(req),
+                Self::OrigProtoUpgrade(ref mut svc) => svc.call(req).map_err(Into::into).boxed(),
                 Self::H2(ref mut svc) => Box::pin(
                     svc.call(req)
                         .err_into::<Error>()
