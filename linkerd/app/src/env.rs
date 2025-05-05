@@ -83,8 +83,8 @@ pub enum ParseError {
     ),
     #[error("not a valid port range")]
     NotAPortRange,
-    #[error(transparent)]
-    AddrError(addr::Error),
+    #[error("{0}")]
+    AddrError(#[source] addr::Error),
     #[error("only two addresses are supported")]
     TooManyAddrs,
     #[error("not a valid identity name")]

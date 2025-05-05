@@ -16,8 +16,8 @@ use tokio_rustls::rustls::{self, crypto::CryptoProvider};
 use tracing::warn;
 
 #[derive(Debug, Error)]
-#[error(transparent)]
-pub struct InvalidKey(KeyRejected);
+#[error("{0}")]
+pub struct InvalidKey(#[source] KeyRejected);
 
 #[derive(Debug, Error)]
 #[error("invalid trust roots")]

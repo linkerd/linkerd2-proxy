@@ -427,7 +427,7 @@ pub mod proto {
 
     #[derive(Debug, thiserror::Error)]
     pub enum InvalidBackoff {
-        #[error(transparent)]
+        #[error("{0}")]
         Backoff(#[from] linkerd_exp_backoff::InvalidBackoff),
         #[error("invalid duration: {0}")]
         Duration(#[from] prost_types::DurationError),

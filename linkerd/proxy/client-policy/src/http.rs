@@ -162,10 +162,10 @@ pub mod proto {
         #[error("missing {0}")]
         Missing(&'static str),
 
-        #[error(transparent)]
+        #[error("{0}")]
         Timeout(#[from] InvalidTimeouts),
 
-        #[error(transparent)]
+        #[error("{0}")]
         Retry(#[from] InvalidRetry),
     }
 
