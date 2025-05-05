@@ -83,13 +83,13 @@ pub struct App {
     tap: tap::Tap,
 }
 
+// === impl Config ===
+
 impl Config {
     pub fn try_from_env() -> Result<Self, env::EnvError> {
         env::Env.try_config()
     }
-}
 
-impl Config {
     /// Build an application.
     ///
     /// It is currently required that this be run on a Tokio runtime, since some
@@ -357,6 +357,8 @@ impl Config {
         }
     }
 }
+
+// === impl App ===
 
 impl App {
     pub fn admin_addr(&self) -> Local<ServerAddr> {
