@@ -45,6 +45,8 @@ mod tests {
         Nada,
         #[error("{0}")]
         Inner(#[source] Inner),
+        #[error(transparent)]
+        Transparent(Inner),
     }
 
     #[derive(Debug, thiserror::Error)]
@@ -57,6 +59,8 @@ mod tests {
         assert!(super::is_caused_by::<Outer>(&Outer::Nada));
         assert!(super::is_caused_by::<Inner>(&Outer::Inner(Inner)));
         assert!(super::is_caused_by::<Outer>(&Outer::Inner(Inner)));
+        assert!(super::is_caused_by::<Inner>(&Outer::Transparent(Inner)));
+        assert!(super::is_caused_by::<Outer>(&Outer::Transparent(Inner)));
         assert!(super::is_caused_by::<Inner>(&Inner));
         assert!(!super::is_caused_by::<Outer>(&Inner));
     }
@@ -67,6 +71,8 @@ mod tests {
         assert!(super::cause_ref::<Outer>(&Outer::Nada).is_some());
         assert!(super::cause_ref::<Inner>(&Outer::Inner(Inner)).is_some());
         assert!(super::cause_ref::<Outer>(&Outer::Inner(Inner)).is_some());
+        assert!(super::cause_ref::<Inner>(&Outer::Transparent(Inner)).is_some());
+        assert!(super::cause_ref::<Outer>(&Outer::Transparent(Inner)).is_some());
         assert!(super::cause_ref::<Inner>(&Inner).is_some());
         assert!(super::cause_ref::<Outer>(&Inner).is_none());
     }
