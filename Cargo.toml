@@ -136,3 +136,11 @@ features = ["tokio", "tracing"]
 
 [workspace.dependencies.linkerd2-proxy-api]
 version = "0.16.0"
+
+# TODO(kate): this is a temporary patch of hyper, until hyperium/hyper#3883
+# is released. see:
+# - https://github.com/hyperium/hyper/pull/3883
+# - https://github.com/cratelyn/hyper/commit/0edd1c80ed3576705423877d6906684df261cc45
+[patch.crates-io.hyper]
+git = "https://github.com/cratelyn/hyper.git"
+rev = "390a65c2"

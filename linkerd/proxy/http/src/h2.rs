@@ -149,12 +149,12 @@ where
     B::Error: Into<Error> + Send + Sync,
 {
     type Response = http::Response<hyper::body::Incoming>;
-    type Error = hyper::Error;
+    type Error = hyper::client::conn::TrySendError<http::Request<B>>;
     type Future = Pin<Box<dyn Send + Future<Output = Result<Self::Response, Self::Error>>>>;
 
     #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.tx.poll_ready(cx).map_err(From::from)
+        self.tx.poll_ready(cx).map_err(Into::into)
     }
 
     fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
@@ -172,6 +172,6 @@ where
             *req.version_mut() = http::Version::HTTP_11;
         }
 
-        self.tx.send_request(req).boxed()
+        self.tx.try_send_request(req).boxed()
     }
 }
