@@ -7,6 +7,7 @@
 
 use crate::{h1, h2, orig_proto};
 use futures::prelude::*;
+use hyper::client::conn::TrySendError;
 use linkerd_error::{Error, Result};
 use linkerd_http_box::BoxBody;
 use linkerd_stack::{layer, ExtractParam, MakeConnection, Service, ServiceExt};
@@ -134,8 +135,11 @@ where
     #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<()>> {
         match self {
-            Self::H2(ref mut svc) => svc.poll_ready(cx).map_err(Into::into),
-            Self::OrigProtoUpgrade(ref mut svc) => svc.poll_ready(cx).map_err(Into::into),
+            Self::H2(ref mut svc) => svc
+                .poll_ready(cx)
+                .map_err(TrySendError::into_error)
+                .map_err(Error::from),
+            Self::OrigProtoUpgrade(ref mut svc) => svc.poll_ready(cx).map_err(Error::from),
             Self::Http1(ref mut svc) => svc.poll_ready(cx),
         }
     }
@@ -159,7 +163,9 @@ where
                 Self::OrigProtoUpgrade(ref mut svc) => svc.call(req).map_err(Into::into).boxed(),
                 Self::H2(ref mut svc) => Box::pin(
                     svc.call(req)
-                        .err_into::<Error>()
+                        // TODO(kate): recover abandoned requests from the http/2 client.
+                        .map_err(TrySendError::into_error)
+                        .map_err(Error::from)
                         .map_ok(|rsp| rsp.map(BoxBody::new)),
                 ) as RspFuture,
             }

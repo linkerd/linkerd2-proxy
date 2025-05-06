@@ -48,13 +48,13 @@ pub struct WasUpgrade(());
 /// This can represent an error presented by either of the underlying HTTP/1 or HTTP/2 clients,
 /// or a "downgraded" HTTP/2 error.
 #[derive(Debug, Error)]
-pub enum Error {
+pub enum Error<B> {
     #[error("{0}")]
     Downgraded(#[from] DowngradedH2Error),
     #[error(transparent)]
     H1(linkerd_error::Error),
     #[error(transparent)]
-    H2(hyper::Error),
+    H2(hyper::client::conn::TrySendError<http::Request<B>>),
 }
 
 // === impl Upgrade ===
@@ -76,7 +76,7 @@ where
     B::Error: Into<linkerd_error::Error> + Send + Sync,
 {
     type Response = http::Response<BoxBody>;
-    type Error = Error;
+    type Error = Error<B>;
     type Future = Pin<
         Box<dyn Future<Output = Result<http::Response<BoxBody>, Self::Error>> + Send + 'static>,
     >;
@@ -157,9 +157,9 @@ where
 
 // === impl Error ===
 
-impl Error {
-    fn h2(err: hyper::Error) -> Self {
-        if let Some(downgraded) = downgrade_h2_error(&err) {
+impl<B> Error<B> {
+    fn h2(err: hyper::client::conn::TrySendError<http::Request<B>>) -> Self {
+        if let Some(downgraded) = downgrade_h2_error(err.error()) {
             return Self::Downgraded(downgraded);
         }
 
