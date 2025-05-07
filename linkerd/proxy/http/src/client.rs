@@ -136,7 +136,7 @@ where
         match self {
             Self::H2(ref mut svc) => svc.poll_ready(cx).map_err(Into::into),
             Self::OrigProtoUpgrade(ref mut svc) => svc.poll_ready(cx),
-            Self::Http1(_) => Poll::Ready(Ok(())),
+            Self::Http1(ref mut svc) => svc.poll_ready(cx),
         }
     }
 
@@ -155,7 +155,7 @@ where
             debug!(headers = ?req.headers());
 
             match self {
-                Self::Http1(ref mut h1) => h1.request(req),
+                Self::Http1(ref mut svc) => svc.call(req),
                 Self::OrigProtoUpgrade(ref mut svc) => svc.call(req),
                 Self::H2(ref mut svc) => Box::pin(
                     svc.call(req)
