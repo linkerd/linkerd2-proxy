@@ -31,7 +31,7 @@ linkerd-tls = { path = "../tls" }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }
-tracing = "0.1"
+tracing = { workspace = true }
 rcgen = "0.13.2"
 
 linkerd-conditional = { path = "../conditional" }

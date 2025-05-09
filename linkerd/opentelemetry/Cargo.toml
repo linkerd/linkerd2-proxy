@@ -20,4 +20,4 @@ tonic = { workspace = true, default-features = false, features = [
     "codegen",
 ] }
 tokio = { version = "1", features = ["macros", "sync", "time"] }
-tracing = "0.1"
+tracing = { workspace = true }

@@ -11,5 +11,5 @@ bytes = { workspace = true }
 futures = { version = "0.3", default-features = false }
 tokio = { version = "1", features = ["io-util"] }
 pin-project = "1"
-tracing = "0.1"
+tracing = { workspace = true }
 linkerd-io = { path = "../io" }

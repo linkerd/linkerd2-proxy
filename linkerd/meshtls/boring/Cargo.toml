@@ -20,7 +20,7 @@ linkerd-meshtls-verifier = { path = "../verifier" }
 
 tokio = { version = "1", features = ["macros", "sync"] }
 tokio-boring = "4"
-tracing = "0.1"
+tracing = { workspace = true }
 
 [features]
 fips = ["boring/fips"]

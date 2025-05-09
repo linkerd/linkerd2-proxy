@@ -15,5 +15,5 @@ linkerd-error = { path = "../../error" }
 linkerd-proxy-core = { path = "../core" }
 thiserror = "2"
 tower = { workspace = true }
-tracing = "0.1"
+tracing = { workspace = true }
 pin-project = "1"
