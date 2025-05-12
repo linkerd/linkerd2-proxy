@@ -67,10 +67,7 @@ where
         let tls: tls::ConditionalClientTls = ep.param();
         if let tls::ConditionalClientTls::None(reason) = tls {
             trace!(%reason, "Not attempting opaque transport");
-            let target = Connect {
-                addr: ep.param(),
-                tls,
-            };
+            let target = Connect::new(ep.param(), tls);
             return Box::pin(self.inner.connect(target).err_into::<Error>());
         }
 
@@ -109,10 +106,10 @@ where
 
         let protocol: Option<SessionProtocol> = ep.param();
 
-        let connect = self.inner.connect(Connect {
-            addr: Remote(ServerAddr((addr.ip(), connect_port).into())),
+        let connect = self.inner.connect(Connect::new(
+            Remote(ServerAddr((addr.ip(), connect_port).into())),
             tls,
-        });
+        ));
         Box::pin(async move {
             let (mut io, meta) = connect.await.map_err(Into::into)?;
 
@@ -203,9 +200,9 @@ mod test {
     ) -> impl Fn(Connect) -> futures::future::Ready<Result<(tokio_test::io::Mock, ConnectMeta), io::Error>>
     {
         move |ep| {
-            let Remote(ServerAddr(sa)) = ep.addr;
+            let Remote(ServerAddr(sa)) = ep.addr();
             assert_eq!(sa.port(), 4143);
-            assert!(ep.tls.is_some());
+            assert!(ep.tls().is_some());
             let buf = header.encode_prefaced_buf().expect("Must encode");
             let io = tokio_test::io::Builder::new()
                 .write(&buf[..])
@@ -225,9 +222,9 @@ mod test {
 
         let svc = TaggedTransport {
             inner: service_fn(|ep: Connect| {
-                let Remote(ServerAddr(sa)) = ep.addr;
+                let Remote(ServerAddr(sa)) = ep.addr();
                 assert_eq!(sa.port(), 4321);
-                assert!(ep.tls.is_none());
+                assert!(ep.tls().is_none());
                 let io = tokio_test::io::Builder::new().write(b"hello").build();
                 let meta = tls::ConnectMeta {
                     socket: Local(ClientAddr(([0, 0, 0, 0], 0).into())),

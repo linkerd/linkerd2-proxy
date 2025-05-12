@@ -8,8 +8,8 @@ use std::task::{Context, Poll};
 
 #[derive(Clone, Debug)]
 pub struct Connect {
-    pub addr: Remote<ServerAddr>,
-    pub tls: tls::ConditionalClientTls,
+    addr: Remote<ServerAddr>,
+    tls: tls::ConditionalClientTls,
 }
 
 /// Prevents outbound connections on the loopback interface, unless the
@@ -77,6 +77,12 @@ where
 
 // === impl Connect ===
 
+impl Connect {
+    pub fn new(addr: Remote<ServerAddr>, tls: tls::ConditionalClientTls) -> Self {
+        Self { addr, tls }
+    }
+}
+
 impl svc::Param<Remote<ServerAddr>> for Connect {
     fn param(&self) -> Remote<ServerAddr> {
         self.addr
@@ -86,5 +92,16 @@ impl svc::Param<Remote<ServerAddr>> for Connect {
 impl svc::Param<tls::ConditionalClientTls> for Connect {
     fn param(&self) -> tls::ConditionalClientTls {
         self.tls.clone()
+    }
+}
+
+#[cfg(test)]
+impl Connect {
+    pub fn addr(&self) -> &Remote<ServerAddr> {
+        &self.addr
+    }
+
+    pub fn tls(&self) -> &tls::ConditionalClientTls {
+        &self.tls
     }
 }
