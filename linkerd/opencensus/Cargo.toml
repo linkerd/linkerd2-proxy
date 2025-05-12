@@ -19,4 +19,4 @@ tonic = { workspace = true, default-features = false, features = [
 ] }
 tokio = { version = "1", features = ["macros", "sync", "time"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
-tracing = "0.1"
+tracing = { workspace = true }

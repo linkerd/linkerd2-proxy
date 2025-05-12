@@ -19,4 +19,4 @@ linkerd-stack = { path = "../../stack" }
 tokio = { version = "1", features = ["sync"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 tower = { workspace = true }
-tracing = "0.1"
+tracing = { workspace = true }

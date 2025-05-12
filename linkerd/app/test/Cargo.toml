@@ -33,7 +33,7 @@ tokio-test = "0.4"
 tokio-stream = { version = "0.1", features = ["sync"] }
 tonic = { workspace = true, default-features = false, optional = true }
 tower = { workspace = true, default-features = false }
-tracing = "0.1"
+tracing = { workspace = true }
 thiserror = "2"
 
 [dependencies.tracing-subscriber]

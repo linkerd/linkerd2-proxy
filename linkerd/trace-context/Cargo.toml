@@ -17,4 +17,4 @@ linkerd-stack = { path = "../stack" }
 rand = "0.8"
 thiserror = "1"
 tower = { workspace = true, default-features = false, features = ["util"] }
-tracing = "0.1"
+tracing = { workspace = true }

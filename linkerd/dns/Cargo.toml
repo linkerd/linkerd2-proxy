@@ -14,7 +14,7 @@ linkerd-error = { path = "../error" }
 prometheus-client = { workspace = true }
 thiserror = "2"
 tokio = { version = "1", features = ["rt", "sync", "time"] }
-tracing = "0.1"
+tracing = { workspace = true }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(fuzzing)'] }

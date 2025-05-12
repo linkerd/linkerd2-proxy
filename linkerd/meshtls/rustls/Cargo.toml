@@ -21,7 +21,7 @@ rustls-webpki = { version = "0.103.1", default-features = false, features = ["st
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt", "sync"] }
 tokio-rustls = { workspace = true }
-tracing = "0.1"
+tracing = { workspace = true }
 
 linkerd-dns-name = { path = "../../dns/name" }
 linkerd-error = { path = "../../error" }

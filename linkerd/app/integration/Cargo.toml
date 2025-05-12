@@ -40,7 +40,7 @@ tokio-rustls = { workspace = true }
 tokio-stream = { version = "0.1", features = ["sync"] }
 tonic = { workspace = true, features = ["transport"], default-features = false }
 tower = { workspace = true, default-features = false }
-tracing = "0.1"
+tracing = { workspace = true }
 
 [dependencies.hyper]
 workspace = true

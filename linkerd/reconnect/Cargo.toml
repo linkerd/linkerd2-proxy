@@ -11,7 +11,7 @@ linkerd-error = { path = "../error" }
 linkerd-stack = { path = "../stack" }
 futures = { version = "0.3", default-features = false }
 tower = { workspace = true, default-features = false }
-tracing = "0.1"
+tracing = { workspace = true }
 pin-project = "1"
 
 [dev-dependencies]

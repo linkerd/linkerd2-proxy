@@ -36,4 +36,4 @@ tokio = { version = "1", features = ["rt"] }
 tokio-stream = { version = "0.1", features = ["time", "sync"] }
 tonic = { workspace = true, default-features = false, features = ["prost"] }
 tower = { workspace = true }
-tracing = "0.1"
+tracing = { workspace = true }
