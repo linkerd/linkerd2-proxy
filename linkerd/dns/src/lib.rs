@@ -43,7 +43,7 @@ struct ARecordError(#[from] hickory_resolver::ResolveError);
 
 #[derive(Debug, Error)]
 enum SrvRecordError {
-    #[error(transparent)]
+    #[error("{0}")]
     Invalid(#[from] InvalidSrv),
     #[error("failed to resolve SRV record: {0}")]
     Resolve(#[from] hickory_resolver::ResolveError),
@@ -252,7 +252,7 @@ impl Metrics {
 
 #[cfg(test)]
 mod tests {
-    use super::{Name, Resolver, Suffix};
+    use super::{InvalidSrv, Name, Resolver, SrvRecordError, Suffix};
     use hickory_resolver::proto::rr::{domain, rdata};
     use std::{net, str::FromStr};
 
@@ -392,6 +392,20 @@ mod tests {
             let socket = Resolver::srv_to_socket_addr(srv).unwrap();
             assert_eq!(socket.ip(), net::IpAddr::from_str(case.output).unwrap());
         }
+    }
+
+    #[test]
+    fn srv_record_reports_cause_correctly() {
+        let srv = "foobar.linkerd-dst-headless.linkerd.svc.cluster.local."
+            .parse::<hickory_resolver::Name>()
+            .map(|name| rdata::SRV::new(1, 1, 8086, name))
+            .expect("a valid domain name");
+
+        let error = SrvRecordError::Invalid(InvalidSrv(srv));
+        let error: Box<dyn std::error::Error + 'static> = Box::new(error);
+
+        assert!(linkerd_error::is_caused_by::<InvalidSrv>(&*error));
+        assert!(linkerd_error::cause_ref::<InvalidSrv>(&*error).is_some());
     }
 }
 
