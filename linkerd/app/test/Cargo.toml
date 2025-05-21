@@ -14,7 +14,6 @@ client-policy = ["linkerd-proxy-client-policy", "tonic", "linkerd-http-route"]
 
 [dependencies]
 futures = { version = "0.3", default-features = false }
-h2 = { workspace = true }
 http = { workspace = true }
 http-body = { workspace = true }
 http-body-util = { workspace = true }
@@ -22,12 +21,10 @@ hyper = { workspace = true, features = ["http1", "http2"] }
 hyper-util = { workspace = true, features = ["tokio"] }
 linkerd-app-core = { path = "../core" }
 linkerd-http-route = { path = "../../http/route", optional = true }
-linkerd-identity = { path = "../../identity" }
 linkerd-proxy-client-policy = { path = "../../proxy/client-policy", optional = true }
 linkerd-io = { path = "../../io", features = ["tokio-test"] }
 parking_lot = "0.12"
 pin-project = "1"
-regex = "1"
 tokio = { version = "1", features = ["io-util", "net", "rt", "sync"] }
 tokio-test = "0.4"
 tokio-stream = { version = "0.1", features = ["sync"] }

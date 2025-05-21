@@ -1731,7 +1731,6 @@ name = "linkerd-app-test"
 version = "0.1.0"
 dependencies = [
  "futures",
- "h2",
  "http",
  "http-body",
  "http-body-util",
@@ -1739,12 +1738,10 @@ dependencies = [
  "hyper-util",
  "linkerd-app-core",
  "linkerd-http-route",
- "linkerd-identity",
  "linkerd-io",
  "linkerd-proxy-client-policy",
  "parking_lot",
  "pin-project",
- "regex",
  "thiserror 2.0.12",
  "tokio",
  "tokio-stream",
