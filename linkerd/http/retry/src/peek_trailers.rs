@@ -182,7 +182,7 @@ impl<B: Body> PeekTrailersBody<B> {
                         },
                         // The body yielded an unknown kind of frame.
                         Some(Ok(None)) => Inner::Buffered {
-                            first: None,
+                            first: Some(Ok(first)),
                             second: None,
                             inner: body,
                         },
@@ -192,7 +192,7 @@ impl<B: Body> PeekTrailersBody<B> {
                     // that a second DATA frame is on the way, and we are no longer willing to
                     // await additional frames. There are no trailers to peek.
                     Inner::Buffered {
-                        first: None,
+                        first: Some(Ok(first)),
                         second: None,
                         inner: body,
                     }
