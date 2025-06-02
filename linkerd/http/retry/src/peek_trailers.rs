@@ -454,4 +454,22 @@ mod tests {
         assert_eq!(data, "hellohello");
         assert_eq!(trailers.unwrap().get("trailer").unwrap(), "shiny");
     }
+
+    #[tokio::test]
+    async fn cannot_peek_body_with_various_pending_polls() {
+        let (_guard, _handle) = linkerd_tracing::test::trace_init();
+        let body = MockBody::default()
+            .then_yield_data(Poll::Ready(data()))
+            .then_yield_data(Poll::Pending)
+            .then_yield_data(Poll::Ready(data()))
+            .then_yield_data(Poll::Pending)
+            .then_yield_trailer(Poll::Ready(trailers()));
+        let peek = PeekTrailersBody::read_body(body).await;
+        assert!(peek.peek_trailers().is_none());
+        assert!(peek.is_end_stream().not());
+
+        let (data, trailers) = collect(peek).await;
+        assert_eq!(data, "hellohello");
+        assert_eq!(trailers.unwrap().get("trailer").unwrap(), "shiny");
+    }
 }
