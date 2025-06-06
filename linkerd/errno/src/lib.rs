@@ -78,7 +78,7 @@ mod code {
             15 => ENOTBLK,          // Block device required
             16 => EBUSY,            // Device or resource busy
             17 => EEXIST,           // File exists
-            18 => EXDEV,            // Cross-device linkgit pus
+            18 => EXDEV,            // Cross-device link
             19 => ENODEV,           // No such device
             20 => ENOTDIR,          // Not a directory
             21 => EISDIR,           // Is a directory
