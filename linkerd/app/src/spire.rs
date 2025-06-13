@@ -67,13 +67,11 @@ impl tower::Service<()> for Client {
                     {
                         use tokio::net::windows::named_pipe;
                         let named_pipe_path = addr.clone();
+                        let client = named_pipe::ClientOptions::new()
+                            .open(named_pipe_path.as_str())
+                            .map(TokioIo::new);
 
-                        async move {
-                            let client =
-                                named_pipe::ClientOptions::new().open(named_pipe_path.as_str())?;
-
-                            Ok::<_, std::io::Error>(TokioIo::new(client))
-                        }
+                        futures::future::ready(client)
                     }
                 }))
                 .await?;
