@@ -40,7 +40,6 @@ impl tower::Service<()> for Client {
         let addr = self.config.workload_api_addr.clone();
         let backoff = self.config.backoff;
         Box::pin(async move {
-            use hyper_util::rt::TokioIo;
             use tonic::transport::{Endpoint, Uri};
 
             // We will ignore this uri because uds do not use it
@@ -60,7 +59,8 @@ impl tower::Service<()> for Client {
                             .unwrap_or(addr.as_str())
                             .to_string();
 
-                        UnixStream::connect(stripped_path.clone()).map_ok(TokioIo::new)
+                        UnixStream::connect(stripped_path.clone())
+                            .map_ok(hyper_util::rt::TokioIo::new)
                     }
 
                     #[cfg(windows)]
@@ -69,9 +69,15 @@ impl tower::Service<()> for Client {
                         let named_pipe_path = addr.clone();
                         let client = named_pipe::ClientOptions::new()
                             .open(named_pipe_path.as_str())
-                            .map(TokioIo::new);
+                            .map(hyper_util::rt::TokioIo::new);
 
                         futures::future::ready(client)
+                    }
+
+                    #[cfg(not(any(unix, windows)))]
+                    {
+                        compile_error!("Spire is supported only on Windows and Unix systems.");
+                        futures::future::pending()
                     }
                 }))
                 .await?;
