@@ -49,17 +49,12 @@ impl tower::Service<()> for Client {
                 .connect_with_connector(tower::util::service_fn(move |_: Uri| {
                     #[cfg(unix)]
                     {
-                        use tokio::net::UnixStream;
-                        const UNIX_PREFIX: &str = "unix:";
                         use futures::TryFutureExt;
 
-                        // Strip the 'unix:' prefix for tonic compatibility.
-                        let stripped_path = addr
-                            .strip_prefix(UNIX_PREFIX)
-                            .unwrap_or(addr.as_str())
-                            .to_string();
+                        // The 'unix:' scheme must be stripped from socket paths.
+                        let path = addr.strip_prefix("unix:").unwrap_or(addr.as_str());
 
-                        UnixStream::connect(stripped_path.clone())
+                        tokio::net::UnixStream::connect(path.to_string())
                             .map_ok(hyper_util::rt::TokioIo::new)
                     }
 
