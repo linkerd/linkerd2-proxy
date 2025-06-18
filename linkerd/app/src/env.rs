@@ -444,7 +444,8 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     let trace_protocol = strings.get(ENV_TRACE_PROTOCOL);
     let trace_service_name = strings.get(ENV_TRACE_SERVICE_NAME);
 
-    let trace_collector_addr = parse_control_addr(strings, ENV_TRACE_COLLECTOR_SVC_BASE);
+    let trace_collector_addr =
+        parse_optionally_named_control_addr(strings, ENV_TRACE_COLLECTOR_SVC_BASE);
 
     let gateway_suffixes = parse(strings, ENV_INBOUND_GATEWAY_SUFFIXES, parse_dns_suffixes);
 
@@ -1134,6 +1135,21 @@ pub fn parse_control_addr<S: Strings>(
     strings: &S,
     base: &str,
 ) -> Result<Option<ControlAddr>, EnvError> {
+    parse_control_addr_inner(strings, base, false)
+}
+
+pub fn parse_optionally_named_control_addr<S: Strings>(
+    strings: &S,
+    base: &str,
+) -> Result<Option<ControlAddr>, EnvError> {
+    parse_control_addr_inner(strings, base, true)
+}
+
+fn parse_control_addr_inner<S: Strings>(
+    strings: &S,
+    base: &str,
+    name_optional: bool,
+) -> Result<Option<ControlAddr>, EnvError> {
     let a = parse(strings, &format!("{base}_ADDR"), parse_addr)?;
     let n = parse(strings, &format!("{base}_NAME"), parse_dns_name)?;
     match (a, n) {
@@ -1141,6 +1157,10 @@ pub fn parse_control_addr<S: Strings>(
         (Some(ref addr), _) if addr.is_loopback() => Ok(Some(ControlAddr {
             addr: addr.clone(),
             identity: Conditional::None(tls::NoClientTls::Loopback),
+        })),
+        (Some(ref addr), None) if name_optional => Ok(Some(ControlAddr {
+            addr: addr.clone(),
+            identity: Conditional::None(tls::NoClientTls::Disabled),
         })),
         (Some(addr), Some(name)) => Ok(Some(ControlAddr {
             addr,
