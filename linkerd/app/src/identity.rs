@@ -109,7 +109,7 @@ impl Config {
                 }
             }
             Self::Spire { client, tls } => {
-                let addr = client.socket_addr.clone();
+                let addr = client.workload_api_addr.clone();
                 let spire = spire::client::Spire::new(tls.id.clone());
 
                 let (store, receiver, ready) = watch(tls, metrics.cert)?;
