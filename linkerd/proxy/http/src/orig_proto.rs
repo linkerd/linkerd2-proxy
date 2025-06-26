@@ -225,8 +225,7 @@ fn test_downgrade_h2_error() {
     );
 
     assert!(
-        downgrade_h2_error(&std::io::Error::new(
-            std::io::ErrorKind::Other,
+        downgrade_h2_error(&std::io::Error::other(
             "non h2 error"
         ))
         .is_none(),
