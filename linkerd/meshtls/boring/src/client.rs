@@ -103,9 +103,10 @@ where
 
             // Servers must present a peer certificate. We extract the x509 cert
             // and verify it manually against the `server_id`.
-            let cert = io.ssl().peer_certificate().ok_or_else(|| {
-                io::Error::other("could not extract peer cert")
-            })?;
+            let cert = io
+                .ssl()
+                .peer_certificate()
+                .ok_or_else(|| io::Error::other("could not extract peer cert"))?;
             let cert_der = id::DerX509(cert.to_der()?);
             verifier::verify_id(&cert_der, &server_id)?;
 

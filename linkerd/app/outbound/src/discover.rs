@@ -134,7 +134,13 @@ impl<N> Outbound<N> {
                                 .unwrap_or_else(|| (orig_dst, Default::default()));
                             // TODO(ver) We should be able to figure out resource coordinates for
                             // the endpoint?
-                            synthesize_forward_policy(&META, detect_timeout, queue, addr, meta.into())
+                            synthesize_forward_policy(
+                                &META,
+                                detect_timeout,
+                                queue,
+                                addr,
+                                meta.into(),
+                            )
                         },
                     );
                     return Ok((Some(profile), policy));
