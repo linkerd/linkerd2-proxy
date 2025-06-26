@@ -142,7 +142,7 @@ fn default_backend(addr: SocketAddr) -> client_policy::Backend {
             capacity: 100,
             failfast_timeout: Duration::from_secs(10),
         },
-        dispatcher: BackendDispatcher::Forward(addr, EndpointMetadata::default()),
+        dispatcher: BackendDispatcher::Forward(addr, EndpointMetadata::default().into()),
     }
 }
 

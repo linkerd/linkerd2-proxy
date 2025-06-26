@@ -153,7 +153,7 @@ fn mk_routes(profile: &profiles::Profile) -> Option<outbound::http::Routes> {
     if let Some((addr, metadata)) = profile.endpoint.clone() {
         return Some(outbound::http::Routes::Endpoint(
             Remote(ServerAddr(addr)),
-            metadata,
+            metadata.into(),
         ));
     }
 
