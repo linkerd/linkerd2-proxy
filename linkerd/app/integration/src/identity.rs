@@ -8,7 +8,7 @@ use std::{
 };
 
 use linkerd2_proxy_api::identity as pb;
-use tokio_rustls::rustls::{self, pki_types::CertificateDer, server::WebPkiClientVerifier};
+use tokio_rustls::rustls::{self, server::WebPkiClientVerifier};
 use tonic as grpc;
 
 pub struct Identity {
@@ -54,13 +54,13 @@ impl Certificates {
         let leaf = certs
             .next()
             .expect("no leaf cert in pemfile")
-            .map_err(|_| io::Error::new(io::ErrorKind::Other, "rustls error reading certs"))?
+            .map_err(|_| io::Error::other("rustls error reading certs"))?
             .as_ref()
             .to_vec();
         let intermediates = certs
             .map(|cert| cert.map(|cert| cert.as_ref().to_vec()))
             .collect::<Result<Vec<_>, _>>()
-            .map_err(|_| io::Error::new(io::ErrorKind::Other, "rustls error reading certs"))?;
+            .map_err(|_| io::Error::other("rustls error reading certs"))?;
 
         Ok(Certificates {
             leaf,
@@ -104,7 +104,6 @@ impl Identity {
         use std::io::Cursor;
         let mut roots = rustls::RootCertStore::empty();
         let trust_anchors = rustls_pemfile::certs(&mut Cursor::new(trust_anchors))
-            .map(|bytes| bytes.map(CertificateDer::from))
             .collect::<Result<Vec<_>, _>>()
             .expect("error parsing pemfile");
         let (added, skipped) = roots.add_parsable_certificates(trust_anchors);

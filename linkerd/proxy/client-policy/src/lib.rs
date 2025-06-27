@@ -100,7 +100,7 @@ pub struct Queue {
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum BackendDispatcher {
-    Forward(SocketAddr, EndpointMetadata),
+    Forward(SocketAddr, Arc<EndpointMetadata>),
     BalanceP2c(Load, EndpointDiscovery),
     Fail { message: Arc<str> },
 }
@@ -673,7 +673,7 @@ pub mod proto {
                 Some(backend::Kind::Forward(ep)) => {
                     let (addr, meta) = resolve::to_addr_meta(ep, &Default::default())
                         .ok_or(InvalidBackend::ForwardAddr)?;
-                    BackendDispatcher::Forward(addr, meta)
+                    BackendDispatcher::Forward(addr, meta.into())
                 }
                 None => {
                     let message = format!(

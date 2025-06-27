@@ -27,7 +27,7 @@ where
                 .into_body()
                 .collect()
                 .await
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?
+                .map_err(io::Error::other)?
                 .aggregate();
             match level.set_from(body.chunk()) {
                 Ok(_) => mk_rsp(StatusCode::NO_CONTENT, BoxBody::empty()),

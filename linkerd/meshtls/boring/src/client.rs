@@ -79,9 +79,9 @@ where
             .connector(self.alpn.as_deref().unwrap_or(&[]));
         Box::pin(async move {
             let config = connector
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?
+                .map_err(io::Error::other)?
                 .configure()
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
 
             // Establish a TLS connection to the server using the provided
             // `server_name` as an SNI value to the server.
@@ -98,14 +98,15 @@ where
                     // XXX(ver) to use the boring error directly here we have to
                     // constrain the socket on Sync + std::fmt::Debug, which is
                     // a pain.
-                    None => io::Error::new(io::ErrorKind::Other, "unexpected TLS handshake error"),
+                    None => io::Error::other("unexpected TLS handshake error"),
                 })?;
 
             // Servers must present a peer certificate. We extract the x509 cert
             // and verify it manually against the `server_id`.
-            let cert = io.ssl().peer_certificate().ok_or_else(|| {
-                io::Error::new(io::ErrorKind::Other, "could not extract peer cert")
-            })?;
+            let cert = io
+                .ssl()
+                .peer_certificate()
+                .ok_or_else(|| io::Error::other("could not extract peer cert"))?;
             let cert_der = id::DerX509(cert.to_der()?);
             verifier::verify_id(&cert_der, &server_id)?;
 

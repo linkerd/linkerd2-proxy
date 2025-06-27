@@ -861,12 +861,7 @@ fn grpc_status_server(
 
 #[tracing::instrument]
 fn connect_error() -> impl Fn(Remote<ServerAddr>) -> io::Result<io::BoxedIo> {
-    move |_| {
-        Err(io::Error::new(
-            io::ErrorKind::Other,
-            "server is not listening",
-        ))
-    }
+    move |_| Err(io::Error::other("server is not listening"))
 }
 
 #[tracing::instrument]

@@ -134,7 +134,13 @@ impl<N> Outbound<N> {
                                 .unwrap_or_else(|| (orig_dst, Default::default()));
                             // TODO(ver) We should be able to figure out resource coordinates for
                             // the endpoint?
-                            synthesize_forward_policy(&META, detect_timeout, queue, addr, meta)
+                            synthesize_forward_policy(
+                                &META,
+                                detect_timeout,
+                                queue,
+                                addr,
+                                meta.into(),
+                            )
                         },
                     );
                     return Ok((Some(profile), policy));
@@ -189,7 +195,7 @@ pub fn synthesize_forward_policy(
     timeout: Duration,
     queue: policy::Queue,
     addr: SocketAddr,
-    metadata: policy::EndpointMetadata,
+    metadata: Arc<policy::EndpointMetadata>,
 ) -> ClientPolicy {
     policy_for_backend(
         meta,
