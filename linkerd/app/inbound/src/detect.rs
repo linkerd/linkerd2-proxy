@@ -325,7 +325,7 @@ impl svc::Param<Remote<ServerAddr>> for Forward {
 impl svc::Param<transport::labels::Key> for Forward {
     fn param(&self) -> transport::labels::Key {
         transport::labels::Key::inbound_server(
-            self.tls.clone(),
+            self.tls.as_ref().map(|t| t.labels()),
             self.orig_dst_addr.into(),
             self.permit.labels.server.clone(),
         )
@@ -429,7 +429,7 @@ impl svc::Param<ServerLabel> for Http {
 impl svc::Param<transport::labels::Key> for Http {
     fn param(&self) -> transport::labels::Key {
         transport::labels::Key::inbound_server(
-            self.tls.status.clone(),
+            self.tls.status.as_ref().map(|t| t.labels()),
             self.tls.orig_dst_addr.into(),
             self.tls.policy.server_label(),
         )

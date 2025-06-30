@@ -10,8 +10,9 @@ pub use self::{
         ConnectMeta, NoClientTls, ServerId,
     },
     server::{
-        ClientId, ConditionalServerTls, NewDetectRequiredSni, NewDetectTls, NoServerTls,
-        NoSniFoundError, ServerTls, SniDetectionTimeoutError,
+        ClientId, ConditionalServerTls, ConditionalServerTlsLabels, NewDetectRequiredSni,
+        NewDetectTls, NoServerTls, NoSniFoundError, ServerTls, ServerTlsLabels,
+        SniDetectionTimeoutError,
     },
 };
 

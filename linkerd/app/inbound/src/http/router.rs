@@ -395,7 +395,7 @@ fn endpoint_labels(
 ) -> impl svc::ExtractParam<metrics::EndpointLabels, Logical> + Clone {
     move |t: &Logical| -> metrics::EndpointLabels {
         metrics::InboundEndpointLabels {
-            tls: t.tls.clone(),
+            tls: t.tls.as_ref().map(|t| t.labels()),
             authority: unsafe_authority_labels
                 .then(|| t.logical.as_ref().map(|d| d.as_http_authority()))
                 .flatten(),

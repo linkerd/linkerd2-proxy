@@ -664,7 +664,7 @@ async fn grpc_response_class() {
     let response_total = metrics
         .get_response_total(
             &metrics::EndpointLabels::Inbound(metrics::InboundEndpointLabels {
-                tls: Target::meshed_h2().1,
+                tls: Target::meshed_h2().1.map(|t| t.labels()),
                 authority: None,
                 target_addr: "127.0.0.1:80".parse().unwrap(),
                 policy: metrics::RouteAuthzLabels {
@@ -762,7 +762,7 @@ async fn test_unsafe_authority_labels(
     let response_total = metrics
         .get_response_total(
             &metrics::EndpointLabels::Inbound(metrics::InboundEndpointLabels {
-                tls: Target::meshed_http1().1,
+                tls: Target::meshed_http1().1.as_ref().map(|t| t.labels()),
                 authority: expected_authority,
                 target_addr: "127.0.0.1:80".parse().unwrap(),
                 policy: metrics::RouteAuthzLabels {
