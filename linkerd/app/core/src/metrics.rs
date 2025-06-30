@@ -427,16 +427,24 @@ impl svc::Param<OutboundZoneLocality> for OutboundEndpointLabels {
 
 impl FmtLabels for OutboundEndpointLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(a) = self.authority.as_ref() {
+        let Self {
+            server_id,
+            authority,
+            labels,
+            zone_locality,
+            target_addr,
+        } = self;
+
+        if let Some(a) = authority.as_ref() {
             Authority(a).fmt_labels(f)?;
             write!(f, ",")?;
         }
 
-        let ta = TargetAddr(self.target_addr);
-        let tls = TlsConnect::from(&self.server_id);
+        let ta = TargetAddr(*target_addr);
+        let tls = TlsConnect::from(server_id);
         (ta, tls).fmt_labels(f)?;
 
-        if let Some(labels) = self.labels.as_ref() {
+        if let Some(labels) = labels.as_ref() {
             write!(f, ",{}", labels)?;
         }
 
