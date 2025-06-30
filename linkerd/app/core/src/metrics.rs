@@ -283,10 +283,16 @@ impl ProfileRouteLabels {
 
 impl FmtLabels for ProfileRouteLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.direction.fmt_labels(f)?;
-        write!(f, ",dst=\"{}\"", self.addr)?;
+        let Self {
+            direction,
+            addr,
+            labels,
+        } = self;
 
-        if let Some(labels) = self.labels.as_ref() {
+        direction.fmt_labels(f)?;
+        write!(f, ",dst=\"{}\"", addr)?;
+
+        if let Some(labels) = labels.as_ref() {
             write!(f, ",{}", labels)?;
         }
 
