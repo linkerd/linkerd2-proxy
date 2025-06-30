@@ -325,16 +325,19 @@ impl FmtLabels for EndpointLabels {
 
 impl FmtLabels for InboundEndpointLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(a) = self.authority.as_ref() {
+        let Self {
+            tls,
+            authority,
+            target_addr,
+            policy,
+        } = self;
+
+        if let Some(a) = authority.as_ref() {
             Authority(a).fmt_labels(f)?;
             write!(f, ",")?;
         }
 
-        (
-            (TargetAddr(self.target_addr), TlsAccept::from(&self.tls)),
-            &self.policy,
-        )
-            .fmt_labels(f)?;
+        ((TargetAddr(*target_addr), TlsAccept::from(tls)), policy).fmt_labels(f)?;
 
         Ok(())
     }
