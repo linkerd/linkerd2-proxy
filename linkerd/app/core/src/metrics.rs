@@ -431,7 +431,8 @@ impl FmtLabels for OutboundEndpointLabels {
             server_id,
             authority,
             labels,
-            zone_locality,
+            // TODO(kate): this label is not currently emitted.
+            zone_locality: _,
             target_addr,
         } = self;
 
