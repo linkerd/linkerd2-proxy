@@ -174,12 +174,13 @@ impl FmtLabels for TlsConnect<'_> {
 
 impl FmtLabels for TargetAddr {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self(target_addr) = self;
         write!(
             f,
             "target_addr=\"{}\",target_ip=\"{}\",target_port=\"{}\"",
-            self.0,
-            self.0.ip(),
-            self.0.port()
+            target_addr,
+            target_addr.ip(),
+            target_addr.port()
         )
     }
 }
