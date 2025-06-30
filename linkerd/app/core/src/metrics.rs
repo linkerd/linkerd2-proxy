@@ -345,13 +345,14 @@ impl FmtLabels for InboundEndpointLabels {
 
 impl FmtLabels for ServerLabel {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self(meta, port) = self;
         write!(
             f,
             "srv_group=\"{}\",srv_kind=\"{}\",srv_name=\"{}\",srv_port=\"{}\"",
-            self.0.group(),
-            self.0.kind(),
-            self.0.name(),
-            self.1
+            meta.group(),
+            meta.kind(),
+            meta.name(),
+            port
         )
     }
 }
