@@ -406,13 +406,15 @@ impl FmtLabels for RouteLabels {
 
 impl FmtLabels for RouteAuthzLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.route.fmt_labels(f)?;
+        let Self { route, authz } = self;
+
+        route.fmt_labels(f)?;
         write!(
             f,
             ",authz_group=\"{}\",authz_kind=\"{}\",authz_name=\"{}\"",
-            self.authz.group(),
-            self.authz.kind(),
-            self.authz.name(),
+            authz.group(),
+            authz.kind(),
+            authz.name(),
         )
     }
 }
