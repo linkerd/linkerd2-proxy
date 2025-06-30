@@ -287,7 +287,13 @@ impl<L> Key<L> {
 
 impl<L: FmtLabels> FmtLabels for Key<L> {
     fn fmt_labels(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        (self.target, (&self.labels, TlsAccept(&self.tls))).fmt_labels(f)
+        let Self {
+            target,
+            tls,
+            labels,
+        } = self;
+
+        (target, (labels, TlsAccept(tls))).fmt_labels(f)
     }
 }
 
