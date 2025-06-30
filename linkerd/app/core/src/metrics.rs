@@ -250,8 +250,10 @@ impl svc::Param<ControlLabels> for control::ControlAddr {
 
 impl FmtLabels for ControlLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "addr=\"{}\",", self.addr)?;
-        TlsConnect::from(&self.server_id).fmt_labels(f)?;
+        let Self { addr, server_id } = self;
+
+        write!(f, "addr=\"{}\",", addr)?;
+        TlsConnect::from(server_id).fmt_labels(f)?;
 
         Ok(())
     }
