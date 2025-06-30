@@ -525,7 +525,13 @@ impl StackLabels {
 
 impl FmtLabels for StackLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.direction.fmt_labels(f)?;
-        write!(f, ",protocol=\"{}\",name=\"{}\"", self.protocol, self.name)
+        let Self {
+            direction,
+            protocol,
+            name,
+        } = self;
+
+        direction.fmt_labels(f)?;
+        write!(f, ",protocol=\"{}\",name=\"{}\"", protocol, name)
     }
 }
