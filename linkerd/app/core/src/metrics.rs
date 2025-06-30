@@ -54,7 +54,7 @@ pub struct Proxy {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ControlLabels {
     addr: Addr,
-    server_id: tls::ConditionalClientTls,
+    server_id: tls::ConditionalClientTlsLabels,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -98,7 +98,7 @@ pub struct RouteAuthzLabels {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct OutboundEndpointLabels {
-    pub server_id: tls::ConditionalClientTls,
+    pub server_id: tls::ConditionalClientTlsLabels,
     pub authority: Option<http::uri::Authority>,
     pub labels: Option<String>,
     pub zone_locality: OutboundZoneLocality,
@@ -243,7 +243,7 @@ impl svc::Param<ControlLabels> for control::ControlAddr {
     fn param(&self) -> ControlLabels {
         ControlLabels {
             addr: self.addr.clone(),
-            server_id: self.identity.clone(),
+            server_id: self.identity.as_ref().map(tls::ClientTls::labels),
         }
     }
 }

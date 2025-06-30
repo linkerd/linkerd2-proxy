@@ -29,7 +29,7 @@ pub struct ServerLabels {
 pub struct TlsAccept<'t>(pub &'t tls::ConditionalServerTls);
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub(crate) struct TlsConnect<'t>(&'t tls::ConditionalClientTls);
+pub(crate) struct TlsConnect<'t>(pub &'t tls::ConditionalClientTlsLabels);
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct TargetAddr(pub SocketAddr);
@@ -62,7 +62,7 @@ impl FmtLabels for Key {
             }
 
             Self::InboundClient => {
-                const NO_TLS: tls::client::ConditionalClientTls =
+                const NO_TLS: tls::client::ConditionalClientTlsLabels =
                     Conditional::None(tls::NoClientTls::Loopback);
 
                 Direction::In.fmt_labels(f)?;
@@ -142,22 +142,24 @@ impl FmtLabels for TlsAccept<'_> {
 
 // === impl TlsConnect ===
 
-impl<'t> From<&'t tls::ConditionalClientTls> for TlsConnect<'t> {
-    fn from(s: &'t tls::ConditionalClientTls) -> Self {
+impl<'t> From<&'t tls::ConditionalClientTlsLabels> for TlsConnect<'t> {
+    fn from(s: &'t tls::ConditionalClientTlsLabels) -> Self {
         TlsConnect(s)
     }
 }
 
 impl FmtLabels for TlsConnect<'_> {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.0 {
+        let Self(tls) = self;
+
+        match tls {
             Conditional::None(tls::NoClientTls::Disabled) => {
                 write!(f, "tls=\"disabled\"")
             }
             Conditional::None(why) => {
                 write!(f, "tls=\"no_identity\",no_tls_reason=\"{}\"", why)
             }
-            Conditional::Some(tls::ClientTls { server_id, .. }) => {
+            Conditional::Some(tls::ClientTlsLabels { server_id }) => {
                 write!(f, "tls=\"true\",server_id=\"{}\"", server_id)
             }
         }

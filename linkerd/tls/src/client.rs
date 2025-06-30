@@ -25,6 +25,12 @@ pub struct ClientTls {
     pub alpn: Option<AlpnProtocols>,
 }
 
+/// Prometheus labels for a [`ClientTls`].
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct ClientTlsLabels {
+    pub server_id: ServerId,
+}
+
 /// A stack param that configures the available ALPN protocols.
 #[derive(Clone, Eq, PartialEq, Hash)]
 pub struct AlpnProtocols(pub Vec<Vec<u8>>);
@@ -49,6 +55,8 @@ pub enum NoClientTls {
 /// A stack paramater that indicates whether the target server endpoint has a
 /// known TLS identity.
 pub type ConditionalClientTls = Conditional<ClientTls, NoClientTls>;
+
+pub type ConditionalClientTlsLabels = Conditional<ClientTlsLabels, NoClientTls>;
 
 #[derive(Clone, Debug)]
 pub struct Client<L, C> {
@@ -83,6 +91,12 @@ impl ClientTls {
             server_id,
             alpn: None,
         }
+    }
+
+    pub fn labels(&self) -> ClientTlsLabels {
+        let Self { server_id, .. } = self;
+        let server_id = server_id.clone();
+        ClientTlsLabels { server_id }
     }
 }
 

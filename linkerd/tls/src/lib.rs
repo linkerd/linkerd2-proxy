@@ -5,7 +5,10 @@ pub mod client;
 pub mod server;
 
 pub use self::{
-    client::{Client, ClientTls, ConditionalClientTls, ConnectMeta, NoClientTls, ServerId},
+    client::{
+        Client, ClientTls, ClientTlsLabels, ConditionalClientTls, ConditionalClientTlsLabels,
+        ConnectMeta, NoClientTls, ServerId,
+    },
     server::{
         ClientId, ConditionalServerTls, NewDetectRequiredSni, NewDetectTls, NoServerTls,
         NoSniFoundError, ServerTls, SniDetectionTimeoutError,
