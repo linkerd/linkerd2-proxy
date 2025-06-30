@@ -376,13 +376,15 @@ impl prom::EncodeLabelSetMut for ServerLabel {
 
 impl FmtLabels for ServerAuthzLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.server.fmt_labels(f)?;
+        let Self { server, authz } = self;
+
+        server.fmt_labels(f)?;
         write!(
             f,
             ",authz_group=\"{}\",authz_kind=\"{}\",authz_name=\"{}\"",
-            self.authz.group(),
-            self.authz.kind(),
-            self.authz.name()
+            authz.group(),
+            authz.kind(),
+            authz.name()
         )
     }
 }
