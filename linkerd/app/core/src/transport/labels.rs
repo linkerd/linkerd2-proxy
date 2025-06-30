@@ -125,7 +125,8 @@ impl<'t> From<&'t tls::ConditionalServerTlsLabels> for TlsAccept<'t> {
 
 impl FmtLabels for TlsAccept<'_> {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.0 {
+        let Self(tls) = self;
+        match tls {
             Conditional::None(tls::NoServerTls::Disabled) => {
                 write!(f, "tls=\"disabled\"")
             }
