@@ -99,14 +99,17 @@ impl ServerLabels {
 
 impl FmtLabels for ServerLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.direction.fmt_labels(f)?;
+        let Self {
+            direction,
+            tls,
+            target_addr,
+            policy,
+        } = self;
+
+        direction.fmt_labels(f)?;
         f.write_str(",peer=\"src\",")?;
 
-        (
-            (TargetAddr(self.target_addr), TlsAccept(&self.tls)),
-            self.policy.as_ref(),
-        )
-            .fmt_labels(f)?;
+        ((TargetAddr(*target_addr), TlsAccept(tls)), policy.as_ref()).fmt_labels(f)?;
 
         Ok(())
     }
