@@ -15,4 +15,4 @@ linkerd-identity = { path = "../../identity" }
 
 
 [dev-dependencies]
-rcgen = "0.13.2"
+rcgen = "0.14.0"
