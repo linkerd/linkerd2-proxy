@@ -289,6 +289,12 @@ impl svc::Param<tls::ConditionalClientTls> for Endpoint {
     }
 }
 
+impl svc::Param<tls::ConditionalClientTlsLabels> for Endpoint {
+    fn param(&self) -> tls::ConditionalClientTlsLabels {
+        tls::ConditionalClientTlsLabels::None(tls::NoClientTls::Disabled)
+    }
+}
+
 impl svc::Param<Option<tcp::tagged_transport::PortOverride>> for Endpoint {
     fn param(&self) -> Option<tcp::tagged_transport::PortOverride> {
         None

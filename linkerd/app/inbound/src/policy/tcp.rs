@@ -77,7 +77,8 @@ where
                 // This new services requires a ClientAddr, so it must necessarily be built for each
                 // connection. So we can just increment the counter here since the service can only
                 // be used at most once.
-                self.metrics.allow(&permit, tls.clone());
+                self.metrics
+                    .allow(&permit, tls.as_ref().map(|t| t.labels()));
 
                 let inner = self.inner.new_service((permit, target));
                 TcpPolicy::Authorized(Authorized {
@@ -97,7 +98,7 @@ where
                     ?tls, %client,
                     "Connection denied"
                 );
-                self.metrics.deny(&policy, tls);
+                self.metrics.deny(&policy, tls.as_ref().map(|t| t.labels()));
                 TcpPolicy::Unauthorized(deny)
             }
         }
@@ -167,7 +168,7 @@ where
                                 %client,
                                 "Connection terminated due to policy change",
                             );
-                            metrics.terminate(&policy, tls);
+                            metrics.terminate(&policy, tls.as_ref().map(|t| t.labels()));
                             return Err(denied.into());
                         }
                     }

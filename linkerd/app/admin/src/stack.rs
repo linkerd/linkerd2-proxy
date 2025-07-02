@@ -214,7 +214,7 @@ impl Config {
 impl Param<transport::labels::Key> for Tcp {
     fn param(&self) -> transport::labels::Key {
         transport::labels::Key::inbound_server(
-            self.tls.clone(),
+            self.tls.as_ref().map(|t| t.labels()),
             self.addr.into(),
             self.policy.server_label(),
         )
@@ -272,7 +272,7 @@ impl Param<metrics::ServerLabel> for Http {
 impl Param<metrics::EndpointLabels> for Permitted {
     fn param(&self) -> metrics::EndpointLabels {
         metrics::InboundEndpointLabels {
-            tls: self.http.tcp.tls.clone(),
+            tls: self.http.tcp.tls.as_ref().map(|t| t.labels()),
             authority: None,
             target_addr: self.http.tcp.addr.into(),
             policy: self.permit.labels.clone(),

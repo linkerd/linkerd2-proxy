@@ -311,9 +311,8 @@ impl Param<Remote<ServerAddr>> for AuthorizedLocalTcp {
 impl Param<transport::labels::Key> for AuthorizedLocalTcp {
     fn param(&self) -> transport::labels::Key {
         transport::labels::Key::inbound_server(
-            tls::ConditionalServerTls::Some(tls::ServerTls::Established {
+            tls::ConditionalServerTlsLabels::Some(tls::ServerTlsLabels::Established {
                 client_id: Some(self.client_id.clone()),
-                negotiated_protocol: None,
             }),
             self.addr.into(),
             self.permit.labels.server.clone(),
@@ -344,9 +343,8 @@ impl Param<Remote<ClientAddr>> for LocalHttp {
 impl Param<transport::labels::Key> for LocalHttp {
     fn param(&self) -> transport::labels::Key {
         transport::labels::Key::inbound_server(
-            tls::ConditionalServerTls::Some(tls::ServerTls::Established {
+            tls::ConditionalServerTlsLabels::Some(tls::ServerTlsLabels::Established {
                 client_id: Some(self.client.client_id.clone()),
-                negotiated_protocol: None,
             }),
             self.addr.into(),
             self.policy.server_label(),
@@ -431,6 +429,14 @@ impl Param<tls::ConditionalServerTls> for GatewayTransportHeader {
         tls::ConditionalServerTls::Some(tls::ServerTls::Established {
             client_id: Some(self.client.client_id.clone()),
             negotiated_protocol: self.client.alpn.clone(),
+        })
+    }
+}
+
+impl Param<tls::ConditionalServerTlsLabels> for GatewayTransportHeader {
+    fn param(&self) -> tls::ConditionalServerTlsLabels {
+        tls::ConditionalServerTlsLabels::Some(tls::ServerTlsLabels::Established {
+            client_id: Some(self.client.client_id.clone()),
         })
     }
 }
