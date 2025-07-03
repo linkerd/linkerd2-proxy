@@ -251,18 +251,24 @@ impl FmtMetrics for TcpAuthzMetrics {
 
 impl FmtLabels for HTTPLocalRateLimitLabels {
     fn fmt_labels(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.server.fmt_labels(f)?;
-        if let Some(rl) = &self.rate_limit {
+        let Self {
+            server,
+            rate_limit,
+            scope,
+        } = self;
+
+        server.fmt_labels(f)?;
+        if let Some(rl) = rate_limit {
             write!(
                 f,
                 ",ratelimit_group=\"{}\",ratelimit_kind=\"{}\",ratelimit_name=\"{}\",ratelimit_scope=\"{}\"",
                 rl.group(),
                 rl.kind(),
                 rl.name(),
-                self.scope,
+                scope,
             )
         } else {
-            write!(f, ",ratelimit_scope=\"{}\"", self.scope)
+            write!(f, ",ratelimit_scope=\"{}\"", scope)
         }
     }
 }
@@ -281,7 +287,13 @@ impl<L> Key<L> {
 
 impl<L: FmtLabels> FmtLabels for Key<L> {
     fn fmt_labels(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        (self.target, (&self.labels, TlsAccept(&self.tls))).fmt_labels(f)
+        let Self {
+            target,
+            tls,
+            labels,
+        } = self;
+
+        (target, (labels, TlsAccept(tls))).fmt_labels(f)
     }
 }
 

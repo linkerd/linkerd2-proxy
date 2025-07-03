@@ -146,6 +146,7 @@ where
 
 impl FmtLabels for Status {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "status_code=\"{}\"", self.0.as_u16())
+        let Self(status) = self;
+        write!(f, "status_code=\"{}\"", status.as_u16())
     }
 }

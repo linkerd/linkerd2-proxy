@@ -188,8 +188,6 @@ impl<A: FmtLabels, B: FmtLabels> FmtLabels for (Option<A>, B) {
     }
 }
 
-// === impl FmtMetrics ===
-
 impl<'a, A: FmtMetrics + 'a> FmtMetrics for &'a A {
     #[inline]
     fn fmt_metrics(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -210,8 +208,10 @@ impl<M: FmtMetrics> FmtMetrics for Option<M> {
 impl<A: FmtMetrics, B: FmtMetrics> FmtMetrics for AndThen<A, B> {
     #[inline]
     fn fmt_metrics(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt_metrics(f)?;
-        self.1.fmt_metrics(f)?;
+        let Self(a, b) = self;
+
+        a.fmt_metrics(f)?;
+        b.fmt_metrics(f)?;
 
         Ok(())
     }
