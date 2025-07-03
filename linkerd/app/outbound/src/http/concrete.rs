@@ -32,7 +32,7 @@ pub use self::balance::BalancerMetrics;
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Dispatch {
     Balance(NameAddr, EwmaConfig),
-    Forward(Remote<ServerAddr>, Metadata),
+    Forward(Remote<ServerAddr>, Arc<Metadata>),
     /// A backend dispatcher that explicitly fails all requests.
     Fail {
         message: Arc<str>,
@@ -49,7 +49,7 @@ pub struct DispatcherFailed(Arc<str>);
 pub struct Endpoint<T> {
     addr: Remote<ServerAddr>,
     is_local: bool,
-    metadata: Metadata,
+    metadata: Arc<Metadata>,
     parent: T,
     queue: QueueConfig,
     close_server_connection_on_remote_proxy_error: bool,

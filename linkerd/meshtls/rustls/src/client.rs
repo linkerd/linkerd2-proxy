@@ -83,7 +83,7 @@ impl Connect {
 fn extract_cert(c: &rustls::ClientConnection) -> io::Result<&CertificateDer<'_>> {
     match c.peer_certificates().and_then(|certs| certs.first()) {
         Some(leaf_cert) => io::Result::Ok(leaf_cert),
-        None => Err(io::Error::new(io::ErrorKind::Other, "missing tls end cert")),
+        None => Err(io::Error::other("missing tls end cert")),
     }
 }
 

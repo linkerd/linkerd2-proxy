@@ -214,7 +214,7 @@ impl Outbound<()> {
                                 detect_timeout,
                                 queue,
                                 addr,
-                                meta,
+                                meta.into(),
                             );
                         }
 

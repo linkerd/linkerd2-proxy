@@ -121,7 +121,7 @@ where
                         let http2 = http2.override_from(metadata.http2_client_params());
                         Endpoint {
                             addr: Remote(ServerAddr(addr)),
-                            metadata,
+                            metadata: metadata.into(),
                             is_local,
                             parent: target.parent,
                             queue: http_queue,

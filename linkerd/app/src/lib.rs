@@ -398,7 +398,7 @@ impl App {
 
     pub fn tracing_addr(&self) -> Option<&ControlAddr> {
         match self.trace_collector {
-            trace_collector::TraceCollector::Disabled { .. } => None,
+            trace_collector::TraceCollector::Disabled => None,
             crate::trace_collector::TraceCollector::Enabled(ref oc) => Some(&oc.addr),
         }
     }
