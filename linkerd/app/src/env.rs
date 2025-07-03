@@ -294,7 +294,7 @@ const DEFAULT_INBOUND_HTTP_FAILFAST_TIMEOUT: Duration = Duration::from_secs(1);
 const DEFAULT_INBOUND_DETECT_TIMEOUT: Duration = Duration::from_secs(10);
 const DEFAULT_INBOUND_CONNECT_TIMEOUT: Duration = Duration::from_millis(300);
 const DEFAULT_INBOUND_CONNECT_BACKOFF: ExponentialBackoff =
-    ExponentialBackoff::new_unchecked(Duration::from_millis(100), Duration::from_millis(500), 0.1);
+    ExponentialBackoff::new_unchecked(Duration::from_millis(100), Duration::from_secs(10), 0.1);
 
 const DEFAULT_OUTBOUND_TCP_QUEUE_CAPACITY: usize = 10_000;
 const DEFAULT_OUTBOUND_TCP_FAILFAST_TIMEOUT: Duration = Duration::from_secs(3);
@@ -303,7 +303,7 @@ const DEFAULT_OUTBOUND_HTTP_FAILFAST_TIMEOUT: Duration = Duration::from_secs(3);
 const DEFAULT_OUTBOUND_DETECT_TIMEOUT: Duration = Duration::from_secs(10);
 const DEFAULT_OUTBOUND_CONNECT_TIMEOUT: Duration = Duration::from_secs(1);
 const DEFAULT_OUTBOUND_CONNECT_BACKOFF: ExponentialBackoff =
-    ExponentialBackoff::new_unchecked(Duration::from_millis(100), Duration::from_millis(500), 0.1);
+    ExponentialBackoff::new_unchecked(Duration::from_millis(100), Duration::from_secs(60), 0.1);
 
 const DEFAULT_CONTROL_QUEUE_CAPACITY: usize = 100;
 const DEFAULT_CONTROL_FAILFAST_TIMEOUT: Duration = Duration::from_secs(10);
