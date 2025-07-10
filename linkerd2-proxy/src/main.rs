@@ -33,7 +33,7 @@ fn main() {
     let trace = match trace::Settings::from_env().init() {
         Ok(t) => t,
         Err(e) => {
-            eprintln!("Invalid logging configuration: {}", e);
+            eprintln!("Invalid logging configuration: {e}");
             std::process::exit(EX_USAGE);
         }
     };
@@ -53,7 +53,7 @@ fn main() {
     let config = match Config::try_from_env() {
         Ok(config) => config,
         Err(e) => {
-            eprintln!("Invalid configuration: {}", e);
+            eprintln!("Invalid configuration: {e}");
             std::process::exit(EX_USAGE);
         }
     };
@@ -83,7 +83,7 @@ fn main() {
         {
             Ok(app) => app,
             Err(e) => {
-                eprintln!("Initialization failure: {}", e);
+                eprintln!("Initialization failure: {e}");
                 std::process::exit(1);
             }
         };

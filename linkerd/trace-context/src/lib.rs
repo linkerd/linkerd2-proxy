@@ -101,7 +101,7 @@ impl AsRef<[u8]> for Id {
 impl fmt::Display for Id {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for b in self.0.iter() {
-            write!(f, "{:02x?}", b)?;
+            write!(f, "{b:02x?}")?;
         }
         Ok(())
     }

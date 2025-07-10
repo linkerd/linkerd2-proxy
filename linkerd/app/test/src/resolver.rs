@@ -279,8 +279,7 @@ impl<T: Param<ConcreteAddr>, E> tower::Service<T> for NoDst<E> {
     fn call(&mut self, target: T) -> Self::Future {
         let ConcreteAddr(addr) = target.param();
         panic!(
-            "no destination resolutions were expected in this test, but tried to resolve {}",
-            addr
+            "no destination resolutions were expected in this test, but tried to resolve {addr}"
         );
     }
 }
@@ -297,8 +296,7 @@ impl<T: Param<profiles::LookupAddr>> tower::Service<T> for NoProfiles {
     fn call(&mut self, target: T) -> Self::Future {
         let profiles::LookupAddr(addr) = target.param();
         panic!(
-            "no profile resolutions were expected in this test, but tried to resolve {}",
-            addr
+            "no profile resolutions were expected in this test, but tried to resolve {addr}"
         );
     }
 }

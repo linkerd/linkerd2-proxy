@@ -1319,7 +1319,7 @@ async fn metrics_compression() {
             ));
             let mut scrape = String::new();
             decoder.read_to_string(&mut scrape).unwrap_or_else(|_| {
-                panic!("decode gzip (requested Accept-Encoding: {})", encoding)
+                panic!("decode gzip (requested Accept-Encoding: {encoding})")
             });
             scrape
         }

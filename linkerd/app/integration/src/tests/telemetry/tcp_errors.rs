@@ -82,7 +82,7 @@ impl Test {
 
         env.put(
             app::env::ENV_INBOUND_DETECT_TIMEOUT,
-            format!("{:?}", TIMEOUT),
+            format!("{TIMEOUT:?}"),
         );
 
         (self.set_env)(&mut env);

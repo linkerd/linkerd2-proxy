@@ -155,10 +155,10 @@ where
     I: Iterator<Item = (&'i String, &'i String)>,
 {
     let (k0, v0) = labels_iter.next()?;
-    let mut out = format!("{}_{}=\"{}\"", prefix, k0, v0);
+    let mut out = format!("{prefix}_{k0}=\"{v0}\"");
 
     for (k, v) in labels_iter {
-        write!(out, ",{}_{}=\"{}\"", prefix, k, v).expect("label concat must succeed");
+        write!(out, ",{prefix}_{k}=\"{v}\"").expect("label concat must succeed");
     }
     Some(out)
 }
@@ -285,7 +285,7 @@ impl FmtLabels for ProfileRouteLabels {
         write!(f, ",dst=\"{}\"", self.addr)?;
 
         if let Some(labels) = self.labels.as_ref() {
-            write!(f, ",{}", labels)?;
+            write!(f, ",{labels}")?;
         }
 
         Ok(())
@@ -419,7 +419,7 @@ impl FmtLabels for OutboundEndpointLabels {
         (ta, tls).fmt_labels(f)?;
 
         if let Some(labels) = self.labels.as_ref() {
-            write!(f, ",{}", labels)?;
+            write!(f, ",{labels}")?;
         }
 
         Ok(())
@@ -437,7 +437,7 @@ impl fmt::Display for Direction {
 
 impl FmtLabels for Direction {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "direction=\"{}\"", self)
+        write!(f, "direction=\"{self}\"")
     }
 }
 
@@ -469,8 +469,7 @@ impl FmtLabels for Class {
 
             Class::Error(msg) => write!(
                 f,
-                "classification=\"failure\",grpc_status=\"\",error=\"{}\"",
-                msg
+                "classification=\"failure\",grpc_status=\"\",error=\"{msg}\""
             ),
         }
     }

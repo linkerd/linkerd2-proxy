@@ -218,7 +218,7 @@ impl Controller {
             let f = f.take().expect("called twice?");
             let fut = f(req)
                 .map_ok(grpc::Response::new)
-                .map_err(|e| grpc::Status::new(grpc::Code::Internal, format!("{}", e)));
+                .map_err(|e| grpc::Status::new(grpc::Code::Internal, format!("{e}")));
             Box::pin(fut)
         });
         self.expect_calls.lock().push_back(func);

@@ -381,7 +381,7 @@ mod cross_version {
 }
 
 fn default_dst_name(port: u16) -> String {
-    format!("{}:{}", HOST, port)
+    format!("{HOST}:{port}")
 }
 
 fn send_default_dst(

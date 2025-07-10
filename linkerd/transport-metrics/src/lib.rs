@@ -84,7 +84,7 @@ impl FmtLabels for Eos {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
             None => f.pad("errno=\"\""),
-            Some(errno) => write!(f, "errno=\"{}\"", errno),
+            Some(errno) => write!(f, "errno=\"{errno}\""),
         }
     }
 }

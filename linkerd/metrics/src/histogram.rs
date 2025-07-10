@@ -95,7 +95,7 @@ impl<V: Into<u64>, F: Factor + std::fmt::Debug> Histogram<V, F> {
         for (&bucket, count) in self {
             if bucket >= le {
                 let count = count.value();
-                assert!(count >= at_least, "le={:?}; bucket={:?};", le, bucket);
+                assert!(count >= at_least, "le={le:?}; bucket={bucket:?};");
                 break;
             }
         }
@@ -136,7 +136,7 @@ impl<V: Into<u64>, F: Factor + std::fmt::Debug> Histogram<V, F> {
             }
 
             let count: f64 = self.buckets[i].value();
-            assert_eq!(count, exactly, "bucket={:?}; value={:?};", bucket, value,);
+            assert_eq!(count, exactly, "bucket={bucket:?}; value={value:?};",);
         }
         self
     }
@@ -161,9 +161,7 @@ impl<V: Into<u64>, F: Factor + std::fmt::Debug> Histogram<V, F> {
                 assert_eq!(
                     count.value(),
                     exactly,
-                    "bucket={:?}; value={:?};",
-                    bucket,
-                    value,
+                    "bucket={bucket:?}; value={value:?};",
                 );
             }
         }
@@ -233,7 +231,7 @@ impl<K: fmt::Display, V: fmt::Display> FmtLabels for Label<K, V> {
 impl fmt::Display for Bucket {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
-            Bucket::Le(v) => write!(f, "{}", v),
+            Bucket::Le(v) => write!(f, "{v}"),
             Bucket::Inf => write!(f, "+Inf"),
         }
     }

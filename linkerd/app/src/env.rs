@@ -1117,11 +1117,11 @@ pub fn parse_backoff<S: Strings>(
     base: &str,
     default: ExponentialBackoff,
 ) -> Result<ExponentialBackoff, EnvError> {
-    let min_env = format!("LINKERD2_PROXY_{}_EXP_BACKOFF_MIN", base);
+    let min_env = format!("LINKERD2_PROXY_{base}_EXP_BACKOFF_MIN");
     let min = parse(strings, &min_env, parse_duration);
-    let max_env = format!("LINKERD2_PROXY_{}_EXP_BACKOFF_MAX", base);
+    let max_env = format!("LINKERD2_PROXY_{base}_EXP_BACKOFF_MAX");
     let max = parse(strings, &max_env, parse_duration);
-    let jitter_env = format!("LINKERD2_PROXY_{}_EXP_BACKOFF_JITTER", base);
+    let jitter_env = format!("LINKERD2_PROXY_{base}_EXP_BACKOFF_JITTER");
     let jitter = parse(strings, &jitter_env, parse_number::<f64>);
 
     match (min?, max?, jitter?) {
@@ -1256,7 +1256,7 @@ pub fn parse_linkerd_identity_config<S: Strings>(
             Ok((control, certify))
         }
         (addr, end_entity_dir, token, _minr, _maxr) => {
-            let s = format!("{0}_ADDR and {0}_NAME", ENV_IDENTITY_SVC_BASE);
+            let s = format!("{ENV_IDENTITY_SVC_BASE}_ADDR and {ENV_IDENTITY_SVC_BASE}_NAME");
             let svc_env: &str = s.as_str();
             for (unset, name) in &[
                 (addr.is_none(), svc_env),

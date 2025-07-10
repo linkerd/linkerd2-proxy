@@ -127,14 +127,14 @@ impl FmtLabels for TlsAccept<'_> {
                 write!(f, "tls=\"disabled\"")
             }
             Conditional::None(why) => {
-                write!(f, "tls=\"no_identity\",no_tls_reason=\"{}\"", why)
+                write!(f, "tls=\"no_identity\",no_tls_reason=\"{why}\"")
             }
             Conditional::Some(tls::ServerTls::Established { client_id, .. }) => match client_id {
-                Some(id) => write!(f, "tls=\"true\",client_id=\"{}\"", id),
+                Some(id) => write!(f, "tls=\"true\",client_id=\"{id}\""),
                 None => write!(f, "tls=\"true\",client_id=\"\""),
             },
             Conditional::Some(tls::ServerTls::Passthru { sni }) => {
-                write!(f, "tls=\"opaque\",sni=\"{}\"", sni)
+                write!(f, "tls=\"opaque\",sni=\"{sni}\"")
             }
         }
     }
@@ -155,10 +155,10 @@ impl FmtLabels for TlsConnect<'_> {
                 write!(f, "tls=\"disabled\"")
             }
             Conditional::None(why) => {
-                write!(f, "tls=\"no_identity\",no_tls_reason=\"{}\"", why)
+                write!(f, "tls=\"no_identity\",no_tls_reason=\"{why}\"")
             }
             Conditional::Some(tls::ClientTls { server_id, .. }) => {
-                write!(f, "tls=\"true\",server_id=\"{}\"", server_id)
+                write!(f, "tls=\"true\",server_id=\"{server_id}\"")
             }
         }
     }

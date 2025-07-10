@@ -26,7 +26,7 @@ async fn is_valid_json() {
     assert!(!json.is_empty());
 
     for obj in json {
-        println!("{}\n", obj);
+        println!("{obj}\n");
     }
 }
 
@@ -53,7 +53,7 @@ async fn query_is_valid_json() {
     assert!(!json.is_empty());
 
     for obj in json {
-        println!("{}\n", obj);
+        println!("{obj}\n");
     }
 }
 
@@ -74,11 +74,10 @@ async fn valid_get_does_not_error() {
 
     let json = logs.await.unwrap();
     for obj in json {
-        println!("{}\n", obj);
+        println!("{obj}\n");
         if obj.get("error").is_some() {
             panic!(
-                "expected the log stream to contain no error responses!\njson = {}",
-                obj
+                "expected the log stream to contain no error responses!\njson = {obj}"
             );
         }
     }
@@ -101,11 +100,10 @@ async fn valid_query_does_not_error() {
 
     let json = logs.await.unwrap();
     for obj in json {
-        println!("{}\n", obj);
+        println!("{obj}\n");
         if obj.get("error").is_some() {
             panic!(
-                "expected the log stream to contain no error responses!\njson = {}",
-                obj
+                "expected the log stream to contain no error responses!\njson = {obj}"
             );
         }
     }
@@ -142,9 +140,7 @@ async fn multi_filter() {
                 level.and_then(|value| value.as_str()),
                 Some("DEBUG") | Some("INFO") | Some("WARN") | Some("ERROR")
             ),
-            "level must be DEBUG, INFO, WARN, or ERROR\n level: {:?}\n  json: {:#?}",
-            level,
-            obj
+            "level must be DEBUG, INFO, WARN, or ERROR\n level: {level:?}\n  json: {obj:#?}"
         );
     }
 
@@ -175,7 +171,7 @@ async fn get_log_stream(
     let req = client
         .request_body(
             client
-                .request_builder(&format!("{}?{}", PATH, filter))
+                .request_builder(&format!("{PATH}?{filter}"))
                 .method(http::Method::GET)
                 .body(http_body_util::Full::new(Bytes::from(filter)))
                 .unwrap(),
@@ -231,7 +227,7 @@ where
                         }
                     }
                     Err(e) => {
-                        println!("body failed: {}", e);
+                        println!("body failed: {e}");
                         break;
                     }
                 };

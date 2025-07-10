@@ -53,7 +53,7 @@ impl FmtMetric for Gauge {
         L: FmtLabels,
         N: Display,
     {
-        write!(f, "{}{{", name)?;
+        write!(f, "{name}{{")?;
         labels.fmt_labels(f)?;
         writeln!(f, "}} {}", self.value())
     }

@@ -63,7 +63,7 @@ async fn wait_for_profile_stage(client: &client::Client, metrics: &client::Clien
     for _ in 0i32..10 {
         assert_eq!(client.get("/load-profile").await, "");
         let m = metrics.get("/metrics").await;
-        let stage_metric = format!("rt_load_profile=\"{}\"", stage);
+        let stage_metric = format!("rt_load_profile=\"{stage}\"");
         if m.contains(stage_metric.as_str()) {
             break;
         }
