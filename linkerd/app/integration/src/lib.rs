@@ -3,6 +3,7 @@
 #![warn(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
 #![recursion_limit = "256"]
+#![allow(clippy::result_large_err)]
 
 mod test_env;
 
@@ -247,7 +248,7 @@ impl fmt::Display for HumanDuration {
         let secs = self.0.as_secs();
         let subsec_ms = self.0.subsec_nanos() as f64 / 1_000_000f64;
         if secs == 0 {
-            write!(fmt, "{}ms", subsec_ms)
+            write!(fmt, "{subsec_ms}ms")
         } else {
             write!(fmt, "{}s", secs as f64 + subsec_ms)
         }

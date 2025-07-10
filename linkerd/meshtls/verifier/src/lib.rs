@@ -50,10 +50,7 @@ pub fn verify_id(cert: &[u8], expected_id: &Id) -> io::Result<()> {
         return Ok(());
     }
 
-    Err(io::Error::new(
-        io::ErrorKind::Other,
-        "certificate does not match TLS identity",
-    ))
+    Err(io::Error::other("certificate does not match TLS identity"))
 }
 
 #[cfg(test)]

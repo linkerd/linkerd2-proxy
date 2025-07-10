@@ -151,7 +151,7 @@ where
         Box::pin(async move {
             let parsed_header = SPIFFE_HEADER_VALUE
                 .parse()
-                .map_err(|e| tonic::Status::internal(format!("Failed to parse header: {}", e)))?;
+                .map_err(|e| tonic::Status::internal(format!("Failed to parse header: {e}")))?;
 
             let mut req = tonic::Request::new(req);
             req.metadata_mut().insert(SPIFFE_HEADER_KEY, parsed_header);

@@ -8,7 +8,7 @@ use linkerd_app_core::{
     transport::addrs::*,
     Addr, Error, Infallible, NameAddr, CANONICAL_DST_HEADER,
 };
-use std::{fmt::Debug, hash::Hash};
+use std::{fmt::Debug, hash::Hash, sync::Arc};
 use tokio::sync::watch;
 
 pub mod policy;
@@ -32,7 +32,7 @@ pub enum Routes {
 
     /// Fallback endpoint forwarding.
     // TODO(ver) Remove this variant when policy routes are fully wired up.
-    Endpoint(Remote<ServerAddr>, Metadata),
+    Endpoint(Remote<ServerAddr>, Arc<Metadata>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -64,7 +64,7 @@ enum RouterParams<T: Clone + Debug + Eq + Hash> {
     Profile(profile::Params<T>),
 
     // TODO(ver) Remove this variant when policy routes are fully wired up.
-    Endpoint(Remote<ServerAddr>, Metadata, T),
+    Endpoint(Remote<ServerAddr>, Arc<Metadata>, T),
 }
 
 // Only applies to requests with profiles.

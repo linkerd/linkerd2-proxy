@@ -100,15 +100,11 @@ impl Addr {
                     // them ourselves.
                     format!("[{}]", a.ip())
                 };
-                http::uri::Authority::from_str(&ip).unwrap_or_else(|err| {
-                    panic!("SocketAddr ({}) must be valid authority: {}", a, err)
-                })
+                http::uri::Authority::from_str(&ip)
+                    .unwrap_or_else(|err| panic!("SocketAddr ({a}) must be valid authority: {err}"))
             }
-            Addr::Socket(a) => {
-                http::uri::Authority::from_str(&a.to_string()).unwrap_or_else(|err| {
-                    panic!("SocketAddr ({}) must be valid authority: {}", a, err)
-                })
-            }
+            Addr::Socket(a) => http::uri::Authority::from_str(&a.to_string())
+                .unwrap_or_else(|err| panic!("SocketAddr ({a}) must be valid authority: {err}")),
         }
     }
 
@@ -265,14 +261,14 @@ mod tests {
         ];
         for (host, expected_result) in cases {
             let a = Addr::from_str(host).unwrap();
-            assert_eq!(a.is_loopback(), *expected_result, "{:?}", host)
+            assert_eq!(a.is_loopback(), *expected_result, "{host:?}")
         }
     }
 
     fn test_to_http_authority(cases: &[&str]) {
         let width = cases.iter().map(|s| s.len()).max().unwrap_or(0);
         for host in cases {
-            print!("trying {:1$} ... ", host, width);
+            print!("trying {host:width$} ... ");
             Addr::from_str(host).unwrap().to_http_authority();
             println!("ok");
         }

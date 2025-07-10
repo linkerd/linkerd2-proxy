@@ -4,11 +4,11 @@ fn set_env(name: &str, cmd: &mut Command) {
     let value = match cmd.output() {
         Ok(output) => String::from_utf8(output.stdout).unwrap(),
         Err(err) => {
-            println!("cargo:warning={}", err);
+            println!("cargo:warning={err}");
             "".to_string()
         }
     };
-    println!("cargo:rustc-env={}={}", name, value);
+    println!("cargo:rustc-env={name}={value}");
 }
 
 fn version() -> String {

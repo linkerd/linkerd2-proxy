@@ -85,7 +85,7 @@ impl FmtLabels for Eos {
         let Self(errno) = self;
         match errno {
             None => f.pad("errno=\"\""),
-            Some(errno) => write!(f, "errno=\"{}\"", errno),
+            Some(errno) => write!(f, "errno=\"{errno}\""),
         }
     }
 }

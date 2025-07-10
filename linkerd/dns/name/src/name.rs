@@ -312,7 +312,7 @@ mod tests {
         for &(left, right, expected_result) in CASES {
             let l = left.parse::<Name>().unwrap();
             let r = right.parse::<Name>().unwrap();
-            assert_eq!(l == r, expected_result, "{:?} vs {:?}", l, r);
+            assert_eq!(l == r, expected_result, "{l:?} vs {r:?}");
         }
     }
 
@@ -327,7 +327,7 @@ mod tests {
         ];
         for (host, expected_result) in cases {
             let dns_name = host.parse::<Name>().unwrap();
-            assert_eq!(dns_name.is_localhost(), *expected_result, "{:?}", dns_name)
+            assert_eq!(dns_name.is_localhost(), *expected_result, "{dns_name:?}")
         }
     }
 
@@ -343,12 +343,11 @@ mod tests {
         for (host, expected_result) in cases {
             let dns_name = host
                 .parse::<Name>()
-                .unwrap_or_else(|_| panic!("'{}' was invalid", host));
+                .unwrap_or_else(|_| panic!("'{host}' was invalid"));
             assert_eq!(
                 dns_name.without_trailing_dot(),
                 *expected_result,
-                "{:?}",
-                dns_name
+                "{dns_name:?}"
             )
         }
         assert!(".".parse::<Name>().is_err());

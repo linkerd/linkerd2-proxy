@@ -268,7 +268,7 @@ impl FmtLabels for HTTPLocalRateLimitLabels {
                 scope,
             )
         } else {
-            write!(f, ",ratelimit_scope=\"{}\"", scope)
+            write!(f, ",ratelimit_scope=\"{scope}\"")
         }
     }
 }

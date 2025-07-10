@@ -70,8 +70,7 @@ impl<E: fmt::Debug> tower::Service<E> for NoRawTcp {
 
     fn call(&mut self, endpoint: E) -> Self::Future {
         panic!(
-            "no raw TCP connections expected in this test, but tried to connect to {:?}",
-            endpoint
+            "no raw TCP connections expected in this test, but tried to connect to {endpoint:?}"
         );
     }
 }

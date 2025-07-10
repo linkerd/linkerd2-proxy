@@ -126,7 +126,7 @@ impl FromStr for Mode {
             return Ok(Self::Rustls);
         }
 
-        Err(format!("unknown TLS backend: {}", s).into())
+        Err(format!("unknown TLS backend: {s}").into())
     }
 }
 

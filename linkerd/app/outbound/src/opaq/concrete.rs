@@ -32,7 +32,7 @@ use tracing::info_span;
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Dispatch {
     Balance(NameAddr, balance::EwmaConfig),
-    Forward(Remote<ServerAddr>, Metadata),
+    Forward(Remote<ServerAddr>, Arc<Metadata>),
     /// A backend dispatcher that explicitly fails all requests.
     Fail {
         message: Arc<str>,
@@ -57,7 +57,7 @@ pub struct ConcreteError {
 pub struct Endpoint<T> {
     addr: Remote<ServerAddr>,
     is_local: bool,
-    metadata: Metadata,
+    metadata: Arc<Metadata>,
     parent: T,
 }
 
@@ -196,7 +196,7 @@ impl<C> Outbound<C> {
                         let is_local = inbound_ips.contains(&addr.ip());
                         Endpoint {
                             addr: Remote(ServerAddr(addr)),
-                            metadata,
+                            metadata: metadata.into(),
                             is_local,
                             parent: target.parent,
                         }

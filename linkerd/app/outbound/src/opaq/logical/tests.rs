@@ -160,9 +160,7 @@ async fn balances() {
     }
     assert!(
         seen0 && seen1,
-        "Both endpoints must be used; ep0={} ep1={}",
-        seen0,
-        seen1
+        "Both endpoints must be used; ep0={seen0} ep1={seen1}"
     );
 
     // When we remove the ep0, all traffic goes to ep1:
@@ -190,8 +188,7 @@ async fn balances() {
     task.abort();
     assert!(
         errors::is_caused_by::<FailFastError>(&*err),
-        "unexpected error: {}",
-        err
+        "unexpected error: {err}"
     );
     assert!(resolved.only_configured(), "Resolution must be reused");
 }

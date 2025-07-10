@@ -172,11 +172,11 @@ mod tests {
     fn test_unit<F: Fn(u64) -> Duration>(unit: &str, to_duration: F) {
         for v in &[0, 1, 23, 456_789] {
             let d = to_duration(*v);
-            let text = format!("{}{}", v, unit);
-            assert_eq!(parse_duration(&text), Ok(d), "text=\"{}\"", text);
+            let text = format!("{v}{unit}");
+            assert_eq!(parse_duration(&text), Ok(d), "text=\"{text}\"");
 
-            let text = format!(" {}{}\t", v, unit);
-            assert_eq!(parse_duration(&text), Ok(d), "text=\"{}\"", text);
+            let text = format!(" {v}{unit}\t");
+            assert_eq!(parse_duration(&text), Ok(d), "text=\"{text}\"");
         }
     }
 
@@ -245,7 +245,7 @@ mod tests {
         fn p(s: &str) -> Result<Vec<String>, ParseError> {
             let mut sfxs = parse_dns_suffixes(s)?
                 .into_iter()
-                .map(|s| format!("{}", s))
+                .map(|s| format!("{s}"))
                 .collect::<Vec<_>>();
             sfxs.sort();
             Ok(sfxs)

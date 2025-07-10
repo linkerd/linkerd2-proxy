@@ -90,7 +90,7 @@ impl Gateway {
                                 detect_timeout,
                                 queue,
                                 addr,
-                                meta,
+                                meta.into(),
                             ),
                             None => {
                                 tracing::debug!(

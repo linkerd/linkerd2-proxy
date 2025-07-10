@@ -338,7 +338,7 @@ mod tests {
         ] {
             let n = Name::from_str(name).unwrap();
             let s = Suffix::from_str(suffix).unwrap();
-            assert!(s.contains(&n), "{} should contain {}", suffix, name);
+            assert!(s.contains(&n), "{suffix} should contain {name}");
         }
     }
 
@@ -352,7 +352,7 @@ mod tests {
         ] {
             let n = Name::from_str(name).unwrap();
             let s = Suffix::from_str(suffix).unwrap();
-            assert!(!s.contains(&n), "{} should not contain {}", suffix, name);
+            assert!(!s.contains(&n), "{suffix} should not contain {name}");
         }
 
         assert!(Suffix::from_str("").is_err(), "suffix must not be empty");

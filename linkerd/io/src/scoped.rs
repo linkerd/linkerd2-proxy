@@ -24,7 +24,7 @@ impl Scope {
     #[inline]
     fn err(&self) -> impl Fn(io::Error) -> io::Error {
         let scope = *self;
-        move |err| io::Error::new(err.kind(), format!("{}: {}", scope, err))
+        move |err| io::Error::new(err.kind(), format!("{scope}: {err}"))
     }
 }
 

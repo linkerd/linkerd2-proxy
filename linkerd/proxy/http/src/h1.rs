@@ -213,8 +213,7 @@ pub(crate) fn is_absolute_form(uri: &Uri) -> bool {
     // allow URIs with the other parts missing when the scheme is set.
     debug_assert!(
         uri.scheme().is_none() || (uri.authority().is_some() && uri.path_and_query().is_some()),
-        "is_absolute_form http::Uri invariants: {:?}",
-        uri
+        "is_absolute_form http::Uri invariants: {uri:?}"
     );
 
     uri.scheme().is_some()
