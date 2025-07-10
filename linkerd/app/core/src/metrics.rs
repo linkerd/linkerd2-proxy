@@ -54,7 +54,7 @@ pub struct Proxy {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ControlLabels {
     addr: Addr,
-    server_id: tls::ConditionalClientTls,
+    server_id: tls::ConditionalClientTlsLabels,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -65,7 +65,7 @@ pub enum EndpointLabels {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct InboundEndpointLabels {
-    pub tls: tls::ConditionalServerTls,
+    pub tls: tls::ConditionalServerTlsLabels,
     pub authority: Option<http::uri::Authority>,
     pub target_addr: SocketAddr,
     pub policy: RouteAuthzLabels,
@@ -98,7 +98,7 @@ pub struct RouteAuthzLabels {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct OutboundEndpointLabels {
-    pub server_id: tls::ConditionalClientTls,
+    pub server_id: tls::ConditionalClientTlsLabels,
     pub authority: Option<http::uri::Authority>,
     pub labels: Option<String>,
     pub zone_locality: OutboundZoneLocality,
@@ -243,15 +243,17 @@ impl svc::Param<ControlLabels> for control::ControlAddr {
     fn param(&self) -> ControlLabels {
         ControlLabels {
             addr: self.addr.clone(),
-            server_id: self.identity.clone(),
+            server_id: self.identity.as_ref().map(tls::ClientTls::labels),
         }
     }
 }
 
 impl FmtLabels for ControlLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "addr=\"{}\",", self.addr)?;
-        TlsConnect::from(&self.server_id).fmt_labels(f)?;
+        let Self { addr, server_id } = self;
+
+        write!(f, "addr=\"{}\",", addr)?;
+        TlsConnect::from(server_id).fmt_labels(f)?;
 
         Ok(())
     }
@@ -281,10 +283,16 @@ impl ProfileRouteLabels {
 
 impl FmtLabels for ProfileRouteLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.direction.fmt_labels(f)?;
-        write!(f, ",dst=\"{}\"", self.addr)?;
+        let Self {
+            direction,
+            addr,
+            labels,
+        } = self;
 
-        if let Some(labels) = self.labels.as_ref() {
+        direction.fmt_labels(f)?;
+        write!(f, ",dst=\"{}\"", addr)?;
+
+        if let Some(labels) = labels.as_ref() {
             write!(f, ",{labels}")?;
         }
 
@@ -317,16 +325,19 @@ impl FmtLabels for EndpointLabels {
 
 impl FmtLabels for InboundEndpointLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(a) = self.authority.as_ref() {
+        let Self {
+            tls,
+            authority,
+            target_addr,
+            policy,
+        } = self;
+
+        if let Some(a) = authority.as_ref() {
             Authority(a).fmt_labels(f)?;
             write!(f, ",")?;
         }
 
-        (
-            (TargetAddr(self.target_addr), TlsAccept::from(&self.tls)),
-            &self.policy,
-        )
-            .fmt_labels(f)?;
+        ((TargetAddr(*target_addr), TlsAccept::from(tls)), policy).fmt_labels(f)?;
 
         Ok(())
     }
@@ -334,13 +345,14 @@ impl FmtLabels for InboundEndpointLabels {
 
 impl FmtLabels for ServerLabel {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self(meta, port) = self;
         write!(
             f,
             "srv_group=\"{}\",srv_kind=\"{}\",srv_name=\"{}\",srv_port=\"{}\"",
-            self.0.group(),
-            self.0.kind(),
-            self.0.name(),
-            self.1
+            meta.group(),
+            meta.kind(),
+            meta.name(),
+            port
         )
     }
 }
@@ -364,39 +376,45 @@ impl prom::EncodeLabelSetMut for ServerLabel {
 
 impl FmtLabels for ServerAuthzLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.server.fmt_labels(f)?;
+        let Self { server, authz } = self;
+
+        server.fmt_labels(f)?;
         write!(
             f,
             ",authz_group=\"{}\",authz_kind=\"{}\",authz_name=\"{}\"",
-            self.authz.group(),
-            self.authz.kind(),
-            self.authz.name()
+            authz.group(),
+            authz.kind(),
+            authz.name()
         )
     }
 }
 
 impl FmtLabels for RouteLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.server.fmt_labels(f)?;
+        let Self { server, route } = self;
+
+        server.fmt_labels(f)?;
         write!(
             f,
             ",route_group=\"{}\",route_kind=\"{}\",route_name=\"{}\"",
-            self.route.group(),
-            self.route.kind(),
-            self.route.name(),
+            route.group(),
+            route.kind(),
+            route.name(),
         )
     }
 }
 
 impl FmtLabels for RouteAuthzLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.route.fmt_labels(f)?;
+        let Self { route, authz } = self;
+
+        route.fmt_labels(f)?;
         write!(
             f,
             ",authz_group=\"{}\",authz_kind=\"{}\",authz_name=\"{}\"",
-            self.authz.group(),
-            self.authz.kind(),
-            self.authz.name(),
+            authz.group(),
+            authz.kind(),
+            authz.name(),
         )
     }
 }
@@ -409,16 +427,25 @@ impl svc::Param<OutboundZoneLocality> for OutboundEndpointLabels {
 
 impl FmtLabels for OutboundEndpointLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(a) = self.authority.as_ref() {
+        let Self {
+            server_id,
+            authority,
+            labels,
+            // TODO(kate): this label is not currently emitted.
+            zone_locality: _,
+            target_addr,
+        } = self;
+
+        if let Some(a) = authority.as_ref() {
             Authority(a).fmt_labels(f)?;
             write!(f, ",")?;
         }
 
-        let ta = TargetAddr(self.target_addr);
-        let tls = TlsConnect::from(&self.server_id);
+        let ta = TargetAddr(*target_addr);
+        let tls = TlsConnect::from(server_id);
         (ta, tls).fmt_labels(f)?;
 
-        if let Some(labels) = self.labels.as_ref() {
+        if let Some(labels) = labels.as_ref() {
             write!(f, ",{labels}")?;
         }
 
@@ -443,7 +470,8 @@ impl FmtLabels for Direction {
 
 impl FmtLabels for Authority<'_> {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "authority=\"{}\"", self.0)
+        let Self(authority) = self;
+        write!(f, "authority=\"{}\"", authority)
     }
 }
 
@@ -497,7 +525,13 @@ impl StackLabels {
 
 impl FmtLabels for StackLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.direction.fmt_labels(f)?;
-        write!(f, ",protocol=\"{}\",name=\"{}\"", self.protocol, self.name)
+        let Self {
+            direction,
+            protocol,
+            name,
+        } = self;
+
+        direction.fmt_labels(f)?;
+        write!(f, ",protocol=\"{}\",name=\"{}\"", protocol, name)
     }
 }

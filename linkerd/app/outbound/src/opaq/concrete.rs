@@ -419,3 +419,10 @@ impl<T> svc::Param<tls::ConditionalClientTls> for Endpoint<T> {
             ))
     }
 }
+
+impl<T> svc::Param<tls::ConditionalClientTlsLabels> for Endpoint<T> {
+    fn param(&self) -> tls::ConditionalClientTlsLabels {
+        let tls: tls::ConditionalClientTls = self.param();
+        tls.as_ref().map(tls::ClientTls::labels)
+    }
+}

@@ -37,6 +37,13 @@ pub enum ServerTls {
     },
 }
 
+/// Prometheus labels for a [`ServerTls`].
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub enum ServerTlsLabels {
+    Established { client_id: Option<ClientId> },
+    Passthru { sni: ServerName },
+}
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum NoServerTls {
     /// Identity is administratively disabled.
@@ -56,6 +63,8 @@ pub enum NoServerTls {
 
 /// Indicates whether TLS was established on an accepted connection.
 pub type ConditionalServerTls = Conditional<ServerTls, NoServerTls>;
+
+pub type ConditionalServerTlsLabels = Conditional<ServerTlsLabels, NoServerTls>;
 
 pub type DetectIo<T> = EitherIo<T, PrefixedIo<T>>;
 
@@ -301,6 +310,18 @@ impl ServerTls {
         match self {
             ServerTls::Established { ref client_id, .. } => client_id.as_ref(),
             _ => None,
+        }
+    }
+
+    pub fn labels(&self) -> ServerTlsLabels {
+        match self {
+            Self::Established {
+                client_id,
+                negotiated_protocol: _,
+            } => ServerTlsLabels::Established {
+                client_id: client_id.clone(),
+            },
+            Self::Passthru { sni } => ServerTlsLabels::Passthru { sni: sni.clone() },
         }
     }
 }

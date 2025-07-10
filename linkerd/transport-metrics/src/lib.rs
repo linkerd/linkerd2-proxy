@@ -82,7 +82,8 @@ impl<K: Eq + Hash + FmtLabels> Registry<K> {
 
 impl FmtLabels for Eos {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.0 {
+        let Self(errno) = self;
+        match errno {
             None => f.pad("errno=\"\""),
             Some(errno) => write!(f, "errno=\"{errno}\""),
         }

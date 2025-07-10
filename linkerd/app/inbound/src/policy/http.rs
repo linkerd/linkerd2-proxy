@@ -248,8 +248,11 @@ impl<T, N> HttpPolicyService<T, N> {
                         );
                     }
                 }
-                self.metrics
-                    .deny(labels, self.connection.dst, self.connection.tls.clone());
+                self.metrics.deny(
+                    labels,
+                    self.connection.dst,
+                    self.connection.tls.as_ref().map(|t| t.labels()),
+                );
                 return Err(HttpRouteUnauthorized(()).into());
             }
         };
@@ -279,14 +282,19 @@ impl<T, N> HttpPolicyService<T, N> {
             }
         };
 
-        self.metrics.allow(&permit, self.connection.tls.clone());
+        self.metrics
+            .allow(&permit, self.connection.tls.as_ref().map(|t| t.labels()));
+
         Ok((permit, r#match, route))
     }
 
     fn mk_route_not_found(&self) -> Error {
         let labels = self.policy.server_label();
-        self.metrics
-            .route_not_found(labels, self.connection.dst, self.connection.tls.clone());
+        self.metrics.route_not_found(
+            labels,
+            self.connection.dst,
+            self.connection.tls.as_ref().map(|t| t.labels()),
+        );
         HttpRouteNotFound(()).into()
     }
 
@@ -306,7 +314,7 @@ impl<T, N> HttpPolicyService<T, N> {
                 self.metrics.ratelimit(
                     self.policy.ratelimit_label(&err),
                     self.connection.dst,
-                    self.connection.tls.clone(),
+                    self.connection.tls.as_ref().map(|t| t.labels()),
                 );
                 err.into()
             })

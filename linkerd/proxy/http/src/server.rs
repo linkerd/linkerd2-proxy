@@ -112,7 +112,9 @@ where
         }
 
         let mut http1 = hyper::server::conn::http1::Builder::new();
-        http1.timer(hyper_util::rt::TokioTimer::new());
+        http1
+            .header_read_timeout(None)
+            .timer(hyper_util::rt::TokioTimer::new());
 
         debug!(?version, "Creating HTTP service");
         let inner = self.inner.new_service(target);

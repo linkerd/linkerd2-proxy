@@ -49,7 +49,7 @@ jobs:
       CXX: "/usr/bin/clang++-19"
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-      - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6
+      - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0
       - run: cargo tarpaulin --locked --workspace --exclude=linkerd2-proxy --exclude=linkerd-transport-header --exclude=opencensus-proto --exclude=spire-proto --no-run
       - run: cargo tarpaulin --locked --workspace --exclude=linkerd2-proxy --exclude=linkerd-transport-header --exclude=opencensus-proto --exclude=spire-proto --skip-clean --ignore-tests --no-fail-fast --out=Xml
         # Some tests are especially flakey in coverage tests. That's fine. We

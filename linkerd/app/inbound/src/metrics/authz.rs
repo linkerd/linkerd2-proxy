@@ -67,7 +67,7 @@ pub struct HTTPLocalRateLimitLabels {
 #[derive(Debug, Hash, PartialEq, Eq)]
 struct Key<L> {
     target: TargetAddr,
-    tls: tls::ConditionalServerTls,
+    tls: tls::ConditionalServerTlsLabels,
     labels: L,
 }
 
@@ -80,7 +80,7 @@ type HttpLocalRateLimitKey = Key<HTTPLocalRateLimitLabels>;
 // === impl HttpAuthzMetrics ===
 
 impl HttpAuthzMetrics {
-    pub fn allow(&self, permit: &HttpRoutePermit, tls: tls::ConditionalServerTls) {
+    pub fn allow(&self, permit: &HttpRoutePermit, tls: tls::ConditionalServerTlsLabels) {
         self.0
             .allow
             .lock()
@@ -93,7 +93,7 @@ impl HttpAuthzMetrics {
         &self,
         labels: ServerLabel,
         dst: OrigDstAddr,
-        tls: tls::ConditionalServerTls,
+        tls: tls::ConditionalServerTlsLabels,
     ) {
         self.0
             .route_not_found
@@ -103,7 +103,12 @@ impl HttpAuthzMetrics {
             .incr();
     }
 
-    pub fn deny(&self, labels: RouteLabels, dst: OrigDstAddr, tls: tls::ConditionalServerTls) {
+    pub fn deny(
+        &self,
+        labels: RouteLabels,
+        dst: OrigDstAddr,
+        tls: tls::ConditionalServerTlsLabels,
+    ) {
         self.0
             .deny
             .lock()
@@ -116,7 +121,7 @@ impl HttpAuthzMetrics {
         &self,
         labels: HTTPLocalRateLimitLabels,
         dst: OrigDstAddr,
-        tls: tls::ConditionalServerTls,
+        tls: tls::ConditionalServerTlsLabels,
     ) {
         self.0
             .http_local_rate_limit
@@ -187,7 +192,7 @@ impl FmtMetrics for HttpAuthzMetrics {
 // === impl TcpAuthzMetrics ===
 
 impl TcpAuthzMetrics {
-    pub fn allow(&self, permit: &ServerPermit, tls: tls::ConditionalServerTls) {
+    pub fn allow(&self, permit: &ServerPermit, tls: tls::ConditionalServerTlsLabels) {
         self.0
             .allow
             .lock()
@@ -196,7 +201,7 @@ impl TcpAuthzMetrics {
             .incr();
     }
 
-    pub fn deny(&self, policy: &AllowPolicy, tls: tls::ConditionalServerTls) {
+    pub fn deny(&self, policy: &AllowPolicy, tls: tls::ConditionalServerTlsLabels) {
         self.0
             .deny
             .lock()
@@ -205,7 +210,7 @@ impl TcpAuthzMetrics {
             .incr();
     }
 
-    pub fn terminate(&self, policy: &AllowPolicy, tls: tls::ConditionalServerTls) {
+    pub fn terminate(&self, policy: &AllowPolicy, tls: tls::ConditionalServerTlsLabels) {
         self.0
             .terminate
             .lock()
@@ -246,18 +251,24 @@ impl FmtMetrics for TcpAuthzMetrics {
 
 impl FmtLabels for HTTPLocalRateLimitLabels {
     fn fmt_labels(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.server.fmt_labels(f)?;
-        if let Some(rl) = &self.rate_limit {
+        let Self {
+            server,
+            rate_limit,
+            scope,
+        } = self;
+
+        server.fmt_labels(f)?;
+        if let Some(rl) = rate_limit {
             write!(
                 f,
                 ",ratelimit_group=\"{}\",ratelimit_kind=\"{}\",ratelimit_name=\"{}\",ratelimit_scope=\"{}\"",
                 rl.group(),
                 rl.kind(),
                 rl.name(),
-                self.scope,
+                scope,
             )
         } else {
-            write!(f, ",ratelimit_scope=\"{}\"", self.scope)
+            write!(f, ",ratelimit_scope=\"{}\"", scope)
         }
     }
 }
@@ -265,7 +276,7 @@ impl FmtLabels for HTTPLocalRateLimitLabels {
 // === impl Key ===
 
 impl<L> Key<L> {
-    fn new(labels: L, dst: OrigDstAddr, tls: tls::ConditionalServerTls) -> Self {
+    fn new(labels: L, dst: OrigDstAddr, tls: tls::ConditionalServerTlsLabels) -> Self {
         Self {
             tls,
             target: TargetAddr(dst.into()),
@@ -276,24 +287,30 @@ impl<L> Key<L> {
 
 impl<L: FmtLabels> FmtLabels for Key<L> {
     fn fmt_labels(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        (self.target, (&self.labels, TlsAccept(&self.tls))).fmt_labels(f)
+        let Self {
+            target,
+            tls,
+            labels,
+        } = self;
+
+        (target, (labels, TlsAccept(tls))).fmt_labels(f)
     }
 }
 
 impl ServerKey {
-    fn from_policy(policy: &AllowPolicy, tls: tls::ConditionalServerTls) -> Self {
+    fn from_policy(policy: &AllowPolicy, tls: tls::ConditionalServerTlsLabels) -> Self {
         Self::new(policy.server_label(), policy.dst_addr(), tls)
     }
 }
 
 impl RouteAuthzKey {
-    fn from_permit(permit: &HttpRoutePermit, tls: tls::ConditionalServerTls) -> Self {
+    fn from_permit(permit: &HttpRoutePermit, tls: tls::ConditionalServerTlsLabels) -> Self {
         Self::new(permit.labels.clone(), permit.dst, tls)
     }
 }
 
 impl ServerAuthzKey {
-    fn from_permit(permit: &ServerPermit, tls: tls::ConditionalServerTls) -> Self {
+    fn from_permit(permit: &ServerPermit, tls: tls::ConditionalServerTlsLabels) -> Self {
         Self::new(permit.labels.clone(), permit.dst, tls)
     }
 }
