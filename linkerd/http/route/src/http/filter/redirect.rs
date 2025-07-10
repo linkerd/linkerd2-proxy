@@ -98,7 +98,7 @@ impl RedirectRequest {
                     .port_u16()
                     .and_then(|p| Self::port_if_not_default(scheme, p))
                 {
-                    Some(p) => format!("{}:{}", h, p).try_into().map_err(Into::into),
+                    Some(p) => format!("{h}:{p}").try_into().map_err(Into::into),
                     None => Ok(h.clone()),
                 }
             }
@@ -110,7 +110,7 @@ impl RedirectRequest {
                     // using the request's hostname and the override port.
                     Some(p) if Some(p) != orig_uri.port_u16() => {
                         let h = orig_uri.host().ok_or(InvalidRedirect::MissingAuthority)?;
-                        format!("{}:{}", h, p).try_into().map_err(Into::into)
+                        format!("{h}:{p}").try_into().map_err(Into::into)
                     }
 
                     // If the override port is the default for the scheme but
@@ -237,7 +237,7 @@ pub mod proto {
             let authority = match (rr.host, NonZeroU16::try_from(port)) {
                 (h, p) if h.is_empty() => p.ok().map(AuthorityOverride::Port),
                 (h, Ok(p)) => {
-                    let a = format!("{}:{}", h, p).try_into()?;
+                    let a = format!("{h}:{p}").try_into()?;
                     Some(AuthorityOverride::Exact(a))
                 }
                 (h, Err(_)) => {

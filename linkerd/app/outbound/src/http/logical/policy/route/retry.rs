@@ -54,7 +54,7 @@ impl retry::Policy for RetryPolicy {
 
         if let Some(codes) = self.retryable_grpc_statuses.as_ref() {
             let grpc_status = Self::grpc_status(rsp);
-            let retryable = grpc_status.map_or(false, |c| codes.contains(c));
+            let retryable = grpc_status.is_some_and(|c| codes.contains(c));
             tracing::debug!(retryable, grpc.status = ?grpc_status);
             if retryable {
                 return true;

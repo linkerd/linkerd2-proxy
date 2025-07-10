@@ -262,10 +262,7 @@ impl pb::destination_server::Destination for Controller {
                 }
 
                 tracing::warn!(?dst, ?updates, "request does not match");
-                let msg = format!(
-                    "expected get call for {:?} but got get call for {:?}",
-                    dst, req
-                );
+                let msg = format!("expected get call for {dst:?} but got get call for {req:?}");
                 calls.push_front(Dst::Call(dst, updates));
                 return Err(grpc::Status::new(grpc::Code::Unavailable, msg));
             }

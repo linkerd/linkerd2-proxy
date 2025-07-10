@@ -55,6 +55,6 @@ fn generate_protos(out_dir: &Path, iface_files: &[PathBuf], includes: &Path) {
         .out_dir(out_dir)
         .compile_protos(iface_files, &[includes])
     {
-        eprintln!("\nfailed to compile protos: {}", error);
+        eprintln!("\nfailed to compile protos: {error}");
     }
 }

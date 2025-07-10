@@ -214,7 +214,7 @@ fn h2_error(err: &Error) -> String {
     if let Some(reason) = err.h2_reason() {
         // This should output the error code in the same format as the spec,
         // for example: PROTOCOL_ERROR
-        format!("h2({:?})", reason)
+        format!("h2({reason:?})")
     } else {
         trace!("classifying found non-h2 error: {:?}", err);
         String::from("unclassified")

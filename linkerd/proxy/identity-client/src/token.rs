@@ -16,7 +16,7 @@ impl TokenSource {
         let t = std::fs::read(&self.0)?;
 
         if t.is_empty() {
-            return Err(io::Error::new(io::ErrorKind::Other, "token is empty"));
+            return Err(io::Error::other("token is empty"));
         }
 
         Ok(t)

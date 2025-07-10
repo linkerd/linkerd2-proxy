@@ -112,7 +112,7 @@ fn convert_req_match(orig: api::RequestMatch) -> Option<http::RequestMatch> {
                 (hd_anchor, tl_anchor) => {
                     let hd = if hd_anchor { "" } else { "^" };
                     let tl = if tl_anchor { "" } else { "$" };
-                    let re = format!("{}{}{}", hd, regex, tl);
+                    let re = format!("{hd}{regex}{tl}");
                     Regex::new(&re).ok()?
                 }
             };

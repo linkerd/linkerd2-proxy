@@ -92,7 +92,7 @@ impl Settings {
         match env.parse() {
             Ok(format) => Some(format),
             Err(err) => {
-                eprintln!("Invalid {}={:?}: {}", ENV_ACCESS_LOG, env, err);
+                eprintln!("Invalid {ENV_ACCESS_LOG}={env:?}: {err}");
                 None
             }
         }

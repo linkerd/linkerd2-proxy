@@ -68,7 +68,7 @@ where
             .borrow()
             .acceptor(self.alpn.as_deref().unwrap_or(&[]));
         Box::pin(async move {
-            let acc = acceptor.map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+            let acc = acceptor.map_err(io::Error::other)?;
             let io = tokio_boring::accept(&acc, io)
                 .await
                 .map(ServerIo)
@@ -76,7 +76,7 @@ where
                     Some(ioe) => io::Error::new(ioe.kind(), ioe.to_string()),
                     // XXX(ver) to use the boring error directly here we have to constraint the
                     // socket on Sync + std::fmt::Debug, which is a pain.
-                    None => io::Error::new(io::ErrorKind::Other, "unexpected TLS handshake error"),
+                    None => io::Error::other("unexpected TLS handshake error"),
                 })?;
 
             let client_id = io.client_identity();

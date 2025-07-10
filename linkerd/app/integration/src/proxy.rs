@@ -108,7 +108,7 @@ impl fmt::Debug for MockOrigDst {
         match self {
             Self::Addr(addr) => f
                 .debug_tuple("MockOrigDst::Addr")
-                .field(&format_args!("{}", addr))
+                .field(&format_args!("{addr}"))
                 .finish(),
             Self::Direct => f.debug_tuple("MockOrigDst::Direct").finish(),
             Self::None => f.debug_tuple("MockOrigDst::None").finish(),
@@ -416,9 +416,9 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
         use std::fmt::Write;
         let mut ports = inbound_default_ports.iter();
         if let Some(port) = ports.next() {
-            let mut var = format!("{}", port);
+            let mut var = format!("{port}");
             for port in ports {
-                write!(&mut var, ",{}", port).expect("writing to String should never fail");
+                write!(&mut var, ",{port}").expect("writing to String should never fail");
             }
             info!("{}={:?}", app::env::ENV_INBOUND_PORTS, var);
             env.put(app::env::ENV_INBOUND_PORTS, var);

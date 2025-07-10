@@ -262,7 +262,7 @@ where
 
         // Poll the inner body for the next frame.
         let poll = this.inner.as_mut().poll_frame(cx);
-        let frame = futures::ready!(poll).map(|res| res.map_err(Error::from));
+        let frame = futures::ready!(poll).map(|res| res);
 
         match &frame {
             Some(Ok(frame)) => {

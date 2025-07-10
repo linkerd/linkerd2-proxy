@@ -136,18 +136,18 @@ impl FormatFields<'_> for ApacheCommon {
 
 impl field::Visit for ApacheCommonVisitor<'_> {
     fn record_str(&mut self, field: &field::Field, val: &str) {
-        self.record_debug(field, &format_args!("{}", val))
+        self.record_debug(field, &format_args!("{val}"))
     }
 
     fn record_debug(&mut self, field: &field::Field, val: &dyn fmt::Debug) {
         self.res = match field.name() {
             n if ApacheCommon::SKIPPED_FIELDS.contains(&n) => return,
-            "timestamp" => write!(&mut self.writer, " [{:?}]", val),
-            "client.addr" => write!(&mut self.writer, "{:?}", val),
-            "client.id" => write!(&mut self.writer, " {:?} -", val),
-            "method" => write!(&mut self.writer, " \"{:?}", val),
-            "version" => write!(&mut self.writer, " {:?}\"", val),
-            _ => write!(&mut self.writer, " {:?}", val),
+            "timestamp" => write!(&mut self.writer, " [{val:?}]"),
+            "client.addr" => write!(&mut self.writer, "{val:?}"),
+            "client.id" => write!(&mut self.writer, " {val:?} -"),
+            "method" => write!(&mut self.writer, " \"{val:?}"),
+            "version" => write!(&mut self.writer, " {val:?}\""),
+            _ => write!(&mut self.writer, " {val:?}"),
         }
     }
 }

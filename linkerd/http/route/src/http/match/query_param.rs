@@ -11,7 +11,7 @@ pub enum MatchQueryParam {
 
 impl MatchQueryParam {
     pub fn is_match(&self, uri: &Uri) -> bool {
-        uri.query().map_or(false, |qs| {
+        uri.query().is_some_and(|qs| {
             url::form_urlencoded::parse(qs.as_bytes()).any(|(q, p)| match self {
                 Self::Exact(n, v) => *n == *q && *v == *p,
                 Self::Regex(n, r) => {
