@@ -252,7 +252,7 @@ impl FmtLabels for ControlLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Self { addr, server_id } = self;
 
-        write!(f, "addr=\"{}\",", addr)?;
+        write!(f, "addr=\"{addr}\",")?;
         TlsConnect::from(server_id).fmt_labels(f)?;
 
         Ok(())
@@ -290,7 +290,7 @@ impl FmtLabels for ProfileRouteLabels {
         } = self;
 
         direction.fmt_labels(f)?;
-        write!(f, ",dst=\"{}\"", addr)?;
+        write!(f, ",dst=\"{addr}\"")?;
 
         if let Some(labels) = labels.as_ref() {
             write!(f, ",{labels}")?;
@@ -471,7 +471,7 @@ impl FmtLabels for Direction {
 impl FmtLabels for Authority<'_> {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Self(authority) = self;
-        write!(f, "authority=\"{}\"", authority)
+        write!(f, "authority=\"{authority}\"")
     }
 }
 
@@ -532,6 +532,6 @@ impl FmtLabels for StackLabels {
         } = self;
 
         direction.fmt_labels(f)?;
-        write!(f, ",protocol=\"{}\",name=\"{}\"", protocol, name)
+        write!(f, ",protocol=\"{protocol}\",name=\"{name}\"")
     }
 }

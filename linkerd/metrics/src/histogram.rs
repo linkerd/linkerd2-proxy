@@ -223,7 +223,7 @@ impl<V: Into<u64>, F: Factor> FmtMetric for Histogram<V, F> {
 impl<K: fmt::Display, V: fmt::Display> FmtLabels for Label<K, V> {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Self(k, v) = self;
-        write!(f, "{}=\"{}\"", k, v)
+        write!(f, "{k}=\"{v}\"")
     }
 }
 
