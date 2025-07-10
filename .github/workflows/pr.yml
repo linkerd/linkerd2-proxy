@@ -76,7 +76,7 @@ jobs:
     if: needs.meta.outputs.actions_changed == 'true'
     runs-on: ubuntu-24.04
     steps:
-      - uses: linkerd/dev/actions/setup-tools@54d0545f231e3b1e9eb2daf4c062ef0b58b9cd49
+      - uses: linkerd/dev/actions/setup-tools@v46
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - run: just action-lint
       - run: just action-dev-check
@@ -127,7 +127,7 @@ jobs:
     env:
       WAIT_TIMEOUT: 2m
     steps:
-      - uses: linkerd/dev/actions/setup-tools@54d0545f231e3b1e9eb2daf4c062ef0b58b9cd49
+      - uses: linkerd/dev/actions/setup-tools@v46
       - name: scurl https://run.linkerd.io/install-edge | sh
         run: |
           scurl https://run.linkerd.io/install-edge | sh
