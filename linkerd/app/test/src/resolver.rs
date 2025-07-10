@@ -295,9 +295,7 @@ impl<T: Param<profiles::LookupAddr>> tower::Service<T> for NoProfiles {
 
     fn call(&mut self, target: T) -> Self::Future {
         let profiles::LookupAddr(addr) = target.param();
-        panic!(
-            "no profile resolutions were expected in this test, but tried to resolve {addr}"
-        );
+        panic!("no profile resolutions were expected in this test, but tried to resolve {addr}");
     }
 }
 

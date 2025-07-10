@@ -76,9 +76,7 @@ async fn valid_get_does_not_error() {
     for obj in json {
         println!("{obj}\n");
         if obj.get("error").is_some() {
-            panic!(
-                "expected the log stream to contain no error responses!\njson = {obj}"
-            );
+            panic!("expected the log stream to contain no error responses!\njson = {obj}");
         }
     }
 }
@@ -102,9 +100,7 @@ async fn valid_query_does_not_error() {
     for obj in json {
         println!("{obj}\n");
         if obj.get("error").is_some() {
-            panic!(
-                "expected the log stream to contain no error responses!\njson = {obj}"
-            );
+            panic!("expected the log stream to contain no error responses!\njson = {obj}");
         }
     }
 }

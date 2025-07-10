@@ -100,15 +100,11 @@ impl Addr {
                     // them ourselves.
                     format!("[{}]", a.ip())
                 };
-                http::uri::Authority::from_str(&ip).unwrap_or_else(|err| {
-                    panic!("SocketAddr ({a}) must be valid authority: {err}")
-                })
+                http::uri::Authority::from_str(&ip)
+                    .unwrap_or_else(|err| panic!("SocketAddr ({a}) must be valid authority: {err}"))
             }
-            Addr::Socket(a) => {
-                http::uri::Authority::from_str(&a.to_string()).unwrap_or_else(|err| {
-                    panic!("SocketAddr ({a}) must be valid authority: {err}")
-                })
-            }
+            Addr::Socket(a) => http::uri::Authority::from_str(&a.to_string())
+                .unwrap_or_else(|err| panic!("SocketAddr ({a}) must be valid authority: {err}")),
         }
     }
 
