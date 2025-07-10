@@ -8,7 +8,7 @@ publish = { workspace = true }
 description = "The main proxy executable"
 
 [features]
-default = ["meshtls-rustls-ring"]
+default = ["meshtls-rustls-aws-lc"]
 meshtls-boring = ["linkerd-meshtls/boring"]
 meshtls-boring-fips = ["linkerd-meshtls/boring-fips"]
 meshtls-rustls-aws-lc = ["linkerd-meshtls/rustls-aws-lc"]
