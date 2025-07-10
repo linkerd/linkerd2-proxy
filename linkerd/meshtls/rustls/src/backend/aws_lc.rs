@@ -4,8 +4,19 @@ use tokio_rustls::rustls::{
     crypto::{aws_lc_rs, WebPkiSupportedAlgorithms},
 };
 
-pub static TLS_SUPPORTED_CIPHERSUITES: &[rustls::SupportedCipherSuite] =
-    &[rustls::crypto::aws_lc_rs::cipher_suite::TLS13_CHACHA20_POLY1305_SHA256];
+#[cfg(not(feature = "aws-lc-fips"))]
+pub static TLS_SUPPORTED_CIPHERSUITES: &[rustls::SupportedCipherSuite] = &[
+    aws_lc_rs::cipher_suite::TLS13_CHACHA20_POLY1305_SHA256,
+    aws_lc_rs::cipher_suite::TLS13_AES_128_GCM_SHA256,
+    aws_lc_rs::cipher_suite::TLS13_AES_256_GCM_SHA384,
+];
+// Prefer aes-256-gcm if fips is enabled, with chaha20-poly1305 as a fallback
+#[cfg(feature = "aws-lc-fips")]
+pub static TLS_SUPPORTED_CIPHERSUITES: &[rustls::SupportedCipherSuite] = &[
+    aws_lc_rs::cipher_suite::TLS13_AES_256_GCM_SHA384,
+    aws_lc_rs::cipher_suite::TLS13_AES_128_GCM_SHA256,
+    aws_lc_rs::cipher_suite::TLS13_CHACHA20_POLY1305_SHA256,
+];
 pub static SUPPORTED_SIG_ALGS: &WebPkiSupportedAlgorithms = &WebPkiSupportedAlgorithms {
     all: &[
         webpki::aws_lc_rs::ECDSA_P256_SHA256,
