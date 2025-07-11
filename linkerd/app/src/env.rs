@@ -348,7 +348,11 @@ const DEFAULT_OUTBOUND_HTTP1_CONNECTION_POOL_IDLE_TIMEOUT: Duration = Duration::
 // many concurrent requests. It's generally preferable to use the MAX_IDLE_AGE
 // limitations to quickly drop idle connections.
 const DEFAULT_INBOUND_MAX_IDLE_CONNS_PER_ENDPOINT: usize = usize::MAX;
-const DEFAULT_OUTBOUND_MAX_IDLE_CONNS_PER_ENDPOINT: usize = usize::MAX;
+// By default, we limit the number of outbound connections that may be opened
+// per-host. We pick a high number (10k) that shouldn't interfere with most
+// workloads, but will prevent issues with our outbound HTTP client from
+// exhausting the file descriptors available to the process.
+const DEFAULT_OUTBOUND_MAX_IDLE_CONNS_PER_ENDPOINT: usize = 10_000;
 
 // These settings limit the number of requests that have not received responses,
 // including those buffered in the proxy and dispatched to the destination
