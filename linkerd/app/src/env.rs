@@ -343,7 +343,7 @@ const DEFAULT_INBOUND_HTTP1_CONNECTION_POOL_IDLE_TIMEOUT: Duration = Duration::f
 // TODO(ver) This should be configurable at the load balancer level.
 const DEFAULT_OUTBOUND_HTTP1_CONNECTION_POOL_IDLE_TIMEOUT: Duration = Duration::from_secs(3);
 
-// By default, we don't limit the number of connections a connection pol may
+// By default, we don't limit the number of connections a connection pool may
 // use, as doing so can severely impact CPU utilization for applications with
 // many concurrent requests. It's generally preferable to use the MAX_IDLE_AGE
 // limitations to quickly drop idle connections.
