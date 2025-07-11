@@ -1,12 +1,16 @@
-use super::{default_provider, params::*, InvalidKey};
+use super::{default_provider, params::*};
 use linkerd_dns_name as dns;
 use linkerd_error::Result;
 use linkerd_identity as id;
 use linkerd_meshtls_verifier as verifier;
-use ring::{rand, signature::EcdsaKeyPair};
 use std::{convert::TryFrom, sync::Arc};
 use tokio::sync::watch;
-use tokio_rustls::rustls::{self, pki_types::UnixTime, server::WebPkiClientVerifier};
+use tokio_rustls::rustls::{
+    self,
+    pki_types::{PrivatePkcs8KeyDer, UnixTime},
+    server::WebPkiClientVerifier,
+    sign::CertifiedKey,
+};
 use tracing::debug;
 
 pub struct Store {
@@ -16,11 +20,7 @@ pub struct Store {
     server_name: dns::Name,
     client_tx: watch::Sender<Arc<rustls::ClientConfig>>,
     server_tx: watch::Sender<Arc<rustls::ServerConfig>>,
-    random: ring::rand::SystemRandom,
 }
-
-#[derive(Clone, Debug)]
-struct Key(Arc<EcdsaKeyPair>);
 
 #[derive(Clone, Debug)]
 struct CertResolver(Arc<rustls::sign::CertifiedKey>);
@@ -90,7 +90,6 @@ impl Store {
             server_name,
             client_tx,
             server_tx,
-            random: ring::rand::SystemRandom::new(),
         }
     }
 
@@ -147,13 +146,11 @@ impl id::Credentials for Store {
         // Use the client's verifier to validate the certificate for our local name.
         self.validate(&chain)?;
 
-        let key = EcdsaKeyPair::from_pkcs8(SIGNATURE_ALG_RING_SIGNING, &key, &self.random)
-            .map_err(InvalidKey)?;
-
-        let resolver = Arc::new(CertResolver(Arc::new(rustls::sign::CertifiedKey::new(
-            chain,
-            Arc::new(Key(Arc::new(key))),
-        ))));
+        let key_der = PrivatePkcs8KeyDer::from(key);
+        let provider = rustls::crypto::CryptoProvider::get_default()
+            .expect("Failed to get default crypto provider");
+        let key = CertifiedKey::from_der(chain, key_der.into(), provider)?;
+        let resolver = Arc::new(CertResolver(Arc::new(key)));
 
         // Build new client and server TLS configs.
         let client = self.client_config(resolver.clone());
@@ -164,39 +161,6 @@ impl id::Credentials for Store {
         let _ = self.server_tx.send(server);
 
         Ok(())
-    }
-}
-
-// === impl Key ===
-
-impl rustls::sign::SigningKey for Key {
-    fn choose_scheme(
-        &self,
-        offered: &[rustls::SignatureScheme],
-    ) -> Option<Box<dyn rustls::sign::Signer>> {
-        if !offered.contains(&SIGNATURE_ALG_RUSTLS_SCHEME) {
-            return None;
-        }
-
-        Some(Box::new(self.clone()))
-    }
-
-    fn algorithm(&self) -> rustls::SignatureAlgorithm {
-        SIGNATURE_ALG_RUSTLS_ALGORITHM
-    }
-}
-
-impl rustls::sign::Signer for Key {
-    fn sign(&self, message: &[u8]) -> Result<Vec<u8>, rustls::Error> {
-        let rng = rand::SystemRandom::new();
-        self.0
-            .sign(&rng, message)
-            .map(|signature| signature.as_ref().to_owned())
-            .map_err(|ring::error::Unspecified| rustls::Error::General("Signing Failed".to_owned()))
-    }
-
-    fn scheme(&self) -> rustls::SignatureScheme {
-        SIGNATURE_ALG_RUSTLS_SCHEME
     }
 }
 
