@@ -127,6 +127,7 @@ where
                     hyper_util::client::legacy::Client::builder(TokioExecutor::new())
                         .pool_max_idle_per_host(self.pool.max_idle)
                         .pool_idle_timeout(self.pool.idle_timeout)
+                        .pool_timer(hyper_util::rt::TokioTimer::default())
                         .set_host(use_absolute_form)
                         .build(HyperConnect::new(
                             self.connect.clone(),
