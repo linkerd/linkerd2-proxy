@@ -18,7 +18,7 @@ use linkerd_stack::{
 };
 use linkerd_tls as tls;
 use linkerd_tls_test_util as test_util;
-use rcgen::{BasicConstraints, CertificateParams, IsCa, KeyPair, SanType};
+use rcgen::{BasicConstraints, CertificateParams, IsCa, Issuer, KeyPair, SanType};
 use std::str::FromStr;
 use std::{
     net::SocketAddr,
@@ -40,8 +40,9 @@ fn generate_cert_with_name(subject_alt_names: Vec<SanType>) -> (Vec<u8>, Vec<u8>
     let issuer_key = KeyPair::generate().unwrap();
     let mut params = CertificateParams::default();
     params.subject_alt_names = subject_alt_names;
+    let issuer = Issuer::from_params(&params, &root_key);
     let cert = params
-        .signed_by(&issuer_key, &root_cert, &root_key)
+        .signed_by(&issuer_key, &issuer)
         .expect("should generate cert");
 
     (
