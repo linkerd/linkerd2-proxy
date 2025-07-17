@@ -343,10 +343,10 @@ const DEFAULT_INBOUND_HTTP1_CONNECTION_POOL_IDLE_TIMEOUT: Duration = Duration::f
 // TODO(ver) This should be configurable at the load balancer level.
 const DEFAULT_OUTBOUND_HTTP1_CONNECTION_POOL_IDLE_TIMEOUT: Duration = Duration::from_secs(3);
 
-// By default, we limit the number of outbound connections that may be opened
-// per-host. We pick a high number (10k) that shouldn't interfere with most
-// workloads, but will prevent issues with our outbound HTTP client from
-// exhausting the file descriptors available to the process.
+// By default, we limit the number of connections that may be opened per-host.
+// We pick a high number (10k) that shouldn't interfere with most workloads, but
+// will prevent issues with our outbound HTTP client from exhausting the file
+// descriptors available to the process.
 const DEFAULT_INBOUND_MAX_IDLE_CONNS_PER_ENDPOINT: usize = 10_000;
 const DEFAULT_OUTBOUND_MAX_IDLE_CONNS_PER_ENDPOINT: usize = 10_000;
 
