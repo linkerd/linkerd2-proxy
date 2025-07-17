@@ -11,13 +11,18 @@ use linkerd_proxy_client_policy::{self as client_policy, tls::sni};
 use parking_lot::Mutex;
 use std::{
     collections::HashMap,
+    marker::PhantomData,
     net::SocketAddr,
     sync::Arc,
     task::{Context, Poll},
     time::Duration,
 };
 use tokio::sync::watch;
-use tokio_rustls::rustls::pki_types::DnsName;
+use tokio_rustls::rustls::{
+    internal::msgs::codec::{Codec, Reader},
+    pki_types::DnsName,
+    InvalidMessage,
+};
 
 mod basic;
 
@@ -170,44 +175,57 @@ fn sni_route(backend: client_policy::Backend, sni: sni::MatchSni) -> client_poli
 // generates a sample ClientHello TLS message for testing
 fn generate_client_hello(sni: &str) -> Vec<u8> {
     use tokio_rustls::rustls::{
-        internal::msgs::{
-            base::Payload,
-            codec::{Codec, Reader},
-            enums::Compression,
-            handshake::{
-                ClientExtension, ClientHelloPayload, HandshakeMessagePayload, HandshakePayload,
-                Random, ServerName, SessionId,
-            },
-            message::{MessagePayload, PlainMessage},
-        },
-        CipherSuite, ContentType, HandshakeType, ProtocolVersion,
+        internal::msgs::{base::Payload, codec::Codec, message::PlainMessage},
+        ContentType, ProtocolVersion,
     };
 
     let sni = DnsName::try_from(sni.to_string()).unwrap();
     let sni = trim_hostname_trailing_dot_for_sni(&sni);
 
-    let mut server_name_bytes = vec![];
-    0u8.encode(&mut server_name_bytes); // encode the type first
-    (sni.as_ref().len() as u16).encode(&mut server_name_bytes); // then the length as u16
-    server_name_bytes.extend_from_slice(sni.as_ref().as_bytes()); // then the server name itself
+    // rustls has internal-only types that can encode a ClientHello, but they are mostly
+    // inaccessible and an unstable part of the public API anyway. Manually encode one here for
+    // testing only instead.
 
-    let server_name =
-        ServerName::read(&mut Reader::init(&server_name_bytes)).expect("Server name is valid");
+    let mut hs_payload_bytes = vec![];
+    1u8.encode(&mut hs_payload_bytes); // client hello ID
 
-    let hs_payload = HandshakeMessagePayload {
-        typ: HandshakeType::ClientHello,
-        payload: HandshakePayload::ClientHello(ClientHelloPayload {
-            client_version: ProtocolVersion::TLSv1_2,
-            random: Random::from([0; 32]),
-            session_id: SessionId::read(&mut Reader::init(&[0])).unwrap(),
-            cipher_suites: vec![CipherSuite::TLS_NULL_WITH_NULL_NULL],
-            compression_methods: vec![Compression::Null],
-            extensions: vec![ClientExtension::ServerName(vec![server_name])],
-        }),
+    let client_hello_body = {
+        let mut payload = LengthPayload::<U24>::empty();
+
+        payload.buf.extend_from_slice(&[0x03, 0x03]); // client version, TLSv1.2
+
+        payload.buf.extend_from_slice(&[0u8; 32]); // random
+
+        0u8.encode(&mut payload.buf); // session ID
+
+        LengthPayload::<u16>::from_slice(&[0x00, 0x00] /* TLS_NULL_WITH_NULL_NULL */)
+            .encode(&mut payload.buf);
+
+        LengthPayload::<u8>::from_slice(&[0x00] /* no compression */).encode(&mut payload.buf);
+
+        let extensions = {
+            let mut payload = LengthPayload::<u16>::empty();
+            0u16.encode(&mut payload.buf); // server name extension ID
+
+            let server_name_extension = {
+                let mut payload = LengthPayload::<u16>::empty();
+                let server_name = {
+                    let mut payload = LengthPayload::<u16>::empty();
+                    0u8.encode(&mut payload.buf); // DNS hostname ID
+                    LengthPayload::<u16>::from_slice(sni.as_ref().as_bytes())
+                        .encode(&mut payload.buf);
+                    payload
+                };
+                server_name.encode(&mut payload.buf);
+                payload
+            };
+            server_name_extension.encode(&mut payload.buf);
+            payload
+        };
+        extensions.encode(&mut payload.buf);
+        payload
     };
-
-    let mut hs_payload_bytes = Vec::default();
-    MessagePayload::handshake(hs_payload).encode(&mut hs_payload_bytes);
+    client_hello_body.encode(&mut hs_payload_bytes);
 
     let message = PlainMessage {
         typ: ContentType::Handshake,
@@ -216,6 +234,65 @@ fn generate_client_hello(sni: &str) -> Vec<u8> {
     };
 
     message.into_unencrypted_opaque().encode()
+}
+
+#[derive(Debug)]
+struct LengthPayload<T> {
+    buf: Vec<u8>,
+    _boo: PhantomData<fn() -> T>,
+}
+
+impl<T> LengthPayload<T> {
+    fn empty() -> Self {
+        Self {
+            buf: vec![],
+            _boo: PhantomData,
+        }
+    }
+
+    fn from_slice(s: &[u8]) -> Self {
+        Self {
+            buf: s.to_vec(),
+            _boo: PhantomData,
+        }
+    }
+}
+
+impl Codec<'_> for LengthPayload<u8> {
+    fn encode(&self, bytes: &mut Vec<u8>) {
+        (self.buf.len() as u8).encode(bytes);
+        bytes.extend_from_slice(&self.buf);
+    }
+
+    fn read(_: &mut Reader<'_>) -> std::result::Result<Self, InvalidMessage> {
+        unimplemented!()
+    }
+}
+
+impl Codec<'_> for LengthPayload<u16> {
+    fn encode(&self, bytes: &mut Vec<u8>) {
+        (self.buf.len() as u16).encode(bytes);
+        bytes.extend_from_slice(&self.buf);
+    }
+
+    fn read(_: &mut Reader<'_>) -> std::result::Result<Self, InvalidMessage> {
+        unimplemented!()
+    }
+}
+
+#[derive(Debug)]
+struct U24;
+
+impl Codec<'_> for LengthPayload<U24> {
+    fn encode(&self, bytes: &mut Vec<u8>) {
+        let len = self.buf.len() as u32;
+        bytes.extend_from_slice(&len.to_be_bytes()[1..]);
+        bytes.extend_from_slice(&self.buf);
+    }
+
+    fn read(_: &mut Reader<'_>) -> std::result::Result<Self, InvalidMessage> {
+        unimplemented!()
+    }
 }
 
 fn trim_hostname_trailing_dot_for_sni(dns_name: &DnsName<'_>) -> DnsName<'static> {
