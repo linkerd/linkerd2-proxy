@@ -58,7 +58,7 @@ concurrency:
 jobs:
   meta:
     timeout-minutes: 5
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.LINKERD2_PROXY_RUNNER || 'ubuntu-24.04' }}
     steps:
       - id: meta
         env:
@@ -108,7 +108,7 @@ jobs:
 
   info:
     needs: meta
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.LINKERD2_PROXY_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 3
     steps:
       - name: Inputs
@@ -140,7 +140,7 @@ jobs:
     # If we're not actually building on a release tag, don't short-circuit on
     # errors. This helps us know whether a failure is platform-specific.
     continue-on-error: ${{ needs.meta.outputs.publish != 'true' }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.LINKERD2_PROXY_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 40
     container: docker://ghcr.io/linkerd/dev:v46-rust-musl
     env:
@@ -170,7 +170,7 @@ jobs:
 
   publish:
     needs: [meta, package]
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.LINKERD2_PROXY_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 5
     permissions:
       actions: write
@@ -225,7 +225,7 @@ jobs:
     needs: publish
     if: always()
     timeout-minutes: 3
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.LINKERD2_PROXY_RUNNER || 'ubuntu-24.04' }}
     steps:
       - name: Results
         run: |

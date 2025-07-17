@@ -13,7 +13,7 @@ on:
 jobs:
   sh-lint:
     timeout-minutes: 5
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.LINKERD2_PROXY_RUNNER || 'ubuntu-24.04' }}
     steps:
       - uses: linkerd/dev/actions/setup-tools@v46
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683

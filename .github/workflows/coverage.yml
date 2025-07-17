@@ -21,7 +21,7 @@ env:
 jobs:
   meta:
     timeout-minutes: 5
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.LINKERD2_PROXY_RUNNER || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - id: changed
@@ -40,7 +40,7 @@ jobs:
   codecov:
     needs: meta
     if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || needs.meta.outputs.any_changed == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.LINKERD2_PROXY_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 30
     container:
       image: docker://ghcr.io/linkerd/dev:v46-rust
