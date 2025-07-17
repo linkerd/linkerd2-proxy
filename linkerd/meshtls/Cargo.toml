@@ -8,9 +8,9 @@ publish = { workspace = true }
 
 [features]
 rustls = ["linkerd-meshtls-rustls", "__has_any_tls_impls"]
-rustls-aws-lc = ["rustls", "linkerd-meshtls-rustls/aws-lc"]
+rustls-aws-lc = ["rustls", "linkerd-meshtls-rustls/aws-lc", "rcgen/aws_lc_rs"]
 rustls-aws-lc-fips = ["rustls-aws-lc", "linkerd-meshtls-rustls/aws-lc-fips"]
-rustls-ring = ["rustls", "linkerd-meshtls-rustls/ring"]
+rustls-ring = ["rustls", "linkerd-meshtls-rustls/ring", "rcgen/ring"]
 boring = ["linkerd-meshtls-boring", "__has_any_tls_impls"]
 boring-fips = ["boring", "linkerd-meshtls-boring/fips"]
 # Enabled if *any* TLS impl is enabled.
@@ -25,14 +25,14 @@ linkerd-error = { path = "../error" }
 linkerd-identity = { path = "../identity" }
 linkerd-io = { path = "../io" }
 linkerd-meshtls-boring = { path = "boring", optional = true }
-linkerd-meshtls-rustls = { path = "rustls", optional = true }
+linkerd-meshtls-rustls = { path = "rustls", optional = true, default-features = false }
 linkerd-stack = { path = "../stack" }
 linkerd-tls = { path = "../tls" }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }
 tracing = { workspace = true }
-rcgen = "0.14.2"
+rcgen = { version = "0.14.2", default-features = false, features = ["crypto", "pem", "ring"] }
 
 linkerd-conditional = { path = "../conditional" }
 linkerd-proxy-transport = { path = "../proxy/transport" }

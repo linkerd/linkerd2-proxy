@@ -8,16 +8,11 @@ pub use self::{receiver::Receiver, store::Store};
 use linkerd_dns_name as dns;
 use linkerd_error::Result;
 use linkerd_identity as id;
-use ring::error::KeyRejected;
 use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::watch;
 use tokio_rustls::rustls::{self, crypto::CryptoProvider};
 use tracing::warn;
-
-#[derive(Debug, Error)]
-#[error("{0}")]
-pub struct InvalidKey(#[source] KeyRejected);
 
 #[derive(Debug, Error)]
 #[error("invalid trust roots")]
@@ -92,10 +87,22 @@ pub fn watch(
     Ok((store, rx))
 }
 
-fn default_provider() -> CryptoProvider {
+fn default_provider() -> Arc<CryptoProvider> {
+    if let Some(provider) = CryptoProvider::get_default() {
+        return Arc::clone(provider);
+    }
+
     let mut provider = backend::default_provider();
     provider.cipher_suites = params::TLS_SUPPORTED_CIPHERSUITES.to_vec();
-    provider
+    // Ignore install errors. This is the only place we install a provider, so if we raced with
+    // another thread to set the provider it will be functionally the same as this provider.
+    let _ = provider.install_default();
+    Arc::clone(CryptoProvider::get_default().expect("Just installed a default"))
+}
+
+#[cfg(feature = "test-util")]
+pub fn default_provider_for_test() -> Arc<CryptoProvider> {
+    default_provider()
 }
 
 #[cfg(feature = "test-util")]
@@ -118,12 +125,8 @@ mod params {
     use tokio_rustls::rustls::{self, crypto::WebPkiSupportedAlgorithms};
 
     // These must be kept in sync:
-    pub static SIGNATURE_ALG_RING_SIGNING: &ring::signature::EcdsaSigningAlgorithm =
-        &ring::signature::ECDSA_P256_SHA256_ASN1_SIGNING;
     pub const SIGNATURE_ALG_RUSTLS_SCHEME: rustls::SignatureScheme =
         rustls::SignatureScheme::ECDSA_NISTP256_SHA256;
-    pub const SIGNATURE_ALG_RUSTLS_ALGORITHM: rustls::SignatureAlgorithm =
-        rustls::SignatureAlgorithm::ECDSA;
     pub static SUPPORTED_SIG_ALGS: &WebPkiSupportedAlgorithms = backend::SUPPORTED_SIG_ALGS;
     pub static TLS_VERSIONS: &[&rustls::SupportedProtocolVersion] = &[&rustls::version::TLS13];
     pub static TLS_SUPPORTED_CIPHERSUITES: &[rustls::SupportedCipherSuite] =
