@@ -1640,6 +1640,7 @@ dependencies = [
  "linkerd-app-core",
  "linkerd-app-test",
  "linkerd-meshtls",
+ "linkerd-meshtls-rustls",
  "linkerd-metrics",
  "linkerd-tracing",
  "linkerd2-proxy-api",
@@ -2146,7 +2147,6 @@ dependencies = [
  "linkerd-stack",
  "linkerd-tls",
  "linkerd-tls-test-util",
- "ring",
  "rustls-pemfile",
  "rustls-webpki",
  "thiserror 2.0.12",
@@ -3590,8 +3590,8 @@ version = "0.14.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0068c5b3cab1d4e271e0bb6539c87563c43411cad90b057b15c79958fbeb41f7"
 dependencies = [
+ "aws-lc-rs",
  "pem",
- "ring",
  "rustls-pki-types",
  "time",
  "yasna",

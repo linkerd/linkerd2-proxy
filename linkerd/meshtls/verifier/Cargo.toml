@@ -15,4 +15,4 @@ linkerd-identity = { path = "../../identity" }
 
 
 [dev-dependencies]
-rcgen = "0.14.3"
+rcgen = { version = "0.14.3", default-features = false, features = ["crypto", "pem", "aws_lc_rs"] }

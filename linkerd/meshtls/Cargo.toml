@@ -25,14 +25,14 @@ linkerd-error = { path = "../error" }
 linkerd-identity = { path = "../identity" }
 linkerd-io = { path = "../io" }
 linkerd-meshtls-boring = { path = "boring", optional = true }
-linkerd-meshtls-rustls = { path = "rustls", optional = true }
+linkerd-meshtls-rustls = { path = "rustls", optional = true, default-features = false }
 linkerd-stack = { path = "../stack" }
 linkerd-tls = { path = "../tls" }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }
 tracing = { workspace = true }
-rcgen = "0.14.3"
+rcgen = { version = "0.14.3", default-features = false, features = ["crypto", "pem", "aws_lc_rs"] }
 
 linkerd-conditional = { path = "../conditional" }
 linkerd-proxy-transport = { path = "../proxy/transport" }

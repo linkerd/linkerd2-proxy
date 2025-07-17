@@ -42,7 +42,7 @@ linkerd-http-prom = { path = "../../http/prom" }
 linkerd-http-retry = { path = "../../http/retry" }
 linkerd-http-route = { path = "../../http/route" }
 linkerd-identity = { path = "../../identity" }
-linkerd-meshtls-rustls = { path = "../../meshtls/rustls", optional = true }
+linkerd-meshtls-rustls = { path = "../../meshtls/rustls", optional = true, default-features = false }
 linkerd-opaq-route = { path = "../../opaq-route" }
 linkerd-proxy-client-policy = { path = "../../proxy/client-policy", features = [
     "proto",

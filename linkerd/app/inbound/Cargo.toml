@@ -26,7 +26,7 @@ linkerd-app-test = { path = "../test", optional = true }
 linkerd-http-access-log = { path = "../../http/access-log" }
 linkerd-idle-cache = { path = "../../idle-cache" }
 linkerd-meshtls = { path = "../../meshtls", optional = true }
-linkerd-meshtls-rustls = { path = "../../meshtls/rustls", optional = true }
+linkerd-meshtls-rustls = { path = "../../meshtls/rustls", optional = true, default-features = false }
 linkerd-proxy-client-policy = { path = "../../proxy/client-policy" }
 linkerd-tonic-stream = { path = "../../tonic-stream" }
 linkerd-tonic-watch = { path = "../../tonic-watch" }
