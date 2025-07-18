@@ -23,7 +23,7 @@ use tracing::{debug, info, warn};
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
 #[global_allocator]
-static GLOBAL: jemallocator::Jemalloc = jemallocator::Jemalloc;
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 mod rt;
 

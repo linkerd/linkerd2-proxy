@@ -1313,26 +1313,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4a5f13b858c8d314ee3e8f639011f7ccefe71f97f96e50151fb991f267928e2c"
 
 [[package]]
-name = "jemalloc-sys"
-version = "0.5.4+5.3.0-patched"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac6c1946e1cea1788cbfde01c993b52a10e2da07f4bac608228d1bed20bfebf2"
-dependencies = [
- "cc",
- "libc",
-]
-
-[[package]]
-name = "jemallocator"
-version = "0.5.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a0de374a9f8e63150e6f5e8a60cc14c668226d7a347d8aee1a45766e3c4dd3bc"
-dependencies = [
- "jemalloc-sys",
- "libc",
-]
-
-[[package]]
 name = "jiff"
 version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1450,7 +1430,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07033963ba89ebaf1584d767badaa2e8fcec21aedea6b8c0346d487d49c28667"
 dependencies = [
  "cfg-if",
- "windows-targets 0.48.5",
+ "windows-targets 0.52.6",
 ]
 
 [[package]]
@@ -2862,13 +2842,13 @@ name = "linkerd2-proxy"
 version = "0.1.0"
 dependencies = [
  "futures",
- "jemallocator",
  "kubert-prometheus-tokio",
  "linkerd-app",
  "linkerd-meshtls",
  "linkerd-metrics",
  "linkerd-signal",
  "num_cpus",
+ "tikv-jemallocator",
  "tokio",
  "tracing",
 ]
@@ -4097,6 +4077,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f60246a4944f24f6e018aa17cdeffb7818b76356965d03b07d6a9886e8962185"
 dependencies = [
  "cfg-if",
+]
+
+[[package]]
+name = "tikv-jemalloc-sys"
+version = "0.6.0+5.3.0-1-ge13ca993e8ccb9ba9847cc330696e02839f328f7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cd3c60906412afa9c2b5b5a48ca6a5abe5736aec9eb48ad05037a677e52e4e2d"
+dependencies = [
+ "cc",
+ "libc",
+]
+
+[[package]]
+name = "tikv-jemallocator"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4cec5ff18518d81584f477e9bfdf957f5bb0979b0bac3af4ca30b5b3ae2d2865"
+dependencies = [
+ "libc",
+ "tikv-jemalloc-sys",
 ]
 
 [[package]]
