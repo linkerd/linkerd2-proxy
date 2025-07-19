@@ -28,6 +28,7 @@ ipnet = "2"
 linkerd-app = { path = "..", features = ["allow-loopback"] }
 linkerd-app-core = { path = "../core" }
 linkerd-app-test = { path = "../test" }
+linkerd-meshtls-rustls = { path = "../../meshtls/rustls", features = ["test-util"] }
 linkerd-metrics = { path = "../../metrics", features = ["test_util"] }
 linkerd-tracing = { path = "../../tracing" }
 maplit = "1"

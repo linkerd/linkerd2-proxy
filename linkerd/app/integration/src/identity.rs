@@ -8,6 +8,7 @@ use std::{
 };
 
 use linkerd2_proxy_api::identity as pb;
+use linkerd_meshtls_rustls::creds::default_provider_for_test;
 use tokio_rustls::rustls::{self, server::WebPkiClientVerifier};
 use tonic as grpc;
 
@@ -33,10 +34,6 @@ type Certify = Box<
             >,
         > + Send,
 >;
-
-static TLS_VERSIONS: &[&rustls::SupportedProtocolVersion] = &[&rustls::version::TLS13];
-static TLS_SUPPORTED_CIPHERSUITES: &[rustls::SupportedCipherSuite] =
-    &[rustls::crypto::ring::cipher_suite::TLS13_CHACHA20_POLY1305_SHA256];
 
 struct Certificates {
     pub leaf: Vec<u8>,
@@ -110,12 +107,10 @@ impl Identity {
         assert_ne!(added, 0, "trust anchors must include at least one cert");
         assert_eq!(skipped, 0, "no certs in pemfile should be invalid");
 
-        let mut provider = rustls::crypto::ring::default_provider();
-        provider.cipher_suites = TLS_SUPPORTED_CIPHERSUITES.to_vec();
-        let provider = Arc::new(provider);
+        let provider = default_provider_for_test();
 
         let client_config = rustls::ClientConfig::builder_with_provider(provider.clone())
-            .with_protocol_versions(TLS_VERSIONS)
+            .with_safe_default_protocol_versions()
             .expect("client config must be valid")
             .with_root_certificates(roots.clone())
             .with_no_client_auth();
@@ -127,7 +122,7 @@ impl Identity {
                 .expect("server verifier must be valid");
 
         let server_config = rustls::ServerConfig::builder_with_provider(provider)
-            .with_protocol_versions(TLS_VERSIONS)
+            .with_safe_default_protocol_versions()
             .expect("server config must be valid")
             .with_client_cert_verifier(client_cert_verifier)
             .with_single_cert(certs.chain(), key)
