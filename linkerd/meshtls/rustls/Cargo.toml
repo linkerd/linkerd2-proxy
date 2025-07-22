@@ -15,7 +15,6 @@ test-util = ["linkerd-tls-test-util"]
 
 [dependencies]
 futures = { version = "0.3", default-features = false }
-ring = { version = "0.17", features = ["std"] }
 rustls-pemfile = "2.2"
 rustls-webpki = { version = "0.103.4", default-features = false, features = ["std"] }
 thiserror = "2"
