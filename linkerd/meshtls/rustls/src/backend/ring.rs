@@ -5,9 +5,9 @@ use tokio_rustls::rustls::{
 };
 
 pub static TLS_SUPPORTED_CIPHERSUITES: &[rustls::SupportedCipherSuite] = &[
-    ring::cipher_suite::TLS13_CHACHA20_POLY1305_SHA256,
     ring::cipher_suite::TLS13_AES_128_GCM_SHA256,
     ring::cipher_suite::TLS13_AES_256_GCM_SHA384,
+    ring::cipher_suite::TLS13_CHACHA20_POLY1305_SHA256,
 ];
 // A subset of the algorithms supported by rustls+ring, imported from
 // https://github.com/rustls/rustls/blob/v/0.23.21/rustls/src/crypto/ring/mod.rs#L107
