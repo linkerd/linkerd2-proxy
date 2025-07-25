@@ -21,6 +21,7 @@ pub(crate) fn default_config() -> Config {
     Config {
         ingress_mode: false,
         emit_headers: true,
+        myntra_nfr_test_enabled: false,
         allow_discovery: IpMatch::new(Some(IpNet::from_str("0.0.0.0/0").unwrap())).into(),
         proxy: config::ProxyConfig {
             server: config::ServerConfig {

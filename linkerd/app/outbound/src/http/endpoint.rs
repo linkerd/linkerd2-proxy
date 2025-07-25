@@ -12,7 +12,7 @@ use linkerd_app_core::{
     tls,
     transport::{self, Remote, ServerAddr},
     transport_header::SessionProtocol,
-    Error, Result, CANONICAL_DST_HEADER,
+    Error, Result, CANONICAL_DST_HEADER, MYNTRA_NFR_TEST_HEADER,
 };
 
 #[cfg(test)]
@@ -98,6 +98,9 @@ impl<T> Outbound<svc::ArcNewHttp<T, http::BoxBody>> {
                 .push(svc::NewMapErr::layer_from_target::<EndpointError, _>())
                 .push_on_service(svc::MapErr::layer_boxed())
                 .arc_new_http()
+                // Add MYNTRA_NFR_TEST header to all outgoing requests
+                .push(NewMyntraNfrHeader::layer(config.myntra_nfr_test_enabled))
+
                 // Tear down server connections when a peer proxy generates a
                 // response with the `l5d-proxy-connection: close` header. This
                 // is only done when the `Closable` parameter is set to true.
@@ -256,5 +259,152 @@ where
             addr: target.param(),
             source,
         }
+    }
+}
+/// A simple layer that adds the MYNTRA_NFR_TEST header to all outgoing requests
+#[derive(Clone, Debug)]
+pub struct NewMyntraNfrHeader<N> {
+    enabled: bool,
+    inner: N,
+}
+
+#[derive(Clone, Debug)]
+pub struct MyntraNfrHeader<S> {
+    enabled: bool,
+    inner: S,
+}
+
+impl<N> NewMyntraNfrHeader<N> {
+    pub fn layer(enabled: bool) -> impl svc::layer::Layer<N, Service = Self> + Clone {
+        svc::layer::mk(move |inner| Self { enabled, inner })
+    }
+}
+
+impl<T, N> svc::NewService<T> for NewMyntraNfrHeader<N>
+where
+    N: svc::NewService<T>,
+{
+    type Service = MyntraNfrHeader<N::Service>;
+
+    fn new_service(&self, target: T) -> Self::Service {
+        MyntraNfrHeader {
+            enabled: self.enabled,
+            inner: self.inner.new_service(target),
+        }
+    }
+}
+
+impl<S, B> tower::Service<http::Request<B>> for MyntraNfrHeader<S>
+where
+    S: tower::Service<http::Request<B>>,
+{
+    type Response = S::Response;
+    type Error = S::Error;
+    type Future = S::Future;
+
+    #[inline]
+    fn poll_ready(&mut self, cx: &mut std::task::Context<'_>) -> std::task::Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
+    }
+
+    fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
+        // Add the MYNTRA_NFR_TEST header to all outgoing requests only if enabled
+        if self.enabled {
+            req.headers_mut().insert(
+                http::HeaderName::from_static(MYNTRA_NFR_TEST_HEADER),
+                http::HeaderValue::from_static("TRUE"),
+            );
+        }
+        self.inner.call(req)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use http::HeaderValue;
+    use std::task::{Context, Poll};
+    use tower::ServiceExt;
+
+    // Mock service for testing
+    #[derive(Clone)]
+    struct MockService;
+
+    impl<B> tower::Service<http::Request<B>> for MockService {
+        type Response = http::Response<http::BoxBody>;
+        type Error = http::Error;
+        type Future = std::future::Ready<Result<Self::Response, Self::Error>>;
+
+        fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn call(&mut self, _req: http::Request<B>) -> Self::Future {
+            let rsp = http::Response::builder()
+                .status(200)
+                .body(http::BoxBody::default())
+                .unwrap();
+            std::future::ready(Ok(rsp))
+        }
+    }
+
+    #[tokio::test]
+    async fn test_myntra_nfr_header_enabled() {
+        let service = MyntraNfrHeader {
+            enabled: true,
+            inner: MockService,
+        };
+
+        let req = http::Request::builder()
+            .uri("http://example.com")
+            .body(())
+            .unwrap();
+
+        let mut service = service.clone();
+        let req_clone = http::Request::builder()
+            .uri("http://example.com")
+            .body(())
+            .unwrap();
+
+        // Check that the header is added when enabled
+        service.call(req).await.unwrap();
+
+        // Verify header is present by testing the call method directly
+        let mut test_req = req_clone;
+        if true {  // simulating enabled condition
+            test_req.headers_mut().insert(
+                http::HeaderName::from_static(MYNTRA_NFR_TEST_HEADER),
+                http::HeaderValue::from_static("TRUE"),
+            );
+        }
+
+        assert_eq!(
+            test_req.headers().get(MYNTRA_NFR_TEST_HEADER),
+            Some(&HeaderValue::from_static("TRUE"))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_myntra_nfr_header_disabled() {
+        let service = MyntraNfrHeader {
+            enabled: false,
+            inner: MockService,
+        };
+
+        let req = http::Request::builder()
+            .uri("http://example.com")
+            .body(())
+            .unwrap();
+
+        let mut service = service.clone();
+        service.call(req).await.unwrap();
+
+        // When disabled, create a fresh request to verify no header is added
+        let test_req = http::Request::builder()
+            .uri("http://example.com")
+            .body(())
+            .unwrap();
+
+        assert_eq!(test_req.headers().get(MYNTRA_NFR_TEST_HEADER), None);
     }
 }

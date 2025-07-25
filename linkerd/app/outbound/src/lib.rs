@@ -83,6 +83,9 @@ pub struct Config {
 
     // Whether the proxy may include informational headers on HTTP responses.
     pub emit_headers: bool,
+
+    // Whether to add the MYNTRA_NFR_TEST header to all outgoing requests.
+    pub myntra_nfr_test_enabled: bool,
 }
 
 #[derive(Clone, Debug)]
