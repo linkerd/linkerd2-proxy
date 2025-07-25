@@ -25,14 +25,14 @@ impl CertMetrics {
         let expiry_ts = prom::Gauge::default();
         registry.register_with_unit(
             "expiration_timestamp",
-            "Time when the this proxy's current mTLS identity certificate will expire (in seconds since the UNIX epoch)",
+            "Time when this proxy's current mTLS identity certificate will expire (in seconds since the UNIX epoch)",
            prom::Unit::Seconds, expiry_ts.clone()
         );
 
         let refresh_ts = prom::Gauge::default();
         registry.register_with_unit(
             "refresh_timestamp",
-            "Time when the this proxy's current mTLS identity certificate were last updated",
+            "Time when this proxy's current mTLS identity certificate was last updated",
             prom::Unit::Seconds,
             refresh_ts.clone(),
         );
