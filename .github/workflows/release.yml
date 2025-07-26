@@ -46,6 +46,7 @@ on:
         default: true
 
 env:
+  CARGO: "cargo auditable"
   CARGO_INCREMENTAL: 0
   CARGO_NET_RETRY: 10
   RUSTFLAGS: "-D warnings -A deprecated --cfg tokio_unstable"
@@ -161,8 +162,10 @@ jobs:
           key: ${{ matrix.arch }}
       - run: just fetch
       - run: just arch=${{ matrix.arch }} libc=${{ matrix.libc }} os=${{ matrix.os }} rustup
-      - run: just arch=${{ matrix.arch }} libc=${{ matrix.libc }} os=${{ matrix.os }} profile=${{ needs.meta.outputs.profile }} build
+      - run: just arch=${{ matrix.arch }} libc=${{ matrix.libc }} os=${{ matrix.os }} profile=${{ needs.meta.outputs.profile }}
       - run: just arch=${{ matrix.arch }} libc=${{ matrix.libc }} os=${{ matrix.os }} profile=${{ needs.meta.outputs.profile }} package
+      - name: Validate auditability
+        run: syft file:target/package/linkerd2-proxy-${{ matrix.arch }}-${{ matrix.os }}.tar.gz
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ${{ matrix.arch }}-${{ matrix.os }}-artifacts
