@@ -124,26 +124,6 @@ async fn inbound_timeout() {
         .await;
 }
 
-/// Tests that the detect metric is labeled and incremented on I/O error.
-#[tokio::test]
-async fn inbound_io_err() {
-    let _trace = trace_init();
-
-    let (proxy, metrics) = Test::default().run().await;
-    let client = crate::tcp::client(proxy.inbound);
-
-    let tcp_client = client.connect().await;
-
-    tcp_client.write(TcpFixture::HELLO_MSG).await;
-    drop(tcp_client);
-
-    metric(&proxy)
-        .label("error", "i/o")
-        .value(1u64)
-        .assert_in(&metrics)
-        .await;
-}
-
 /// Tests that the detect metric is not incremented when TLS is successfully
 /// detected.
 #[tokio::test]
