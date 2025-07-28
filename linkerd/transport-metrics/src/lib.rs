@@ -14,7 +14,10 @@ pub use self::{
     server::NewServer,
 };
 use linkerd_errno::Errno;
-use linkerd_metrics::{legacy::Counter, metrics, FmtLabels, Gauge, LastUpdate, Store};
+use linkerd_metrics::{
+    legacy::{Counter, Gauge},
+    metrics, FmtLabels, LastUpdate, Store,
+};
 use parking_lot::Mutex;
 use std::{collections::HashMap, fmt, hash::Hash, sync::Arc};
 use tokio::time::{Duration, Instant};

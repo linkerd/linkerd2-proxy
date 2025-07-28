@@ -20,7 +20,6 @@ pub use kubert_prometheus_process as process;
 pub use self::new_metrics::NewMetrics;
 pub use self::{
     fmt::{FmtLabels, FmtMetric, FmtMetrics, Metric},
-    gauge::Gauge,
     histogram::Histogram,
     serve::Serve,
     store::{LastUpdate, SharedStore, Store},
@@ -34,7 +33,7 @@ pub mod legacy {
     //
     // this will help us differentiate in dependent systems which components rely on our legacy
     // metrics implementation.
-    pub use super::counter::Counter;
+    pub use super::{counter::Counter, gauge::Gauge};
 }
 
 /// Integration with the [`prometheus_client`]` crate.
