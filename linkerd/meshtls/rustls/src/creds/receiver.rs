@@ -63,6 +63,7 @@ impl std::fmt::Debug for Receiver {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::creds::default_provider;
 
     /// Returns the simplest default rustls server config.
     ///
@@ -70,7 +71,7 @@ mod tests {
     /// incoming handshakes, but that doesn't matter for these tests, where we
     /// don't actually do any TLS.
     fn empty_server_config() -> rustls::ServerConfig {
-        rustls::ServerConfig::builder_with_provider(Arc::new(crate::backend::default_provider()))
+        rustls::ServerConfig::builder_with_provider(default_provider())
             .with_protocol_versions(rustls::ALL_VERSIONS)
             .expect("client config must be valid")
             .with_client_cert_verifier(Arc::new(rustls::server::NoClientAuth))
@@ -83,7 +84,7 @@ mod tests {
     /// it doesn't trust any root certificates. However, that doesn't actually
     /// matter for these tests, which don't actually do TLS.
     fn empty_client_config() -> rustls::ClientConfig {
-        rustls::ClientConfig::builder_with_provider(Arc::new(crate::backend::default_provider()))
+        rustls::ClientConfig::builder_with_provider(default_provider())
             .with_protocol_versions(rustls::ALL_VERSIONS)
             .expect("client config must be valid")
             .with_root_certificates(rustls::RootCertStore::empty())
