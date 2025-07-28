@@ -169,44 +169,6 @@ async fn inbound_success() {
     metric.assert_in(&metrics).await;
 }
 
-/// Tests both of the above cases together.
-#[tokio::test]
-async fn inbound_multi() {
-    let _trace = trace_init();
-
-    let (proxy, metrics) = Test::default().run().await;
-    let client = crate::tcp::client(proxy.inbound);
-
-    let metric = metric(&proxy);
-    let timeout_metric = metric.clone().label("error", "tls detection timeout");
-    let io_metric = metric.label("error", "i/o");
-
-    let tcp_client = client.connect().await;
-
-    tokio::time::sleep(TIMEOUT + Duration::from_millis(15)) // just in case
-        .await;
-
-    timeout_metric.clone().value(1u64).assert_in(&metrics).await;
-    drop(tcp_client);
-
-    let tcp_client = client.connect().await;
-
-    tcp_client.write(TcpFixture::HELLO_MSG).await;
-    drop(tcp_client);
-
-    io_metric.clone().value(1u64).assert_in(&metrics).await;
-    timeout_metric.clone().value(1u64).assert_in(&metrics).await;
-
-    let tcp_client = client.connect().await;
-
-    tokio::time::sleep(TIMEOUT + Duration::from_millis(15)) // just in case
-        .await;
-
-    io_metric.clone().value(1u64).assert_in(&metrics).await;
-    timeout_metric.clone().value(2u64).assert_in(&metrics).await;
-    drop(tcp_client);
-}
-
 /// Tests that TLS detect failure metrics are collected for the direct stack.
 #[tokio::test]
 async fn inbound_direct_multi() {
