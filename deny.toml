@@ -75,6 +75,8 @@ skip-tree = [
     { name = "pprof" },
     # aws-lc-rs uses a slightly outdated version of bindgen
     { name = "bindgen", version = "0.69.5" },
+    # socket v0.6 is still propagating through the ecosystem
+    { name = "socket2", version = "0.5" },
 ]
 
 [sources]
