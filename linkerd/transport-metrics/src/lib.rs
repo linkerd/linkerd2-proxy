@@ -15,8 +15,8 @@ pub use self::{
 };
 use linkerd_errno::Errno;
 use linkerd_metrics::{
-    legacy::{Counter, FmtLabels, Gauge},
-    metrics, LastUpdate, Store,
+    legacy::{Counter, FmtLabels, Gauge, LastUpdate},
+    metrics, Store,
 };
 use parking_lot::Mutex;
 use std::{collections::HashMap, fmt, hash::Hash, sync::Arc};

@@ -20,7 +20,7 @@ pub use kubert_prometheus_process as process;
 pub use self::new_metrics::NewMetrics;
 pub use self::{
     serve::Serve,
-    store::{LastUpdate, SharedStore, Store},
+    store::{SharedStore, Store},
 };
 
 /// A legacy metrics implementation.
@@ -36,6 +36,7 @@ pub mod legacy {
         fmt::{FmtLabels, FmtMetric, FmtMetrics, Metric},
         gauge::Gauge,
         histogram::Histogram,
+        store::LastUpdate,
     };
 }
 
