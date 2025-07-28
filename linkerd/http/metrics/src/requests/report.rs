@@ -2,8 +2,8 @@ use super::{ClassMetrics, Metrics, StatusMetrics};
 use crate::{Prefixed, Report};
 use linkerd_metrics::{
     latency,
-    legacy::{Counter, FmtMetric, Histogram, Metric},
-    FmtLabels, FmtMetrics, Store,
+    legacy::{Counter, FmtMetric, FmtMetrics, Histogram, Metric},
+    FmtLabels, Store,
 };
 use parking_lot::Mutex;
 use std::{fmt, hash::Hash};

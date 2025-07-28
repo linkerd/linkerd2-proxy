@@ -166,7 +166,7 @@ where
 // === impl Metrics ===
 
 impl Metrics {
-    pub fn new(retain_idle: Duration) -> (Self, impl FmtMetrics + Clone + Send + 'static) {
+    pub fn new(retain_idle: Duration) -> (Self, impl legacy::FmtMetrics + Clone + Send + 'static) {
         let (control, control_report) = {
             let m = http_metrics::Requests::<ControlLabels, Class>::default();
             let r = m.clone().into_report(retain_idle).with_prefix("control");
@@ -223,6 +223,7 @@ impl Metrics {
             opentelemetry,
         };
 
+        use legacy::FmtMetrics as _;
         let report = endpoint_report
             .and_report(profile_route_report)
             .and_report(retry_report)

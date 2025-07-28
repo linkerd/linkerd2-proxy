@@ -13,7 +13,7 @@
 use futures::future::{self, TryFutureExt};
 use http::StatusCode;
 use linkerd_app_core::{
-    metrics::{self as metrics, FmtMetrics},
+    metrics::{self as metrics, legacy::FmtMetrics},
     proxy::http::{Body, BoxBody, ClientHandle, Request, Response},
     trace, Error, Result,
 };

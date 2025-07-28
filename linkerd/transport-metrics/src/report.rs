@@ -3,8 +3,8 @@ use super::{
     tcp_write_bytes_total, EosMetrics, Inner,
 };
 use linkerd_metrics::{
-    legacy::{FmtMetric, Metric},
-    FmtLabels, FmtMetrics,
+    legacy::{FmtMetric, FmtMetrics, Metric},
+    FmtLabels,
 };
 use parking_lot::Mutex;
 use std::{fmt, hash::Hash, sync::Arc};

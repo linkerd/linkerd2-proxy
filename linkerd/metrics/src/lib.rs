@@ -19,7 +19,7 @@ pub use kubert_prometheus_process as process;
 #[cfg(feature = "stack")]
 pub use self::new_metrics::NewMetrics;
 pub use self::{
-    fmt::{FmtLabels, FmtMetrics},
+    fmt::FmtLabels,
     serve::Serve,
     store::{LastUpdate, SharedStore, Store},
 };
@@ -34,7 +34,7 @@ pub mod legacy {
     // metrics implementation.
     pub use super::{
         counter::Counter,
-        fmt::{FmtMetric, Metric},
+        fmt::{FmtMetric, FmtMetrics, Metric},
         gauge::Gauge,
         histogram::Histogram,
     };
@@ -64,7 +64,7 @@ pub mod prom {
 
     pub type Report = Arc<Registry>;
 
-    impl crate::FmtMetrics for Report {
+    impl crate::legacy::FmtMetrics for Report {
         #[inline]
         fn fmt_metrics(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             encoding::text::encode(f, self)
