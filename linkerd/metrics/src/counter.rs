@@ -1,6 +1,6 @@
 use super::{
     fmt::{FmtLabels, FmtMetric},
-    Factor,
+    legacy::Factor,
 };
 use std::fmt::{self, Display};
 use std::sync::atomic::{AtomicU64, Ordering};

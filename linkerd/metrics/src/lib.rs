@@ -35,6 +35,17 @@ pub mod legacy {
 
     #[cfg(feature = "stack")]
     pub use super::new_metrics::NewMetrics;
+
+    pub trait Factor {
+        fn factor(n: u64) -> f64;
+    }
+
+    impl Factor for () {
+        #[inline]
+        fn factor(n: u64) -> f64 {
+            super::to_f64(n)
+        }
+    }
 }
 
 /// Integration with the [`prometheus_client`]` crate.
@@ -84,8 +95,8 @@ macro_rules! metrics {
     }
 }
 
-pub trait Factor {
-    fn factor(n: u64) -> f64;
+pub fn to_f64(n: u64) -> f64 {
+    n.wrapping_rem(MAX_PRECISE_UINT64 + 1) as f64
 }
 
 /// Largest `u64` that can fit without loss of precision in `f64` (2^53).
@@ -94,14 +105,3 @@ pub trait Factor {
 /// mantissa), thus integer values over 2^53 are not guaranteed to be correctly
 /// exposed.
 const MAX_PRECISE_UINT64: u64 = 0x20_0000_0000_0000;
-
-impl Factor for () {
-    #[inline]
-    fn factor(n: u64) -> f64 {
-        to_f64(n)
-    }
-}
-
-pub fn to_f64(n: u64) -> f64 {
-    n.wrapping_rem(MAX_PRECISE_UINT64 + 1) as f64
-}
