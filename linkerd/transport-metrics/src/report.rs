@@ -2,7 +2,10 @@ use super::{
     tcp_close_total, tcp_open_connections, tcp_open_total, tcp_read_bytes_total,
     tcp_write_bytes_total, EosMetrics, Inner,
 };
-use linkerd_metrics::{legacy::Metric, FmtLabels, FmtMetric, FmtMetrics};
+use linkerd_metrics::{
+    legacy::{FmtMetric, Metric},
+    FmtLabels, FmtMetrics,
+};
 use parking_lot::Mutex;
 use std::{fmt, hash::Hash, sync::Arc};
 use tokio::time::{Duration, Instant};

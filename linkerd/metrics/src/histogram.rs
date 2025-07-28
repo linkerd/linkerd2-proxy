@@ -2,7 +2,10 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::{cmp, iter, slice};
 
-use super::{legacy::Counter, Factor, FmtLabels, FmtMetric};
+use super::{
+    legacy::{Counter, FmtMetric},
+    Factor, FmtLabels,
+};
 
 /// A series of latency values and counts.
 #[derive(Debug)]
