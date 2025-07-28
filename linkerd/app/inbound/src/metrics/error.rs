@@ -8,7 +8,7 @@ use crate::{
 };
 use linkerd_app_core::{
     errors::{FailFastError, LoadShedError},
-    metrics::FmtLabels,
+    metrics::legacy::FmtLabels,
     tls,
 };
 use std::fmt;

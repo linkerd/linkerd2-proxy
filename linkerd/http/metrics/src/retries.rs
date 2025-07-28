@@ -1,7 +1,7 @@
 use super::{Prefixed, Registry, Report};
 use linkerd_metrics::{
-    legacy::{Counter, FmtMetric, FmtMetrics, Metric},
-    FmtLabels, LastUpdate,
+    legacy::{Counter, FmtLabels, FmtMetric, FmtMetrics, Metric},
+    LastUpdate,
 };
 use parking_lot::Mutex;
 use std::{fmt, hash::Hash, sync::Arc};

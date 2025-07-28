@@ -150,7 +150,7 @@ impl ClassMetrics {
 mod tests {
     #[test]
     fn expiry() {
-        use linkerd_metrics::FmtLabels;
+        use linkerd_metrics::legacy::FmtLabels;
         use std::fmt;
         use tokio::time::{Duration, Instant};
 

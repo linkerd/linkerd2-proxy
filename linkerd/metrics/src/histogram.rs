@@ -3,8 +3,8 @@ use std::marker::PhantomData;
 use std::{cmp, iter, slice};
 
 use super::{
-    legacy::{Counter, FmtMetric},
-    Factor, FmtLabels,
+    legacy::{Counter, FmtLabels, FmtMetric},
+    Factor,
 };
 
 /// A series of latency values and counts.

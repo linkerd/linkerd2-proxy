@@ -1,7 +1,4 @@
-use crate::{
-    legacy::{FmtMetric, Metric},
-    FmtLabels,
-};
+use crate::legacy::{FmtLabels, FmtMetric, Metric};
 use parking_lot::Mutex;
 use std::{
     borrow::Borrow,

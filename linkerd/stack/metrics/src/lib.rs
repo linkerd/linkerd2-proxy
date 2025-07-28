@@ -7,8 +7,8 @@ mod service;
 pub use self::layer::TrackServiceLayer;
 pub use self::service::TrackService;
 use linkerd_metrics::{
-    legacy::{Counter, FmtMetrics},
-    metrics, FmtLabels,
+    legacy::{Counter, FmtLabels, FmtMetrics},
+    metrics,
 };
 use parking_lot::Mutex;
 use std::{collections::HashMap, fmt, hash::Hash, sync::Arc};

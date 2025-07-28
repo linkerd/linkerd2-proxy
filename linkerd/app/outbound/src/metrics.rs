@@ -243,7 +243,7 @@ impl EncodeLabelSet for RouteRef {
 
 // === impl ConcreteLabels ===
 
-impl FmtLabels for ConcreteLabels {
+impl legacy::FmtLabels for ConcreteLabels {
     fn fmt_labels(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let ConcreteLabels(parent, backend) = self;
 
