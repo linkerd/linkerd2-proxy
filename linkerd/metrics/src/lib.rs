@@ -27,6 +27,16 @@ pub use self::{
     store::{LastUpdate, SharedStore, Store},
 };
 
+/// A legacy metrics implementation.
+///
+/// New metrics should use the interfaces in [`prom`] instead.
+pub mod legacy {
+    // TODO(kate): we will move types like `Counter` and `Gauge` into this module.
+    //
+    // this will help us differentiate in dependent systems which components rely on our legacy
+    // metrics implementation.
+}
+
 /// Integration with the [`prometheus_client`]` crate.
 ///
 /// This should be used for all new metrics.
