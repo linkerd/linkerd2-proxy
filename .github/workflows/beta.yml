@@ -23,7 +23,7 @@ permissions:
 jobs:
   build:
     runs-on: ${{ vars.LINKERD2_PROXY_RUNNER || 'ubuntu-24.04' }}
-    container: ghcr.io/linkerd/dev:v46-rust
+    container: ghcr.io/linkerd/dev:v47-rust
     timeout-minutes: 20
     continue-on-error: true
     steps:
