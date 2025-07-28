@@ -19,7 +19,7 @@ pub use kubert_prometheus_process as process;
 #[cfg(feature = "stack")]
 pub use self::new_metrics::NewMetrics;
 pub use self::{
-    fmt::{FmtLabels, FmtMetric, FmtMetrics, Metric},
+    fmt::{FmtLabels, FmtMetric, FmtMetrics},
     serve::Serve,
     store::{LastUpdate, SharedStore, Store},
 };
@@ -32,7 +32,7 @@ pub mod legacy {
     //
     // this will help us differentiate in dependent systems which components rely on our legacy
     // metrics implementation.
-    pub use super::{counter::Counter, gauge::Gauge, histogram::Histogram};
+    pub use super::{counter::Counter, fmt::Metric, gauge::Gauge, histogram::Histogram};
 }
 
 /// Integration with the [`prometheus_client`]` crate.
@@ -72,8 +72,8 @@ macro_rules! metrics {
     { $( $name:ident : $kind:ty { $help:expr } ),+ } => {
         $(
             #[allow(non_upper_case_globals)]
-            const $name: $crate::Metric<'static, &str, $kind> =
-                $crate::Metric {
+            const $name: $crate::legacy::Metric<'static, &str, $kind> =
+                $crate::legacy::Metric {
                     name: stringify!($name),
                     help: $help,
                     _p: ::std::marker::PhantomData,
