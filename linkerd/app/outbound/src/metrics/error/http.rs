@@ -1,6 +1,6 @@
 use super::ErrorKind;
 use linkerd_app_core::{
-    metrics::{metrics, Counter, FmtMetrics},
+    metrics::{legacy::Counter, metrics, FmtMetrics},
     svc, Error,
 };
 use parking_lot::RwLock;

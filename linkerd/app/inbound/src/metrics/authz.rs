@@ -1,8 +1,8 @@
 use crate::policy::{AllowPolicy, HttpRoutePermit, Meta, ServerPermit};
 use linkerd_app_core::{
     metrics::{
-        metrics, Counter, FmtLabels, FmtMetrics, RouteAuthzLabels, RouteLabels, ServerAuthzLabels,
-        ServerLabel, TargetAddr, TlsAccept,
+        legacy::Counter, metrics, FmtLabels, FmtMetrics, RouteAuthzLabels, RouteLabels,
+        ServerAuthzLabels, ServerLabel, TargetAddr, TlsAccept,
     },
     tls,
     transport::OrigDstAddr,
