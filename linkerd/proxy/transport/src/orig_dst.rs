@@ -103,8 +103,8 @@ fn orig_dst(sock: TcpStream, client_addr: ClientAddr) -> io::Result<(OrigDstAddr
         // IPv4-mapped IPv6 addresses are unwrapped by BindTcp::bind() and received here as
         // SocketAddr::V4. We must call getsockopt with IPv4 constants (via
         // orig_dst_addr_v4) even if it originally was an IPv6
-        ClientAddr(SocketAddr::V4(_)) => sock.original_dst()?,
-        ClientAddr(SocketAddr::V6(_)) => sock.original_dst_ipv6()?,
+        ClientAddr(SocketAddr::V4(_)) => sock.original_dst_v4()?,
+        ClientAddr(SocketAddr::V6(_)) => sock.original_dst_v6()?,
     };
 
     let orig_dst = orig_dst.as_socket().ok_or(io::Error::new(
