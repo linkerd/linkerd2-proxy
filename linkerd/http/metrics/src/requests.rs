@@ -6,8 +6,7 @@ use super::Report;
 use linkerd_http_classify::ClassifyResponse;
 use linkerd_metrics::{
     latency,
-    legacy::{Counter, FmtMetrics, Histogram, LastUpdate},
-    NewMetrics,
+    legacy::{Counter, FmtMetrics, Histogram, LastUpdate, NewMetrics},
 };
 use linkerd_stack::{self as svc, layer};
 use std::{collections::HashMap, fmt::Debug, hash::Hash};

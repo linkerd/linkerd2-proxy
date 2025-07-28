@@ -16,9 +16,6 @@ mod store;
 #[cfg(feature = "process")]
 pub use kubert_prometheus_process as process;
 
-#[cfg(feature = "stack")]
-pub use self::new_metrics::NewMetrics;
-
 /// A legacy metrics implementation.
 ///
 /// New metrics should use the interfaces in [`prom`] instead.
@@ -35,6 +32,9 @@ pub mod legacy {
         serve::Serve,
         store::{LastUpdate, SharedStore, Store},
     };
+
+    #[cfg(feature = "stack")]
+    pub use super::new_metrics::NewMetrics;
 }
 
 /// Integration with the [`prometheus_client`]` crate.
