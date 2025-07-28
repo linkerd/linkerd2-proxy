@@ -46,6 +46,7 @@ on:
         default: true
 
 env:
+  CARGO: "cargo auditable"
   CARGO_INCREMENTAL: 0
   CARGO_NET_RETRY: 10
   RUSTFLAGS: "-D warnings -A deprecated --cfg tokio_unstable"
