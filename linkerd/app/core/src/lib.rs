@@ -25,6 +25,7 @@ pub mod metrics;
 pub mod proxy;
 pub mod serve;
 pub mod svc;
+pub mod tls_info;
 pub mod transport;
 
 pub use self::build_info::{BuildInfo, BUILD_INFO};
