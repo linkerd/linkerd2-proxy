@@ -13,7 +13,6 @@ Configures and runs the inbound proxy
 test-util = [
     "linkerd-app-test",
     "linkerd-idle-cache/test-util",
-    "linkerd-meshtls/rustls",
     "linkerd-meshtls-rustls/test-util",
 ]
 
@@ -25,7 +24,6 @@ linkerd-app-core = { path = "../core" }
 linkerd-app-test = { path = "../test", optional = true }
 linkerd-http-access-log = { path = "../../http/access-log" }
 linkerd-idle-cache = { path = "../../idle-cache" }
-linkerd-meshtls = { path = "../../meshtls", optional = true }
 linkerd-meshtls-rustls = { path = "../../meshtls/rustls", optional = true, default-features = false }
 linkerd-proxy-client-policy = { path = "../../proxy/client-policy" }
 linkerd-tonic-stream = { path = "../../tonic-stream" }
@@ -62,7 +60,6 @@ linkerd-http-metrics = { path = "../../http/metrics", features = ["test-util"] }
 linkerd-http-box = { path = "../../http/box" }
 linkerd-idle-cache = { path = "../../idle-cache", features = ["test-util"] }
 linkerd-io = { path = "../../io", features = ["tokio-test"] }
-linkerd-meshtls = { path = "../../meshtls", features = ["rustls"] }
 linkerd-meshtls-rustls = { path = "../../meshtls/rustls", features = [
     "test-util",
 ] }
