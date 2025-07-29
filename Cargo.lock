@@ -165,7 +165,7 @@ version = "0.13.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2608e5a7965cc9d58c56234d346c9c89b824c4c8652b6f047b3bd0a777c0644f"
 dependencies = [
- "bindgen 0.69.5",
+ "bindgen",
  "cc",
  "cmake",
  "dunce",
@@ -190,7 +190,7 @@ version = "0.30.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dbfd150b5dbdb988bcc8fb1fe787eb6b7ee6180ca24da683b61ea5405f3d43ff"
 dependencies = [
- "bindgen 0.69.5",
+ "bindgen",
  "cc",
  "cmake",
  "dunce",
@@ -288,28 +288,10 @@ dependencies = [
  "proc-macro2",
  "quote",
  "regex",
- "rustc-hash 1.1.0",
+ "rustc-hash",
  "shlex",
  "syn",
  "which",
-]
-
-[[package]]
-name = "bindgen"
-version = "0.71.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f58bf3d7db68cfbac37cfc485a8d711e87e064c3d0fe0435b92f7a407f9d6b3"
-dependencies = [
- "bitflags 2.4.2",
- "cexpr",
- "clang-sys",
- "itertools",
- "proc-macro2",
- "quote",
- "regex",
- "rustc-hash 2.1.1",
- "shlex",
- "syn",
 ]
 
 [[package]]
@@ -331,32 +313,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3078c7629b62d3f0439517fa394996acacc5cbc91c5a20d8c658e77abd503a71"
 dependencies = [
  "generic-array",
-]
-
-[[package]]
-name = "boring"
-version = "4.17.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6f4ea552f8764e7235bb0b6aaec33b891e5b178c77d8c96cfad6c10f057c64a6"
-dependencies = [
- "bitflags 2.4.2",
- "boring-sys",
- "foreign-types",
- "libc",
- "openssl-macros",
-]
-
-[[package]]
-name = "boring-sys"
-version = "4.17.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b753c2916f46e25e08abd2cd52b35223a65b7e8a1696ee33b45e20927114696f"
-dependencies = [
- "autocfg",
- "bindgen 0.71.1",
- "cmake",
- "fs_extra",
- "fslock",
 ]
 
 [[package]]
@@ -694,33 +650,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d9c4f5dac5e15c24eb999c26181a6ca40b39fe946cbe4c263c7209467bc83af2"
 
 [[package]]
-name = "foreign-types"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d737d9aa519fb7b749cbc3b962edcf310a8dd1f4b67c91c4f83975dbdd17d965"
-dependencies = [
- "foreign-types-macros",
- "foreign-types-shared",
-]
-
-[[package]]
-name = "foreign-types-macros"
-version = "0.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a5c6c585bc94aaf2c7b51dd4c2ba22680844aba4c687be581871a6f518c5742"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
-name = "foreign-types-shared"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aa9a19cbb55df58761df49b23516a86d432839add4af60fc256da840f66ed35b"
-
-[[package]]
 name = "form_urlencoded"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -734,16 +663,6 @@ name = "fs_extra"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42703706b716c37f96a77aea830392ad231f44c9e9a67872fa5548707e11b11c"
-
-[[package]]
-name = "fslock"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "04412b8935272e3a9bae6f48c7bfff74c2911f60525404edfdd28e49884c3bfb"
-dependencies = [
- "libc",
- "winapi",
-]
 
 [[package]]
 name = "futures"
@@ -1614,7 +1533,6 @@ dependencies = [
  "linkerd-http-metrics",
  "linkerd-idle-cache",
  "linkerd-io",
- "linkerd-meshtls",
  "linkerd-meshtls-rustls",
  "linkerd-proxy-client-policy",
  "linkerd-proxy-server-policy",
@@ -1651,7 +1569,6 @@ dependencies = [
  "linkerd-app-admin",
  "linkerd-app-core",
  "linkerd-app-test",
- "linkerd-meshtls",
  "linkerd-meshtls-rustls",
  "linkerd-metrics",
  "linkerd-tracing",
@@ -1694,7 +1611,6 @@ dependencies = [
  "linkerd-http-route",
  "linkerd-identity",
  "linkerd-io",
- "linkerd-meshtls",
  "linkerd-meshtls-rustls",
  "linkerd-mock-http-body",
  "linkerd-opaq-route",
@@ -2112,7 +2028,6 @@ dependencies = [
  "linkerd-error",
  "linkerd-identity",
  "linkerd-io",
- "linkerd-meshtls-boring",
  "linkerd-meshtls-rustls",
  "linkerd-proxy-transport",
  "linkerd-stack",
@@ -2122,27 +2037,6 @@ dependencies = [
  "pin-project",
  "rcgen",
  "tokio",
- "tracing",
-]
-
-[[package]]
-name = "linkerd-meshtls-boring"
-version = "0.1.0"
-dependencies = [
- "boring",
- "futures",
- "hex",
- "linkerd-dns-name",
- "linkerd-error",
- "linkerd-identity",
- "linkerd-io",
- "linkerd-meshtls",
- "linkerd-meshtls-verifier",
- "linkerd-stack",
- "linkerd-tls",
- "linkerd-tls-test-util",
- "tokio",
- "tokio-boring",
  "tracing",
 ]
 
@@ -3142,17 +3036,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "openssl-macros"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a948666b637a0f465e8564c73e89d4dde00d72d4d473cc972f390fc3dcee7d9c"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
 name = "opentelemetry"
 version = "0.30.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3695,12 +3578,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "08d43f7aa6b08d49f382cde6a7982047c3426db949b1424bc4b7ec9ae12c6ce2"
 
 [[package]]
-name = "rustc-hash"
-version = "2.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "357703d41365b4b27c590e3ed91eabb1b663f07c4c084095e60cbed4362dff0d"
-
-[[package]]
 name = "rustc_version"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4194,17 +4071,6 @@ dependencies = [
  "socket2 0.6.0",
  "tokio-macros",
  "windows-sys 0.59.0",
-]
-
-[[package]]
-name = "tokio-boring"
-version = "4.17.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "538c884f38cf72d3da8af0b5d2b7cccaa09a35d7df5a0d72de2f09b549b93a62"
-dependencies = [
- "boring",
- "boring-sys",
- "tokio",
 ]
 
 [[package]]

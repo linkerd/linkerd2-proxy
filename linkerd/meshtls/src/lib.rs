@@ -25,58 +25,18 @@ use linkerd_error::{Error, Result};
 use linkerd_identity as id;
 use std::str::FromStr;
 
-#[cfg(feature = "boring")]
-pub use linkerd_meshtls_boring as boring;
-
-#[cfg(feature = "rustls")]
 pub use linkerd_meshtls_rustls as rustls;
 
 #[derive(Copy, Clone, Debug)]
 pub enum Mode {
-    #[cfg(feature = "boring")]
-    Boring,
-
-    #[cfg(feature = "rustls")]
     Rustls,
-
-    #[cfg(not(feature = "__has_any_tls_impls"))]
-    NoTls,
-}
-
-#[cfg(not(feature = "__has_any_tls_impls"))]
-#[macro_export]
-macro_rules! no_tls {
-    ($($field:ident),*) => {
-        {
-            $(
-                let _ = $field;
-            )*
-            unreachable!("compiled without any TLS implementations enabled!");
-        }
-    };
 }
 
 // === impl Mode ===
 
-#[cfg(feature = "rustls")]
 impl Default for Mode {
     fn default() -> Self {
         Self::Rustls
-    }
-}
-
-// FIXME(ver) We should have a way to opt into boring by configuration when both are enabled.
-#[cfg(all(feature = "boring", not(feature = "rustls")))]
-impl Default for Mode {
-    fn default() -> Self {
-        Self::Boring
-    }
-}
-
-#[cfg(not(feature = "__has_any_tls_impls"))]
-impl Default for Mode {
-    fn default() -> Self {
-        Self::NoTls
     }
 }
 
@@ -88,16 +48,6 @@ impl Mode {
         roots_pem: &str,
     ) -> Result<(creds::Store, creds::Receiver)> {
         match self {
-            #[cfg(feature = "boring")]
-            Self::Boring => {
-                let (store, receiver) = boring::creds::watch(local_id, server_name, roots_pem)?;
-                Ok((
-                    creds::Store::Boring(store),
-                    creds::Receiver::Boring(receiver),
-                ))
-            }
-
-            #[cfg(feature = "rustls")]
             Self::Rustls => {
                 let (store, receiver) = rustls::creds::watch(local_id, server_name, roots_pem)?;
                 Ok((
@@ -105,9 +55,6 @@ impl Mode {
                     creds::Receiver::Rustls(receiver),
                 ))
             }
-
-            #[cfg(not(feature = "__has_any_tls_impls"))]
-            _ => no_tls!(local_id, server_name, roots_pem),
         }
     }
 }
@@ -116,12 +63,6 @@ impl FromStr for Mode {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self> {
-        #[cfg(feature = "boring")]
-        if s.eq_ignore_ascii_case("boring") {
-            return Ok(Self::Boring);
-        }
-
-        #[cfg(feature = "rustls")]
         if s.eq_ignore_ascii_case("rustls") {
             return Ok(Self::Rustls);
         }
@@ -133,14 +74,7 @@ impl FromStr for Mode {
 impl std::fmt::Display for Mode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            #[cfg(feature = "boring")]
-            Self::Boring => "boring".fmt(f),
-
-            #[cfg(feature = "rustls")]
             Self::Rustls => "rustls".fmt(f),
-
-            #[cfg(not(feature = "__has_any_tls_impls"))]
-            _ => no_tls!(f),
         }
     }
 }
