@@ -6,12 +6,7 @@
 
 // Emit a compile-time error if no TLS implementations are enabled. When adding
 // new implementations, add their feature flags here!
-#[cfg(not(any(
-    feature = "meshtls-boring",
-    feature = "meshtls-rustls-ring",
-    feature = "meshtls-rustls-aws-lc",
-    feature = "meshtls-rustls-aws-lc-fips"
-)))]
+#[cfg(not(any(feature = "meshtls-boring", feature = "meshtls-rustls",)))]
 compile_error!(
     "at least one of the following TLS implementations must be enabled: 'meshtls-boring', 'meshtls-rustls'"
 );
