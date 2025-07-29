@@ -1566,6 +1566,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.12",
  "tokio",
+ "tokio-rustls",
  "tokio-stream",
  "tonic",
  "tower 0.5.2",
