@@ -4,18 +4,6 @@
 #![forbid(unsafe_code)]
 #![recursion_limit = "256"]
 
-// Emit a compile-time error if no TLS implementations are enabled. When adding
-// new implementations, add their feature flags here!
-#[cfg(not(any(
-    feature = "meshtls-boring",
-    feature = "meshtls-rustls-ring",
-    feature = "meshtls-rustls-aws-lc",
-    feature = "meshtls-rustls-aws-lc-fips"
-)))]
-compile_error!(
-    "at least one of the following TLS implementations must be enabled: 'meshtls-boring', 'meshtls-rustls'"
-);
-
 use linkerd_app::{trace, BindTcp, Config, BUILD_INFO};
 use linkerd_signal as signal;
 use tokio::{sync::mpsc, time};
