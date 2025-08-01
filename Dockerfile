@@ -14,11 +14,16 @@ FROM $LINKERD2_IMAGE as linkerd2
 FROM --platform=$BUILDPLATFORM $RUST_IMAGE as fetch
 
 ARG PROXY_FEATURES=""
+ARG TARGETARCH="amd64"
 RUN apt-get update && \
     apt-get install -y time && \
     if [[ "$PROXY_FEATURES" =~ .*meshtls-boring.* ]] ; then \
       apt-get install -y golang ; \
     fi && \
+    case "$TARGETARCH" in \
+        amd64) true ;; \
+        arm64) apt-get install --no-install-recommends -y libc6-dev-arm64-cross gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu ;; \
+    esac && \
     rm -rf /var/lib/apt/lists/*
 
 ENV CARGO_NET_RETRY=10
@@ -33,7 +38,8 @@ RUN --mount=type=cache,id=cargo,target=/usr/local/cargo/registry \
 FROM fetch as build
 ENV CARGO_INCREMENTAL=0
 ENV RUSTFLAGS="-D warnings -A deprecated --cfg tokio_unstable"
-ARG TARGETARCH="amd64"
+ENV AWS_LC_SYS_CFLAGS_aarch64_unknown_linux_gnu="-fuse-ld=/usr/aarch64-linux-gnu/bin/ld"
+ENV AWS_LC_SYS_CFLAGS_aarch64_unknown_linux_musl="-fuse-ld=/usr/aarch64-linux-gnu/bin/ld"
 ARG PROFILE="release"
 ARG LINKERD2_PROXY_VERSION=""
 ARG LINKERD2_PROXY_VENDOR=""

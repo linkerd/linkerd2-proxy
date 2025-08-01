@@ -145,11 +145,22 @@ jobs:
     env:
       LINKERD2_PROXY_VENDOR: ${{ github.repository_owner }}
       LINKERD2_PROXY_VERSION: ${{ needs.meta.outputs.version }}
+      # TODO: add to dev image
+      AWS_LC_SYS_CFLAGS_aarch64_unknown_linux_gnu: "-fuse-ld=/usr/aarch64-linux-gnu/bin/ld"
+      AWS_LC_SYS_CFLAGS_aarch64_unknown_linux_musl: "-fuse-ld=/usr/aarch64-linux-gnu/bin/ld"
     steps:
       # TODO: add to dev image
       - name: Install MiniGW
         if: matrix.os == 'windows'
         run: apt-get update && apt-get install mingw-w64 -y
+      # TODO: add to dev image
+      - name: Install cross compilation toolchain
+        if: matrix.arch == 'arm64'
+        run: apt-get update && apt-get install --no-install-recommends -y \
+          g++-aarch64-linux-gnu \
+          gcc-aarch64-linux-gnu \
+          binutils-aarch64-linux-gnu \
+          libc6-dev-arm64-cross
       - name: Configure git
         run: git config --global --add safe.directory "$PWD" # actions/runner#2033
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
