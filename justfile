@@ -26,7 +26,7 @@ docker-repo := "localhost/linkerd/proxy"
 docker-tag := `git rev-parse --abbrev-ref HEAD | sed 's|/|.|g'` + "." + `git rev-parse --short HEAD`
 docker-image := docker-repo + ":" + docker-tag
 
-# The architecture name to use for packages. Either 'amd64', 'arm64', or 'arm'.
+# The architecture name to use for packages. Either 'amd64' or 'arm64'.
 arch := "amd64"
 # The OS name to use for packages. Either 'linux' or 'windows'.
 os := "linux"
@@ -39,8 +39,6 @@ _target := if os + '-' + arch == "linux-amd64" {
         "x86_64-unknown-linux-" + libc
     } else if os + '-' + arch == "linux-arm64" {
         "aarch64-unknown-linux-" + libc
-    } else if os + '-' + arch == "linux-arm" {
-        "armv7-unknown-linux-" + libc + "eabihf"
     } else if os + '-' + arch == "windows-amd64" {
         "x86_64-pc-windows-" + libc
     } else {
@@ -139,7 +137,7 @@ _strip:
 
 _package_bin := _package_dir / "bin" / "linkerd2-proxy"
 
-# XXX {aarch64,arm}-musl builds do not enable PIE, so we use target-specific
+# XXX aarch64-musl builds do not enable PIE, so we use target-specific
 # files to document those differences.
 _expected_checksec := '.checksec' / arch + '-' + libc + '.json'
 
