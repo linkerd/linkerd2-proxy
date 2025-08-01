@@ -22,6 +22,7 @@ use linkerd_app_core::{
     metrics::{prom, FmtMetrics},
     serve,
     svc::Param,
+    tls_info,
     transport::{addrs::*, listen::Bind},
     Error, ProxyRuntime,
 };
@@ -304,6 +305,7 @@ impl Config {
             error!(%error, "Failed to register process metrics");
         }
         registry.register("proxy_build_info", "Proxy build info", BUILD_INFO.metric());
+        registry.register("rustls_info", "Proxy TLS info", tls_info::metric());
 
         let admin = {
             let identity = identity.receiver().server();
