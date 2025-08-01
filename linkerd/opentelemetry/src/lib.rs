@@ -15,16 +15,19 @@ use opentelemetry::{
 };
 pub use opentelemetry_proto as proto;
 use opentelemetry_proto::{
-    proto::{
+    tonic::{
         collector::trace::v1::{
             trace_service_client::TraceServiceClient, ExportTraceServiceRequest,
         },
         trace::v1::ResourceSpans,
     },
-    transform::{common::ResourceAttributesWithSchema, trace::group_spans_by_resource_and_scope},
+    transform::{
+        common::tonic::ResourceAttributesWithSchema,
+        trace::tonic::group_spans_by_resource_and_scope,
+    },
 };
-use opentelemetry_sdk::trace::SpanLinks;
-pub use opentelemetry_sdk::{self as sdk, trace::SpanData};
+use opentelemetry_sdk::trace::{SpanData, SpanLinks};
+pub use opentelemetry_sdk::{self as sdk};
 use tokio::{sync::mpsc, time};
 use tonic::{self as grpc, body::BoxBody, client::GrpcService};
 use tracing::{debug, info, trace};

@@ -5,8 +5,8 @@ use linkerd_app_core::{
 use linkerd_opentelemetry::{
     self as opentelemetry, metrics,
     proto::{
-        proto::common::v1::{any_value, AnyValue, KeyValue},
-        transform::common::ResourceAttributesWithSchema,
+        tonic::common::v1::{any_value, AnyValue, KeyValue},
+        transform::common::tonic::ResourceAttributesWithSchema,
     },
 };
 use std::{
