@@ -79,7 +79,7 @@ jobs:
             exit 1
           fi
           ( echo version="${VERSION#v}"
-            echo archs='["amd64", "arm64", "arm"]'
+            echo archs='["amd64", "arm64"]'
             echo oses='["linux", "windows"]'
           ) >> "$GITHUB_OUTPUT"
 
@@ -135,8 +135,6 @@ jobs:
         exclude:
           - os: windows
             arch: arm64
-          - os: windows
-            arch: arm  
 
     # If we're not actually building on a release tag, don't short-circuit on
     # errors. This helps us know whether a failure is platform-specific.
