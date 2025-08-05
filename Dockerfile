@@ -22,7 +22,7 @@ RUN apt-get update && \
     fi && \
     case "$TARGETARCH" in \
         amd64) true ;; \
-        arm64) apt-get install --no-install-recommends -y libc6-dev-arm64-cross gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu ;; \
+        arm64) apt-get install --no-install-recommends -y binutils-aarch64-linux-gnu ;; \
     esac && \
     rm -rf /var/lib/apt/lists/*
 
