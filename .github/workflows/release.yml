@@ -150,6 +150,11 @@ jobs:
       - name: Install MiniGW
         if: matrix.os == 'windows'
         run: apt-get update && apt-get install mingw-w64 -y
+      # TODO: these packages will be included in dev v48
+      - name: Install cross compilation toolchain
+        if: matrix.arch == 'arm64'
+        run: apt-get update && apt-get install --no-install-recommends -y \
+          binutils-aarch64-linux-gnu
       - name: Configure git
         run: git config --global --add safe.directory "$PWD" # actions/runner#2033
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
