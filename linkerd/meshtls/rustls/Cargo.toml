@@ -7,7 +7,7 @@ edition = "2018"
 publish = { workspace = true }
 
 [features]
-default = ["ring"]
+default = ["aws-lc"]
 ring = ["tokio-rustls/ring", "rustls-webpki/ring"]
 aws-lc = ["tokio-rustls/aws-lc-rs", "rustls-webpki/aws-lc-rs"]
 aws-lc-fips = ["aws-lc", "tokio-rustls/fips"]
