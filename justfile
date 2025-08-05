@@ -18,6 +18,10 @@ features := ""
 export LINKERD2_PROXY_VERSION := env_var_or_default("LINKERD2_PROXY_VERSION", "0.0.0-dev" + `git rev-parse --short HEAD`)
 export LINKERD2_PROXY_VENDOR := env_var_or_default("LINKERD2_PROXY_VENDOR", `whoami` + "@" + `hostname`)
 
+# TODO: these variables will be included in dev v48
+export AWS_LC_SYS_CFLAGS_aarch64_unknown_linux_gnu := env_var_or_default("AWS_LC_SYS_CFLAGS_aarch64_unknown_linux_gnu", "-fuse-ld=/usr/aarch64-linux-gnu/bin/ld")
+export AWS_LC_SYS_CFLAGS_aarch64_unknown_linux_musl := env_var_or_default("AWS_LC_SYS_CFLAGS_aarch64_unknown_linux_musl", "-fuse-ld=/usr/aarch64-linux-gnu/bin/ld")
+
 # The version name to use for packages.
 package_version := "v" + LINKERD2_PROXY_VERSION
 
