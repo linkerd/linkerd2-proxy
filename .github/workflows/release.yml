@@ -145,7 +145,7 @@ jobs:
     env:
       LINKERD2_PROXY_VENDOR: ${{ github.repository_owner }}
       LINKERD2_PROXY_VERSION: ${{ needs.meta.outputs.version }}
-      # TODO: add to dev image
+      # TODO: these variables will be included in dev v48
       AWS_LC_SYS_CFLAGS_aarch64_unknown_linux_gnu: "-fuse-ld=/usr/aarch64-linux-gnu/bin/ld"
       AWS_LC_SYS_CFLAGS_aarch64_unknown_linux_musl: "-fuse-ld=/usr/aarch64-linux-gnu/bin/ld"
     steps:
@@ -153,7 +153,7 @@ jobs:
       - name: Install MiniGW
         if: matrix.os == 'windows'
         run: apt-get update && apt-get install mingw-w64 -y
-      # TODO: add to dev image
+      # TODO: these packages will be included in dev v48
       - name: Install cross compilation toolchain
         if: matrix.arch == 'arm64'
         run: apt-get update && apt-get install --no-install-recommends -y \
