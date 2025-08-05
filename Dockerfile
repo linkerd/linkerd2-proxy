@@ -38,8 +38,6 @@ RUN --mount=type=cache,id=cargo,target=/usr/local/cargo/registry \
 FROM fetch as build
 ENV CARGO_INCREMENTAL=0
 ENV RUSTFLAGS="-D warnings -A deprecated --cfg tokio_unstable"
-ENV AWS_LC_SYS_CFLAGS_aarch64_unknown_linux_gnu="-fuse-ld=/usr/aarch64-linux-gnu/bin/ld"
-ENV AWS_LC_SYS_CFLAGS_aarch64_unknown_linux_musl="-fuse-ld=/usr/aarch64-linux-gnu/bin/ld"
 ARG PROFILE="release"
 ARG LINKERD2_PROXY_VERSION=""
 ARG LINKERD2_PROXY_VENDOR=""
