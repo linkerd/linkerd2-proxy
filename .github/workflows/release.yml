@@ -175,7 +175,7 @@ jobs:
           ref: ${{ needs.meta.outputs.ref }}
       - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0
         with:
-          key: ${{ matrix.arch }}
+          key: ${{ matrix.os }}-${{ matrix.arch }}
       - run: just fetch
       - run: just arch=${{ matrix.arch }} libc=${{ matrix.libc }} os=${{ matrix.os }} rustup
       - run: just arch=${{ matrix.arch }} libc=${{ matrix.libc }} os=${{ matrix.os }} profile=${{ needs.meta.outputs.profile }} build
