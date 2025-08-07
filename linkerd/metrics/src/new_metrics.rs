@@ -1,4 +1,4 @@
-use crate::SharedStore;
+use crate::legacy::SharedStore;
 use linkerd_stack as svc;
 use std::{fmt, hash::Hash, marker::PhantomData, sync::Arc};
 

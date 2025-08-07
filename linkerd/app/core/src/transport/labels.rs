@@ -1,7 +1,7 @@
 use crate::metrics::ServerLabel as PolicyServerLabel;
 pub use crate::metrics::{Direction, OutboundEndpointLabels};
 use linkerd_conditional::Conditional;
-use linkerd_metrics::FmtLabels;
+use linkerd_metrics::legacy::FmtLabels;
 use linkerd_tls as tls;
 use std::{fmt, net::SocketAddr};
 

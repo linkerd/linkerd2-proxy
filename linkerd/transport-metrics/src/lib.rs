@@ -14,7 +14,10 @@ pub use self::{
     server::NewServer,
 };
 use linkerd_errno::Errno;
-use linkerd_metrics::{metrics, Counter, FmtLabels, Gauge, LastUpdate, Store};
+use linkerd_metrics::{
+    legacy::{Counter, FmtLabels, Gauge, LastUpdate, Store},
+    metrics,
+};
 use parking_lot::Mutex;
 use std::{collections::HashMap, fmt, hash::Hash, sync::Arc};
 use tokio::time::{Duration, Instant};
@@ -113,7 +116,7 @@ impl Default for ByEos {
 mod tests {
     #[test]
     fn expiry() {
-        use linkerd_metrics::FmtLabels;
+        use linkerd_metrics::legacy::FmtLabels;
         use std::fmt;
         use tokio::time::{Duration, Instant};
 

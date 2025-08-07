@@ -4,7 +4,7 @@ use linkerd_http_box::BoxBody;
 use std::io::Write;
 use tracing::trace;
 
-use super::FmtMetrics;
+use super::legacy::FmtMetrics;
 
 /// Serve Prometheues metrics.
 #[derive(Debug, Clone)]

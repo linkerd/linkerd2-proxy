@@ -3,7 +3,7 @@ use futures::{ready, TryFuture};
 use http_body::{Body, Frame};
 use linkerd_error::Error;
 use linkerd_http_classify::{ClassifyEos, ClassifyResponse};
-use linkerd_metrics::NewMetrics;
+use linkerd_metrics::legacy::NewMetrics;
 use linkerd_stack::Proxy;
 use parking_lot::Mutex;
 use pin_project::{pin_project, pinned_drop};

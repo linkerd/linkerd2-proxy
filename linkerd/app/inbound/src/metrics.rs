@@ -50,7 +50,7 @@ impl InboundMetrics {
     }
 }
 
-impl FmtMetrics for InboundMetrics {
+impl legacy::FmtMetrics for InboundMetrics {
     fn fmt_metrics(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.http_authz.fmt_metrics(f)?;
         self.http_errors.fmt_metrics(f)?;

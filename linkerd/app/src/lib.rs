@@ -19,7 +19,7 @@ use linkerd_app_core::{
     config::ServerConfig,
     control::{ControlAddr, Metrics as ControlMetrics},
     dns, drain,
-    metrics::{prom, FmtMetrics},
+    metrics::{legacy::FmtMetrics, prom},
     serve,
     svc::Param,
     tls_info,
