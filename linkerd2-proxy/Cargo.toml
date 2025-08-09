@@ -8,12 +8,11 @@ publish = { workspace = true }
 description = "The main proxy executable"
 
 [features]
-default = ["meshtls-rustls-aws-lc"]
+default = ["meshtls-rustls"]
 meshtls-boring = ["linkerd-meshtls/boring"]
 meshtls-boring-fips = ["linkerd-meshtls/boring-fips"]
-meshtls-rustls-aws-lc = ["linkerd-meshtls/rustls-aws-lc"]
-meshtls-rustls-aws-lc-fips = ["linkerd-meshtls/rustls-aws-lc-fips"]
-meshtls-rustls-ring = ["linkerd-meshtls/rustls-ring"]
+meshtls-rustls = ["linkerd-meshtls/rustls"]
+meshtls-rustls-fips = ["linkerd-meshtls/rustls-fips"]
 log-streaming = ["linkerd-app/log-streaming"]
 pprof = ["linkerd-app/pprof"]
 # From https://github.com/polarsignals/rust-jemalloc-pprof/blob/bcf1ad7f7ad3ec8e71098f4d5a9ce55905c7a602/README.md#usage
