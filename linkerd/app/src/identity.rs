@@ -137,8 +137,7 @@ fn watch(
     watch::Receiver<bool>,
 )> {
     let (tx, ready) = watch::channel(false);
-    let (store, receiver) =
-        Mode::default().watch(tls.id, tls.server_name, &tls.trust_anchors_pem)?;
+    let (store, receiver) = Mode.watch(tls.id, tls.server_name, &tls.trust_anchors_pem)?;
     let cred = WithCertMetrics::new(metrics, NotifyReady { store, tx });
     Ok((cred, receiver, ready))
 }

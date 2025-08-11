@@ -285,7 +285,7 @@ where
 
         let tls = Some(client_server_id.clone());
         let client = async move {
-            let conn = tls::Client::layer(client_tls)
+            let conn = tls::Client::<meshtls::NewClient, ConnectTcp>::layer(client_tls)
                 .layer(ConnectTcp::new(Keepalive(None), UserTimeout(None)))
                 .oneshot(Target(server_addr.into(), client_server_id))
                 .await;
