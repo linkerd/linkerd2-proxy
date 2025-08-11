@@ -20,25 +20,6 @@ pub use self::{
     client::{ClientIo, Connect, ConnectFuture, NewClient},
     server::{Server, ServerIo, TerminateFuture},
 };
-use linkerd_dns_name as dns;
-use linkerd_error::Result;
-use linkerd_identity as id;
 
 pub use linkerd_meshtls_rustls as rustls;
 pub use rustls::creds::watch;
-
-#[derive(Default, Copy, Clone, Debug)]
-pub struct Mode;
-
-// === impl Mode ===
-
-impl Mode {
-    pub fn watch(
-        self,
-        local_id: id::Id,
-        server_name: dns::Name,
-        roots_pem: &str,
-    ) -> Result<(creds::Store, creds::Receiver)> {
-        watch(local_id, server_name, roots_pem)
-    }
-}
