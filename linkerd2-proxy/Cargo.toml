@@ -9,7 +9,7 @@ description = "The main proxy executable"
 
 [features]
 default = []
-meshtls-rustls-aws-lc-fips = ["linkerd-meshtls/rustls-aws-lc-fips"]
+meshtls-rustls-aws-lc-fips = ["linkerd-meshtls/fips"]
 log-streaming = ["linkerd-app/log-streaming"]
 pprof = ["linkerd-app/pprof"]
 # From https://github.com/polarsignals/rust-jemalloc-pprof/blob/bcf1ad7f7ad3ec8e71098f4d5a9ce55905c7a602/README.md#usage
