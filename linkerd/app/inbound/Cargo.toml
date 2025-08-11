@@ -13,7 +13,7 @@ Configures and runs the inbound proxy
 test-util = [
     "linkerd-app-test",
     "linkerd-idle-cache/test-util",
-    "linkerd-meshtls-rustls/test-util",
+    "linkerd-meshtls/test-util",
 ]
 
 [dependencies]
@@ -24,7 +24,7 @@ linkerd-app-core = { path = "../core" }
 linkerd-app-test = { path = "../test", optional = true }
 linkerd-http-access-log = { path = "../../http/access-log" }
 linkerd-idle-cache = { path = "../../idle-cache" }
-linkerd-meshtls-rustls = { path = "../../meshtls/rustls", optional = true, default-features = false }
+linkerd-meshtls = { path = "../../meshtls", optional = true, default-features = false }
 linkerd-proxy-client-policy = { path = "../../proxy/client-policy" }
 linkerd-tonic-stream = { path = "../../tonic-stream" }
 linkerd-tonic-watch = { path = "../../tonic-watch" }
@@ -47,7 +47,7 @@ hyper = { workspace = true, features = ["http1", "http2"] }
 linkerd-app-test = { path = "../test" }
 arbitrary = { version = "1", features = ["derive"] }
 libfuzzer-sys = { version = "0.4", features = ["arbitrary-derive"] }
-linkerd-meshtls-rustls = { path = "../../meshtls/rustls", features = [
+linkerd-meshtls = { path = "../../meshtls", features = [
     "test-util",
 ] }
 
@@ -60,7 +60,7 @@ linkerd-http-metrics = { path = "../../http/metrics", features = ["test-util"] }
 linkerd-http-box = { path = "../../http/box" }
 linkerd-idle-cache = { path = "../../idle-cache", features = ["test-util"] }
 linkerd-io = { path = "../../io", features = ["tokio-test"] }
-linkerd-meshtls-rustls = { path = "../../meshtls/rustls", features = [
+linkerd-meshtls = { path = "../../meshtls", features = [
     "test-util",
 ] }
 linkerd-proxy-server-policy = { path = "../../proxy/server-policy", features = [

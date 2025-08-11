@@ -8,7 +8,7 @@ use std::{
 };
 
 use linkerd2_proxy_api::identity as pb;
-use linkerd_meshtls_rustls::creds::default_provider_for_test;
+use linkerd_meshtls::creds::default_provider_for_test;
 use tokio_rustls::rustls::{self, server::WebPkiClientVerifier};
 use tonic as grpc;
 
