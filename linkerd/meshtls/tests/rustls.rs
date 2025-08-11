@@ -3,24 +3,22 @@
 
 mod util;
 
-use linkerd_meshtls::Mode;
-
 #[test]
 fn fails_processing_cert_when_wrong_id_configured() {
-    util::fails_processing_cert_when_wrong_id_configured(Mode);
+    util::fails_processing_cert_when_wrong_id_configured();
 }
 
 #[tokio::test(flavor = "current_thread")]
 async fn plaintext() {
-    util::plaintext(Mode).await;
+    util::plaintext().await;
 }
 
 #[tokio::test(flavor = "current_thread")]
 async fn proxy_to_proxy_tls_works() {
-    util::proxy_to_proxy_tls_works(Mode).await;
+    util::proxy_to_proxy_tls_works().await;
 }
 
 #[tokio::test(flavor = "current_thread")]
 async fn proxy_to_proxy_tls_pass_through_when_identity_does_not_match() {
-    util::proxy_to_proxy_tls_pass_through_when_identity_does_not_match(Mode).await;
+    util::proxy_to_proxy_tls_pass_through_when_identity_does_not_match().await;
 }
