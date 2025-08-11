@@ -42,7 +42,6 @@ members = [
     "linkerd/idle-cache",
     "linkerd/io",
     "linkerd/meshtls",
-    "linkerd/meshtls/rustls",
     "linkerd/meshtls/verifier",
     "linkerd/metrics",
     "linkerd/mock/http-body",

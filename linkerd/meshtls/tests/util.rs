@@ -7,8 +7,7 @@ use linkerd_dns_name::Name;
 use linkerd_error::Infallible;
 use linkerd_identity::{Credentials, DerX509, Id};
 use linkerd_io::{self as io, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use linkerd_meshtls as meshtls;
-use linkerd_meshtls_rustls::creds::watch;
+use linkerd_meshtls::{self as meshtls, watch};
 use linkerd_proxy_transport::{
     addrs::*,
     listen::{Addrs, Bind, BindTcp},

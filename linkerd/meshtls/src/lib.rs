@@ -12,14 +12,15 @@
 //! having to pin a TLS implementation. Furthermore, this crate supports both
 //! backends simultaneously so it can be compiled with `--all-features`.
 
+mod backend;
 mod client;
 pub mod creds;
 mod server;
+#[cfg(test)]
+mod tests;
 
 pub use self::{
     client::{ClientIo, Connect, ConnectFuture, NewClient},
+    creds::watch,
     server::{Server, ServerIo, TerminateFuture},
 };
-
-pub use linkerd_meshtls_rustls as rustls;
-pub use rustls::creds::watch;
