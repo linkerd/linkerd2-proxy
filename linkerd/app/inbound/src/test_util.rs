@@ -98,7 +98,7 @@ pub fn runtime() -> (ProxyRuntime, drain::Signal) {
     let (tap, _) = tap::new();
     let (metrics, _) = metrics::Metrics::new(std::time::Duration::from_secs(10));
     let runtime = ProxyRuntime {
-        identity: rustls::creds::default_for_test().1.into(),
+        identity: rustls::creds::default_for_test().1,
         metrics: metrics.proxy,
         tap,
         span_sink: None,

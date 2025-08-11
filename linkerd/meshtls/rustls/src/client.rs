@@ -3,7 +3,7 @@ use linkerd_identity as id;
 use linkerd_io as io;
 use linkerd_meshtls_verifier as verifier;
 use linkerd_stack::{NewService, Service};
-use linkerd_tls::{client::AlpnProtocols, ClientTls, NegotiatedProtocolRef};
+use linkerd_tls::{client::AlpnProtocols, ClientTls, NegotiatedProtocol, NegotiatedProtocolRef};
 use std::{convert::TryFrom, pin::Pin, sync::Arc, task::Context};
 use tokio::sync::watch;
 use tokio_rustls::rustls::{self, pki_types::CertificateDer, ClientConfig};
@@ -22,7 +22,8 @@ pub struct Connect {
     config: Arc<ClientConfig>,
 }
 
-pub type ConnectFuture<I> = Pin<Box<dyn Future<Output = io::Result<ClientIo<I>>> + Send>>;
+pub type ConnectFuture<I> =
+    Pin<Box<dyn Future<Output = io::Result<(ClientIo<I>, Option<NegotiatedProtocol>)>> + Send>>;
 
 #[derive(Debug)]
 pub struct ClientIo<I>(tokio_rustls::client::TlsStream<I>);
@@ -91,7 +92,7 @@ impl<I> Service<I> for Connect
 where
     I: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
 {
-    type Response = ClientIo<I>;
+    type Response = (ClientIo<I>, Option<NegotiatedProtocol>);
     type Error = io::Error;
     type Future = ConnectFuture<I>;
 
@@ -115,7 +116,9 @@ where
                     let (_, conn) = s.get_ref();
                     let end_cert = extract_cert(conn)?;
                     verifier::verify_id(end_cert, &server_id)?;
-                    Ok(ClientIo(s))
+                    let io = ClientIo(s);
+                    let np = io.negotiated_protocol().map(|np| np.to_owned());
+                    Ok((io, np))
                 }),
         )
     }
