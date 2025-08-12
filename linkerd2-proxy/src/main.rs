@@ -35,6 +35,8 @@ fn main() {
         vendor = BUILD_INFO.vendor,
     );
 
+    linkerd_rustls::install_default_provider();
+
     let mut metrics = linkerd_metrics::prom::Registry::default();
 
     // Load configuration from the environment without binding ports.

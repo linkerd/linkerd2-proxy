@@ -2665,6 +2665,7 @@ dependencies = [
  "linkerd-app",
  "linkerd-meshtls",
  "linkerd-metrics",
+ "linkerd-rustls",
  "linkerd-signal",
  "num_cpus",
  "tikv-jemallocator",
