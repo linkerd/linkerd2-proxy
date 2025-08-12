@@ -2,8 +2,6 @@ mod receiver;
 mod store;
 pub(crate) mod verify;
 
-use crate::backend;
-
 pub use self::{receiver::Receiver, store::Store};
 use linkerd_dns_name as dns;
 use linkerd_error::Result;
@@ -11,7 +9,7 @@ use linkerd_identity as id;
 use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::watch;
-use tokio_rustls::rustls::{self, crypto::CryptoProvider};
+use tokio_rustls::rustls::{self};
 use tracing::warn;
 
 #[derive(Debug, Error)]
@@ -87,22 +85,6 @@ pub fn watch(
     Ok((store, rx))
 }
 
-fn default_provider() -> Arc<CryptoProvider> {
-    if let Some(provider) = CryptoProvider::get_default() {
-        return Arc::clone(provider);
-    }
-
-    // Ignore install errors. This is the only place we install a provider, so if we raced with
-    // another thread to set the provider it will be functionally the same as this provider.
-    let _ = backend::default_provider().install_default();
-    Arc::clone(CryptoProvider::get_default().expect("Just installed a default"))
-}
-
-#[cfg(feature = "test-util")]
-pub fn default_provider_for_test() -> Arc<CryptoProvider> {
-    default_provider()
-}
-
 #[cfg(feature = "test-util")]
 pub fn for_test(ent: &linkerd_tls_test_util::Entity) -> (Store, Receiver) {
     watch(
@@ -116,15 +98,4 @@ pub fn for_test(ent: &linkerd_tls_test_util::Entity) -> (Store, Receiver) {
 #[cfg(feature = "test-util")]
 pub fn default_for_test() -> (Store, Receiver) {
     for_test(&linkerd_tls_test_util::FOO_NS1)
-}
-
-mod params {
-    use crate::backend;
-    use tokio_rustls::rustls::{self, crypto::WebPkiSupportedAlgorithms};
-
-    // These must be kept in sync:
-    pub const SIGNATURE_ALG_RUSTLS_SCHEME: rustls::SignatureScheme =
-        rustls::SignatureScheme::ECDSA_NISTP256_SHA256;
-    pub static SUPPORTED_SIG_ALGS: &WebPkiSupportedAlgorithms = backend::SUPPORTED_SIG_ALGS;
-    pub static TLS_VERSIONS: &[&rustls::SupportedProtocolVersion] = &[&rustls::version::TLS13];
 }

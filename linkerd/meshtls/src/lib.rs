@@ -12,7 +12,6 @@
 //! having to pin a TLS implementation. Furthermore, this crate supports both
 //! backends simultaneously so it can be compiled with `--all-features`.
 
-mod backend;
 mod client;
 pub mod creds;
 mod server;
