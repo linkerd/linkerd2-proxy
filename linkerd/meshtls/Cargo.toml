@@ -24,6 +24,7 @@ linkerd-error = { path = "../error" }
 linkerd-identity = { path = "../identity" }
 linkerd-io = { path = "../io" }
 linkerd-meshtls-verifier = { path = "verifier" }
+linkerd-rustls = { path = "../rustls" }
 linkerd-stack = { path = "../stack" }
 linkerd-tls = { path = "../tls" }
 linkerd-tls-test-util = { path = "../tls/test-util", optional = true }

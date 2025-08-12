@@ -1546,6 +1546,7 @@ dependencies = [
  "linkerd-app-test",
  "linkerd-meshtls",
  "linkerd-metrics",
+ "linkerd-rustls",
  "linkerd-tracing",
  "linkerd2-proxy-api",
  "maplit",
@@ -1994,6 +1995,7 @@ dependencies = [
  "linkerd-io",
  "linkerd-meshtls-verifier",
  "linkerd-proxy-transport",
+ "linkerd-rustls",
  "linkerd-stack",
  "linkerd-tls",
  "linkerd-tls-test-util",
@@ -2439,6 +2441,14 @@ dependencies = [
  "linkerd-stack",
  "parking_lot",
  "tracing",
+]
+
+[[package]]
+name = "linkerd-rustls"
+version = "0.1.0"
+dependencies = [
+ "rustls-webpki",
+ "tokio-rustls",
 ]
 
 [[package]]
