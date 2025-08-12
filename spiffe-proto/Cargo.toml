@@ -7,9 +7,7 @@ edition = { workspace = true }
 publish = { workspace = true }
 
 [dependencies]
-bytes = { workspace = true }
 prost = { workspace = true }
-prost-types = { workspace = true }
 
 [dependencies.tonic]
 workspace = true

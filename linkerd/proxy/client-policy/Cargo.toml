@@ -17,7 +17,6 @@ proto = [
 
 [dependencies]
 ahash = "0.8"
-ipnet = "2"
 http = { workspace = true }
 once_cell = { version = "1" }
 prost-types = { workspace = true, optional = true }
@@ -30,13 +29,8 @@ linkerd-http-route = { path = "../../http/route" }
 linkerd-tls-route = { path = "../../tls/route" }
 linkerd-opaq-route = { path = "../../opaq-route" }
 linkerd-proxy-api-resolve = { path = "../api-resolve" }
-linkerd-proxy-core = { path = "../core" }
 
 [dependencies.linkerd2-proxy-api]
 workspace = true
 optional = true
 features = ["outbound"]
-
-[dev-dependencies]
-maplit = "1"
-quickcheck = { version = "1", default-features = false }

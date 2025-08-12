@@ -7,15 +7,11 @@ edition = { workspace = true }
 publish = { workspace = true }
 
 [dependencies]
-futures = { version = "0.3", default-features = false }
 linkerd2-proxy-api = { workspace = true, features = ["identity"] }
 linkerd-dns-name = { path = "../../dns/name" }
 linkerd-error = { path = "../../error" }
 linkerd-identity = { path = "../../identity" }
-linkerd-metrics = { path = "../../metrics" }
 linkerd-stack = { path = "../../stack" }
-parking_lot = "0.12"
-pin-project = "1"
 thiserror = "2"
 tokio = { version = "1", features = ["time", "sync"] }
 tonic = { workspace = true, default-features = false }

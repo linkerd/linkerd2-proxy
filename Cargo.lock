@@ -1514,13 +1514,10 @@ dependencies = [
  "http-body",
  "http-body-util",
  "hyper",
- "hyper-util",
  "ipnet",
  "linkerd-addr",
  "linkerd-conditional",
  "linkerd-dns",
- "linkerd-duplex",
- "linkerd-errno",
  "linkerd-error",
  "linkerd-error-respond",
  "linkerd-exp-backoff",
@@ -1557,13 +1554,9 @@ dependencies = [
  "linkerd-tracing",
  "linkerd-transport-header",
  "linkerd-transport-metrics",
- "parking_lot",
  "pin-project",
  "prometheus-client",
- "quickcheck",
- "regex",
  "semver",
- "serde_json",
  "thiserror 2.0.14",
  "tokio",
  "tokio-rustls",
@@ -1758,7 +1751,6 @@ dependencies = [
  "linkerd-stack",
  "parking_lot",
  "rand 0.9.2",
- "tokio",
  "tokio-test",
  "tower-test",
  "tracing",
@@ -1768,7 +1760,6 @@ dependencies = [
 name = "linkerd-dns"
 version = "0.1.0"
 dependencies = [
- "futures",
  "hickory-resolver",
  "linkerd-dns-name",
  "linkerd-error",
@@ -1917,11 +1908,9 @@ dependencies = [
 name = "linkerd-http-metrics"
 version = "0.1.0"
 dependencies = [
- "bytes",
  "futures",
  "http",
  "http-body",
- "hyper",
  "linkerd-error",
  "linkerd-http-classify",
  "linkerd-metrics",
@@ -1955,7 +1944,6 @@ dependencies = [
  "linkerd-http-box",
  "linkerd-metrics",
  "linkerd-stack",
- "parking_lot",
  "pin-project",
  "prometheus-client",
  "thiserror 2.0.14",
@@ -1982,7 +1970,6 @@ dependencies = [
  "http",
  "http-body",
  "http-body-util",
- "hyper",
  "linkerd-error",
  "linkerd-exp-backoff",
  "linkerd-http-box",
@@ -2004,7 +1991,6 @@ version = "0.1.0"
 dependencies = [
  "http",
  "linkerd2-proxy-api",
- "maplit",
  "rand 0.9.2",
  "regex",
  "thiserror 2.0.14",
@@ -2032,7 +2018,6 @@ dependencies = [
 name = "linkerd-http-upgrade"
 version = "0.1.0"
 dependencies = [
- "bytes",
  "drain",
  "futures",
  "http",
@@ -2078,10 +2063,7 @@ dependencies = [
 name = "linkerd-idle-cache"
 version = "0.1.0"
 dependencies = [
- "futures",
- "linkerd-error",
  "linkerd-stack",
- "linkerd-tracing",
  "parking_lot",
  "tokio",
  "tower 0.5.2",
@@ -2130,13 +2112,11 @@ name = "linkerd-meshtls-boring"
 version = "0.1.0"
 dependencies = [
  "boring",
- "futures",
  "hex",
  "linkerd-dns-name",
  "linkerd-error",
  "linkerd-identity",
  "linkerd-io",
- "linkerd-meshtls",
  "linkerd-meshtls-verifier",
  "linkerd-stack",
  "linkerd-tls",
@@ -2185,9 +2165,7 @@ dependencies = [
  "bytes",
  "deflate",
  "http",
- "http-body",
  "http-body-util",
- "hyper",
  "kubert-prometheus-process",
  "linkerd-http-box",
  "linkerd-stack",
@@ -2274,7 +2252,6 @@ dependencies = [
  "ahash",
  "futures",
  "futures-util",
- "indexmap 2.10.0",
  "linkerd-error",
  "linkerd-metrics",
  "linkerd-pool",
@@ -2307,8 +2284,6 @@ dependencies = [
  "linkerd-tls",
  "linkerd-tonic-stream",
  "linkerd2-proxy-api",
- "pin-project",
- "prost 0.13.5",
  "tonic",
  "tower 0.5.2",
  "tracing",
@@ -2326,7 +2301,6 @@ dependencies = [
  "linkerd-proxy-balance-queue",
  "linkerd-proxy-core",
  "linkerd-stack",
- "rand 0.9.2",
  "tokio",
  "tower 0.5.2",
  "tracing",
@@ -2354,13 +2328,10 @@ dependencies = [
  "linkerd-tracing",
  "parking_lot",
  "pin-project",
- "prometheus-client",
- "thiserror 2.0.14",
  "tokio",
  "tokio-stream",
  "tokio-test",
  "tokio-util",
- "tower-test",
  "tracing",
 ]
 
@@ -2370,19 +2341,15 @@ version = "0.1.0"
 dependencies = [
  "ahash",
  "http",
- "ipnet",
  "linkerd-error",
  "linkerd-exp-backoff",
  "linkerd-http-route",
  "linkerd-opaq-route",
  "linkerd-proxy-api-resolve",
- "linkerd-proxy-core",
  "linkerd-tls-route",
  "linkerd2-proxy-api",
- "maplit",
  "once_cell",
  "prost-types 0.13.5",
- "quickcheck",
  "thiserror 2.0.14",
  "tonic",
 ]
@@ -2416,7 +2383,6 @@ dependencies = [
 name = "linkerd-proxy-http"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "bytes",
  "drain",
  "futures",
@@ -2424,11 +2390,9 @@ dependencies = [
  "http",
  "http-body",
  "http-body-util",
- "httparse",
  "hyper",
  "hyper-balance",
  "hyper-util",
- "linkerd-duplex",
  "linkerd-error",
  "linkerd-http-box",
  "linkerd-http-classify",
@@ -2444,32 +2408,25 @@ dependencies = [
  "linkerd-proxy-balance",
  "linkerd-stack",
  "linkerd-tracing",
- "parking_lot",
  "pin-project",
- "rand 0.9.2",
  "thiserror 2.0.14",
  "tokio",
  "tokio-test",
  "tower 0.5.2",
  "tower-test",
  "tracing",
- "try-lock",
 ]
 
 [[package]]
 name = "linkerd-proxy-identity-client"
 version = "0.1.0"
 dependencies = [
- "futures",
  "http-body",
  "linkerd-dns-name",
  "linkerd-error",
  "linkerd-identity",
- "linkerd-metrics",
  "linkerd-stack",
  "linkerd2-proxy-api",
- "parking_lot",
- "pin-project",
  "thiserror 2.0.14",
  "tokio",
  "tonic",
@@ -2515,14 +2472,12 @@ dependencies = [
  "linkerd-exp-backoff",
  "linkerd-identity",
  "linkerd-proxy-http",
- "linkerd-stack",
  "linkerd-tonic-watch",
  "rcgen",
  "simple_asn1",
  "spiffe-proto",
  "thiserror 2.0.14",
  "tokio",
- "tokio-test",
  "tonic",
  "tower 0.5.2",
  "tracing",
@@ -2552,7 +2507,6 @@ dependencies = [
  "pin-project",
  "prost-types 0.13.5",
  "quickcheck",
- "rand 0.9.2",
  "thiserror 2.0.14",
  "tokio",
  "tonic",
@@ -2569,8 +2523,6 @@ dependencies = [
  "linkerd-error",
  "linkerd-proxy-balance",
  "linkerd-stack",
- "pin-project",
- "rand 0.9.2",
  "tokio",
  "tower 0.5.2",
 ]
@@ -2599,11 +2551,9 @@ dependencies = [
  "linkerd-error",
  "linkerd-stack",
  "linkerd-tracing",
- "pin-project",
  "tokio",
  "tokio-stream",
  "tokio-test",
- "tower 0.5.2",
  "tower-test",
  "tracing",
 ]
@@ -2628,7 +2578,6 @@ dependencies = [
  "linkerd-error",
  "linkerd-stack",
  "parking_lot",
- "thiserror 2.0.14",
  "tracing",
 ]
 
@@ -2636,14 +2585,12 @@ dependencies = [
 name = "linkerd-service-profiles"
 version = "0.1.0"
 dependencies = [
- "bytes",
  "futures",
  "http",
  "http-body",
  "linkerd-addr",
  "linkerd-dns-name",
  "linkerd-error",
- "linkerd-http-box",
  "linkerd-proxy-api-resolve",
  "linkerd-stack",
  "linkerd-tonic-stream",
@@ -2703,8 +2650,6 @@ dependencies = [
 name = "linkerd-stack-tracing"
 version = "0.1.0"
 dependencies = [
- "futures",
- "linkerd-error",
  "linkerd-stack",
  "tower 0.5.2",
  "tracing",
@@ -2714,7 +2659,6 @@ dependencies = [
 name = "linkerd-tls"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "bytes",
  "futures",
  "linkerd-conditional",
@@ -2727,7 +2671,6 @@ dependencies = [
  "pin-project",
  "thiserror 2.0.14",
  "tokio",
- "tower 0.5.2",
  "tracing",
  "untrusted",
 ]
@@ -2739,8 +2682,6 @@ dependencies = [
  "linkerd-dns",
  "linkerd-tls",
  "linkerd2-proxy-api",
- "rand 0.9.2",
- "regex",
  "thiserror 2.0.14",
  "tracing",
 ]
@@ -2759,7 +2700,6 @@ dependencies = [
  "pin-project",
  "tokio",
  "tokio-stream",
- "tokio-test",
  "tonic",
  "tracing",
 ]
@@ -2774,7 +2714,6 @@ dependencies = [
  "linkerd-tracing",
  "tokio",
  "tokio-stream",
- "tokio-test",
  "tonic",
  "tower-test",
  "tracing",
@@ -2815,9 +2754,7 @@ name = "linkerd-transport-header"
 version = "0.1.0"
 dependencies = [
  "arbitrary",
- "async-trait",
  "bytes",
- "futures",
  "libfuzzer-sys",
  "linkerd-dns-name",
  "linkerd-error",
@@ -3134,7 +3071,6 @@ dependencies = [
 name = "opencensus-proto"
 version = "0.1.0"
 dependencies = [
- "bytes",
  "prost 0.13.5",
  "prost-types 0.13.5",
  "tonic",
@@ -3935,9 +3871,7 @@ dependencies = [
 name = "spiffe-proto"
 version = "0.1.0"
 dependencies = [
- "bytes",
  "prost 0.13.5",
- "prost-types 0.13.5",
  "tonic",
  "tonic-build",
 ]

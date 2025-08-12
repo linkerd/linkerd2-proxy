@@ -7,7 +7,6 @@ edition = { workspace = true }
 publish = { workspace = true }
 
 [dependencies]
-async-trait = "0.1"
 bytes = { workspace = true }
 futures = { version = "0.3", default-features = false }
 linkerd-conditional = { path = "../conditional" }
@@ -19,7 +18,6 @@ linkerd-stack = { path = "../stack" }
 pin-project = "1"
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "time"] }
-tower = { workspace = true }
 tracing = { workspace = true }
 untrusted = "0.9"
 
