@@ -8,7 +8,7 @@ publish = { workspace = true }
 
 [features]
 rustls = ["linkerd-meshtls-rustls", "__has_any_tls_impls"]
-rustls-fips = ["linkerd-meshtls-rustls/fips"]
+rustls-aws-lc-fips = ["linkerd-meshtls-rustls/aws-lc-fips"]
 boring = ["linkerd-meshtls-boring", "__has_any_tls_impls"]
 boring-fips = ["boring", "linkerd-meshtls-boring/fips"]
 # Enabled if *any* TLS impl is enabled.

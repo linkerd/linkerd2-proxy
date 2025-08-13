@@ -7,7 +7,7 @@ edition = "2018"
 publish = { workspace = true }
 
 [features]
-fips = ["tokio-rustls/fips"]
+aws-lc-fips = ["tokio-rustls/fips"]
 test-util = ["linkerd-tls-test-util"]
 
 [dependencies]
