@@ -101,7 +101,7 @@ impl Config {
         identity: identity::NewClient,
     ) -> svc::ArcNewService<
         (),
-        svc::BoxCloneSyncService<http::Request<tonic::body::BoxBody>, http::Response<RspBody>>,
+        svc::BoxCloneSyncService<http::Request<tonic::body::Body>, http::Response<RspBody>>,
     > {
         let addr = self.addr;
         tracing::trace!(%addr, "Building");

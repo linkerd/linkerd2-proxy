@@ -7,7 +7,7 @@ use linkerd_stack::Param;
 use linkerd_tonic_stream::{LimitReceiveFuture, ReceiveLimits};
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use tonic::{self as grpc, body::BoxBody, client::GrpcService};
+use tonic::{self as grpc, body::Body as TonicBody, client::GrpcService};
 use tower::Service;
 use tracing::{debug, info, trace};
 
@@ -22,7 +22,7 @@ pub struct Resolve<S> {
 
 impl<S> Resolve<S>
 where
-    S: GrpcService<BoxBody> + Clone + Send + 'static,
+    S: GrpcService<TonicBody> + Clone + Send + 'static,
     S::Error: Into<Error> + Send,
     S::ResponseBody: Body<Data = tonic::codegen::Bytes> + Send + 'static,
     <S::ResponseBody as Body>::Error: Into<Error> + Send,
@@ -46,7 +46,7 @@ type ResolveFuture =
 impl<T, S> Service<T> for Resolve<S>
 where
     T: Param<ConcreteAddr>,
-    S: GrpcService<BoxBody> + Clone + Send + 'static,
+    S: GrpcService<TonicBody> + Clone + Send + 'static,
     S::Error: Into<Error> + Send,
     S::ResponseBody: Body<Data = tonic::codegen::Bytes> + Send + 'static,
     <S::ResponseBody as Body>::Error: Into<Error> + Send,

@@ -6,7 +6,7 @@ use linkerd_opencensus::{self as opencensus, metrics, proto};
 use std::{collections::HashMap, time::SystemTime};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
-use tonic::{body::BoxBody, client::GrpcService};
+use tonic::{body::Body as TonicBody, client::GrpcService};
 use tracing::Instrument;
 
 pub(super) fn create_collector<S>(
@@ -18,7 +18,7 @@ pub(super) fn create_collector<S>(
     legacy_metrics: metrics::Registry,
 ) -> EnabledCollector
 where
-    S: GrpcService<BoxBody> + Clone + Send + 'static,
+    S: GrpcService<TonicBody> + Clone + Send + 'static,
     S::Error: Into<Error>,
     S::Future: Send,
     S::ResponseBody: Body<Data = tonic::codegen::Bytes> + Send + 'static,

@@ -74,7 +74,7 @@ impl<S> Store<S> {
         opaque_ports: RangeInclusiveSet<u16>,
     ) -> Self
     where
-        S: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error>,
+        S: tonic::client::GrpcService<tonic::body::Body, Error = Error>,
         S: Clone + Send + Sync + 'static,
         S::Future: Send,
         S::ResponseBody: http::Body<Data = tonic::codegen::Bytes, Error = Error> + Send + 'static,
@@ -138,7 +138,7 @@ impl<S> Store<S> {
 
 impl<S> GetPolicy for Store<S>
 where
-    S: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error>,
+    S: tonic::client::GrpcService<tonic::body::Body, Error = Error>,
     S: Clone + Send + Sync + 'static,
     S::Future: Send,
     S::ResponseBody: http::Body<Data = tonic::codegen::Bytes, Error = Error> + Send + 'static,
