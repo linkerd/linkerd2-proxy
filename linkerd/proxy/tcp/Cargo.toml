@@ -12,7 +12,5 @@ linkerd-duplex = { path = "../../duplex" }
 linkerd-error = { path = "../../error" }
 linkerd-proxy-balance = { path = "../../proxy/balance" }
 linkerd-stack = { path = "../../stack" }
-rand = "0.9"
 tokio = { version = "1" }
 tower = { workspace = true, default-features = false }
-pin-project = "1"

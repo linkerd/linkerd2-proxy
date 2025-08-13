@@ -8,7 +8,6 @@ publish = { workspace = true }
 
 [dependencies]
 futures = { version = "0.3", default-features = false }
-rand = "0.9"
 tokio = { version = "1", features = ["time"] }
 tracing = { workspace = true }
 

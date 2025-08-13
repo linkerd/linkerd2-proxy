@@ -17,7 +17,6 @@ bytes = { workspace = true }
 futures = { version = "0.3", default-features = false }
 http = { workspace = true }
 http-body = { workspace = true }
-parking_lot = "0.12"
 pin-project = "1"
 prometheus-client = { workspace = true }
 thiserror = "2"

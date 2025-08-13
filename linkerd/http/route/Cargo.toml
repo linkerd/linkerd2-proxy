@@ -21,6 +21,3 @@ url = "2"
 workspace = true
 features = ["http-route", "grpc-route"]
 optional = true
-
-[dev-dependencies]
-maplit = "1"

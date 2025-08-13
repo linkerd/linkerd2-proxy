@@ -13,32 +13,24 @@ independently of the inbound and outbound proxy logic.
 """
 
 [dependencies]
-bytes = { workspace = true }
 drain = { workspace = true, features = ["retain"] }
 http = { workspace = true }
 http-body = { workspace = true }
-http-body-util = { workspace = true }
 hyper = { workspace = true, features = ["http1", "http2"] }
-hyper-util = { workspace = true }
 futures = { version = "0.3", default-features = false }
 ipnet = "2.11"
 prometheus-client = { workspace = true }
-regex = "1"
-serde_json = "1"
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "sync", "parking_lot"] }
 tokio-rustls = { workspace = true }
 tokio-stream = { version = "0.1", features = ["time"] }
 tonic = { workspace = true, default-features = false, features = ["prost"] }
 tracing = { workspace = true }
-parking_lot = "0.12"
 pin-project = "1"
 
 linkerd-addr = { path = "../../addr" }
 linkerd-conditional = { path = "../../conditional" }
 linkerd-dns = { path = "../../dns" }
-linkerd-duplex = { path = "../../duplex" }
-linkerd-errno = { path = "../../errno" }
 linkerd-error = { path = "../../error" }
 linkerd-error-respond = { path = "../../error-respond" }
 linkerd-exp-backoff = { path = "../../exp-backoff" }
@@ -84,5 +76,6 @@ features = ["make", "spawn-ready", "timeout", "util", "limit"]
 semver = "1"
 
 [dev-dependencies]
+bytes = { workspace = true }
+http-body-util = { workspace = true }
 linkerd-mock-http-body = { path = "../../mock/http-body" }
-quickcheck = { version = "1", default-features = false }

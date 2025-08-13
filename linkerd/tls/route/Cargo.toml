@@ -10,8 +10,6 @@ publish = { workspace = true }
 proto = ["linkerd2-proxy-api"]
 
 [dependencies]
-regex = "1"
-rand = "0.9"
 thiserror = "2"
 tracing = { workspace = true }
 linkerd-tls = { path = "../" }

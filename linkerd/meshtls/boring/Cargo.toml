@@ -8,7 +8,6 @@ publish = { workspace = true }
 
 [dependencies]
 boring = "4"
-futures = { version = "0.3", default-features = false }
 hex = "0.4"                                             # used for debug logging
 tokio = { version = "1", features = ["macros", "sync"] }
 tokio-boring = "4"
@@ -27,4 +26,3 @@ fips = ["boring/fips"]
 
 [dev-dependencies]
 linkerd-tls-test-util = { path = "../../tls/test-util" }
-linkerd-meshtls = { path = "../../meshtls" }
