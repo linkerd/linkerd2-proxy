@@ -14,7 +14,6 @@ linkerd-identity = { path = "../../identity" }
 spiffe-proto = { path = "../../../spiffe-proto" }
 linkerd-tonic-watch = { path = "../../tonic-watch" }
 linkerd-exp-backoff = { path = "../../exp-backoff" }
-linkerd-stack = { path = "../../stack" }
 tokio = { version = "1", features = ["time", "sync"] }
 tonic = { workspace = true }
 tower = { workspace = true }
@@ -25,4 +24,3 @@ thiserror = "2"
 
 [dev-dependencies]
 rcgen = { version = "0.14.3", default-features = false, features = ["crypto", "pem", "aws_lc_rs"] }
-tokio-test = "0.4"

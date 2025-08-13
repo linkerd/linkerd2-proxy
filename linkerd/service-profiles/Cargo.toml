@@ -10,7 +10,6 @@ Implements client layers for Linkerd ServiceProfiles.
 """
 
 [dependencies]
-bytes = { workspace = true }
 futures = { version = "0.3", default-features = false }
 http = { workspace = true }
 http-body = { workspace = true }
@@ -28,7 +27,6 @@ tracing = { workspace = true }
 linkerd-addr = { path = "../addr" }
 linkerd-dns-name = { path = "../dns/name" }
 linkerd-error = { path = "../error" }
-linkerd-http-box = { path = "../http/box" }
 linkerd-proxy-api-resolve = { path = "../proxy/api-resolve" }
 linkerd-stack = { path = "../stack" }
 linkerd-tonic-stream = { path = "../tonic-stream" }

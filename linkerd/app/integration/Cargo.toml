@@ -35,11 +35,11 @@ maplit = "1"
 parking_lot = "0.12"
 regex = "1"
 rustls-pemfile = "2.2"
-socket2 = "0.5"
+socket2 = "0.6"
 tokio = { version = "1", features = ["io-util", "net", "rt", "macros"] }
 tokio-rustls = { workspace = true }
 tokio-stream = { version = "0.1", features = ["sync"] }
-tonic = { workspace = true, features = ["transport"], default-features = false }
+tonic = { workspace = true, features = ["transport", "router"], default-features = false }
 tower = { workspace = true, default-features = false }
 tracing = { workspace = true }
 

@@ -16,16 +16,37 @@ mod store;
 #[cfg(feature = "process")]
 pub use kubert_prometheus_process as process;
 
-#[cfg(feature = "stack")]
-pub use self::new_metrics::NewMetrics;
-pub use self::{
-    counter::Counter,
-    fmt::{FmtLabels, FmtMetric, FmtMetrics, Metric},
-    gauge::Gauge,
-    histogram::Histogram,
-    serve::Serve,
-    store::{LastUpdate, SharedStore, Store},
-};
+/// A legacy metrics implementation.
+///
+/// New metrics should use the interfaces in [`prom`] instead.
+pub mod legacy {
+    // TODO(kate): we will move types like `Counter` and `Gauge` into this module.
+    //
+    // this will help us differentiate in dependent systems which components rely on our legacy
+    // metrics implementation.
+    pub use super::{
+        counter::Counter,
+        fmt::{FmtLabels, FmtMetric, FmtMetrics, Metric},
+        gauge::Gauge,
+        histogram::Histogram,
+        serve::Serve,
+        store::{LastUpdate, SharedStore, Store},
+    };
+
+    #[cfg(feature = "stack")]
+    pub use super::new_metrics::NewMetrics;
+
+    pub trait Factor {
+        fn factor(n: u64) -> f64;
+    }
+
+    impl Factor for () {
+        #[inline]
+        fn factor(n: u64) -> f64 {
+            super::to_f64(n)
+        }
+    }
+}
 
 /// Integration with the [`prometheus_client`]` crate.
 ///
@@ -51,7 +72,7 @@ pub mod prom {
 
     pub type Report = Arc<Registry>;
 
-    impl crate::FmtMetrics for Report {
+    impl crate::legacy::FmtMetrics for Report {
         #[inline]
         fn fmt_metrics(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             encoding::text::encode(f, self)
@@ -64,8 +85,8 @@ macro_rules! metrics {
     { $( $name:ident : $kind:ty { $help:expr } ),+ } => {
         $(
             #[allow(non_upper_case_globals)]
-            const $name: $crate::Metric<'static, &str, $kind> =
-                $crate::Metric {
+            const $name: $crate::legacy::Metric<'static, &str, $kind> =
+                $crate::legacy::Metric {
                     name: stringify!($name),
                     help: $help,
                     _p: ::std::marker::PhantomData,
@@ -74,8 +95,8 @@ macro_rules! metrics {
     }
 }
 
-pub trait Factor {
-    fn factor(n: u64) -> f64;
+pub fn to_f64(n: u64) -> f64 {
+    n.wrapping_rem(MAX_PRECISE_UINT64 + 1) as f64
 }
 
 /// Largest `u64` that can fit without loss of precision in `f64` (2^53).
@@ -84,14 +105,3 @@ pub trait Factor {
 /// mantissa), thus integer values over 2^53 are not guaranteed to be correctly
 /// exposed.
 const MAX_PRECISE_UINT64: u64 = 0x20_0000_0000_0000;
-
-impl Factor for () {
-    #[inline]
-    fn factor(n: u64) -> f64 {
-        to_f64(n)
-    }
-}
-
-pub fn to_f64(n: u64) -> f64 {
-    n.wrapping_rem(MAX_PRECISE_UINT64 + 1) as f64
-}

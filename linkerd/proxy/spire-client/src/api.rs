@@ -114,7 +114,7 @@ impl TryFrom<api::X509svid> for Svid {
 
 impl<S> Api<S>
 where
-    S: tonic::client::GrpcService<tonic::body::BoxBody> + Clone,
+    S: tonic::client::GrpcService<tonic::body::Body> + Clone,
     S::Error: Into<Error>,
     S::ResponseBody: Default + http::Body<Data = tonic::codegen::Bytes> + Send + 'static,
     <S::ResponseBody as http::Body>::Error: Into<Error> + Send,
@@ -127,7 +127,7 @@ where
 
 impl<S> Service<()> for Api<S>
 where
-    S: tonic::client::GrpcService<tonic::body::BoxBody> + Clone,
+    S: tonic::client::GrpcService<tonic::body::Body> + Clone,
     S: Clone + Send + Sync + 'static,
     S::ResponseBody: Default + http::Body<Data = tonic::codegen::Bytes> + Send + 'static,
     <S::ResponseBody as http::Body>::Error: Into<Error> + Send,

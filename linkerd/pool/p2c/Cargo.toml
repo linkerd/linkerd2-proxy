@@ -9,10 +9,8 @@ publish = { workspace = true }
 [dependencies]
 ahash = "0.8"
 futures = { version = "0.3", default-features = false }
-indexmap = "2"
 prometheus-client = { workspace = true }
 rand = { version = "0.9", features = ["small_rng"] }
-tokio = { version = "1", features = ["rt", "sync", "time"] }
 tracing = { workspace = true }
 
 linkerd-error = { path = "../../error" }
@@ -30,5 +28,6 @@ futures-util = { version = "0.3", default-features = false }
 linkerd-tracing = { path = "../../tracing" }
 parking_lot = "0.12"
 quickcheck = { version = "1", default-features = false }
+tokio = { version = "1", features = ["rt", "sync", "time"] }
 tokio-test = "0.4"
 tower-test = { workspace = true }

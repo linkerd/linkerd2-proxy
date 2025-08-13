@@ -2,7 +2,7 @@
 #![forbid(unsafe_code)]
 
 pub use self::{requests::Requests, retries::Retries};
-use linkerd_metrics::SharedStore;
+use linkerd_metrics::legacy::SharedStore;
 use parking_lot::Mutex;
 use std::{fmt, hash::Hash, time::Duration};
 

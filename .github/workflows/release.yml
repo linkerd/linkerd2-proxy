@@ -61,7 +61,23 @@ jobs:
     timeout-minutes: 5
     runs-on: ${{ vars.LINKERD2_PROXY_RUNNER || 'ubuntu-24.04' }}
     steps:
-      - id: meta
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+        if: github.event_name == 'pull_request'
+      - id: workflow
+        if: github.event_name == 'pull_request'
+        uses: tj-actions/changed-files@ed68ef82c095e0d48ec87eccea555d944a631a4c
+        with:
+          files: |
+            .github/workflows/release.yml
+      - id: build
+        if: github.event_name == 'pull_request'
+        uses: tj-actions/changed-files@ed68ef82c095e0d48ec87eccea555d944a631a4c
+        with:
+          files: |
+            justfile
+            Cargo.toml
+
+      - id: version
         env:
           VERSION: ${{ inputs.version }}
         shell: bash
@@ -69,40 +85,38 @@ jobs:
           set -euo pipefail
           shopt -s extglob
           if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
-            echo version="0.0.0-test.${GITHUB_SHA:0:7}"
-            echo archs='["amd64"]'
-            echo oses='["linux"]'
+            echo version="0.0.0-test.${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
             exit 0
-          fi >> "$GITHUB_OUTPUT"
+          fi
           if ! [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+)?(\+[0-9A-Za-z-]+)?$ ]]; then
             echo "Invalid version: $VERSION" >&2
             exit 1
           fi
-          ( echo version="${VERSION#v}"
-            echo archs='["amd64", "arm64", "arm"]'
+          echo version="${VERSION#v}" >> "$GITHUB_OUTPUT"
+
+      - id: platform
+        shell: bash
+        env:
+          WORKFLOW_CHANGED: ${{ steps.workflow.outputs.any_changed }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == pull_request && "$WORKFLOW_CHANGED" != 'true' ]]; then
+            ( echo archs='["amd64"]'
+              echo oses='["linux"]' ) >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          ( echo archs='["amd64", "arm64"]'
             echo oses='["linux", "windows"]'
           ) >> "$GITHUB_OUTPUT"
 
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        if: github.event_name == 'pull_request'
-      - id: changed
-        if: github.event_name == 'pull_request'
-        uses: tj-actions/changed-files@ed68ef82c095e0d48ec87eccea555d944a631a4c
-        with:
-          files: |
-            .github/workflows/release.yml
-            justfile
-            Cargo.toml
-
     outputs:
-      archs: ${{ steps.meta.outputs.archs }}
-      oses: ${{ steps.meta.outputs.oses }}
-      version: ${{ steps.meta.outputs.version }}
-      package: ${{ github.event_name == 'workflow_dispatch' || steps.changed.outputs.any_changed == 'true' }}
+      archs: ${{ steps.platform.outputs.archs }}
+      oses: ${{ steps.platform.outputs.oses }}
+      version: ${{ steps.version.outputs.version }}
+      package: ${{ github.event_name == 'workflow_dispatch' || steps.build.outputs.any_changed == 'true' || steps.workflow.outputs.any_changed == 'true' }}
       profile: ${{ inputs.profile || 'release' }}
       publish: ${{ inputs.publish }}
       ref: ${{ inputs.ref || github.sha }}
-      tag: "${{ inputs.tag-prefix || 'release/' }}v${{ steps.meta.outputs.version }}"
+      tag: "${{ inputs.tag-prefix || 'release/' }}v${{ steps.version.outputs.version }}"
       prerelease: ${{ inputs.prerelease }}
       draft: ${{ inputs.draft }}
       latest: ${{ inputs.latest }}
@@ -135,8 +149,6 @@ jobs:
         exclude:
           - os: windows
             arch: arm64
-          - os: windows
-            arch: arm  
 
     # If we're not actually building on a release tag, don't short-circuit on
     # errors. This helps us know whether a failure is platform-specific.
@@ -151,15 +163,19 @@ jobs:
       # TODO: add to dev image
       - name: Install MiniGW
         if: matrix.os == 'windows'
-        run: apt-get update && apt-get install mingw-w64 -y
+        run: apt-get update && apt-get install -y mingw-w64
+      - name: Install cross compilation toolchain
+        if: matrix.arch == 'arm64'
+        run: apt-get update && apt-get install -y binutils-aarch64-linux-gnu
+
       - name: Configure git
         run: git config --global --add safe.directory "$PWD" # actions/runner#2033
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
         with:
           ref: ${{ needs.meta.outputs.ref }}
       - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0
         with:
-          key: ${{ matrix.arch }}
+          key: ${{ matrix.os }}-${{ matrix.arch }}
       - run: just fetch
       - run: just arch=${{ matrix.arch }} libc=${{ matrix.libc }} os=${{ matrix.os }} rustup
       - run: just arch=${{ matrix.arch }} libc=${{ matrix.libc }} os=${{ matrix.os }} profile=${{ needs.meta.outputs.profile }} build
@@ -188,7 +204,7 @@ jobs:
           git config --global user.name "$GITHUB_USERNAME"
           git config --global user.email "$GITHUB_USERNAME"@users.noreply.github.com
       # Tag the release.
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
         with:
           token: ${{ secrets.LINKERD2_PROXY_GITHUB_TOKEN || github.token }}
           ref: ${{ needs.meta.outputs.ref }}

@@ -5,7 +5,7 @@ pub(crate) use self::{http::Http, tcp::Tcp};
 use crate::http::IdentityRequired;
 use linkerd_app_core::{
     errors::{FailFastError, LoadShedError},
-    metrics::FmtLabels,
+    metrics::legacy::FmtLabels,
     proxy::http::ResponseTimeoutError,
 };
 use std::fmt;

@@ -46,7 +46,7 @@ impl Config {
     ) -> Result<
         Policy<
             impl svc::Service<
-                    http::Request<tonic::body::BoxBody>,
+                    http::Request<tonic::body::Body>,
                     Response = http::Response<control::RspBody>,
                     Error = Error,
                     Future = impl Send,

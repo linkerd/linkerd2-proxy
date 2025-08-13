@@ -2,7 +2,6 @@
 targets = [
     { triple = "x86_64-unknown-linux-gnu" },
     { triple = "aarch64-unknown-linux-gnu" },
-    { triple = "armv7-unknown-linux-gnu" },
 ]
 
 [advisories]
@@ -26,25 +25,12 @@ confidence-threshold = 0.8
 exceptions = [
     { allow = [
         "ISC",
-        "MIT",
-        "OpenSSL",
-    ], name = "ring", version = "*" },
-    { allow = [
-        "ISC",
         "OpenSSL",
     ], name = "aws-lc-sys", version = "*" },
     { allow = [
         "ISC",
         "OpenSSL",
     ], name = "aws-lc-fips-sys", version = "*" },
-]
-
-[[licenses.clarify]]
-name = "ring"
-version = "*"
-expression = "MIT AND ISC AND OpenSSL"
-license-files = [
-    { path = "LICENSE", hash = 0xbd0eed23 },
 ]
 
 [bans]
@@ -56,6 +42,8 @@ deny = [
     { name = "rustls", wrappers = ["tokio-rustls"] },
     # rustls-webpki should be used instead.
     { name = "webpki" },
+    # aws-lc-rs should be used instead.
+    { name = "ring" }
 ]
 skip = [
     # `linkerd-trace-context`, `rustls-pemfile` and `tonic` depend on `base64`
@@ -76,6 +64,8 @@ skip-tree = [
     { name = "pprof" },
     # aws-lc-rs uses a slightly outdated version of bindgen
     { name = "bindgen", version = "0.69.5" },
+    # socket v0.6 is still propagating through the ecosystem
+    { name = "socket2", version = "0.5" },
 ]
 
 [sources]

@@ -263,7 +263,7 @@ fn orig_dst_addr() -> OrigDstAddr {
     OrigDstAddr(([192, 0, 2, 2], 1000).into())
 }
 
-impl tonic::client::GrpcService<tonic::body::BoxBody> for MockSvc {
+impl tonic::client::GrpcService<tonic::body::Body> for MockSvc {
     type ResponseBody = linkerd_app_core::control::RspBody;
     type Error = Error;
     type Future = futures::future::Pending<Result<http::Response<Self::ResponseBody>, Self::Error>>;
@@ -275,7 +275,7 @@ impl tonic::client::GrpcService<tonic::body::BoxBody> for MockSvc {
         unreachable!()
     }
 
-    fn call(&mut self, _req: http::Request<tonic::body::BoxBody>) -> Self::Future {
+    fn call(&mut self, _req: http::Request<tonic::body::Body>) -> Self::Future {
         unreachable!()
     }
 }

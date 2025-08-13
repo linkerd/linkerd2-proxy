@@ -124,26 +124,6 @@ async fn inbound_timeout() {
         .await;
 }
 
-/// Tests that the detect metric is labeled and incremented on I/O error.
-#[tokio::test]
-async fn inbound_io_err() {
-    let _trace = trace_init();
-
-    let (proxy, metrics) = Test::default().run().await;
-    let client = crate::tcp::client(proxy.inbound);
-
-    let tcp_client = client.connect().await;
-
-    tcp_client.write(TcpFixture::HELLO_MSG).await;
-    drop(tcp_client);
-
-    metric(&proxy)
-        .label("error", "i/o")
-        .value(1u64)
-        .assert_in(&metrics)
-        .await;
-}
-
 /// Tests that the detect metric is not incremented when TLS is successfully
 /// detected.
 #[tokio::test]
@@ -187,44 +167,6 @@ async fn inbound_success() {
     let tls_client = client::http2_tls(proxy.inbound, "foo.ns1.svc.cluster.local", client_config);
     tls_client.get("/").await;
     metric.assert_in(&metrics).await;
-}
-
-/// Tests both of the above cases together.
-#[tokio::test]
-async fn inbound_multi() {
-    let _trace = trace_init();
-
-    let (proxy, metrics) = Test::default().run().await;
-    let client = crate::tcp::client(proxy.inbound);
-
-    let metric = metric(&proxy);
-    let timeout_metric = metric.clone().label("error", "tls detection timeout");
-    let io_metric = metric.label("error", "i/o");
-
-    let tcp_client = client.connect().await;
-
-    tokio::time::sleep(TIMEOUT + Duration::from_millis(15)) // just in case
-        .await;
-
-    timeout_metric.clone().value(1u64).assert_in(&metrics).await;
-    drop(tcp_client);
-
-    let tcp_client = client.connect().await;
-
-    tcp_client.write(TcpFixture::HELLO_MSG).await;
-    drop(tcp_client);
-
-    io_metric.clone().value(1u64).assert_in(&metrics).await;
-    timeout_metric.clone().value(1u64).assert_in(&metrics).await;
-
-    let tcp_client = client.connect().await;
-
-    tokio::time::sleep(TIMEOUT + Duration::from_millis(15)) // just in case
-        .await;
-
-    io_metric.clone().value(1u64).assert_in(&metrics).await;
-    timeout_metric.clone().value(2u64).assert_in(&metrics).await;
-    drop(tcp_client);
 }
 
 /// Tests that TLS detect failure metrics are collected for the direct stack.

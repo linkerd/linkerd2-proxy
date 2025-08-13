@@ -1,6 +1,9 @@
 use super::ErrorKind;
 use linkerd_app_core::{
-    metrics::{metrics, Counter, FmtMetrics, ServerLabel},
+    metrics::{
+        legacy::{Counter, FmtMetrics},
+        metrics, ServerLabel,
+    },
     svc::{self, stack::NewMonitor},
     transport::{labels::TargetAddr, OrigDstAddr},
     Error,

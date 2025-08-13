@@ -12,7 +12,7 @@ use std::{
 };
 use thiserror::Error;
 use tokio::time;
-use tonic::{body::BoxBody, client::GrpcService};
+use tonic::{body::Body as TonicBody, client::GrpcService};
 use tracing::{debug, error};
 
 /// Configures the Identity service and local identity.
@@ -92,7 +92,7 @@ impl Certify {
     where
         C: Credentials,
         N: NewService<(), Service = S>,
-        S: GrpcService<BoxBody>,
+        S: GrpcService<TonicBody>,
         S::ResponseBody: Body<Data = tonic::codegen::Bytes> + Send + 'static,
         <S::ResponseBody as Body>::Error: Into<Error> + Send,
     {
@@ -154,7 +154,7 @@ async fn certify<C, S>(
 ) -> Result<SystemTime>
 where
     C: Credentials,
-    S: GrpcService<BoxBody>,
+    S: GrpcService<TonicBody>,
     S::ResponseBody: Body<Data = tonic::codegen::Bytes> + Send + 'static,
     <S::ResponseBody as Body>::Error: Into<Error> + Send,
 {

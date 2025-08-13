@@ -1,4 +1,7 @@
-use linkerd_metrics::{metrics, Counter, FmtMetrics};
+use linkerd_metrics::{
+    legacy::{Counter, FmtMetrics},
+    metrics,
+};
 use std::fmt;
 use std::sync::Arc;
 

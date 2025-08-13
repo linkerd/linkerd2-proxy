@@ -13,7 +13,7 @@
 use futures::future::{self, TryFutureExt};
 use http::StatusCode;
 use linkerd_app_core::{
-    metrics::{self as metrics, FmtMetrics},
+    metrics::{self as metrics, legacy::FmtMetrics},
     proxy::http::{Body, BoxBody, ClientHandle, Request, Response},
     trace, Error, Result,
 };
@@ -32,7 +32,7 @@ pub use self::readiness::{Latch, Readiness};
 
 #[derive(Clone)]
 pub struct Admin<M> {
-    metrics: metrics::Serve<M>,
+    metrics: metrics::legacy::Serve<M>,
     tracing: trace::Handle,
     ready: Readiness,
     shutdown_tx: mpsc::UnboundedSender<()>,
@@ -52,7 +52,7 @@ impl<M> Admin<M> {
         tracing: trace::Handle,
     ) -> Self {
         Self {
-            metrics: metrics::Serve::new(metrics),
+            metrics: metrics::legacy::Serve::new(metrics),
             ready,
             shutdown_tx,
             enable_shutdown,

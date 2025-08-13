@@ -166,7 +166,7 @@ where
 // === impl Metrics ===
 
 impl Metrics {
-    pub fn new(retain_idle: Duration) -> (Self, impl FmtMetrics + Clone + Send + 'static) {
+    pub fn new(retain_idle: Duration) -> (Self, impl legacy::FmtMetrics + Clone + Send + 'static) {
         let (control, control_report) = {
             let m = http_metrics::Requests::<ControlLabels, Class>::default();
             let r = m.clone().into_report(retain_idle).with_prefix("control");
@@ -223,6 +223,7 @@ impl Metrics {
             opentelemetry,
         };
 
+        use legacy::FmtMetrics as _;
         let report = endpoint_report
             .and_report(profile_route_report)
             .and_report(retry_report)
@@ -248,7 +249,7 @@ impl svc::Param<ControlLabels> for control::ControlAddr {
     }
 }
 
-impl FmtLabels for ControlLabels {
+impl legacy::FmtLabels for ControlLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Self { addr, server_id } = self;
 
@@ -281,7 +282,7 @@ impl ProfileRouteLabels {
     }
 }
 
-impl FmtLabels for ProfileRouteLabels {
+impl legacy::FmtLabels for ProfileRouteLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Self {
             direction,
@@ -314,7 +315,7 @@ impl From<OutboundEndpointLabels> for EndpointLabels {
     }
 }
 
-impl FmtLabels for EndpointLabels {
+impl legacy::FmtLabels for EndpointLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Inbound(i) => (Direction::In, i).fmt_labels(f),
@@ -323,7 +324,7 @@ impl FmtLabels for EndpointLabels {
     }
 }
 
-impl FmtLabels for InboundEndpointLabels {
+impl legacy::FmtLabels for InboundEndpointLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Self {
             tls,
@@ -343,7 +344,7 @@ impl FmtLabels for InboundEndpointLabels {
     }
 }
 
-impl FmtLabels for ServerLabel {
+impl legacy::FmtLabels for ServerLabel {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Self(meta, port) = self;
         write!(
@@ -374,7 +375,7 @@ impl prom::EncodeLabelSetMut for ServerLabel {
     }
 }
 
-impl FmtLabels for ServerAuthzLabels {
+impl legacy::FmtLabels for ServerAuthzLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Self { server, authz } = self;
 
@@ -389,7 +390,7 @@ impl FmtLabels for ServerAuthzLabels {
     }
 }
 
-impl FmtLabels for RouteLabels {
+impl legacy::FmtLabels for RouteLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Self { server, route } = self;
 
@@ -404,7 +405,7 @@ impl FmtLabels for RouteLabels {
     }
 }
 
-impl FmtLabels for RouteAuthzLabels {
+impl legacy::FmtLabels for RouteAuthzLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Self { route, authz } = self;
 
@@ -425,7 +426,7 @@ impl svc::Param<OutboundZoneLocality> for OutboundEndpointLabels {
     }
 }
 
-impl FmtLabels for OutboundEndpointLabels {
+impl legacy::FmtLabels for OutboundEndpointLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Self {
             server_id,
@@ -462,20 +463,20 @@ impl fmt::Display for Direction {
     }
 }
 
-impl FmtLabels for Direction {
+impl legacy::FmtLabels for Direction {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "direction=\"{self}\"")
     }
 }
 
-impl FmtLabels for Authority<'_> {
+impl legacy::FmtLabels for Authority<'_> {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Self(authority) = self;
         write!(f, "authority=\"{authority}\"")
     }
 }
 
-impl FmtLabels for Class {
+impl legacy::FmtLabels for Class {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let class = |ok: bool| if ok { "success" } else { "failure" };
 
@@ -523,7 +524,7 @@ impl StackLabels {
     }
 }
 
-impl FmtLabels for StackLabels {
+impl legacy::FmtLabels for StackLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Self {
             direction,

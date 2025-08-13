@@ -2,7 +2,7 @@ use linkerd_app_core::{
     classify,
     config::ServerConfig,
     drain, errors, identity,
-    metrics::{self, FmtMetrics},
+    metrics::{self, legacy::FmtMetrics},
     proxy::http,
     serve,
     svc::{self, ExtractParam, InsertParam, Param},

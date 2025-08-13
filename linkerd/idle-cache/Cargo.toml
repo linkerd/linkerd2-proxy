@@ -10,8 +10,6 @@ publish = { workspace = true }
 test-util = []
 
 [dependencies]
-futures = { version = "0.3", default-features = false }
-linkerd-error = { path = "../error" }
 linkerd-stack = { path = "../stack" }
 parking_lot = "0.12"
 tokio = { version = "1", default-features = false, features = [
@@ -28,4 +26,3 @@ tokio = { version = "1", default-features = false, features = [
     "test-util",
     "time",
 ] }
-linkerd-tracing = { path = "../tracing", features = ["ansi"] }
