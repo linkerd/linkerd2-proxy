@@ -7,8 +7,6 @@ edition = { workspace = true }
 publish = { workspace = true }
 
 [dependencies]
-futures = { version = "0.3", default-features = false }
-linkerd-error = { path = "../../error" }
 linkerd-stack = { path = ".." }
 tower = { workspace = true }
 tracing = { workspace = true }

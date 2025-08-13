@@ -15,7 +15,6 @@ tokio = { version = "1", features = ["time"] }
 tracing = { workspace = true }
 
 [dev-dependencies]
-tokio = { version = "1", features = ["macros"] }
-tokio-test = "0.4"
+tokio = { version = "1", features = ["macros", "test-util"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 linkerd-tracing = { path = "../tracing" }
