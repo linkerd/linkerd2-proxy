@@ -7,7 +7,7 @@ edition = "2018"
 publish = { workspace = true }
 
 [features]
-fips = ["linkerd-meshtls-rustls/fips"]
+rustls-aws-lc-fips = ["linkerd-meshtls-rustls/aws-lc-fips"]
 
 [dependencies]
 futures = { version = "0.3", default-features = false }
