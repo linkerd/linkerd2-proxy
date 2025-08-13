@@ -10,7 +10,7 @@ use std::{
     sync::Arc,
     task::{Context, Poll},
 };
-use tonic::{body::BoxBody, client::GrpcService};
+use tonic::{body::Body as TonicBody, client::GrpcService};
 use tracing::debug;
 
 /// Creates watches on service profiles.
@@ -31,7 +31,7 @@ struct Inner<S> {
 
 impl<R, S> Client<R, S>
 where
-    S: GrpcService<BoxBody> + Clone + Send + 'static,
+    S: GrpcService<TonicBody> + Clone + Send + 'static,
     S::ResponseBody: Send + Sync,
     S::ResponseBody: Body<Data = tonic::codegen::Bytes> + Send + 'static,
     <S::ResponseBody as Body>::Error:
@@ -64,7 +64,7 @@ where
 impl<T, R, S> Service<T> for Client<R, S>
 where
     T: Param<LookupAddr>,
-    S: GrpcService<BoxBody> + Clone + Send + 'static,
+    S: GrpcService<TonicBody> + Clone + Send + 'static,
     S::ResponseBody: Body<Data = tonic::codegen::Bytes> + Send + 'static,
     <S::ResponseBody as Body>::Error:
         Into<Box<dyn std::error::Error + Send + Sync + 'static>> + Send,
@@ -111,7 +111,7 @@ type InnerFuture =
 
 impl<S> Inner<S>
 where
-    S: GrpcService<BoxBody> + Clone + Send + 'static,
+    S: GrpcService<TonicBody> + Clone + Send + 'static,
     S::ResponseBody: Body<Data = tonic::codegen::Bytes> + Send + 'static,
     <S::ResponseBody as Body>::Error:
         Into<Box<dyn std::error::Error + Send + Sync + 'static>> + Send,
@@ -128,7 +128,7 @@ where
 
 impl<S> Service<LookupAddr> for Inner<S>
 where
-    S: GrpcService<BoxBody> + Clone + Send + 'static,
+    S: GrpcService<TonicBody> + Clone + Send + 'static,
     S::ResponseBody: Body<Data = tonic::codegen::Bytes> + Send + 'static,
     <S::ResponseBody as Body>::Error:
         Into<Box<dyn std::error::Error + Send + Sync + 'static>> + Send,

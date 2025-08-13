@@ -302,7 +302,7 @@ impl Controller {
     }
 
     pub async fn run(self) -> controller::Listening {
-        let svc = grpc::transport::Server::builder()
+        let routes = grpc::service::Routes::default()
             .add_service(
                 inbound_server_policies_server::InboundServerPoliciesServer::new(Server(Arc::new(
                     self.inbound,
@@ -310,9 +310,9 @@ impl Controller {
             )
             .add_service(outbound_policies_server::OutboundPoliciesServer::new(
                 Server(Arc::new(self.outbound)),
-            ))
-            .into_service();
-        controller::run(RoutesSvc(svc), "support policy controller", None).await
+            ));
+
+        controller::run(RoutesSvc(routes), "support policy controller", None).await
     }
 }
 
@@ -525,7 +525,9 @@ impl Service<Request<hyper::body::Incoming>> for RoutesSvc {
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         let Self(routes) = self;
-        routes.poll_ready(cx)
+        <grpc::service::Routes as Service<Request<UnsyncBoxBody<Bytes, grpc::Status>>>>::poll_ready(
+            routes, cx,
+        )
     }
 
     fn call(&mut self, req: Request<hyper::body::Incoming>) -> Self::Future {

@@ -19,12 +19,12 @@ use opencensus_proto::{
 use std::collections::HashMap;
 use tokio::{sync::mpsc, time};
 use tokio_stream::wrappers::ReceiverStream;
-use tonic::{self as grpc, body::BoxBody, client::GrpcService};
+use tonic::{self as grpc, body::Body as TonicBody, client::GrpcService};
 use tracing::{debug, info, trace};
 
 pub async fn export_spans<T, S>(client: T, node: Node, spans: S, metrics: Registry)
 where
-    T: GrpcService<BoxBody> + Clone,
+    T: GrpcService<TonicBody> + Clone,
     T::Error: Into<Error>,
     T::ResponseBody: Body<Data = tonic::codegen::Bytes> + Send + 'static,
     <T::ResponseBody as Body>::Error: Into<Error> + Send,
@@ -49,7 +49,7 @@ struct SpanRxClosed;
 
 impl<T, S> SpanExporter<T, S>
 where
-    T: GrpcService<BoxBody>,
+    T: GrpcService<TonicBody>,
     T::Error: Into<Error>,
     T::ResponseBody: Body<Data = tonic::codegen::Bytes> + Send + 'static,
     <T::ResponseBody as Body>::Error: Into<Error> + Send,

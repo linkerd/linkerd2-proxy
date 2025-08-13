@@ -40,7 +40,7 @@ impl Config {
         limits: ReceiveLimits,
     ) -> impl GetPolicy + Clone + Send + Sync + 'static
     where
-        C: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error>,
+        C: tonic::client::GrpcService<tonic::body::Body, Error = Error>,
         C: Clone + Unpin + Send + Sync + 'static,
         C::ResponseBody: http::Body<Data = tonic::codegen::Bytes, Error = Error>,
         C::ResponseBody: Send + 'static,

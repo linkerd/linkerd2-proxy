@@ -15,7 +15,7 @@ use std::{
 };
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
-use tonic::{body::BoxBody, client::GrpcService};
+use tonic::{body::Body as TonicBody, client::GrpcService};
 use tracing::Instrument;
 
 pub(super) struct OtelCollectorAttributes {
@@ -31,7 +31,7 @@ pub(super) fn create_collector<S>(
     legacy_metrics: metrics::Registry,
 ) -> EnabledCollector
 where
-    S: GrpcService<BoxBody> + Clone + Send + 'static,
+    S: GrpcService<TonicBody> + Clone + Send + 'static,
     S::Error: Into<Error>,
     S::Future: Send,
     S::ResponseBody: Body<Data = tonic::codegen::Bytes> + Send + 'static,

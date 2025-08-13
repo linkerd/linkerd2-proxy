@@ -146,7 +146,7 @@ impl Outbound<()> {
         export_hostname_labels: bool,
     ) -> impl policy::GetPolicy
     where
-        C: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error>,
+        C: tonic::client::GrpcService<tonic::body::Body, Error = Error>,
         C: Clone + Unpin + Send + Sync + 'static,
         C::ResponseBody: proxy::http::Body<Data = tonic::codegen::Bytes, Error = Error>,
         C::ResponseBody: Send + 'static,
