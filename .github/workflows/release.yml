@@ -137,6 +137,13 @@ jobs:
           ${{ toJson(needs.meta.outputs) }}
           EOF
 
+  # oci:
+  #   needs: meta
+  #   if: needs.meta.outputs.package == 'true'
+  #   uses: ./.github/workflows/oci-build-push.yml
+  #   with:
+  #     outputs: type=oci,dest=linkerd2-proxy.tar
+
   package:
     needs: meta
     if: needs.meta.outputs.package == 'true'

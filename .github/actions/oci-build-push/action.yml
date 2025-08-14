@@ -1,0 +1,56 @@
+
+inputs:
+  ref:
+    required: false
+  tags:
+    required: false
+  features:
+    required: false
+  vendor:
+    required: false
+  version:
+    required: false
+  rustflags:
+    required: false
+    default: -D warnings -A deprecated --cfg tokio_unstable
+  target:
+    required: false
+    default: bin
+  platforms:
+    required: false
+    default: linux/amd64,linux/arm64
+  cache-scope:
+    required: false
+  outputs:
+    required: false
+
+outputs:
+  imageid: ${{ steps.build.outputs.imageid }}
+  digest: ${{ steps.build.outputs.digest }}
+  metadata: ${{ steps.build.outputs.metadata }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      with:
+        ref: ${{ inputs.ref || github.ref }}
+    - uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392
+    - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435
+    - uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83
+      id: build
+      with:
+        context: .
+        build-args: |
+          PROFILE=release
+          RUSTFLAGS=${{ inputs.rustflags }}
+          LINKERD2_PROXY_VENDOR=${{ inputs.vendor }}
+          LINKERD2_PROXY_VERSION=${{ inputs.version }}
+          PROXY_FEATURES=${{ inputs.features }}
+        outputs: ${{ inputs.outputs }}
+        tags: ${{ inputs.tags }}
+        target: ${{ inputs.target }}
+        platforms: ${{ inputs.platforms }}
+        cache-from: type=gha,scope=${{ inputs.cache-scope || github.head_ref }}
+        cache-to: type=gha,scope=${{ inputs.cache-scope || github.head_ref }},mode=max
+

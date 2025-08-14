@@ -7,12 +7,9 @@ ARG RUST_IMAGE=ghcr.io/linkerd/dev:v47-rust
 
 # Use an arbitrary ~recent edge release image to get the proxy
 # identity-initializing and linkerd-await wrappers.
-ARG LINKERD2_IMAGE=ghcr.io/linkerd/proxy:edge-23.11.2
+ARG LINKERD2_IMAGE=ghcr.io/linkerd/proxy:edge-25.8.2
 
-FROM $LINKERD2_IMAGE as linkerd2
-
-FROM --platform=$BUILDPLATFORM $RUST_IMAGE as fetch
-
+FROM --platform=$BUILDPLATFORM $RUST_IMAGE as base
 ARG PROXY_FEATURES=""
 ARG TARGETARCH="amd64"
 RUN apt-get update && \
@@ -26,31 +23,34 @@ RUN apt-get update && \
     esac && \
     rm -rf /var/lib/apt/lists/*
 
+FROM base as fetch
 ENV CARGO_NET_RETRY=10
 ENV RUSTUP_MAX_RETRIES=10
-
 WORKDIR /src
 COPY . .
 RUN --mount=type=cache,id=cargo,target=/usr/local/cargo/registry \
     just fetch
 
-# Build the proxy.
 FROM fetch as build
 ENV CARGO_INCREMENTAL=0
-ENV RUSTFLAGS="-D warnings -A deprecated --cfg tokio_unstable"
+ARG RUSTFLAGS="-D warnings -A deprecated --cfg tokio_unstable"
 ARG PROFILE="release"
 ARG LINKERD2_PROXY_VERSION=""
 ARG LINKERD2_PROXY_VENDOR=""
 SHELL ["/bin/bash", "-c"]
 RUN --mount=type=cache,id=cargo,target=/usr/local/cargo/registry \
     if [[ "$PROXY_FEATURES" =~ .*pprof.* ]] ; then cmd=build-debug ; else cmd=build ; fi ; \
-    /usr/bin/time -v just arch="$TARGETARCH" features="$PROXY_FEATURES" profile="$PROFILE" "$cmd" && \
+    /usr/bin/time -v just arch="$TARGETARCH" profile="$PROFILE" features="$PROXY_FEATURES" "$cmd" && \
     ( mkdir -p /out ; \
-        mv $(just --evaluate profile="$PROFILE" _target_bin) /out/ ; \
+        mv $(just --evaluate arch="$TARGETARCH" profile="$PROFILE" _target_bin) /out/ ; \
         du -sh /out/* )
+
+FROM scratch as bin
+COPY --from=build /out/linkerd2-proxy /
 
 # Install the proxy binary into a base image that we can at least get a shell
 # for debugging.
+FROM $LINKERD2_IMAGE as linkerd2
 FROM docker.io/library/debian:bookworm-slim as runtime
 WORKDIR /linkerd
 COPY --from=linkerd2 /usr/lib/linkerd/* /usr/lib/linkerd/

@@ -1,0 +1,29 @@
+on:
+  pull_request: {}
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ${{ vars.LINKERD2_PROXY_RUNNER || 'ubuntu-24.04' }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+      - id: meta
+        uses: tj-actions/changed-files@ed68ef82c095e0d48ec87eccea555d944a631a4c
+        with:
+          files: |
+            .github/workflows/cache-oci.yml
+            .github/workflows/oci-build-push.yml
+
+      - if: steps.meta.outputs.any_changed == 'true' || github.event_name == 'push'
+        uses: ./.github/actions/oci-build-push
+        with:
+          outputs: type=local,dest=out
+
+      - if: steps.meta.outputs.any_changed == 'true' || github.event_name == 'push'
+        run: find out -type f -ls
