@@ -1,4 +1,5 @@
 use aws_lc_rs::default_provider as aws_lc_default_provider;
+use tokio_rustls::rustls::crypto::SupportedKxGroup;
 use tokio_rustls::rustls::{
     self,
     crypto::{aws_lc_rs, CryptoProvider, WebPkiSupportedAlgorithms},
@@ -7,6 +8,7 @@ use tokio_rustls::rustls::{
 pub fn default_provider() -> CryptoProvider {
     let mut provider = aws_lc_default_provider();
     provider.cipher_suites = TLS_SUPPORTED_CIPHERSUITES.to_vec();
+    provider.kx_groups = kx_groups();
     provider.signature_verification_algorithms = *SUPPORTED_SIG_ALGS;
     #[cfg(feature = "aws-lc-fips")]
     assert!(provider.fips());
@@ -25,6 +27,25 @@ static TLS_SUPPORTED_CIPHERSUITES: &[rustls::SupportedCipherSuite] = &[
     aws_lc_rs::cipher_suite::TLS13_AES_256_GCM_SHA384,
     aws_lc_rs::cipher_suite::TLS13_AES_128_GCM_SHA256,
 ];
+
+#[cfg(not(feature = "aws-lc-fips"))]
+fn kx_groups() -> Vec<&'static dyn SupportedKxGroup> {
+    vec![
+        aws_lc_rs::kx_group::X25519MLKEM768,
+        aws_lc_rs::kx_group::X25519,
+        aws_lc_rs::kx_group::SECP256R1,
+        aws_lc_rs::kx_group::SECP384R1,
+    ]
+}
+#[cfg(feature = "aws-lc-fips")]
+fn kx_groups() -> Vec<&'static dyn SupportedKxGroup> {
+    vec![
+        aws_lc_rs::kx_group::SECP256R1MLKEM768,
+        aws_lc_rs::kx_group::SECP256R1,
+        aws_lc_rs::kx_group::SECP384R1,
+    ]
+}
+
 pub static SUPPORTED_SIG_ALGS: &WebPkiSupportedAlgorithms = &WebPkiSupportedAlgorithms {
     all: &[
         webpki::aws_lc_rs::ECDSA_P256_SHA256,
@@ -119,23 +140,6 @@ mod tests {
                 NamedGroup::X25519MLKEM768,
             ]
         );
-    }
-
-    #[test]
-    fn check_default_linkerd_kx_groups() {
-        let kx_groups = aws_lc_default_provider()
-            .kx_groups
-            .iter()
-            .map(|g| g.name())
-            .collect::<Vec<_>>();
-
-        let linkerd_kx_groups = default_provider()
-            .kx_groups
-            .iter()
-            .map(|g| g.name())
-            .collect::<Vec<_>>();
-
-        assert_eq!(kx_groups, linkerd_kx_groups);
     }
 
     #[test]
