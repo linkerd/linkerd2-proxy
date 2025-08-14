@@ -92,11 +92,9 @@ fn default_provider() -> Arc<CryptoProvider> {
         return Arc::clone(provider);
     }
 
-    let mut provider = backend::default_provider();
-    provider.cipher_suites = params::TLS_SUPPORTED_CIPHERSUITES.to_vec();
     // Ignore install errors. This is the only place we install a provider, so if we raced with
     // another thread to set the provider it will be functionally the same as this provider.
-    let _ = provider.install_default();
+    let _ = backend::default_provider().install_default();
     Arc::clone(CryptoProvider::get_default().expect("Just installed a default"))
 }
 
@@ -129,6 +127,4 @@ mod params {
         rustls::SignatureScheme::ECDSA_NISTP256_SHA256;
     pub static SUPPORTED_SIG_ALGS: &WebPkiSupportedAlgorithms = backend::SUPPORTED_SIG_ALGS;
     pub static TLS_VERSIONS: &[&rustls::SupportedProtocolVersion] = &[&rustls::version::TLS13];
-    pub static TLS_SUPPORTED_CIPHERSUITES: &[rustls::SupportedCipherSuite] =
-        backend::TLS_SUPPORTED_CIPHERSUITES;
 }
