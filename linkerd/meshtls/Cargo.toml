@@ -7,12 +7,7 @@ edition = "2018"
 publish = { workspace = true }
 
 [features]
-rustls = ["linkerd-meshtls-rustls", "__has_any_tls_impls"]
 rustls-aws-lc-fips = ["linkerd-meshtls-rustls/aws-lc-fips"]
-boring = ["linkerd-meshtls-boring", "__has_any_tls_impls"]
-boring-fips = ["boring", "linkerd-meshtls-boring/fips"]
-# Enabled if *any* TLS impl is enabled.
-__has_any_tls_impls = []
 
 [dependencies]
 futures = { version = "0.3", default-features = false }
@@ -22,8 +17,7 @@ linkerd-dns-name = { path = "../dns/name" }
 linkerd-error = { path = "../error" }
 linkerd-identity = { path = "../identity" }
 linkerd-io = { path = "../io" }
-linkerd-meshtls-boring = { path = "boring", optional = true }
-linkerd-meshtls-rustls = { path = "rustls", optional = true, default-features = false }
+linkerd-meshtls-rustls = { path = "rustls", default-features = false }
 linkerd-stack = { path = "../stack" }
 linkerd-tls = { path = "../tls" }
 
