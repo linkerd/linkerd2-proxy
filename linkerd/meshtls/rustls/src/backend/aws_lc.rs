@@ -1,8 +1,7 @@
 use aws_lc_rs::default_provider as aws_lc_default_provider;
-use tokio_rustls::rustls::crypto::SupportedKxGroup;
 use tokio_rustls::rustls::{
     self,
-    crypto::{aws_lc_rs, CryptoProvider, WebPkiSupportedAlgorithms},
+    crypto::{aws_lc_rs, CryptoProvider, SupportedKxGroup, WebPkiSupportedAlgorithms},
 };
 
 pub fn default_provider() -> CryptoProvider {
