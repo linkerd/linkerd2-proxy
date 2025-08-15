@@ -7,7 +7,7 @@ use linkerd_dns_name::Name;
 use linkerd_error::Infallible;
 use linkerd_identity::{Credentials, DerX509, Id};
 use linkerd_io::{self as io, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use linkerd_meshtls as meshtls;
+use linkerd_meshtls::{self as meshtls, watch};
 use linkerd_proxy_transport::{
     addrs::*,
     listen::{Addrs, Bind, BindTcp},
@@ -52,15 +52,13 @@ fn generate_cert_with_name(subject_alt_names: Vec<SanType>) -> (Vec<u8>, Vec<u8>
     )
 }
 
-pub fn fails_processing_cert_when_wrong_id_configured(mode: meshtls::Mode) {
+pub fn fails_processing_cert_when_wrong_id_configured() {
     let server_name = Name::from_str("system.local").expect("should parse");
     let id = Id::Dns(server_name.clone());
 
     let (cert, key, roots) =
         generate_cert_with_name(vec![SanType::URI("spiffe://system/local".parse().unwrap())]);
-    let (mut store, _) = mode
-        .watch(id, server_name.clone(), &roots)
-        .expect("should construct");
+    let (mut store, _) = watch(id, server_name.clone(), &roots).expect("should construct");
 
     let err = store
         .set_certificate(DerX509(cert), vec![], key, SystemTime::now())
@@ -69,9 +67,9 @@ pub fn fails_processing_cert_when_wrong_id_configured(mode: meshtls::Mode) {
     assert_eq!("certificate does not match TLS identity", format!("{err}"),);
 }
 
-pub async fn plaintext(mode: meshtls::Mode) {
-    let (_foo, _, server_tls) = load(mode, &test_util::FOO_NS1);
-    let (_bar, client_tls, _) = load(mode, &test_util::BAR_NS1);
+pub async fn plaintext() {
+    let (_foo, _, server_tls) = load(&test_util::FOO_NS1);
+    let (_bar, client_tls, _) = load(&test_util::BAR_NS1);
     let (client_result, server_result) = run_test(
         client_tls,
         Conditional::None(tls::NoClientTls::NotProvidedByServiceDiscovery),
@@ -94,9 +92,9 @@ pub async fn plaintext(mode: meshtls::Mode) {
     assert_eq!(&server_result.result.expect("ping")[..], PING);
 }
 
-pub async fn proxy_to_proxy_tls_works(mode: meshtls::Mode) {
-    let (_foo, _, server_tls) = load(mode, &test_util::FOO_NS1);
-    let (_bar, client_tls, _) = load(mode, &test_util::BAR_NS1);
+pub async fn proxy_to_proxy_tls_works() {
+    let (_foo, _, server_tls) = load(&test_util::FOO_NS1);
+    let (_bar, client_tls, _) = load(&test_util::BAR_NS1);
     let server_id = tls::ServerId(test_util::FOO_NS1.id.parse().unwrap());
     let server_name = tls::ServerName(test_util::FOO_NS1.name.parse().unwrap());
     let (client_result, server_result) = run_test(
@@ -125,12 +123,12 @@ pub async fn proxy_to_proxy_tls_works(mode: meshtls::Mode) {
     assert_eq!(&server_result.result.expect("ping")[..], PING);
 }
 
-pub async fn proxy_to_proxy_tls_pass_through_when_identity_does_not_match(mode: meshtls::Mode) {
-    let (_foo, _, server_tls) = load(mode, &test_util::FOO_NS1);
+pub async fn proxy_to_proxy_tls_pass_through_when_identity_does_not_match() {
+    let (_foo, _, server_tls) = load(&test_util::FOO_NS1);
 
     // Misuse the client's identity instead of the server's identity. Any
     // identity other than `server_tls.server_identity` would work.
-    let (_bar, client_tls, _) = load(mode, &test_util::BAR_NS1);
+    let (_bar, client_tls, _) = load(&test_util::BAR_NS1);
     let server_id = test_util::BAR_NS1.id.parse::<tls::ServerId>().unwrap();
     let server_name = test_util::BAR_NS1.name.parse::<tls::ServerName>().unwrap();
 
@@ -161,18 +159,14 @@ type ServerConn<T, I> = (
     io::EitherIo<meshtls::ServerIo<tls::server::DetectIo<I>>, tls::server::DetectIo<I>>,
 );
 
-fn load(
-    mode: meshtls::Mode,
-    ent: &test_util::Entity,
-) -> (meshtls::creds::Store, meshtls::NewClient, meshtls::Server) {
+fn load(ent: &test_util::Entity) -> (meshtls::creds::Store, meshtls::NewClient, meshtls::Server) {
     let roots_pem = std::str::from_utf8(ent.trust_anchors).expect("valid PEM");
-    let (mut store, rx) = mode
-        .watch(
-            ent.name.parse().unwrap(),
-            ent.name.parse().unwrap(),
-            roots_pem,
-        )
-        .expect("credentials must be readable");
+    let (mut store, rx) = watch(
+        ent.name.parse().unwrap(),
+        ent.name.parse().unwrap(),
+        roots_pem,
+    )
+    .expect("credentials must be readable");
 
     store
         .set_certificate(
@@ -285,7 +279,7 @@ where
 
         let tls = Some(client_server_id.clone());
         let client = async move {
-            let conn = tls::Client::layer(client_tls)
+            let conn = tls::Client::<meshtls::NewClient, ConnectTcp>::layer(client_tls)
                 .layer(ConnectTcp::new(Keepalive(None), UserTimeout(None)))
                 .oneshot(Target(server_addr.into(), client_server_id))
                 .await;

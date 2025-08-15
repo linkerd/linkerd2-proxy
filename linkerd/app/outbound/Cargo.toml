@@ -13,7 +13,7 @@ Configures and runs the outbound proxy
 default = []
 allow-loopback = []
 test-subscriber = []
-test-util = ["linkerd-app-test", "linkerd-meshtls-rustls/test-util", "dep:http-body"]
+test-util = ["linkerd-app-test", "linkerd-meshtls/test-util", "dep:http-body"]
 
 prometheus-client-rust-242 = [] # TODO
 
@@ -42,7 +42,7 @@ linkerd-http-prom = { path = "../../http/prom" }
 linkerd-http-retry = { path = "../../http/retry" }
 linkerd-http-route = { path = "../../http/route" }
 linkerd-identity = { path = "../../identity" }
-linkerd-meshtls-rustls = { path = "../../meshtls/rustls", optional = true, default-features = false }
+linkerd-meshtls = { path = "../../meshtls", optional = true, default-features = false }
 linkerd-opaq-route = { path = "../../opaq-route" }
 linkerd-proxy-client-policy = { path = "../../proxy/client-policy", features = [
     "proto",
@@ -67,7 +67,7 @@ linkerd-app-test = { path = "../test", features = ["client-policy"] }
 linkerd-http-box = { path = "../../http/box" }
 linkerd-http-prom = { path = "../../http/prom", features = ["test-util"] }
 linkerd-io = { path = "../../io", features = ["tokio-test"] }
-linkerd-meshtls-rustls = { path = "../../meshtls/rustls", features = [
+linkerd-meshtls = { path = "../../meshtls", features = [
     "test-util",
 ] }
 linkerd-mock-http-body = { path = "../../mock/http-body" }

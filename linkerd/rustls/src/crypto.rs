@@ -1,26 +1,33 @@
-use aws_lc_rs::default_provider as aws_lc_default_provider;
 use tokio_rustls::rustls::{
     self,
-    crypto::{aws_lc_rs, CryptoProvider, WebPkiSupportedAlgorithms},
+    crypto::{
+        aws_lc_rs::{self, default_provider as aws_lc_default_provider},
+        CryptoProvider, WebPkiSupportedAlgorithms,
+    },
 };
 
 pub fn default_provider() -> CryptoProvider {
     let mut provider = aws_lc_default_provider();
     provider.cipher_suites = TLS_SUPPORTED_CIPHERSUITES.to_vec();
     provider.signature_verification_algorithms = *SUPPORTED_SIG_ALGS;
-    #[cfg(feature = "aws-lc-fips")]
+    #[cfg(feature = "fips")]
     assert!(provider.fips());
     provider
 }
 
-#[cfg(not(feature = "aws-lc-fips"))]
-pub static TLS_SUPPORTED_CIPHERSUITES: &[rustls::SupportedCipherSuite] = &[
+// These must be kept in sync:
+pub const SIGNATURE_ALG_RUSTLS_SCHEME: rustls::SignatureScheme =
+    rustls::SignatureScheme::ECDSA_NISTP256_SHA256;
+pub static TLS_VERSIONS: &[&rustls::SupportedProtocolVersion] = &[&rustls::version::TLS13];
+
+#[cfg(not(feature = "fips"))]
+static TLS_SUPPORTED_CIPHERSUITES: &[rustls::SupportedCipherSuite] = &[
     aws_lc_rs::cipher_suite::TLS13_AES_128_GCM_SHA256,
     aws_lc_rs::cipher_suite::TLS13_AES_256_GCM_SHA384,
     aws_lc_rs::cipher_suite::TLS13_CHACHA20_POLY1305_SHA256,
 ];
 // Prefer aes-256-gcm if fips is enabled
-#[cfg(feature = "aws-lc-fips")]
+#[cfg(feature = "fips")]
 static TLS_SUPPORTED_CIPHERSUITES: &[rustls::SupportedCipherSuite] = &[
     aws_lc_rs::cipher_suite::TLS13_AES_256_GCM_SHA384,
     aws_lc_rs::cipher_suite::TLS13_AES_128_GCM_SHA256,

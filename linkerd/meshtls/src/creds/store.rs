@@ -1,4 +1,3 @@
-use super::{default_provider, params::*};
 use linkerd_dns_name as dns;
 use linkerd_error::Result;
 use linkerd_identity as id;
@@ -28,8 +27,8 @@ struct CertResolver(Arc<rustls::sign::CertifiedKey>);
 pub(super) fn client_config_builder(
     cert_verifier: Arc<dyn rustls::client::danger::ServerCertVerifier>,
 ) -> rustls::ConfigBuilder<rustls::ClientConfig, rustls::client::WantsClientCert> {
-    rustls::ClientConfig::builder_with_provider(default_provider())
-        .with_protocol_versions(TLS_VERSIONS)
+    rustls::ClientConfig::builder_with_provider(linkerd_rustls::get_default_provider())
+        .with_protocol_versions(linkerd_rustls::TLS_VERSIONS)
         .expect("client config must be valid")
         // XXX: Rustls's built-in verifiers don't let us tweak things as fully
         // as we'd like (e.g. controlling the set of trusted signature
@@ -55,7 +54,7 @@ pub(super) fn server_config(
     // controlling the set of trusted signature algorithms), but they provide good enough
     // defaults for now.
     // TODO: lock down the verification further.
-    let provider = default_provider();
+    let provider = linkerd_rustls::get_default_provider();
 
     let client_cert_verifier =
         WebPkiClientVerifier::builder_with_provider(Arc::new(roots), provider.clone())
@@ -64,7 +63,7 @@ pub(super) fn server_config(
             .expect("server verifier must be valid");
 
     rustls::ServerConfig::builder_with_provider(provider)
-        .with_protocol_versions(TLS_VERSIONS)
+        .with_protocol_versions(linkerd_rustls::TLS_VERSIONS)
         .expect("server config must be valid")
         .with_client_cert_verifier(client_cert_verifier)
         .with_cert_resolver(resolver)
@@ -172,7 +171,7 @@ impl CertResolver {
         &self,
         sigschemes: &[rustls::SignatureScheme],
     ) -> Option<Arc<rustls::sign::CertifiedKey>> {
-        if !sigschemes.contains(&SIGNATURE_ALG_RUSTLS_SCHEME) {
+        if !sigschemes.contains(&linkerd_rustls::SIGNATURE_ALG_RUSTLS_SCHEME) {
             debug!("Signature scheme not supported -> no certificate");
             return None;
         }

@@ -18,8 +18,7 @@ linkerd-app-core = { path = "../../core" }
 linkerd-app-inbound = { path = ".." }
 linkerd-app-test = { path = "../../test" }
 linkerd-idle-cache = { path = "../../../idle-cache", features = ["test-util"] }
-linkerd-meshtls = { path = "../../../meshtls", features = ["rustls"] }
-linkerd-meshtls-rustls = { path = "../../../meshtls/rustls", features = [
+linkerd-meshtls = { path = "../../../meshtls", features = [
     "test-util",
 ] }
 linkerd-tracing = { path = "../../../tracing", features = ["ansi"] }

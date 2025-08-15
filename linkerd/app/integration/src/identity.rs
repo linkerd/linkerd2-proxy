@@ -8,7 +8,7 @@ use std::{
 };
 
 use linkerd2_proxy_api::identity as pb;
-use linkerd_meshtls_rustls::creds::default_provider_for_test;
+use linkerd_rustls::get_default_provider;
 use tokio_rustls::rustls::{self, server::WebPkiClientVerifier};
 use tonic as grpc;
 
@@ -107,7 +107,7 @@ impl Identity {
         assert_ne!(added, 0, "trust anchors must include at least one cert");
         assert_eq!(skipped, 0, "no certs in pemfile should be invalid");
 
-        let provider = default_provider_for_test();
+        let provider = get_default_provider();
 
         let client_config = rustls::ClientConfig::builder_with_provider(provider.clone())
             .with_safe_default_protocol_versions()
