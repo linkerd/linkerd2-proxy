@@ -30,6 +30,7 @@ linkerd-app-core = { path = "../core" }
 linkerd-app-test = { path = "../test" }
 linkerd-meshtls = { path = "../../meshtls", features = ["test-util"] }
 linkerd-metrics = { path = "../../metrics", features = ["test_util"] }
+linkerd-rustls = { path = "../../rustls" }
 linkerd-tracing = { path = "../../tracing" }
 maplit = "1"
 parking_lot = "0.12"

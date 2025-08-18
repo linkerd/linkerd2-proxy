@@ -1,7 +1,9 @@
-use aws_lc_rs::default_provider as aws_lc_default_provider;
 use tokio_rustls::rustls::{
     self,
-    crypto::{aws_lc_rs, CryptoProvider, SupportedKxGroup, WebPkiSupportedAlgorithms},
+    crypto::{
+        aws_lc_rs::{self, default_provider as aws_lc_default_provider},
+        CryptoProvider, SupportedKxGroup, WebPkiSupportedAlgorithms,
+    },
 };
 
 pub fn default_provider() -> CryptoProvider {
@@ -14,8 +16,13 @@ pub fn default_provider() -> CryptoProvider {
     provider
 }
 
+// These must be kept in sync:
+pub const SIGNATURE_ALG_RUSTLS_SCHEME: rustls::SignatureScheme =
+    rustls::SignatureScheme::ECDSA_NISTP256_SHA256;
+pub static TLS_VERSIONS: &[&rustls::SupportedProtocolVersion] = &[&rustls::version::TLS13];
+
 #[cfg(not(feature = "rustls-aws-lc-fips"))]
-pub static TLS_SUPPORTED_CIPHERSUITES: &[rustls::SupportedCipherSuite] = &[
+static TLS_SUPPORTED_CIPHERSUITES: &[rustls::SupportedCipherSuite] = &[
     aws_lc_rs::cipher_suite::TLS13_AES_128_GCM_SHA256,
     aws_lc_rs::cipher_suite::TLS13_AES_256_GCM_SHA384,
     aws_lc_rs::cipher_suite::TLS13_CHACHA20_POLY1305_SHA256,

@@ -9,7 +9,7 @@ description = "The main proxy executable"
 
 [features]
 default = []
-meshtls-rustls-aws-lc-fips = ["linkerd-meshtls/rustls-aws-lc-fips"]
+meshtls-rustls-aws-lc-fips = ["linkerd-rustls/rustls-aws-lc-fips"]
 log-streaming = ["linkerd-app/log-streaming"]
 pprof = ["linkerd-app/pprof"]
 # From https://github.com/polarsignals/rust-jemalloc-pprof/blob/bcf1ad7f7ad3ec8e71098f4d5a9ce55905c7a602/README.md#usage
@@ -25,7 +25,7 @@ linkerd-app = { path = "../linkerd/app" }
 linkerd-metrics = { path = "../linkerd/metrics" }
 # We don't actually use code from this crate in `main`; it's here only so we can
 # control its feature flags.
-linkerd-meshtls = { path = "../linkerd/meshtls" }
+linkerd-rustls = { path = "../linkerd/rustls" }
 linkerd-signal = { path = "../linkerd/signal" }
 num_cpus = "1"
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "time", "net"] }

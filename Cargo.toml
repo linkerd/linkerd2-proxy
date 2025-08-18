@@ -69,6 +69,7 @@ members = [
     "linkerd/reconnect",
     "linkerd/retry",
     "linkerd/router",
+    "linkerd/rustls",
     "linkerd/service-profiles",
     "linkerd/signal",
     "linkerd/stack",

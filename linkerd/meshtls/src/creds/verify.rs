@@ -1,4 +1,4 @@
-use crate::creds::params::SUPPORTED_SIG_ALGS;
+use linkerd_rustls::SUPPORTED_SIG_ALGS;
 use std::{convert::TryFrom, sync::Arc};
 use tokio_rustls::rustls::{
     self,
