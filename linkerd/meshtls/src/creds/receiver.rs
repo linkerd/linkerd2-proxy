@@ -70,7 +70,6 @@ mod tests {
     /// incoming handshakes, but that doesn't matter for these tests, where we
     /// don't actually do any TLS.
     fn empty_server_config() -> rustls::ServerConfig {
-        linkerd_rustls::install_default_provider();
         rustls::ServerConfig::builder_with_provider(linkerd_rustls::get_default_provider())
             .with_protocol_versions(rustls::ALL_VERSIONS)
             .expect("client config must be valid")
@@ -84,7 +83,6 @@ mod tests {
     /// it doesn't trust any root certificates. However, that doesn't actually
     /// matter for these tests, which don't actually do TLS.
     fn empty_client_config() -> rustls::ClientConfig {
-        linkerd_rustls::install_default_provider();
         rustls::ClientConfig::builder_with_provider(linkerd_rustls::get_default_provider())
             .with_protocol_versions(rustls::ALL_VERSIONS)
             .expect("client config must be valid")

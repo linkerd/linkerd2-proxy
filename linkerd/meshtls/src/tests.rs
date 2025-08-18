@@ -3,7 +3,6 @@ use linkerd_tls_test_util::*;
 use std::time::{Duration, SystemTime};
 
 fn load(ent: &Entity) -> crate::creds::Store {
-    linkerd_rustls::install_default_provider();
     let roots_pem = std::str::from_utf8(ent.trust_anchors).expect("valid PEM");
     let (store, _) = crate::creds::watch(
         ent.name.parse().unwrap(),
