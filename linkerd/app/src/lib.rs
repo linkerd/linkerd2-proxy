@@ -252,9 +252,6 @@ impl Config {
             export_hostname_labels,
         );
 
-        let dst_addr = dst.addr.clone();
-        // registry.sub_registry_with_prefix("gateway"),
-
         let gateway = gateway::Gateway::new(gateway, inbound.clone(), outbound.clone()).stack(
             dst.resolve.clone(),
             dst.profiles.clone(),
@@ -332,7 +329,7 @@ impl Config {
 
         Ok(App {
             admin,
-            dst: dst_addr,
+            dst: dst.addr,
             drain: drain_tx,
             identity,
             inbound_addr,
