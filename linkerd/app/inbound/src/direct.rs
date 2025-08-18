@@ -117,7 +117,7 @@ impl<N> Inbound<N> {
             let identity = rt
                 .identity
                 .server()
-                .with_alpn(vec![transport_header::PROTOCOL.into()])
+                .spawn_with_alpn(vec![transport_header::PROTOCOL.into()])
                 .expect("TLS credential store must be held");
 
             inner
