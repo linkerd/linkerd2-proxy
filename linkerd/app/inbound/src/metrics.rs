@@ -13,7 +13,7 @@ pub(crate) mod error;
 
 pub use linkerd_app_core::metrics::*;
 
-/// Holds outbound proxy metrics.
+/// Holds LEGACY inbound proxy metrics.
 #[derive(Clone, Debug)]
 pub struct InboundMetrics {
     pub http_authz: authz::HttpAuthzMetrics,
