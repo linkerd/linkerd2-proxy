@@ -6,7 +6,7 @@ on:
     inputs:
       version:
         description: "Version in the form v1.2.3-prerelease+buildinfo"
-        required: true
+        required: false
         type: string
       tag-prefix:
         description: "Tag prefix"
@@ -29,6 +29,11 @@ on:
         required: false
         type: string
         default: ""
+      do-oci-push:
+        description: "Push the Docker image to the OCI registry?"
+        required: false
+        type: boolean
+        default: false
       prerelease:
         description: "Is this a prerelease?"
         required: false
@@ -84,8 +89,8 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s extglob
-          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
-            echo version="0.0.0-test.${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
+          if [[ -z "$VERSION" ]]; then
+            echo version="0.0.0-sha-${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           if ! [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+)?(\+[0-9A-Za-z-]+)?$ ]]; then
@@ -101,7 +106,8 @@ jobs:
         run: |
           if [[ "$GITHUB_EVENT_NAME" == pull_request && "$WORKFLOW_CHANGED" != 'true' ]]; then
             ( echo archs='["amd64"]'
-              echo oses='["linux"]' ) >> "$GITHUB_OUTPUT"
+              echo oses='["linux"]'
+            ) >> "$GITHUB_OUTPUT"
             exit 0
           fi
           ( echo archs='["amd64", "arm64"]'
@@ -136,13 +142,6 @@ jobs:
           jq . <<EOF
           ${{ toJson(needs.meta.outputs) }}
           EOF
-
-  # oci:
-  #   needs: meta
-  #   if: needs.meta.outputs.package == 'true'
-  #   uses: ./.github/workflows/oci-build-push.yml
-  #   with:
-  #     outputs: type=oci,dest=linkerd2-proxy.tar
 
   package:
     needs: meta
@@ -191,6 +190,31 @@ jobs:
         with:
           name: ${{ matrix.arch }}-${{ matrix.os }}-artifacts
           path: target/package/*
+
+  # TODO(ver) Drop `package` in favor of build-push-image.
+  build-push-image:
+    needs: meta
+    if: needs.meta.outputs.package == 'true'
+    runs-on: ${{ vars.LINKERD2_PROXY_RUNNER || 'ubuntu-24.04' }}
+    permissions:
+      contents: write
+    steps:
+      - uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772
+        if: inputs.do-oci-push
+        with:
+          registry: ghcr.io
+          username: ${{ vars.LINKERD2_PROXY_GITHUB_USERNAME || github.actor }}
+          password: ${{ secrets.LINKERD2_PROXY_GITHUB_TOKEN || github.token }}
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+        with:
+          ref: ${{ needs.meta.outputs.ref }}
+      - uses: ./.github/actions/oci-build-push
+        with:
+          platforms: linux/amd64,linux/arm64
+          push: ${{ inputs.do-oci-push }}
+          rustflags: '-D warnings -A deprecated --cfg tokio_unstable'
+          vendor: ${{ github.repository_owner }}
+          version: ${{ needs.meta.outputs.version }}
 
   publish:
     needs: [meta, package]
