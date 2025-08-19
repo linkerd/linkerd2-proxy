@@ -4,12 +4,12 @@
 use linkerd_error::Error;
 
 pub use self::{
-    channel::{BroadcastClassification, NewBroadcastClassification, Tx},
+    channel::BroadcastClassification,
     gate::{NewClassifyGate, NewClassifyGateSet},
     insert::{InsertClassifyResponse, NewInsertClassifyResponse},
 };
 
-pub mod channel;
+mod channel;
 pub mod gate;
 mod insert;
 

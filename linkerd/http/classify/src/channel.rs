@@ -2,7 +2,7 @@ use super::{ClassifyEos, ClassifyResponse};
 use futures::{prelude::*, ready};
 use http_body::Frame;
 use linkerd_error::Error;
-use linkerd_stack::{layer, ExtractParam, NewService, Service};
+use linkerd_stack::Service;
 use pin_project::{pin_project, pinned_drop};
 use std::{
     fmt::Debug,
@@ -12,18 +12,6 @@ use std::{
 };
 use tokio::sync::mpsc;
 
-/// Constructs new [`BroadcastClassification`] services.
-///
-/// `X` is an [`ExtractParam`] implementation that extracts a [`Tx`] from each
-/// target. The [`Tx`] is used to broadcast the classification of each response
-/// from the constructed [`BroadcastClassification`] service.
-#[derive(Debug)]
-pub struct NewBroadcastClassification<C, X, N> {
-    inner: N,
-    extract: X,
-    _marker: PhantomData<fn() -> C>,
-}
-
 /// A HTTP `Service` that applies a [`ClassifyResponse`] to each response, and
 /// broadcasts the classification over a [`mpsc`] channel.
 #[derive(Debug)]
@@ -32,14 +20,6 @@ pub struct BroadcastClassification<C: ClassifyResponse, S> {
     tx: mpsc::Sender<C::Class>,
     _marker: PhantomData<fn() -> C>,
 }
-
-/// A handle to a [`mpsc`] channel over which response classifications are
-/// broadcasted.
-///
-/// This is extracted from a target value by [`NewBroadcastClassification`] when
-/// constructing a [`BroadcastClassification`] service.
-#[derive(Clone, Debug)]
-pub struct Tx<C>(pub mpsc::Sender<C>);
 
 #[pin_project]
 pub struct ResponseFuture<C: ClassifyResponse, B, F> {
@@ -60,59 +40,6 @@ pub struct ResponseBody<C: ClassifyEos, B> {
 struct State<C, T> {
     classify: C,
     tx: mpsc::Sender<T>,
-}
-
-// === impl NewBroadcastClassification ===
-
-impl<C, X: Clone, N> NewBroadcastClassification<C, X, N> {
-    pub fn new(extract: X, inner: N) -> Self {
-        Self {
-            inner,
-            extract,
-            _marker: PhantomData,
-        }
-    }
-
-    /// Returns a [`layer::Layer`] that constructs `NewBroadcastClassification`
-    /// [`NewService`]s, using the provided [`ExtractParam`] implementation to
-    /// extract a classification [`Tx`] from the target.
-    pub fn layer_via(extract: X) -> impl layer::Layer<N, Service = Self> + Clone {
-        layer::mk(move |inner| Self::new(extract.clone(), inner))
-    }
-}
-
-impl<C, N> NewBroadcastClassification<C, (), N> {
-    /// Returns a [`layer::Layer`] that constructs `NewBroadcastClassification`
-    /// [`NewService`]s when the target type implements
-    /// [`linkerd_stack::Param`]`<`[`Tx`]`>`.
-    pub fn layer() -> impl layer::Layer<N, Service = Self> + Clone {
-        Self::layer_via(())
-    }
-}
-
-impl<T, C, X, N> NewService<T> for NewBroadcastClassification<C, X, N>
-where
-    C: ClassifyResponse,
-    X: ExtractParam<Tx<C::Class>, T>,
-    N: NewService<T>,
-{
-    type Service = BroadcastClassification<C, N::Service>;
-
-    fn new_service(&self, target: T) -> Self::Service {
-        let Tx(tx) = self.extract.extract_param(&target);
-        let inner = self.inner.new_service(target);
-        BroadcastClassification::new(tx, inner)
-    }
-}
-
-impl<C, X: Clone, N: Clone> Clone for NewBroadcastClassification<C, X, N> {
-    fn clone(&self) -> Self {
-        Self {
-            inner: self.inner.clone(),
-            extract: self.extract.clone(),
-            _marker: PhantomData,
-        }
-    }
 }
 
 // === impl BroadcastClassification ===
