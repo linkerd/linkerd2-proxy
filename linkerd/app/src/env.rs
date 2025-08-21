@@ -279,6 +279,9 @@ const ENV_INBOUND_HTTP1_CONNECTION_POOL_IDLE_TIMEOUT: &str =
 const ENV_OUTBOUND_HTTP1_CONNECTION_POOL_IDLE_TIMEOUT: &str =
     "LINKERD2_PROXY_OUTBOUND_HTTP1_CONNECTION_POOL_IDLE_TIMEOUT";
 
+/// Configures whether to use post-quantum key exchange algorithms.
+const ENV_POST_QUANTUM_KX: &str = "LINKERD2_PROXY_POST_QUANTUM_KX";
+
 const ENV_SHUTDOWN_GRACE_PERIOD: &str = "LINKERD2_PROXY_SHUTDOWN_GRACE_PERIOD";
 
 // Default values for various configuration fields
@@ -405,6 +408,8 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         parse(strings, ENV_INBOUND_CONNECT_USER_TIMEOUT, parse_duration);
     let outbound_connect_user_timeout =
         parse(strings, ENV_OUTBOUND_CONNECT_USER_TIMEOUT, parse_duration);
+
+    let post_quantum_kx = parse(strings, ENV_POST_QUANTUM_KX, parse_bool);
 
     let shutdown_grace_period = parse(strings, ENV_SHUTDOWN_GRACE_PERIOD, parse_duration);
 
@@ -973,6 +978,12 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         }
     };
 
+    let rustls = {
+        linkerd_rustls::Config {
+            post_quantum: post_quantum_kx?.unwrap_or(true),
+        }
+    };
+
     Ok(super::Config {
         admin,
         dns,
@@ -984,6 +995,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         outbound,
         gateway,
         inbound,
+        rustls,
         shutdown_grace_period: shutdown_grace_period?.unwrap_or(DEFAULT_SHUTDOWN_GRACE_PERIOD),
     })
 }

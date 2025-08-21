@@ -1371,6 +1371,7 @@ dependencies = [
  "linkerd-error",
  "linkerd-opencensus",
  "linkerd-opentelemetry",
+ "linkerd-rustls",
  "linkerd-tonic-stream",
  "linkerd-workers",
  "rangemap",

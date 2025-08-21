@@ -6,10 +6,25 @@ use tokio_rustls::rustls::{
     },
 };
 
-pub fn default_provider() -> CryptoProvider {
+#[derive(Debug, Copy, Clone)]
+pub struct Config {
+    pub post_quantum: bool,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self { post_quantum: true }
+    }
+}
+
+pub fn default_provider(config: Config) -> CryptoProvider {
     let mut provider = aws_lc_default_provider();
     provider.cipher_suites = TLS_SUPPORTED_CIPHERSUITES.to_vec();
-    provider.kx_groups = kx_groups();
+    provider.kx_groups = if config.post_quantum {
+        quantum_kx_groups()
+    } else {
+        classical_kx_groups()
+    };
     provider.signature_verification_algorithms = *SUPPORTED_SIG_ALGS;
     #[cfg(feature = "rustls-aws-lc-fips")]
     assert!(provider.fips());
@@ -35,7 +50,7 @@ static TLS_SUPPORTED_CIPHERSUITES: &[rustls::SupportedCipherSuite] = &[
 ];
 
 #[cfg(not(feature = "rustls-aws-lc-fips"))]
-fn kx_groups() -> Vec<&'static dyn SupportedKxGroup> {
+fn quantum_kx_groups() -> Vec<&'static dyn SupportedKxGroup> {
     vec![
         aws_lc_rs::kx_group::X25519MLKEM768,
         aws_lc_rs::kx_group::X25519,
@@ -44,9 +59,25 @@ fn kx_groups() -> Vec<&'static dyn SupportedKxGroup> {
     ]
 }
 #[cfg(feature = "rustls-aws-lc-fips")]
-fn kx_groups() -> Vec<&'static dyn SupportedKxGroup> {
+fn quantum_kx_groups() -> Vec<&'static dyn SupportedKxGroup> {
     vec![
         aws_lc_rs::kx_group::SECP256R1MLKEM768,
+        aws_lc_rs::kx_group::SECP256R1,
+        aws_lc_rs::kx_group::SECP384R1,
+    ]
+}
+
+#[cfg(not(feature = "rustls-aws-lc-fips"))]
+fn classical_kx_groups() -> Vec<&'static dyn SupportedKxGroup> {
+    vec![
+        aws_lc_rs::kx_group::X25519,
+        aws_lc_rs::kx_group::SECP256R1,
+        aws_lc_rs::kx_group::SECP384R1,
+    ]
+}
+#[cfg(feature = "rustls-aws-lc-fips")]
+fn classical_kx_groups() -> Vec<&'static dyn SupportedKxGroup> {
+    vec![
         aws_lc_rs::kx_group::SECP256R1,
         aws_lc_rs::kx_group::SECP384R1,
     ]

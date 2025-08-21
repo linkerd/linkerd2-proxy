@@ -35,8 +35,6 @@ fn main() {
         vendor = BUILD_INFO.vendor,
     );
 
-    linkerd_rustls::install_default_provider();
-
     let mut metrics = linkerd_metrics::prom::Registry::default();
 
     // Load configuration from the environment without binding ports.
@@ -47,6 +45,8 @@ fn main() {
             std::process::exit(EX_USAGE);
         }
     };
+
+    linkerd_rustls::install_default_provider(config.rustls);
 
     // Builds a runtime with the appropriate number of cores:
     // `LINKERD2_PROXY_CORES` env or the number of available CPUs (as provided

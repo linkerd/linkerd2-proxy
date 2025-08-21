@@ -30,6 +30,7 @@ pub use linkerd_app_core::{metrics, trace, transport::BindTcp, BUILD_INFO};
 use linkerd_app_gateway as gateway;
 use linkerd_app_inbound::{self as inbound, Inbound};
 use linkerd_app_outbound::{self as outbound, Outbound};
+use linkerd_rustls as rustls;
 pub use linkerd_workers::Workers;
 use std::pin::Pin;
 use tokio::{
@@ -63,6 +64,7 @@ pub struct Config {
     pub admin: admin::Config,
     pub tap: tap::Config,
     pub trace_collector: trace_collector::Config,
+    pub rustls: rustls::Config,
 
     /// Grace period for graceful shutdowns.
     ///
