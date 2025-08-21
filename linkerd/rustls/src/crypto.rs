@@ -46,7 +46,6 @@ fn kx_groups() -> Vec<&'static dyn SupportedKxGroup> {
 #[cfg(feature = "rustls-aws-lc-fips")]
 fn kx_groups() -> Vec<&'static dyn SupportedKxGroup> {
     vec![
-        aws_lc_rs::kx_group::SECP256R1MLKEM768,
         aws_lc_rs::kx_group::SECP256R1,
         aws_lc_rs::kx_group::SECP384R1,
     ]
