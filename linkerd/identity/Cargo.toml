@@ -10,7 +10,7 @@ publish = { workspace = true }
 prometheus-client = { workspace = true }
 thiserror = "2"
 tracing = { workspace = true }
-url = "2.5.4"
+url = "2.5.6"
 
 linkerd-dns-name = { path = "../dns/name" }
 linkerd-metrics = { path = "../metrics" }
