@@ -127,7 +127,6 @@ impl<M, L: Layer<M>> Layer<M> for Layers<L> {
 
 // === impl Stack ===
 
-#[allow(dead_code)]
 impl<S> Stack<S> {
     pub fn push<L: Layer<S>>(self, layer: L) -> Stack<L::Service> {
         Stack(layer.layer(self.0))
