@@ -238,7 +238,7 @@ impl Metrics {
     }
 }
 
-// === impl CtlLabels ===
+// === impl ControlLabels ===
 
 impl svc::Param<ControlLabels> for control::ControlAddr {
     fn param(&self) -> ControlLabels {
@@ -344,6 +344,8 @@ impl legacy::FmtLabels for InboundEndpointLabels {
     }
 }
 
+// === impl ServerLabel ===
+
 impl legacy::FmtLabels for ServerLabel {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Self(meta, port) = self;
@@ -375,6 +377,8 @@ impl prom::EncodeLabelSetMut for ServerLabel {
     }
 }
 
+// === impl ServerAuthzLabels ===
+
 impl legacy::FmtLabels for ServerAuthzLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Self { server, authz } = self;
@@ -389,6 +393,8 @@ impl legacy::FmtLabels for ServerAuthzLabels {
         )
     }
 }
+
+// === impl RouteLabels ===
 
 impl legacy::FmtLabels for RouteLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -405,6 +411,8 @@ impl legacy::FmtLabels for RouteLabels {
     }
 }
 
+// === impl RouteAuthzLabels ===
+
 impl legacy::FmtLabels for RouteAuthzLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Self { route, authz } = self;
@@ -419,6 +427,8 @@ impl legacy::FmtLabels for RouteAuthzLabels {
         )
     }
 }
+
+// === impl OutboundEndpointLabels ===
 
 impl svc::Param<OutboundZoneLocality> for OutboundEndpointLabels {
     fn param(&self) -> OutboundZoneLocality {
@@ -454,6 +464,8 @@ impl legacy::FmtLabels for OutboundEndpointLabels {
     }
 }
 
+// === impl Direction ===
+
 impl fmt::Display for Direction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -469,12 +481,16 @@ impl legacy::FmtLabels for Direction {
     }
 }
 
+// === impl Authority ===
+
 impl legacy::FmtLabels for Authority<'_> {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Self(authority) = self;
         write!(f, "authority=\"{authority}\"")
     }
 }
+
+// === impl Class ===
 
 impl legacy::FmtLabels for Class {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
