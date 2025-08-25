@@ -43,7 +43,7 @@ pub struct ServerUnauthorized {
 }
 
 pub trait GetPolicy {
-    // Returns the traffic policy configured for the destination address.
+    /// Returns the traffic policy configured for the destination address.
     fn get_policy(&self, dst: OrigDstAddr) -> AllowPolicy;
 }
 
@@ -59,7 +59,7 @@ pub struct AllowPolicy {
     server: Cached<watch::Receiver<ServerPolicy>>,
 }
 
-// Describes an authorized non-HTTP connection.
+/// Describes an authorized non-HTTP connection.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ServerPermit {
     pub dst: OrigDstAddr,
@@ -67,7 +67,7 @@ pub struct ServerPermit {
     pub labels: ServerAuthzLabels,
 }
 
-// Describes an authorized HTTP request.
+/// Describes an authorized HTTP request.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct HttpRoutePermit {
     pub dst: OrigDstAddr,
