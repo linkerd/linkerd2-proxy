@@ -1,4 +1,4 @@
-mod router;
+pub(crate) mod router;
 mod server;
 mod set_identity_header;
 #[cfg(test)]
