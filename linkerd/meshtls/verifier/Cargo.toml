@@ -8,7 +8,7 @@ publish = { workspace = true }
 
 [dependencies]
 tracing = { workspace = true }
-x509-parser = "0.17.0"
+x509-parser = "0.18.0"
 
 linkerd-error = { path = "../../error" }
 linkerd-identity = { path = "../../identity" }
