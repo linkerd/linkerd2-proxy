@@ -46,6 +46,13 @@ struct ConnectionMeta {
     tls: tls::ConditionalServerTls,
 }
 
+/// A `T`-typed target with policy enforced by a [`NewHttpPolicy<N>`] layer.
+#[derive(Debug)]
+pub struct Permitted<T> {
+    pub permit: HttpRoutePermit,
+    pub target: T,
+}
+
 #[derive(Debug, thiserror::Error)]
 #[error("no route found for request")]
 pub struct HttpRouteNotFound(());
@@ -138,7 +145,7 @@ macro_rules! try_fut {
 impl<B, T, N, S> svc::Service<::http::Request<B>> for HttpPolicyService<T, N>
 where
     T: Clone,
-    N: svc::NewService<(HttpRoutePermit, T), Service = S>,
+    N: svc::NewService<Permitted<T>, Service = S>,
     S: svc::Service<::http::Request<B>>,
     S::Error: Into<Error>,
 {
@@ -175,7 +182,10 @@ where
 
         future::Either::Left(
             self.inner
-                .new_service((permit, self.target.clone()))
+                .new_service(Permitted {
+                    permit,
+                    target: self.target.clone(),
+                })
                 .oneshot(req)
                 .err_into::<Error>(),
         )
@@ -382,4 +392,18 @@ fn apply_grpc_filters<B>(route: &grpc::Policy, req: &mut ::http::Request<B>) -> 
     }
 
     Ok(())
+}
+
+// === impl Permitted ===
+
+/// An authorized `T`-typed target can produce `P`-typed parameters.
+impl<T, P> svc::Param<P> for Permitted<T>
+where
+    T: svc::Param<P>,
+{
+    fn param(&self) -> P {
+        let Self { target, .. } = self;
+
+        target.param()
+    }
 }

@@ -114,7 +114,7 @@ impl Config {
                     .to_layer::<classify::Response, _, Permitted>(),
             )
             .push(classify::NewClassify::layer_default())
-            .push_map_target(|(permit, http)| Permitted { permit, http })
+            .push_map_target(Permitted::from)
             .push(inbound::policy::NewHttpPolicy::layer(
                 metrics.http_authz.clone(),
             ))
@@ -278,6 +278,17 @@ impl Param<metrics::EndpointLabels> for Permitted {
             policy: self.permit.labels.clone(),
         }
         .into()
+    }
+}
+
+impl From<inbound::policy::Permitted<Http>> for Permitted {
+    fn from(
+        inbound::policy::Permitted { permit, target }: inbound::policy::Permitted<Http>,
+    ) -> Self {
+        Self {
+            permit,
+            http: target,
+        }
     }
 }
 
