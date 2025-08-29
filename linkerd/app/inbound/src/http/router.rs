@@ -1,6 +1,6 @@
 use crate::{policy, stack_labels, Inbound};
 use linkerd_app_core::{
-    classify, errors, http_tracing, metrics, profiles,
+    classify, errors, http_tracing, profiles,
     proxy::{http, tap},
     svc::{self, ExtractParam, Param},
     tls,
@@ -9,6 +9,10 @@ use linkerd_app_core::{
 };
 use std::{fmt, net::SocketAddr};
 use tracing::{debug, debug_span};
+
+pub use self::metrics::RequestCountLabels;
+
+mod metrics;
 
 /// Describes an HTTP client target.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -241,6 +245,7 @@ impl<C> Inbound<C> {
                 .push(svc::NewOneshotRoute::layer_via(|t: &policy::Permitted<T>| {
                     LogicalPerRequest::from(t)
                 }))
+                .push(self::metrics::layer(rt.metrics.request_count.clone()))
                 .check_new_service::<policy::Permitted<T>, http::Request<http::BoxBody>>()
                 .push(svc::ArcNewService::layer())
                 .push(policy::NewHttpPolicy::layer(rt.metrics.http_authz.clone()))
@@ -333,9 +338,12 @@ impl Param<profiles::http::Route> for ProfileRoute {
     }
 }
 
-impl Param<metrics::ProfileRouteLabels> for ProfileRoute {
-    fn param(&self) -> metrics::ProfileRouteLabels {
-        metrics::ProfileRouteLabels::inbound(self.profile.addr.clone(), &self.route)
+impl Param<linkerd_app_core::metrics::ProfileRouteLabels> for ProfileRoute {
+    fn param(&self) -> linkerd_app_core::metrics::ProfileRouteLabels {
+        linkerd_app_core::metrics::ProfileRouteLabels::inbound(
+            self.profile.addr.clone(),
+            &self.route,
+        )
     }
 }
 
@@ -392,9 +400,9 @@ impl Param<transport::labels::Key> for Logical {
 
 fn endpoint_labels(
     unsafe_authority_labels: bool,
-) -> impl svc::ExtractParam<metrics::EndpointLabels, Logical> + Clone {
-    move |t: &Logical| -> metrics::EndpointLabels {
-        metrics::InboundEndpointLabels {
+) -> impl svc::ExtractParam<linkerd_app_core::metrics::EndpointLabels, Logical> + Clone {
+    move |t: &Logical| -> linkerd_app_core::metrics::EndpointLabels {
+        linkerd_app_core::metrics::InboundEndpointLabels {
             tls: t.tls.as_ref().map(|t| t.labels()),
             authority: unsafe_authority_labels
                 .then(|| t.logical.as_ref().map(|d| d.as_http_authority()))
