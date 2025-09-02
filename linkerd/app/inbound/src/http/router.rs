@@ -1,6 +1,6 @@
 use crate::{policy, stack_labels, Inbound};
 use linkerd_app_core::{
-    classify, errors, http_tracing, metrics, profiles,
+    classify, errors, http_tracing, profiles,
     proxy::{http, tap},
     svc::{self, ExtractParam, Param},
     tls,
@@ -333,9 +333,12 @@ impl Param<profiles::http::Route> for ProfileRoute {
     }
 }
 
-impl Param<metrics::ProfileRouteLabels> for ProfileRoute {
-    fn param(&self) -> metrics::ProfileRouteLabels {
-        metrics::ProfileRouteLabels::inbound(self.profile.addr.clone(), &self.route)
+impl Param<linkerd_app_core::metrics::ProfileRouteLabels> for ProfileRoute {
+    fn param(&self) -> linkerd_app_core::metrics::ProfileRouteLabels {
+        linkerd_app_core::metrics::ProfileRouteLabels::inbound(
+            self.profile.addr.clone(),
+            &self.route,
+        )
     }
 }
 
@@ -392,9 +395,9 @@ impl Param<transport::labels::Key> for Logical {
 
 fn endpoint_labels(
     unsafe_authority_labels: bool,
-) -> impl svc::ExtractParam<metrics::EndpointLabels, Logical> + Clone {
-    move |t: &Logical| -> metrics::EndpointLabels {
-        metrics::InboundEndpointLabels {
+) -> impl svc::ExtractParam<linkerd_app_core::metrics::EndpointLabels, Logical> + Clone {
+    move |t: &Logical| -> linkerd_app_core::metrics::EndpointLabels {
+        linkerd_app_core::metrics::InboundEndpointLabels {
             tls: t.tls.as_ref().map(|t| t.labels()),
             authority: unsafe_authority_labels
                 .then(|| t.logical.as_ref().map(|d| d.as_http_authority()))
