@@ -66,17 +66,21 @@ impl Gateway {
     >
     where
         // Target describing an inbound gateway connection.
-        T: svc::Param<GatewayAddr>,
-        T: svc::Param<OrigDstAddr>,
-        T: svc::Param<Remote<ClientAddr>>,
-        T: svc::Param<ServerLabel>,
-        T: svc::Param<tls::ConditionalServerTls>,
-        T: svc::Param<tls::ClientId>,
-        T: svc::Param<inbound::policy::AllowPolicy>,
-        T: svc::Param<Option<watch::Receiver<profiles::Profile>>>,
-        T: svc::Param<http::Variant>,
-        T: svc::Param<http::normalize_uri::DefaultAuthority>,
-        T: Clone + Send + Sync + Unpin + 'static,
+        T: Clone
+            + Send
+            + Sync
+            + Unpin
+            + 'static
+            + svc::Param<GatewayAddr>
+            + svc::Param<OrigDstAddr>
+            + svc::Param<Remote<ClientAddr>>
+            + svc::Param<ServerLabel>
+            + svc::Param<tls::ConditionalServerTls>
+            + svc::Param<tls::ClientId>
+            + svc::Param<inbound::policy::AllowPolicy>
+            + svc::Param<Option<watch::Receiver<profiles::Profile>>>
+            + svc::Param<http::Variant>
+            + svc::Param<http::normalize_uri::DefaultAuthority>,
         // Endpoint resolution.
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
         R::Resolution: Unpin,
