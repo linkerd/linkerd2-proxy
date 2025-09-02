@@ -2,6 +2,7 @@ use crate::policy::Permitted;
 use linkerd_app_core::{
     metrics::{
         prom::{
+            self,
             encoding::{self, EncodeLabelSet, LabelSetEncoder},
             EncodeLabelSetMut,
         },
@@ -12,7 +13,7 @@ use linkerd_app_core::{
 use linkerd_http_prom::{NewCountRequests, RequestCount};
 
 pub(super) fn layer<N>(
-    request_count: linkerd_http_prom::RequestCountFamilies<RequestCountLabels>,
+    request_count: RequestCountFamilies,
     // TODO(kate): other metrics families will added here.
 ) -> impl svc::Layer<N, Service = NewCountRequests<ExtractRequestCount, N>> {
     svc::layer::mk(move |inner| {
@@ -22,22 +23,41 @@ pub(super) fn layer<N>(
     })
 }
 
+#[derive(Clone, Debug)]
+pub struct RequestCountFamilies {
+    http: linkerd_http_prom::RequestCountFamilies<RequestCountLabels>,
+}
+
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct RequestCountLabels {
     route: RouteLabels,
 }
 
 #[derive(Clone, Debug)]
-pub struct ExtractRequestCount(pub linkerd_http_prom::RequestCountFamilies<RequestCountLabels>);
+pub struct ExtractRequestCount(pub RequestCountFamilies);
+
+// === impl RequestCountFamilies ===
+
+impl RequestCountFamilies {
+    /// Registers a new [`RequestCountFamilies`] with the given registry.
+    pub fn register(reg: &mut prom::Registry) -> Self {
+        let http = {
+            let reg = reg.sub_registry_with_prefix("http");
+            linkerd_http_prom::RequestCountFamilies::register(reg)
+        };
+
+        Self { http }
+    }
+}
 
 // === impl ExtractRequestCount ===
 
 impl<T> svc::ExtractParam<RequestCount, Permitted<T>> for ExtractRequestCount {
     fn extract_param(&self, Permitted { permit, .. }: &Permitted<T>) -> RequestCount {
-        let Self(family) = self;
+        let Self(families) = self;
         let route = permit.labels.route.clone();
 
-        family.metrics(&RequestCountLabels { route })
+        families.http.metrics(&RequestCountLabels { route })
     }
 }
 
