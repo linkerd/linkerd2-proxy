@@ -236,12 +236,12 @@ impl<C> Inbound<C> {
                 .push_on_service(svc::LoadShed::layer())
                 .push(svc::NewMapErr::layer_from_target::<LogicalError, _>())
                 .lift_new()
-                .check_new_new::<(policy::HttpRoutePermit, T), Logical>()
+                .check_new_new::<policy::Permitted<T>, Logical>()
                 .push(svc::ArcNewService::layer())
-                .push(svc::NewOneshotRoute::layer_via(|(permit, t): &(policy::HttpRoutePermit, T)| {
-                    LogicalPerRequest::from((permit.clone(), t.clone()))
+                .push(svc::NewOneshotRoute::layer_via(|t: &policy::Permitted<T>| {
+                    LogicalPerRequest::from(t)
                 }))
-                .check_new_service::<(policy::HttpRoutePermit, T), http::Request<http::BoxBody>>()
+                .check_new_service::<policy::Permitted<T>, http::Request<http::BoxBody>>()
                 .push(svc::ArcNewService::layer())
                 .push(policy::NewHttpPolicy::layer(rt.metrics.http_authz.clone()))
                 // Used by tap.
@@ -254,12 +254,12 @@ impl<C> Inbound<C> {
 
 // === impl LogicalPerRequest ===
 
-impl<T> From<(policy::HttpRoutePermit, T)> for LogicalPerRequest
+impl<'a, T> From<&'a policy::Permitted<T>> for LogicalPerRequest
 where
     T: Param<Remote<ServerAddr>>,
     T: Param<tls::ConditionalServerTls>,
 {
-    fn from((permit, t): (policy::HttpRoutePermit, T)) -> Self {
+    fn from(policy::Permitted { permit, target }: &'a policy::Permitted<T>) -> Self {
         let labels = [
             ("srv", &permit.labels.route.server.0),
             ("route", &permit.labels.route.route),
@@ -276,9 +276,9 @@ where
         .collect::<std::collections::BTreeMap<_, _>>();
 
         Self {
-            server: t.param(),
-            tls: t.param(),
-            permit,
+            server: target.param(),
+            tls: target.param(),
+            permit: permit.clone(),
             labels: labels.into(),
         }
     }
