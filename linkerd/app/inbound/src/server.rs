@@ -1,5 +1,6 @@
 use crate::{direct, policy, Inbound};
 use linkerd_app_core::{
+    config::ConnectConfig,
     exp_backoff::ExponentialBackoff,
     io, profiles,
     proxy::http,
@@ -102,6 +103,52 @@ impl Inbound<()> {
             .push_detect(detect_metrics, forward)
             .push_accept(addr.port(), policies, direct)
             .into_inner()
+    }
+
+    /// Readies the inbound stack to make TCP connections (for both TCP
+    /// forwarding and HTTP proxying).
+    fn into_tcp_connect<T>(
+        self,
+        proxy_port: u16,
+    ) -> Inbound<
+        impl svc::MakeConnection<
+                T,
+                Connection = impl Send + Unpin,
+                Metadata = impl Send + Unpin,
+                Error = Error,
+                Future = impl Send,
+            > + Clone,
+    >
+    where
+        T: svc::Param<Remote<ServerAddr>> + 'static,
+    {
+        self.map_stack(|config, _, _| {
+            // Establishes connections to remote peers (for both TCP
+            // forwarding and HTTP proxying).
+            let ConnectConfig {
+                ref keepalive,
+                ref user_timeout,
+                ref timeout,
+                ..
+            } = config.proxy.connect;
+
+            #[derive(Debug, thiserror::Error)]
+            #[error("inbound connection must not target port {0}")]
+            struct Loop(u16);
+
+            svc::stack(transport::ConnectTcp::new(*keepalive, *user_timeout))
+                // Limits the time we wait for a connection to be established.
+                .push_connect_timeout(*timeout)
+                // Prevent connections that would target the inbound proxy port from looping.
+                .push_filter(move |t: T| {
+                    let addr = t.param();
+                    let port = addr.port();
+                    if port == proxy_port {
+                        return Err(Loop(port));
+                    }
+                    Ok(addr)
+                })
+        })
     }
 }
 
