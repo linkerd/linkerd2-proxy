@@ -9,10 +9,10 @@ use linkerd_app_core::{
     },
     svc,
 };
-use linkerd_http_prom::{NewCountRequests, RequestCount, RequestCountFamilies};
+use linkerd_http_prom::{NewCountRequests, RequestCount};
 
 pub(super) fn layer<N>(
-    request_count: RequestCountFamilies<RequestCountLabels>,
+    request_count: linkerd_http_prom::RequestCountFamilies<RequestCountLabels>,
     // TODO(kate): other metrics families will added here.
 ) -> impl svc::Layer<N, Service = NewCountRequests<ExtractRequestCount, N>> {
     svc::layer::mk(move |inner| {
@@ -28,7 +28,7 @@ pub struct RequestCountLabels {
 }
 
 #[derive(Clone, Debug)]
-pub struct ExtractRequestCount(pub RequestCountFamilies<RequestCountLabels>);
+pub struct ExtractRequestCount(pub linkerd_http_prom::RequestCountFamilies<RequestCountLabels>);
 
 // === impl ExtractRequestCount ===
 
