@@ -25,6 +25,7 @@ pub(super) fn layer<N>(
 
 #[derive(Clone, Debug)]
 pub struct RequestCountFamilies {
+    grpc: linkerd_http_prom::RequestCountFamilies<RequestCountLabels>,
     http: linkerd_http_prom::RequestCountFamilies<RequestCountLabels>,
 }
 
@@ -41,23 +42,41 @@ pub struct ExtractRequestCount(pub RequestCountFamilies);
 impl RequestCountFamilies {
     /// Registers a new [`RequestCountFamilies`] with the given registry.
     pub fn register(reg: &mut prom::Registry) -> Self {
+        let grpc = {
+            let reg = reg.sub_registry_with_prefix("grpc");
+            linkerd_http_prom::RequestCountFamilies::register(reg)
+        };
+
         let http = {
             let reg = reg.sub_registry_with_prefix("http");
             linkerd_http_prom::RequestCountFamilies::register(reg)
         };
 
-        Self { http }
+        Self { grpc, http }
+    }
+
+    /// Fetches the proper request counting family, given a permitted target.
+    fn family<T>(
+        &self,
+        permitted: &Permitted<T>,
+    ) -> &linkerd_http_prom::RequestCountFamilies<RequestCountLabels> {
+        let Self { grpc, http } = self;
+        match permitted {
+            Permitted::Grpc { .. } => grpc,
+            Permitted::Http { .. } => http,
+        }
     }
 }
 
 // === impl ExtractRequestCount ===
 
 impl<T> svc::ExtractParam<RequestCount, Permitted<T>> for ExtractRequestCount {
-    fn extract_param(&self, Permitted { permit, .. }: &Permitted<T>) -> RequestCount {
+    fn extract_param(&self, permitted: &Permitted<T>) -> RequestCount {
         let Self(families) = self;
-        let route = permit.labels.route.clone();
+        let family = families.family(permitted);
+        let route = permitted.route_labels();
 
-        families.http.metrics(&RequestCountLabels { route })
+        family.metrics(&RequestCountLabels { route })
     }
 }
 
