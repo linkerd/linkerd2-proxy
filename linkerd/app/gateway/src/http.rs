@@ -81,57 +81,34 @@ impl Gateway {
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
         R::Resolution: Unpin,
     {
-        let http =
-            self.outbound
-                .clone()
-                .with_stack(inner)
-                .push_http_cached(resolve)
-                .into_stack()
-                // Discard `T` and its associated client-specific metadata.
-                .push_map_target(Target::discard_parent)
-                .push(svc::ArcNewService::layer())
-                // Add headers to prevent loops.
-                .push(NewHttpGateway::layer(
-                    self.inbound.identity().local_id().clone(),
-                ))
-                .push_on_service(svc::LoadShed::layer())
-                .lift_new()
-                .push(svc::ArcNewService::layer())
-                // After protocol-downgrade, we need to build an inner stack for
-                // each request-level HTTP version.
-                .push(svc::NewOneshotRoute::layer_via(|t: &Target<T>| {
-                    ByRequestVersion(t.clone())
-                }))
-                // Only permit gateway traffic to endpoints for which we have
-                // discovery information.
-                .push_filter(
-                    |Permitted {
-                         permit: _,
-                         target: parent,
-                     }: Permitted<T>|
-                     -> Result<_, GatewayDomainInvalid> {
-                        let routes = {
-                            let mut profile = svc::Param::<
-                                Option<watch::Receiver<profiles::Profile>>,
-                            >::param(&parent)
-                            .ok_or(GatewayDomainInvalid)?;
-                            let init = mk_routes(&profile.borrow_and_update())
-                                .ok_or(GatewayDomainInvalid)?;
-                            outbound::http::spawn_routes(profile, init, mk_routes)
-                        };
-
-                        Ok(Target {
-                            routes,
-                            addr: parent.param(),
-                            version: parent.param(),
-                            parent,
-                        })
-                    },
-                )
-                .push(svc::ArcNewService::layer())
-                // Authorize requests to the gateway.
-                .push(self.inbound.authorize_http())
-                .arc_new_clone_http();
+        let http = self
+            .outbound
+            .clone()
+            .with_stack(inner)
+            .push_http_cached(resolve)
+            .into_stack()
+            // Discard `T` and its associated client-specific metadata.
+            .push_map_target(Target::discard_parent)
+            .push(svc::ArcNewService::layer())
+            // Add headers to prevent loops.
+            .push(NewHttpGateway::layer(
+                self.inbound.identity().local_id().clone(),
+            ))
+            .push_on_service(svc::LoadShed::layer())
+            .lift_new()
+            .push(svc::ArcNewService::layer())
+            // After protocol-downgrade, we need to build an inner stack for
+            // each request-level HTTP version.
+            .push(svc::NewOneshotRoute::layer_via(|t: &Target<T>| {
+                ByRequestVersion(t.clone())
+            }))
+            // Only permit gateway traffic to endpoints for which we have
+            // discovery information.
+            .push_filter(spawn_routes)
+            .push(svc::ArcNewService::layer())
+            // Authorize requests to the gateway.
+            .push(self.inbound.authorize_http())
+            .arc_new_clone_http();
 
         self.inbound
             .clone()
@@ -144,6 +121,33 @@ impl Gateway {
             .into_stack()
             .arc_new_clone_http()
     }
+}
+
+fn spawn_routes<T>(
+    Permitted {
+        permit: _,
+        target: parent,
+    }: Permitted<T>,
+) -> Result<Target<T>, GatewayDomainInvalid>
+where
+    T: Clone
+        + svc::Param<GatewayAddr>
+        + svc::Param<http::Variant>
+        + svc::Param<Option<watch::Receiver<profiles::Profile>>>,
+{
+    let routes = {
+        let mut profile = svc::Param::<Option<watch::Receiver<profiles::Profile>>>::param(&parent)
+            .ok_or(GatewayDomainInvalid)?;
+        let init = mk_routes(&profile.borrow_and_update()).ok_or(GatewayDomainInvalid)?;
+        outbound::http::spawn_routes(profile, init, mk_routes)
+    };
+
+    Ok(Target {
+        routes,
+        addr: parent.param(),
+        version: parent.param(),
+        parent,
+    })
 }
 
 fn mk_routes(profile: &profiles::Profile) -> Option<outbound::http::Routes> {
