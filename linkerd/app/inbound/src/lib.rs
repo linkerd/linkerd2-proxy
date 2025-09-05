@@ -27,16 +27,15 @@ use linkerd_app_core::{
     config::{ProxyConfig, QueueConfig},
     drain,
     http_tracing::SpanSink,
-    identity, io,
+    identity,
     metrics::prom,
-    proxy::{tap, tcp},
+    proxy::tap,
     svc,
     transport::{self, Remote, ServerAddr},
     Error, NameAddr, NameMatch, ProxyRuntime,
 };
 use std::{fmt::Debug, time::Duration};
 use thiserror::Error;
-use tracing::debug_span;
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -188,47 +187,6 @@ impl Inbound<()> {
 impl<S> Inbound<S> {
     pub fn push<L: svc::layer::Layer<S>>(self, layer: L) -> Inbound<L::Service> {
         self.map_stack(|_, _, stack| stack.push(layer))
-    }
-
-    // Forwards TCP streams that cannot be decoded as HTTP.
-    //
-    // Looping is always prevented.
-    pub fn push_tcp_forward<T, I>(
-        self,
-    ) -> Inbound<
-        svc::ArcNewService<
-            T,
-            impl svc::Service<I, Response = (), Error = ForwardError, Future = impl Send> + Clone,
-        >,
-    >
-    where
-        T: svc::Param<transport::labels::Key>
-            + svc::Param<Remote<ServerAddr>>
-            + Clone
-            + Send
-            + Sync
-            + 'static,
-        I: io::AsyncRead + io::AsyncWrite,
-        I: Debug + Send + Unpin + 'static,
-        S: svc::MakeConnection<T> + Clone + Send + Sync + Unpin + 'static,
-        S::Connection: Send + Unpin,
-        S::Metadata: Send + Unpin,
-        S::Future: Send,
-    {
-        self.map_stack(|_, rt, connect| {
-            connect
-                .push(transport::metrics::Client::layer(
-                    rt.metrics.proxy.transport.clone(),
-                ))
-                .push(svc::stack::WithoutConnectionMetadata::layer())
-                .push_new_thunk()
-                .push_on_service(tcp::Forward::layer())
-                .push_on_service(drain::Retain::layer(rt.drain.clone()))
-                .instrument(|_: &_| debug_span!("tcp"))
-                .push(svc::NewMapErr::layer_from_target::<ForwardError, _>())
-                .push(svc::ArcNewService::layer())
-                .check_new::<T>()
-        })
     }
 }
 

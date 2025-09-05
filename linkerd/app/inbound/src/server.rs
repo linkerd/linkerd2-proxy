@@ -1,9 +1,10 @@
-use crate::{direct, policy, Inbound};
+use crate::{direct, policy, ForwardError, Inbound};
 use linkerd_app_core::{
     config::ConnectConfig,
+    drain,
     exp_backoff::ExponentialBackoff,
     io, profiles,
-    proxy::http,
+    proxy::{http, tcp},
     svc,
     transport::{self, addrs::*},
     Error,
@@ -148,6 +149,49 @@ impl Inbound<()> {
                     }
                     Ok(addr)
                 })
+        })
+    }
+}
+
+impl<S> Inbound<S> {
+    // Forwards TCP streams that cannot be decoded as HTTP.
+    //
+    // Looping is always prevented.
+    fn push_tcp_forward<T, I>(
+        self,
+    ) -> Inbound<
+        svc::ArcNewService<
+            T,
+            impl svc::Service<I, Response = (), Error = ForwardError, Future = impl Send> + Clone,
+        >,
+    >
+    where
+        T: svc::Param<transport::labels::Key>
+            + svc::Param<Remote<ServerAddr>>
+            + Clone
+            + Send
+            + Sync
+            + 'static,
+        I: io::AsyncRead + io::AsyncWrite,
+        I: Debug + Send + Unpin + 'static,
+        S: svc::MakeConnection<T> + Clone + Send + Sync + Unpin + 'static,
+        S::Connection: Send + Unpin,
+        S::Metadata: Send + Unpin,
+        S::Future: Send,
+    {
+        self.map_stack(|_, rt, connect| {
+            connect
+                .push(transport::metrics::Client::layer(
+                    rt.metrics.proxy.transport.clone(),
+                ))
+                .push(svc::stack::WithoutConnectionMetadata::layer())
+                .push_new_thunk()
+                .push_on_service(tcp::Forward::layer())
+                .push_on_service(drain::Retain::layer(rt.drain.clone()))
+                .instrument(|_: &_| debug_span!("tcp"))
+                .push(svc::NewMapErr::layer_from_target::<ForwardError, _>())
+                .push(svc::ArcNewService::layer())
+                .check_new::<T>()
         })
     }
 }
