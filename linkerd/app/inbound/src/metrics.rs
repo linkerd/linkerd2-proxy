@@ -11,6 +11,7 @@
 pub(crate) mod authz;
 pub(crate) mod error;
 
+use crate::http::router::RequestCountFamilies;
 pub use linkerd_app_core::metrics::*;
 
 /// Holds LEGACY inbound proxy metrics.
@@ -28,6 +29,7 @@ pub struct InboundMetrics {
 
     pub detect: crate::detect::MetricsFamilies,
     pub direct: crate::direct::MetricsFamilies,
+    pub request_count: RequestCountFamilies,
 }
 
 impl InboundMetrics {
@@ -37,6 +39,7 @@ impl InboundMetrics {
         let direct = crate::direct::MetricsFamilies::register(
             reg.sub_registry_with_prefix("tcp_transport_header"),
         );
+        let request_count = RequestCountFamilies::register(reg);
 
         Self {
             http_authz: authz::HttpAuthzMetrics::default(),
@@ -46,6 +49,7 @@ impl InboundMetrics {
             proxy,
             detect,
             direct,
+            request_count,
         }
     }
 }

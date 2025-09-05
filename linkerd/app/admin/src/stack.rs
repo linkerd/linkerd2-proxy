@@ -282,9 +282,8 @@ impl Param<metrics::EndpointLabels> for Permitted {
 }
 
 impl From<inbound::policy::Permitted<Http>> for Permitted {
-    fn from(
-        inbound::policy::Permitted { permit, target }: inbound::policy::Permitted<Http>,
-    ) -> Self {
+    fn from(permitted: inbound::policy::Permitted<Http>) -> Self {
+        let (target, permit) = permitted.into_parts();
         Self {
             permit,
             http: target,

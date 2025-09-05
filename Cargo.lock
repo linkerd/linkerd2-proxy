@@ -1515,6 +1515,7 @@ dependencies = [
  "linkerd-http-access-log",
  "linkerd-http-box",
  "linkerd-http-metrics",
+ "linkerd-http-prom",
  "linkerd-idle-cache",
  "linkerd-io",
  "linkerd-meshtls",

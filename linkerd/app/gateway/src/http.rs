@@ -123,18 +123,14 @@ impl Gateway {
     }
 }
 
-fn spawn_routes<T>(
-    Permitted {
-        permit: _,
-        target: parent,
-    }: Permitted<T>,
-) -> Result<Target<T>, GatewayDomainInvalid>
+fn spawn_routes<T>(permitted: Permitted<T>) -> Result<Target<T>, GatewayDomainInvalid>
 where
     T: Clone
         + svc::Param<GatewayAddr>
         + svc::Param<http::Variant>
         + svc::Param<Option<watch::Receiver<profiles::Profile>>>,
 {
+    let parent = permitted.into_target();
     let routes = {
         let mut profile = svc::Param::<Option<watch::Receiver<profiles::Profile>>>::param(&parent)
             .ok_or(GatewayDomainInvalid)?;
