@@ -1,5 +1,4 @@
 use crate::profiles;
-pub use classify::gate;
 use linkerd_error::Error;
 use linkerd_proxy_client_policy as client_policy;
 use linkerd_proxy_http::{classify, HasH2Reason, ResponseTimeoutError};

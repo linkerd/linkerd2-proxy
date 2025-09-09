@@ -1,0 +1,14 @@
+[package]
+name = "linkerd-rustls"
+version = { workspace = true }
+authors = { workspace = true }
+license = { workspace = true }
+edition = "2018"
+publish = { workspace = true }
+
+[features]
+rustls-aws-lc-fips = ["tokio-rustls/fips"]
+
+[dependencies]
+rustls-webpki = { version = "0.103.4", default-features = false, features = ["std", "aws-lc-rs"] }
+tokio-rustls = { workspace = true, features = ["aws-lc-rs"] }

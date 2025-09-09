@@ -1,91 +1,92 @@
+use futures::prelude::*;
+use linkerd_identity as id;
 use linkerd_io as io;
+use linkerd_meshtls_verifier as verifier;
 use linkerd_stack::{NewService, Service};
-use linkerd_tls::{ClientTls, NegotiatedProtocol};
-use std::{
-    future::Future,
-    pin::Pin,
-    task::{Context, Poll},
-};
+use linkerd_tls::{client::AlpnProtocols, ClientTls, NegotiatedProtocol, NegotiatedProtocolRef};
+use std::{convert::TryFrom, pin::Pin, sync::Arc, task::Context};
+use tokio::sync::watch;
+use tokio_rustls::rustls::{self, pki_types::CertificateDer, ClientConfig};
 
-#[cfg(feature = "boring")]
-use crate::boring;
-
-#[cfg(feature = "rustls")]
-use crate::rustls;
-
-#[cfg(not(feature = "__has_any_tls_impls"))]
-use std::marker::PhantomData;
-
-#[derive(Clone, Debug)]
-pub enum NewClient {
-    #[cfg(feature = "boring")]
-    Boring(boring::NewClient),
-
-    #[cfg(feature = "rustls")]
-    Rustls(rustls::NewClient),
-
-    #[cfg(not(feature = "__has_any_tls_impls"))]
-    NoTls,
-}
-
+/// A `NewService` that produces `Connect` services from a dynamic TLS configuration.
 #[derive(Clone)]
-pub enum Connect {
-    #[cfg(feature = "boring")]
-    Boring(boring::Connect),
-
-    #[cfg(feature = "rustls")]
-    Rustls(rustls::Connect),
-
-    #[cfg(not(feature = "__has_any_tls_impls"))]
-    NoTls,
+pub struct NewClient {
+    config: watch::Receiver<Arc<ClientConfig>>,
 }
 
-#[pin_project::pin_project(project = ConnectFutureProj)]
-pub enum ConnectFuture<I> {
-    #[cfg(feature = "boring")]
-    Boring(#[pin] boring::ConnectFuture<I>),
-
-    #[cfg(feature = "rustls")]
-    Rustls(#[pin] rustls::ConnectFuture<I>),
-
-    #[cfg(not(feature = "__has_any_tls_impls"))]
-    NoTls(PhantomData<fn(I)>),
+/// A `Service` that initiates client-side TLS connections.
+#[derive(Clone)]
+pub struct Connect {
+    server_id: id::Id,
+    server_name: rustls::pki_types::ServerName<'static>,
+    config: Arc<ClientConfig>,
 }
 
-#[pin_project::pin_project(project = ClientIoProj)]
+pub type ConnectFuture<I> =
+    Pin<Box<dyn Future<Output = io::Result<(ClientIo<I>, Option<NegotiatedProtocol>)>> + Send>>;
+
 #[derive(Debug)]
-pub enum ClientIo<I> {
-    #[cfg(feature = "boring")]
-    Boring(#[pin] boring::ClientIo<I>),
-
-    #[cfg(feature = "rustls")]
-    Rustls(#[pin] rustls::ClientIo<I>),
-
-    #[cfg(not(feature = "__has_any_tls_impls"))]
-    NoTls(PhantomData<fn(I)>),
-}
+pub struct ClientIo<I>(tokio_rustls::client::TlsStream<I>);
 
 // === impl NewClient ===
+
+impl NewClient {
+    pub(crate) fn new(config: watch::Receiver<Arc<ClientConfig>>) -> Self {
+        Self { config }
+    }
+}
 
 impl NewService<ClientTls> for NewClient {
     type Service = Connect;
 
-    #[inline]
     fn new_service(&self, target: ClientTls) -> Self::Service {
-        match self {
-            #[cfg(feature = "boring")]
-            Self::Boring(new_client) => Connect::Boring(new_client.new_service(target)),
+        Connect::new(target, (*self.config.borrow()).clone())
+    }
+}
 
-            #[cfg(feature = "rustls")]
-            Self::Rustls(new_client) => Connect::Rustls(new_client.new_service(target)),
-
-            #[cfg(not(feature = "__has_any_tls_impls"))]
-            _ => crate::no_tls!(target),
-        }
+impl std::fmt::Debug for NewClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NewClient").finish()
     }
 }
 
 // === impl Connect ===
+
+impl Connect {
+    pub(crate) fn new(client_tls: ClientTls, config: Arc<ClientConfig>) -> Self {
+        // If ALPN protocols are configured by the endpoint, we have to clone the entire
+        // configuration and set the protocols. If there are no ALPN options, clone the Arc'd base
+        // configuration without extra allocation.
+        //
+        // TODO it would be better to avoid cloning the whole TLS config per-connection, but the
+        // Rustls API doesn't give us a lot of options.
+        let config = match client_tls.alpn {
+            None => config,
+            Some(AlpnProtocols(protocols)) => {
+                let mut c = (*config).clone();
+                c.alpn_protocols = protocols;
+                Arc::new(c)
+            }
+        };
+
+        let server_name =
+            rustls::pki_types::ServerName::try_from(client_tls.server_name.to_string())
+                .expect("identity must be a valid DNS name");
+
+        Self {
+            server_id: client_tls.server_id.into(),
+            server_name,
+            config,
+        }
+    }
+}
+
+fn extract_cert(c: &rustls::ClientConnection) -> io::Result<&CertificateDer<'_>> {
+    match c.peer_certificates().and_then(|certs| certs.first()) {
+        Some(leaf_cert) => io::Result::Ok(leaf_cert),
+        None => Err(io::Error::other("missing tls end cert")),
+    }
+}
 
 impl<I> Service<I> for Connect
 where
@@ -95,67 +96,31 @@ where
     type Error = io::Error;
     type Future = ConnectFuture<I>;
 
-    #[inline]
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        match self {
-            #[cfg(feature = "boring")]
-            Self::Boring(connect) => <boring::Connect as Service<I>>::poll_ready(connect, cx),
-
-            #[cfg(feature = "rustls")]
-            Self::Rustls(connect) => <rustls::Connect as Service<I>>::poll_ready(connect, cx),
-
-            #[cfg(not(feature = "__has_any_tls_impls"))]
-            _ => crate::no_tls!(cx),
-        }
+    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> io::Poll<()> {
+        io::Poll::Ready(Ok(()))
     }
 
-    #[inline]
     fn call(&mut self, io: I) -> Self::Future {
-        match self {
-            #[cfg(feature = "boring")]
-            Self::Boring(connect) => ConnectFuture::Boring(connect.call(io)),
-
-            #[cfg(feature = "rustls")]
-            Self::Rustls(connect) => ConnectFuture::Rustls(connect.call(io)),
-
-            #[cfg(not(feature = "__has_any_tls_impls"))]
-            _ => crate::no_tls!(io),
-        }
-    }
-}
-
-// === impl ConnectFuture ===
-
-impl<I> Future for ConnectFuture<I>
-where
-    I: io::AsyncRead + io::AsyncWrite + Unpin,
-{
-    type Output = io::Result<(ClientIo<I>, Option<NegotiatedProtocol>)>;
-
-    #[inline]
-    fn poll(self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        match self.project() {
-            #[cfg(feature = "boring")]
-            ConnectFutureProj::Boring(f) => {
-                let res = futures::ready!(f.poll(cx));
-                Poll::Ready(res.map(|io| {
+        let server_id = self.server_id.clone();
+        Box::pin(
+            // Connect to the server, sending the `server_name` SNI in the
+            // client handshake. The provided config should use the
+            // `AnySanVerifier` to ignore the server certificate's DNS SANs.
+            // Instead, we extract the server's leaf certificate after the
+            // handshake and verify that it matches the provided `server_id``.
+            tokio_rustls::TlsConnector::from(self.config.clone())
+                // XXX(eliza): it's a bummer that the server name has to be cloned here...
+                .connect(self.server_name.clone(), io)
+                .map(move |s| {
+                    let s = s?;
+                    let (_, conn) = s.get_ref();
+                    let end_cert = extract_cert(conn)?;
+                    verifier::verify_id(end_cert, &server_id)?;
+                    let io = ClientIo(s);
                     let np = io.negotiated_protocol().map(|np| np.to_owned());
-                    (ClientIo::Boring(io), np)
-                }))
-            }
-
-            #[cfg(feature = "rustls")]
-            ConnectFutureProj::Rustls(f) => {
-                let res = futures::ready!(f.poll(cx));
-                Poll::Ready(res.map(|io| {
-                    let np = io.negotiated_protocol().map(|np| np.to_owned());
-                    (ClientIo::Rustls(io), np)
-                }))
-            }
-
-            #[cfg(not(feature = "__has_any_tls_impls"))]
-            _ => crate::no_tls!(cx),
-        }
+                    Ok((io, np))
+                }),
+        )
     }
 }
 
@@ -164,104 +129,59 @@ where
 impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncRead for ClientIo<I> {
     #[inline]
     fn poll_read(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: &mut io::ReadBuf<'_>,
     ) -> io::Poll<()> {
-        match self.project() {
-            #[cfg(feature = "boring")]
-            ClientIoProj::Boring(io) => io.poll_read(cx, buf),
-
-            #[cfg(feature = "rustls")]
-            ClientIoProj::Rustls(io) => io.poll_read(cx, buf),
-            #[cfg(not(feature = "__has_any_tls_impls"))]
-            _ => crate::no_tls!(cx, buf),
-        }
+        Pin::new(&mut self.0).poll_read(cx, buf)
     }
 }
 
 impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncWrite for ClientIo<I> {
     #[inline]
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> io::Poll<()> {
-        match self.project() {
-            #[cfg(feature = "boring")]
-            ClientIoProj::Boring(io) => io.poll_flush(cx),
-
-            #[cfg(feature = "rustls")]
-            ClientIoProj::Rustls(io) => io.poll_flush(cx),
-            #[cfg(not(feature = "__has_any_tls_impls"))]
-            _ => crate::no_tls!(cx),
-        }
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> io::Poll<()> {
+        Pin::new(&mut self.0).poll_flush(cx)
     }
 
     #[inline]
-    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> io::Poll<()> {
-        match self.project() {
-            #[cfg(feature = "boring")]
-            ClientIoProj::Boring(io) => io.poll_shutdown(cx),
-
-            #[cfg(feature = "rustls")]
-            ClientIoProj::Rustls(io) => io.poll_shutdown(cx),
-            #[cfg(not(feature = "__has_any_tls_impls"))]
-            _ => crate::no_tls!(cx),
-        }
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> io::Poll<()> {
+        Pin::new(&mut self.0).poll_shutdown(cx)
     }
 
     #[inline]
-    fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> io::Poll<usize> {
-        match self.project() {
-            #[cfg(feature = "boring")]
-            ClientIoProj::Boring(io) => io.poll_write(cx, buf),
-
-            #[cfg(feature = "rustls")]
-            ClientIoProj::Rustls(io) => io.poll_write(cx, buf),
-            #[cfg(not(feature = "__has_any_tls_impls"))]
-            _ => crate::no_tls!(cx, buf),
-        }
+    fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> io::Poll<usize> {
+        Pin::new(&mut self.0).poll_write(cx, buf)
     }
 
     #[inline]
     fn poll_write_vectored(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         bufs: &[io::IoSlice<'_>],
-    ) -> Poll<Result<usize, std::io::Error>> {
-        match self.project() {
-            #[cfg(feature = "boring")]
-            ClientIoProj::Boring(io) => io.poll_write_vectored(cx, bufs),
-
-            #[cfg(feature = "rustls")]
-            ClientIoProj::Rustls(io) => io.poll_write_vectored(cx, bufs),
-            #[cfg(not(feature = "__has_any_tls_impls"))]
-            _ => crate::no_tls!(cx, bufs),
-        }
+    ) -> io::Poll<usize> {
+        Pin::new(&mut self.0).poll_write_vectored(cx, bufs)
     }
 
     #[inline]
     fn is_write_vectored(&self) -> bool {
-        match self {
-            #[cfg(feature = "boring")]
-            Self::Boring(io) => io.is_write_vectored(),
+        self.0.is_write_vectored()
+    }
+}
 
-            #[cfg(feature = "rustls")]
-            Self::Rustls(io) => io.is_write_vectored(),
-            #[cfg(not(feature = "__has_any_tls_impls"))]
-            _ => crate::no_tls!(),
-        }
+impl<I> ClientIo<I> {
+    #[inline]
+    pub fn negotiated_protocol(&self) -> Option<NegotiatedProtocolRef<'_>> {
+        self.0
+            .get_ref()
+            .1
+            .alpn_protocol()
+            .map(NegotiatedProtocolRef)
     }
 }
 
 impl<I: io::PeerAddr> io::PeerAddr for ClientIo<I> {
     #[inline]
     fn peer_addr(&self) -> io::Result<std::net::SocketAddr> {
-        match self {
-            #[cfg(feature = "boring")]
-            Self::Boring(io) => io.peer_addr(),
-
-            #[cfg(feature = "rustls")]
-            Self::Rustls(io) => io.peer_addr(),
-            #[cfg(not(feature = "__has_any_tls_impls"))]
-            _ => crate::no_tls!(),
-        }
+        self.0.get_ref().0.peer_addr()
     }
 }

@@ -113,10 +113,6 @@ impl<S> Inbound<S> {
         &self.runtime.identity
     }
 
-    pub fn proxy_metrics(&self) -> &metrics::Proxy {
-        &self.runtime.metrics.proxy
-    }
-
     /// A helper for gateways to instrument policy checks.
     pub fn authorize_http<N>(
         &self,

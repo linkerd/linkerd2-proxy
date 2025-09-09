@@ -29,6 +29,12 @@ where
 }
 
 impl<C, R> Conditional<C, R> {
+    pub fn map<CR>(self, f: impl FnOnce(C) -> CR) -> Conditional<CR, R> {
+        self.and_then(|c| Conditional::Some(f(c)))
+    }
+}
+
+impl<C, R> Conditional<C, R> {
     pub fn and_then<CR, RR, F>(self, f: F) -> Conditional<CR, RR>
     where
         R: Into<RR>,
@@ -38,14 +44,6 @@ impl<C, R> Conditional<C, R> {
             Conditional::Some(c) => f(c),
             Conditional::None(r) => Conditional::None(r.into()),
         }
-    }
-
-    pub fn map<CR, RR, F>(self, f: F) -> Conditional<CR, RR>
-    where
-        R: Into<RR>,
-        F: FnOnce(C) -> CR,
-    {
-        self.and_then(|c| Conditional::Some(f(c)))
     }
 
     pub fn or_else<CR, RR, F>(self, f: F) -> Conditional<CR, RR>

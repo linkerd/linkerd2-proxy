@@ -4,7 +4,6 @@ use std::{
     fmt::{Error, Write},
     sync::{Arc, OnceLock},
 };
-use tracing::error;
 
 static TLS_INFO: OnceLock<Arc<TlsInfo>> = OnceLock::new();
 
@@ -45,14 +44,9 @@ pub fn metric() -> prom::Family<TlsInfo, prom::ConstGauge> {
         prom::ConstGauge::new(1)
     });
 
-    let Some(provider) = tokio_rustls::rustls::crypto::CryptoProvider::get_default() else {
-        // If the crypto provider hasn't been initialized, we return the metrics family with an
-        // empty set of metrics.
-        error!("Initializing TLS info metric before crypto provider initialized, this is a bug!");
-        return fam;
-    };
-
     let tls_info = TLS_INFO.get_or_init(|| {
+        let provider = linkerd_rustls::get_default_provider();
+
         let tls_suites = provider
             .cipher_suites
             .iter()

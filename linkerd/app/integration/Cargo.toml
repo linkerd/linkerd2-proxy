@@ -28,8 +28,9 @@ ipnet = "2"
 linkerd-app = { path = "..", features = ["allow-loopback"] }
 linkerd-app-core = { path = "../core" }
 linkerd-app-test = { path = "../test" }
-linkerd-meshtls-rustls = { path = "../../meshtls/rustls", features = ["test-util"] }
+linkerd-meshtls = { path = "../../meshtls", features = ["test-util"] }
 linkerd-metrics = { path = "../../metrics", features = ["test_util"] }
+linkerd-rustls = { path = "../../rustls" }
 linkerd-tracing = { path = "../../tracing" }
 maplit = "1"
 parking_lot = "0.12"
@@ -73,8 +74,5 @@ flate2 = { version = "1", default-features = false, features = [
 ] }
 # Log streaming isn't enabled by default globally, but we want to test it.
 linkerd-app-admin = { path = "../admin", features = ["log-streaming"] }
-# No code from this crate is actually used; only necessary to enable the Rustls
-# implementation.
-linkerd-meshtls = { path = "../../meshtls", features = ["rustls"] }
 linkerd-tracing = { path = "../../tracing", features = ["ansi"] }
 serde_json = "1"

@@ -1,159 +1,137 @@
-use linkerd_error::Result;
+use futures::prelude::*;
+use linkerd_dns_name as dns;
 use linkerd_io as io;
+use linkerd_meshtls_verifier as verifier;
 use linkerd_stack::{Param, Service};
-use linkerd_tls::{ServerName, ServerTls};
-use std::{
-    future::Future,
-    pin::Pin,
-    task::{Context, Poll},
-};
+use linkerd_tls::{ClientId, NegotiatedProtocol, NegotiatedProtocolRef, ServerName, ServerTls};
+use std::{pin::Pin, sync::Arc, task::Context};
+use thiserror::Error;
+use tokio::sync::watch;
+use tokio_rustls::rustls::{pki_types::CertificateDer, ServerConfig};
+use tracing::debug;
 
-#[cfg(feature = "boring")]
-use crate::boring;
-
-#[cfg(feature = "rustls")]
-use crate::rustls;
-
-#[cfg(not(feature = "__has_any_tls_impls"))]
-use std::marker::PhantomData;
-
+/// A Service that terminates TLS connections using a dynamically updated server configuration.
 #[derive(Clone)]
-pub enum Server {
-    #[cfg(feature = "boring")]
-    Boring(boring::Server),
-
-    #[cfg(feature = "rustls")]
-    Rustls(rustls::Server),
-
-    #[cfg(not(feature = "__has_any_tls_impls"))]
-    NoTls,
+pub struct Server {
+    name: dns::Name,
+    rx: watch::Receiver<Arc<ServerConfig>>,
 }
 
-#[pin_project::pin_project(project = TerminateFutureProj)]
-pub enum TerminateFuture<I> {
-    #[cfg(feature = "boring")]
-    Boring(#[pin] boring::TerminateFuture<I>),
+pub type TerminateFuture<I> = futures::future::MapOk<
+    tokio_rustls::Accept<I>,
+    fn(tokio_rustls::server::TlsStream<I>) -> (ServerTls, ServerIo<I>),
+>;
 
-    #[cfg(feature = "rustls")]
-    Rustls(#[pin] rustls::TerminateFuture<I>),
-
-    #[cfg(not(feature = "__has_any_tls_impls"))]
-    NoTls(PhantomData<fn(I)>),
-}
-
-#[pin_project::pin_project(project = ServerIoProj)]
 #[derive(Debug)]
-pub enum ServerIo<I> {
-    #[cfg(feature = "boring")]
-    Boring(#[pin] boring::ServerIo<I>),
+pub struct ServerIo<I>(tokio_rustls::server::TlsStream<I>);
 
-    #[cfg(feature = "rustls")]
-    Rustls(#[pin] rustls::ServerIo<I>),
+#[derive(Debug, Error)]
+#[error("credential store lost")]
+pub struct LostStore(());
 
-    #[cfg(not(feature = "__has_any_tls_impls"))]
-    NoTls(PhantomData<fn(I)>),
-}
+impl Server {
+    pub(crate) fn new(name: dns::Name, rx: watch::Receiver<Arc<ServerConfig>>) -> Self {
+        Self { name, rx }
+    }
 
-// === impl Server ===
+    #[cfg(test)]
+    pub(crate) fn config(&self) -> Arc<ServerConfig> {
+        (*self.rx.borrow()).clone()
+    }
 
-impl Param<ServerName> for Server {
-    #[inline]
-    fn param(&self) -> ServerName {
-        match self {
-            #[cfg(feature = "boring")]
-            Self::Boring(srv) => srv.param(),
-
-            #[cfg(feature = "rustls")]
-            Self::Rustls(srv) => srv.param(),
-
-            #[cfg(not(feature = "__has_any_tls_impls"))]
-            _ => crate::no_tls!(),
+    /// Spawns a background task that watches for TLS configuration updates and creates an augmented
+    /// configuration with the provided ALPN protocols. The returned server uses this ALPN-aware
+    /// configuration.
+    pub fn spawn_with_alpn(self, alpn_protocols: Vec<Vec<u8>>) -> Result<Self, LostStore> {
+        if alpn_protocols.is_empty() {
+            return Ok(self);
         }
+
+        let mut orig_rx = self.rx;
+
+        let mut c = (**orig_rx.borrow_and_update()).clone();
+        c.alpn_protocols.clone_from(&alpn_protocols);
+        let (tx, rx) = watch::channel(c.into());
+
+        // Spawn a background task that watches the optional server configuration and publishes it
+        // as a reliable channel, including any ALPN overrides.
+        //
+        // The background task completes when the original sender is closed or when all receivers
+        // are dropped.
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = tx.closed() => {
+                        debug!("ALPN TLS config receivers dropped");
+                        return;
+                    }
+                    res = orig_rx.changed() => {
+                        if res.is_err() {
+                            debug!("TLS config sender closed");
+                            return;
+                        }
+                    }
+                }
+
+                let mut c = (*orig_rx.borrow().clone()).clone();
+                c.alpn_protocols.clone_from(&alpn_protocols);
+                let _ = tx.send(c.into());
+            }
+        });
+
+        Ok(Self::new(self.name, rx))
     }
 }
 
-impl Server {
-    pub fn with_alpn(self, alpn_protocols: Vec<Vec<u8>>) -> Result<Self> {
-        match self {
-            #[cfg(feature = "boring")]
-            Self::Boring(srv) => Ok(Self::Boring(srv.with_alpn(alpn_protocols))),
-
-            #[cfg(feature = "rustls")]
-            Self::Rustls(srv) => srv
-                .spawn_with_alpn(alpn_protocols)
-                .map(Self::Rustls)
-                .map_err(Into::into),
-
-            #[cfg(not(feature = "__has_any_tls_impls"))]
-            _ => crate::no_tls!(alpn_protocols),
-        }
+impl Param<ServerName> for Server {
+    fn param(&self) -> ServerName {
+        ServerName(self.name.clone())
     }
 }
 
 impl<I> Service<I> for Server
 where
-    I: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
+    I: io::AsyncRead + io::AsyncWrite + Send + Unpin,
 {
     type Response = (ServerTls, ServerIo<I>);
-    type Error = io::Error;
+    type Error = std::io::Error;
     type Future = TerminateFuture<I>;
 
     #[inline]
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        match self {
-            #[cfg(feature = "boring")]
-            Self::Boring(svc) => <boring::Server as Service<I>>::poll_ready(svc, cx),
-
-            #[cfg(feature = "rustls")]
-            Self::Rustls(svc) => <rustls::Server as Service<I>>::poll_ready(svc, cx),
-
-            #[cfg(not(feature = "__has_any_tls_impls"))]
-            _ => crate::no_tls!(cx),
-        }
+    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> io::Poll<()> {
+        io::Poll::Ready(Ok(()))
     }
 
     #[inline]
     fn call(&mut self, io: I) -> Self::Future {
-        match self {
-            #[cfg(feature = "boring")]
-            Self::Boring(svc) => TerminateFuture::Boring(svc.call(io)),
+        tokio_rustls::TlsAcceptor::from((*self.rx.borrow()).clone())
+            .accept(io)
+            .map_ok(|io| {
+                // Determine the peer's identity, if it exist.
+                let client_id = client_identity(&io);
 
-            #[cfg(feature = "rustls")]
-            Self::Rustls(svc) => TerminateFuture::Rustls(svc.call(io)),
+                let negotiated_protocol = io
+                    .get_ref()
+                    .1
+                    .alpn_protocol()
+                    .map(|b| NegotiatedProtocol(b.into()));
 
-            #[cfg(not(feature = "__has_any_tls_impls"))]
-            _ => crate::no_tls!(io),
-        }
+                debug!(client.id = ?client_id, alpn = ?negotiated_protocol, "Accepted TLS connection");
+                let tls = ServerTls::Established {
+                    client_id,
+                    negotiated_protocol,
+                };
+                (tls, ServerIo(io))
+            })
     }
 }
 
-// === impl TerminateFuture ===
+fn client_identity<I>(tls: &tokio_rustls::server::TlsStream<I>) -> Option<ClientId> {
+    let (_io, session) = tls.get_ref();
+    let certs = session.peer_certificates()?;
+    let c = certs.first().map(CertificateDer::as_ref)?;
 
-impl<I> Future for TerminateFuture<I>
-where
-    I: io::AsyncRead + io::AsyncWrite + Unpin,
-{
-    type Output = io::Result<(ServerTls, ServerIo<I>)>;
-
-    #[inline]
-    fn poll(self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        match self.project() {
-            #[cfg(feature = "boring")]
-            TerminateFutureProj::Boring(f) => {
-                let res = futures::ready!(f.poll(cx));
-                Poll::Ready(res.map(|(tls, io)| (tls, ServerIo::Boring(io))))
-            }
-
-            #[cfg(feature = "rustls")]
-            TerminateFutureProj::Rustls(f) => {
-                let res = futures::ready!(f.poll(cx));
-                Poll::Ready(res.map(|(tls, io)| (tls, ServerIo::Rustls(io))))
-            }
-
-            #[cfg(not(feature = "__has_any_tls_impls"))]
-            _ => crate::no_tls!(cx),
-        }
-    }
+    verifier::client_identity(c).map(ClientId)
 }
 
 // === impl ServerIo ===
@@ -161,105 +139,59 @@ where
 impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncRead for ServerIo<I> {
     #[inline]
     fn poll_read(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: &mut io::ReadBuf<'_>,
     ) -> io::Poll<()> {
-        match self.project() {
-            #[cfg(feature = "boring")]
-            ServerIoProj::Boring(io) => io.poll_read(cx, buf),
-
-            #[cfg(feature = "rustls")]
-            ServerIoProj::Rustls(io) => io.poll_read(cx, buf),
-
-            #[cfg(not(feature = "__has_any_tls_impls"))]
-            _ => crate::no_tls!(cx, buf),
-        }
+        Pin::new(&mut self.0).poll_read(cx, buf)
     }
 }
 
 impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncWrite for ServerIo<I> {
     #[inline]
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> io::Poll<()> {
-        match self.project() {
-            #[cfg(feature = "boring")]
-            ServerIoProj::Boring(io) => io.poll_flush(cx),
-
-            #[cfg(feature = "rustls")]
-            ServerIoProj::Rustls(io) => io.poll_flush(cx),
-            #[cfg(not(feature = "__has_any_tls_impls"))]
-            _ => crate::no_tls!(cx),
-        }
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> io::Poll<()> {
+        Pin::new(&mut self.0).poll_flush(cx)
     }
 
     #[inline]
-    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> io::Poll<()> {
-        match self.project() {
-            #[cfg(feature = "boring")]
-            ServerIoProj::Boring(io) => io.poll_shutdown(cx),
-
-            #[cfg(feature = "rustls")]
-            ServerIoProj::Rustls(io) => io.poll_shutdown(cx),
-            #[cfg(not(feature = "__has_any_tls_impls"))]
-            _ => crate::no_tls!(cx),
-        }
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> io::Poll<()> {
+        Pin::new(&mut self.0).poll_shutdown(cx)
     }
 
     #[inline]
-    fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> io::Poll<usize> {
-        match self.project() {
-            #[cfg(feature = "boring")]
-            ServerIoProj::Boring(io) => io.poll_write(cx, buf),
-
-            #[cfg(feature = "rustls")]
-            ServerIoProj::Rustls(io) => io.poll_write(cx, buf),
-            #[cfg(not(feature = "__has_any_tls_impls"))]
-            _ => crate::no_tls!(cx, buf),
-        }
+    fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> io::Poll<usize> {
+        Pin::new(&mut self.0).poll_write(cx, buf)
     }
 
     #[inline]
     fn poll_write_vectored(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         bufs: &[io::IoSlice<'_>],
-    ) -> Poll<Result<usize, std::io::Error>> {
-        match self.project() {
-            #[cfg(feature = "boring")]
-            ServerIoProj::Boring(io) => io.poll_write_vectored(cx, bufs),
-
-            #[cfg(feature = "rustls")]
-            ServerIoProj::Rustls(io) => io.poll_write_vectored(cx, bufs),
-            #[cfg(not(feature = "__has_any_tls_impls"))]
-            _ => crate::no_tls!(cx, bufs),
-        }
+    ) -> io::Poll<usize> {
+        Pin::new(&mut self.0).poll_write_vectored(cx, bufs)
     }
 
     #[inline]
     fn is_write_vectored(&self) -> bool {
-        match self {
-            #[cfg(feature = "boring")]
-            Self::Boring(io) => io.is_write_vectored(),
+        self.0.is_write_vectored()
+    }
+}
 
-            #[cfg(feature = "rustls")]
-            Self::Rustls(io) => io.is_write_vectored(),
-            #[cfg(not(feature = "__has_any_tls_impls"))]
-            _ => crate::no_tls!(),
-        }
+impl<I> ServerIo<I> {
+    #[inline]
+    pub fn negotiated_protocol(&self) -> Option<NegotiatedProtocolRef<'_>> {
+        self.0
+            .get_ref()
+            .1
+            .alpn_protocol()
+            .map(NegotiatedProtocolRef)
     }
 }
 
 impl<I: io::PeerAddr> io::PeerAddr for ServerIo<I> {
     #[inline]
     fn peer_addr(&self) -> io::Result<std::net::SocketAddr> {
-        match self {
-            #[cfg(feature = "boring")]
-            Self::Boring(io) => io.peer_addr(),
-
-            #[cfg(feature = "rustls")]
-            Self::Rustls(io) => io.peer_addr(),
-            #[cfg(not(feature = "__has_any_tls_impls"))]
-            _ => crate::no_tls!(),
-        }
+        self.0.get_ref().0.peer_addr()
     }
 }

@@ -19,7 +19,7 @@ pub trait SelectRoute<Req> {
     type Key;
     type Error: Into<Error>;
 
-    /// Given a a request, returns the key matching this request.
+    /// Given a request, returns the key matching this request.
     ///
     /// If no route matches the request, this method returns an error.
     fn select(&self, req: &Req) -> Result<Self::Key, Self::Error>;

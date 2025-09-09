@@ -19,11 +19,6 @@ mod metrics;
 
 pub use self::metrics::MetricsFamilies;
 
-/// Creates I/O errors when a connection cannot be forwarded because no transport
-/// header was present.
-#[derive(Debug, Default)]
-struct RefusedNoHeader;
-
 #[derive(Debug, Error)]
 #[error("direct connections must be mutually authenticated")]
 pub struct RefusedNoIdentity(());
@@ -117,7 +112,7 @@ impl<N> Inbound<N> {
             let identity = rt
                 .identity
                 .server()
-                .with_alpn(vec![transport_header::PROTOCOL.into()])
+                .spawn_with_alpn(vec![transport_header::PROTOCOL.into()])
                 .expect("TLS credential store must be held");
 
             inner
@@ -456,17 +451,6 @@ impl Param<Option<SessionProtocol>> for GatewayTransportHeader {
 impl Param<profiles::LookupAddr> for GatewayTransportHeader {
     fn param(&self) -> profiles::LookupAddr {
         profiles::LookupAddr(self.target.clone().into())
-    }
-}
-
-// === impl RefusedNoHeader ===
-
-impl From<RefusedNoHeader> for Error {
-    fn from(_: RefusedNoHeader) -> Error {
-        Error::from(io::Error::new(
-            io::ErrorKind::ConnectionRefused,
-            "Non-transport-header connection refused",
-        ))
     }
 }
 

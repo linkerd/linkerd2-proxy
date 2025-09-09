@@ -9,10 +9,7 @@ use std::{
     task::{Context, Poll},
     time::Duration,
 };
-use tower::{
-    layer::util::{Identity, Stack as Pair},
-    make::MakeService,
-};
+use tower::layer::util::{Identity, Stack as Pair};
 pub use tower::{
     layer::Layer, limit::GlobalConcurrencyLimitLayer as ConcurrencyLimitLayer, service_fn as mk,
     spawn_ready::SpawnReady, Service, ServiceExt,
@@ -127,7 +124,6 @@ impl<M, L: Layer<M>> Layer<M> for Layers<L> {
 
 // === impl Stack ===
 
-#[allow(dead_code)]
 impl<S> Stack<S> {
     pub fn push<L: Layer<S>>(self, layer: L) -> Stack<L::Service> {
         Stack(layer.layer(self.0))
@@ -438,23 +434,6 @@ impl<S> Stack<S> {
     pub fn check_service_response<T, U>(self) -> Self
     where
         S: Service<T, Response = U>,
-    {
-        self
-    }
-
-    /// Validates that this stack serves T-typed targets.
-    pub fn check_make_service<T, U>(self) -> Self
-    where
-        S: MakeService<T, U>,
-    {
-        self
-    }
-
-    /// Validates that this stack serves T-typed targets.
-    pub fn check_make_service_clone<T, U>(self) -> Self
-    where
-        S: MakeService<T, U> + Clone,
-        S::Service: Clone,
     {
         self
     }

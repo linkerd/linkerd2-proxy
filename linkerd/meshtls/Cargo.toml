@@ -7,25 +7,27 @@ edition = "2018"
 publish = { workspace = true }
 
 [features]
-rustls = ["linkerd-meshtls-rustls", "__has_any_tls_impls"]
-rustls-aws-lc-fips = ["linkerd-meshtls-rustls/aws-lc-fips"]
-boring = ["linkerd-meshtls-boring", "__has_any_tls_impls"]
-boring-fips = ["boring", "linkerd-meshtls-boring/fips"]
-# Enabled if *any* TLS impl is enabled.
-__has_any_tls_impls = []
+rustls-aws-lc-fips = ["tokio-rustls/fips"]
+test-util = ["linkerd-tls-test-util"]
 
 [dependencies]
 futures = { version = "0.3", default-features = false }
-pin-project = "1"
+rustls-pemfile = "2.2"
+rustls-webpki = { version = "0.103.4", default-features = false, features = ["std", "aws-lc-rs"] }
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "rt", "sync"] }
+tokio-rustls = { workspace = true, features = ["aws-lc-rs"] }
+tracing = { workspace = true }
 
 linkerd-dns-name = { path = "../dns/name" }
 linkerd-error = { path = "../error" }
 linkerd-identity = { path = "../identity" }
 linkerd-io = { path = "../io" }
-linkerd-meshtls-boring = { path = "boring", optional = true }
-linkerd-meshtls-rustls = { path = "rustls", optional = true, default-features = false }
+linkerd-meshtls-verifier = { path = "verifier" }
+linkerd-rustls = { path = "../rustls" }
 linkerd-stack = { path = "../stack" }
 linkerd-tls = { path = "../tls" }
+linkerd-tls-test-util = { path = "../tls/test-util", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }

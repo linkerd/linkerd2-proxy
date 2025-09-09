@@ -39,7 +39,7 @@ macro_rules! new_svc {
             policy,
             connection: $conn,
             metrics: HttpAuthzMetrics::default(),
-            inner: |(permit, _): (HttpRoutePermit, ())| {
+            inner: |Permitted { permit, target: () }: Permitted<()>| {
                 let f = $rsp;
                 svc::mk(move |req: ::http::Request<BoxBody>| {
                     futures::future::ready((f)(permit.clone(), req))
