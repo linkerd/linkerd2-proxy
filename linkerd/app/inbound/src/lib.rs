@@ -24,19 +24,18 @@ pub use self::{
     detect::MetricsFamilies as DetectMetrics, metrics::InboundMetrics, policy::DefaultPolicy,
 };
 use linkerd_app_core::{
-    config::{ConnectConfig, ProxyConfig, QueueConfig},
+    config::{ProxyConfig, QueueConfig},
     drain,
     http_tracing::SpanSink,
-    identity, io,
+    identity,
     metrics::prom,
-    proxy::{tap, tcp},
+    proxy::tap,
     svc,
     transport::{self, Remote, ServerAddr},
     Error, NameAddr, NameMatch, ProxyRuntime,
 };
 use std::{fmt::Debug, time::Duration};
 use thiserror::Error;
-use tracing::debug_span;
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -183,98 +182,11 @@ impl Inbound<()> {
     pub fn with_stack<S>(self, stack: S) -> Inbound<S> {
         self.map_stack(move |_, _, _| svc::stack(stack))
     }
-
-    /// Readies the inbound stack to make TCP connections (for both TCP
-    // forwarding and HTTP proxying).
-    pub fn into_tcp_connect<T>(
-        self,
-        proxy_port: u16,
-    ) -> Inbound<
-        impl svc::MakeConnection<
-                T,
-                Connection = impl Send + Unpin,
-                Metadata = impl Send + Unpin,
-                Error = Error,
-                Future = impl Send,
-            > + Clone,
-    >
-    where
-        T: svc::Param<Remote<ServerAddr>> + 'static,
-    {
-        self.map_stack(|config, _, _| {
-            // Establishes connections to remote peers (for both TCP
-            // forwarding and HTTP proxying).
-            let ConnectConfig {
-                ref keepalive,
-                ref user_timeout,
-                ref timeout,
-                ..
-            } = config.proxy.connect;
-
-            #[derive(Debug, thiserror::Error)]
-            #[error("inbound connection must not target port {0}")]
-            struct Loop(u16);
-
-            svc::stack(transport::ConnectTcp::new(*keepalive, *user_timeout))
-                // Limits the time we wait for a connection to be established.
-                .push_connect_timeout(*timeout)
-                // Prevent connections that would target the inbound proxy port from looping.
-                .push_filter(move |t: T| {
-                    let addr = t.param();
-                    let port = addr.port();
-                    if port == proxy_port {
-                        return Err(Loop(port));
-                    }
-                    Ok(addr)
-                })
-        })
-    }
 }
 
 impl<S> Inbound<S> {
     pub fn push<L: svc::layer::Layer<S>>(self, layer: L) -> Inbound<L::Service> {
         self.map_stack(|_, _, stack| stack.push(layer))
-    }
-
-    // Forwards TCP streams that cannot be decoded as HTTP.
-    //
-    // Looping is always prevented.
-    pub fn push_tcp_forward<T, I>(
-        self,
-    ) -> Inbound<
-        svc::ArcNewService<
-            T,
-            impl svc::Service<I, Response = (), Error = ForwardError, Future = impl Send> + Clone,
-        >,
-    >
-    where
-        T: svc::Param<transport::labels::Key>
-            + svc::Param<Remote<ServerAddr>>
-            + Clone
-            + Send
-            + Sync
-            + 'static,
-        I: io::AsyncRead + io::AsyncWrite,
-        I: Debug + Send + Unpin + 'static,
-        S: svc::MakeConnection<T> + Clone + Send + Sync + Unpin + 'static,
-        S::Connection: Send + Unpin,
-        S::Metadata: Send + Unpin,
-        S::Future: Send,
-    {
-        self.map_stack(|_, rt, connect| {
-            connect
-                .push(transport::metrics::Client::layer(
-                    rt.metrics.proxy.transport.clone(),
-                ))
-                .push(svc::stack::WithoutConnectionMetadata::layer())
-                .push_new_thunk()
-                .push_on_service(tcp::Forward::layer())
-                .push_on_service(drain::Retain::layer(rt.drain.clone()))
-                .instrument(|_: &_| debug_span!("tcp"))
-                .push(svc::NewMapErr::layer_from_target::<ForwardError, _>())
-                .push(svc::ArcNewService::layer())
-                .check_new::<T>()
-        })
     }
 }
 
