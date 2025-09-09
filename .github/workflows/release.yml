@@ -182,7 +182,7 @@ jobs:
       - run: just arch=${{ matrix.arch }} libc=${{ matrix.libc }} os=${{ matrix.os }} profile=${{ needs.meta.outputs.profile }} package
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: ${{ matrix.arch }}-${{ matrix.os }}-artifacts
+          name: release-${{ matrix.arch }}-${{ matrix.os }}
           path: target/package/*
 
   publish:
@@ -212,8 +212,10 @@ jobs:
       # Fetch the artifacts.
       - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
         with:
+          pattern: 'release-*'
           path: artifacts
-      - run: du -h artifacts/**/*
+          merge-multiple: true
+      - run: du -h artifacts/*
       # Publish the release.
       - if: needs.meta.outputs.publish == 'true'
         run: git push origin "$TAG"
@@ -222,7 +224,7 @@ jobs:
         with:
           name: ${{ env.VERSION }}
           tag_name: ${{ env.TAG }}
-          files: artifacts/**/*
+          files: artifacts/*
           generate_release_notes: true
           prerelease: ${{ needs.meta.outputs.prerelease }}
           draft: ${{ needs.meta.outputs.draft }}
