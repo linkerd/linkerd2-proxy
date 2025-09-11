@@ -94,17 +94,14 @@ impl EncodeLabelSetMut for RequestCountLabels {
                 },
         } = self;
 
-        let mut encode_label = |k, v| (k, v).encode(enc.encode_label());
-
-        encode_label("parent_group", parent.group())?;
-        encode_label("parent_kind", parent.kind())?;
-        encode_label("parent_name", parent.name())?;
-
-        encode_label("route_group", route.group())?;
-        encode_label("route_kind", route.kind())?;
-        encode_label("route_name", route.name())?;
-
+        ("parent_group", parent.group()).encode(enc.encode_label())?;
+        ("parent_kind", parent.kind()).encode(enc.encode_label())?;
+        ("parent_name", parent.name()).encode(enc.encode_label())?;
         ("parent_port", *port).encode(enc.encode_label())?;
+
+        ("route_group", route.group()).encode(enc.encode_label())?;
+        ("route_kind", route.kind()).encode(enc.encode_label())?;
+        ("route_name", route.name()).encode(enc.encode_label())?;
 
         Ok(())
     }
