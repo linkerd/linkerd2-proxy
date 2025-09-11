@@ -1,7 +1,4 @@
-use crate::{
-    policy::{self, Permitted},
-    stack_labels, Inbound,
-};
+use crate::{policy, stack_labels, Inbound};
 use linkerd_app_core::{
     classify, errors, http_tracing, profiles,
     proxy::{http, tap},
@@ -268,10 +265,8 @@ where
     T: Param<tls::ConditionalServerTls>,
 {
     fn from(permitted: &'a policy::Permitted<T>) -> Self {
-        let (permit, target) = match permitted {
-            Permitted::Grpc { permit, target } => (permit, target),
-            Permitted::Http { permit, target } => (permit, target),
-        };
+        let target = permitted.target_ref();
+        let permit = permitted.permit_ref();
 
         let labels = [
             ("srv", &permit.labels.route.server.0),
