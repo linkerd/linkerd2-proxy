@@ -23,6 +23,7 @@ futures = { version = "0.3", default-features = false }
 linkerd-app-core = { path = "../core" }
 linkerd-app-test = { path = "../test", optional = true }
 linkerd-http-access-log = { path = "../../http/access-log" }
+linkerd-http-prom = { path = "../../http/prom" }
 linkerd-idle-cache = { path = "../../idle-cache" }
 linkerd-meshtls = { path = "../../meshtls", optional = true, default-features = false }
 linkerd-proxy-client-policy = { path = "../../proxy/client-policy" }

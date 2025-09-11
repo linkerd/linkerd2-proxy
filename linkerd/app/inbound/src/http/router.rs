@@ -10,6 +10,10 @@ use linkerd_app_core::{
 use std::{fmt, net::SocketAddr};
 use tracing::{debug, debug_span};
 
+pub use self::metrics::RequestCountFamilies;
+
+mod metrics;
+
 /// Describes an HTTP client target.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Http {
@@ -241,6 +245,7 @@ impl<C> Inbound<C> {
                 .push(svc::NewOneshotRoute::layer_via(|t: &policy::Permitted<T>| {
                     LogicalPerRequest::from(t)
                 }))
+                .push(self::metrics::layer(rt.metrics.request_count.clone()))
                 .check_new_service::<policy::Permitted<T>, http::Request<http::BoxBody>>()
                 .push(svc::ArcNewService::layer())
                 .push(policy::NewHttpPolicy::layer(rt.metrics.http_authz.clone()))
@@ -259,7 +264,10 @@ where
     T: Param<Remote<ServerAddr>>,
     T: Param<tls::ConditionalServerTls>,
 {
-    fn from(policy::Permitted { permit, target }: &'a policy::Permitted<T>) -> Self {
+    fn from(permitted: &'a policy::Permitted<T>) -> Self {
+        let target = permitted.target_ref();
+        let permit = permitted.permit_ref();
+
         let labels = [
             ("srv", &permit.labels.route.server.0),
             ("route", &permit.labels.route.route),
