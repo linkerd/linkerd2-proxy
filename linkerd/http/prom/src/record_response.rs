@@ -150,9 +150,9 @@ impl MetricConstructor<Histogram> for MkDurationHistogram {
 
 // === impl NewRecordResponse ===
 
-impl<M, X, K, N> NewRecordResponse<M, X, K, N>
+impl<L, X, M, N> NewRecordResponse<L, X, M, N>
 where
-    M: MkStreamLabel,
+    L: MkStreamLabel,
 {
     pub fn new(extract: X, inner: N) -> Self {
         Self {
@@ -170,9 +170,9 @@ where
     }
 }
 
-impl<M, K, N> NewRecordResponse<M, (), K, N>
+impl<L, M, N> NewRecordResponse<L, (), M, N>
 where
-    M: MkStreamLabel,
+    L: MkStreamLabel,
 {
     pub fn layer() -> impl svc::layer::Layer<N, Service = Self> + Clone {
         Self::layer_via(())
