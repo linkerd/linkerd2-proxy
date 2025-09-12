@@ -93,8 +93,14 @@ pub struct Params<L: MkStreamLabel, M> {
 #[error("request was cancelled before completion")]
 pub struct RequestCancelled(());
 
-/// Builds RecordResponse instances by extracing M-typed parameters from stack
-/// targets
+/// Instruments an `N`-typed [`svc::NewService<T>`] with metrics.
+///
+/// Builds [`RecordResponse<L, M, S>`] instances by extracting `L`- and `M`-typed [`Params<L, M>`]
+/// parameters from `T`-typed stack targets using an `X`-typed [`svc::ExtractParam<P, T>`]
+/// implementation.
+///
+/// The `L`-typed [`MkStreamLabel`] inspects requests and emits a [`StreamLabel`], which is
+/// intended to be used to generate labels for the `M`-typed metrics.
 #[derive(Clone, Debug)]
 pub struct NewRecordResponse<L, X, M, N> {
     inner: N,
