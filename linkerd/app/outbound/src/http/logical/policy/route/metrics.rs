@@ -152,7 +152,7 @@ impl<R: StreamLabel, B: StreamLabel> RouteMetrics<R, B> {
         p: crate::ParentRef,
         r: crate::RouteRef,
         b: crate::BackendRef,
-    ) -> linkerd_http_prom::RequestCount {
+    ) -> linkerd_http_prom::count_reqs::RequestCount {
         self.backend.backend_request_count(p, r, b)
     }
 }

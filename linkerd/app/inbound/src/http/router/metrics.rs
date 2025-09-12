@@ -10,7 +10,7 @@ use linkerd_app_core::{
     },
     svc,
 };
-use linkerd_http_prom::{NewCountRequests, RequestCount};
+use linkerd_http_prom::count_reqs::{NewCountRequests, RequestCount};
 
 pub(super) fn layer<N>(
     request_count: RequestCountFamilies,
@@ -25,8 +25,8 @@ pub(super) fn layer<N>(
 
 #[derive(Clone, Debug)]
 pub struct RequestCountFamilies {
-    grpc: linkerd_http_prom::RequestCountFamilies<RequestCountLabels>,
-    http: linkerd_http_prom::RequestCountFamilies<RequestCountLabels>,
+    grpc: linkerd_http_prom::count_reqs::RequestCountFamilies<RequestCountLabels>,
+    http: linkerd_http_prom::count_reqs::RequestCountFamilies<RequestCountLabels>,
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -44,12 +44,12 @@ impl RequestCountFamilies {
     pub fn register(reg: &mut prom::Registry) -> Self {
         let grpc = {
             let reg = reg.sub_registry_with_prefix("grpc");
-            linkerd_http_prom::RequestCountFamilies::register(reg)
+            linkerd_http_prom::count_reqs::RequestCountFamilies::register(reg)
         };
 
         let http = {
             let reg = reg.sub_registry_with_prefix("http");
-            linkerd_http_prom::RequestCountFamilies::register(reg)
+            linkerd_http_prom::count_reqs::RequestCountFamilies::register(reg)
         };
 
         Self { grpc, http }
@@ -59,7 +59,7 @@ impl RequestCountFamilies {
     fn family<T>(
         &self,
         permitted: &Permitted<T>,
-    ) -> &linkerd_http_prom::RequestCountFamilies<RequestCountLabels> {
+    ) -> &linkerd_http_prom::count_reqs::RequestCountFamilies<RequestCountLabels> {
         let Self { grpc, http } = self;
         match permitted {
             Permitted::Grpc { .. } => grpc,

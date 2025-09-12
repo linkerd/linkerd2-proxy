@@ -2,7 +2,5 @@
 #![forbid(unsafe_code)]
 
 pub mod body_data;
-mod count_reqs;
+pub mod count_reqs;
 pub mod record_response;
-
-pub use self::count_reqs::{CountRequests, NewCountRequests, RequestCount, RequestCountFamilies};
