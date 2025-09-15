@@ -48,6 +48,10 @@ updates:
           - "tokio-rustls"
           - "rustls*"
           - "ring"
+      serde:
+        patterns:
+          - "serde"
+          - "serde_*"
       symbolic:
         patterns:
           - "symbolic-*"
