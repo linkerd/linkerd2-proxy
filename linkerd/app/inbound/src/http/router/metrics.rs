@@ -216,11 +216,16 @@ impl EncodeLabelSet for ResponseBodyDataLabels {
 
 // === impl ExtractRecordBodyDataMetrics ===
 
-impl<T> svc::ExtractParam<BodyDataMetrics, Permitted<T>> for ExtractRecordBodyDataMetrics {
-    fn extract_param(&self, permitted: &Permitted<T>) -> BodyDataMetrics {
+impl<T> svc::ExtractParam<BodyDataMetrics, T> for ExtractRecordBodyDataMetrics
+where
+    T: svc::Param<PermitVariant> + svc::Param<RouteLabels>,
+{
+    fn extract_param(&self, target: &T) -> BodyDataMetrics {
         let Self(families) = self;
-        let family = families.family(permitted.variant());
-        let route = permitted.route_labels();
+        let variant = target.param();
+        let route = target.param();
+
+        let family = families.family(variant);
 
         family.metrics(&ResponseBodyDataLabels { route })
     }
