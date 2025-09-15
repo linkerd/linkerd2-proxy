@@ -1,7 +1,4 @@
-use crate::{
-    policy::{PermitVariant, Permitted},
-    InboundMetrics,
-};
+use crate::{policy::PermitVariant, InboundMetrics};
 use linkerd_app_core::{
     metrics::{
         prom::{
@@ -107,11 +104,16 @@ impl RequestCountFamilies {
 
 // === impl ExtractRequestCount ===
 
-impl<T> svc::ExtractParam<RequestCount, Permitted<T>> for ExtractRequestCount {
-    fn extract_param(&self, permitted: &Permitted<T>) -> RequestCount {
+impl<T> svc::ExtractParam<RequestCount, T> for ExtractRequestCount
+where
+    T: svc::Param<PermitVariant> + svc::Param<RouteLabels>,
+{
+    fn extract_param(&self, target: &T) -> RequestCount {
         let Self(families) = self;
-        let family = families.family(permitted.variant());
-        let route = permitted.route_labels();
+        let variant = target.param();
+        let route = target.param();
+
+        let family = families.family(variant);
 
         family.metrics(&RequestCountLabels { route })
     }
