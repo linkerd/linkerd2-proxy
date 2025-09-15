@@ -5,7 +5,7 @@ use linkerd_app_core::{
     svc,
 };
 use linkerd_http_prom::{
-    body_data::request::{NewRecordBodyData, RequestBodyFamilies},
+    body_data::request::{BodyDataMetrics, NewRecordBodyData, RequestBodyFamilies},
     record_response::{self, StreamLabel},
 };
 
@@ -61,6 +61,19 @@ pub type NewRecordDuration<T, M, N> =
 #[derive(Clone, Debug)]
 pub struct ExtractRecordDurationParams<M>(pub M);
 
+/// Extracts a [`ExtractBodyDataParams`] from a target.
+#[derive(Clone, Debug)]
+pub struct ExtractBodyDataParams(RequestBodyFamilies<labels::Route>);
+
+/// Extracts a single time series from the request body metrics.
+#[derive(Clone, Debug)]
+pub struct ExtractBodyDataMetrics<X> {
+    /// The labeled family of metrics.
+    metrics: RequestBodyFamilies<labels::Route>,
+    /// Extracts [`labels::Route`] to select a time series.
+    extract: X,
+}
+
 pub fn layer<T, N>(
     metrics: &RequestMetrics<T::StreamLabel>,
     body_data: &RequestBodyFamilies<labels::Route>,
@@ -68,9 +81,8 @@ pub fn layer<T, N>(
     N,
     Service = NewRecordBodyData<
         NewRecordDuration<T, RequestMetrics<T::StreamLabel>, N>,
-        (),
-        T,
-        labels::Route,
+        ExtractBodyDataParams,
+        ExtractBodyDataMetrics<T>,
     >,
 >
 where
@@ -78,7 +90,7 @@ where
     T: svc::ExtractParam<labels::Route, http::Request<http::BoxBody>>,
 {
     let record = NewRecordDuration::layer_via(ExtractRecordDurationParams(metrics.clone()));
-    let body_data = NewRecordBodyData::new((), body_data.clone());
+    let body_data = NewRecordBodyData::new(ExtractBodyDataParams(body_data.clone()));
 
     svc::layer::mk(move |inner| {
         use svc::Layer;
@@ -169,6 +181,31 @@ where
             labeler: target.clone(),
             metric: self.0.clone(),
         }
+    }
+}
+
+// === impl ExtractRecordBodyDataParams ===
+
+impl<T: Clone> svc::ExtractParam<ExtractBodyDataMetrics<T>, T> for ExtractBodyDataParams {
+    fn extract_param(&self, t: &T) -> ExtractBodyDataMetrics<T> {
+        let Self(metrics) = self;
+        ExtractBodyDataMetrics {
+            metrics: metrics.clone(),
+            extract: t.clone(),
+        }
+    }
+}
+
+// === impl ExtractRecordBodyDataMetrics ===
+
+impl<B, X> svc::ExtractParam<BodyDataMetrics, http::Request<B>> for ExtractBodyDataMetrics<X>
+where
+    X: svc::ExtractParam<labels::Route, http::Request<B>>,
+{
+    fn extract_param(&self, req: &http::Request<B>) -> BodyDataMetrics {
+        let Self { metrics, extract } = self;
+        let labels = extract.extract_param(req);
+        metrics.metrics(&labels)
     }
 }
 
