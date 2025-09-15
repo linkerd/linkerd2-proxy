@@ -5,15 +5,14 @@ pub use super::metrics::{BodyDataMetrics, RequestBodyFamilies};
 use http::{Request, Response};
 use linkerd_error::Error;
 use linkerd_http_box::BoxBody;
-use linkerd_stack::{self as svc, layer::Layer, ExtractParam, NewService, Service};
+use linkerd_stack::{self as svc, layer::Layer, ExtractParam, NewService, Param, Service};
 use std::marker::PhantomData;
 
 /// A [`NewService<T>`] that creates [`RecordBodyData`] services.
 #[derive(Clone, Debug)]
-pub struct NewRecordBodyData<N, X, ReqX, L> {
+pub struct NewRecordBodyData<N, ReqX, L> {
     /// The inner [`NewService<T>`].
     inner: N,
-    extract: X,
     metrics: RequestBodyFamilies<L>,
     marker: PhantomData<ReqX>,
 }
@@ -29,29 +28,27 @@ pub struct RecordBodyData<S, ReqX, L> {
 
 // === impl NewRecordBodyData ===
 
-impl<N, X, ReqX, L> NewRecordBodyData<N, X, ReqX, L>
+impl<N, ReqX, L> NewRecordBodyData<N, ReqX, L>
 where
-    X: Clone,
     L: Clone,
 {
     /// Returns a [`Layer<S>`] that tracks body chunks.
     ///
     /// This uses an `X`-typed [`ExtractParam<P, T>`] implementation to extract service parameters
     /// from a `T`-typed target.
-    pub fn new(extract: X, metrics: RequestBodyFamilies<L>) -> impl Layer<N, Service = Self> {
+    pub fn new(metrics: RequestBodyFamilies<L>) -> impl Layer<N, Service = Self> {
         svc::layer::mk(move |inner| Self {
             inner,
-            extract: extract.clone(),
             metrics: metrics.clone(),
             marker: PhantomData,
         })
     }
 }
 
-impl<T, N, X, ReqX, L> NewService<T> for NewRecordBodyData<N, X, ReqX, L>
+impl<T, N, ReqX, L> NewService<T> for NewRecordBodyData<N, ReqX, L>
 where
     N: NewService<T>,
-    X: ExtractParam<ReqX, T>,
+    T: Param<ReqX>,
     L: Clone,
 {
     type Service = RecordBodyData<N::Service, ReqX, L>;
@@ -59,12 +56,11 @@ where
     fn new_service(&self, target: T) -> Self::Service {
         let Self {
             inner,
-            extract,
             metrics,
             marker: _,
         } = self;
 
-        let extract = extract.extract_param(&target);
+        let extract = target.param();
         let inner = inner.new_service(target);
         let metrics = metrics.clone();
 
