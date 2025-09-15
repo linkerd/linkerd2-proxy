@@ -409,16 +409,6 @@ fn apply_grpc_filters<B>(route: &grpc::Policy, req: &mut ::http::Request<B>) -> 
 
 // === impl Permitted ===
 
-/// An authorized `T`-typed target can produce `P`-typed parameters.
-impl<T, P> svc::Param<P> for Permitted<T>
-where
-    T: svc::Param<P>,
-{
-    fn param(&self) -> P {
-        self.target_ref().param()
-    }
-}
-
 impl<T> Permitted<T> {
     /// Returns a reference to the [`HttpRoutePermit`] authorizing this `T`.
     pub fn permit_ref(&self) -> &HttpRoutePermit {
