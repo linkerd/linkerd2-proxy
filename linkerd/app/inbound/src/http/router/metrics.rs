@@ -1,4 +1,7 @@
-use crate::{policy::Permitted, InboundMetrics};
+use crate::{
+    policy::{PermitVariant, Permitted},
+    InboundMetrics,
+};
 use linkerd_app_core::{
     metrics::{
         prom::{
@@ -95,9 +98,9 @@ impl RequestCountFamilies {
         permitted: &Permitted<T>,
     ) -> &linkerd_http_prom::count_reqs::RequestCountFamilies<RequestCountLabels> {
         let Self { grpc, http } = self;
-        match permitted {
-            Permitted::Grpc { .. } => grpc,
-            Permitted::Http { .. } => http,
+        match permitted.variant() {
+            PermitVariant::Grpc => grpc,
+            PermitVariant::Http => http,
         }
     }
 }
@@ -171,9 +174,9 @@ impl ResponseBodyFamilies {
         permitted: &Permitted<T>,
     ) -> &linkerd_http_prom::body_data::response::ResponseBodyFamilies<ResponseBodyDataLabels> {
         let Self { grpc, http } = self;
-        match permitted {
-            Permitted::Grpc { .. } => grpc,
-            Permitted::Http { .. } => http,
+        match permitted.variant() {
+            PermitVariant::Grpc => grpc,
+            PermitVariant::Http => http,
         }
     }
 }

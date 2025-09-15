@@ -12,7 +12,7 @@ pub use self::{
     config::Config,
     http::{
         HttpInvalidPolicy, HttpRouteInvalidRedirect, HttpRouteNotFound, HttpRouteRedirect,
-        HttpRouteUnauthorized, NewHttpPolicy, Permitted,
+        HttpRouteUnauthorized, NewHttpPolicy, PermitVariant, Permitted,
     },
     tcp::NewTcpPolicy,
 };

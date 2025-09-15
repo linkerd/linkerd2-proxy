@@ -48,9 +48,16 @@ struct ConnectionMeta {
 
 /// A `T`-typed target with policy enforced by a [`NewHttpPolicy<N>`] layer.
 #[derive(Debug)]
-pub enum Permitted<T> {
-    Grpc { permit: HttpRoutePermit, target: T },
-    Http { permit: HttpRoutePermit, target: T },
+pub struct Permitted<T> {
+    permit: HttpRoutePermit,
+    protocol: PermitVariant,
+    target: T,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum PermitVariant {
+    Grpc,
+    Http,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -170,12 +177,20 @@ where
             Some(Routes::Http(routes)) => {
                 let (permit, mtch, route) = try_fut!(self.authorize(&routes, &req));
                 try_fut!(apply_http_filters(mtch, route, &mut req));
-                Permitted::Http { permit, target }
+                Permitted {
+                    permit,
+                    target,
+                    protocol: PermitVariant::Http,
+                }
             }
             Some(Routes::Grpc(routes)) => {
                 let (permit, _, route) = try_fut!(self.authorize(&routes, &req));
                 try_fut!(apply_grpc_filters(route, &mut req));
-                Permitted::Grpc { permit, target }
+                Permitted {
+                    permit,
+                    target,
+                    protocol: PermitVariant::Grpc,
+                }
             }
         };
 
@@ -407,34 +422,33 @@ where
 impl<T> Permitted<T> {
     /// Returns a reference to the [`HttpRoutePermit`] authorizing this `T`.
     pub fn permit_ref(&self) -> &HttpRoutePermit {
-        match self {
-            Self::Grpc { permit, .. } => permit,
-            Self::Http { permit, .. } => permit,
-        }
+        &self.permit
+    }
+
+    /// Returns the [`PermitVariant`] of the permitting policy.
+    pub fn variant(&self) -> PermitVariant {
+        self.protocol
     }
 
     /// Returns a reference to the underlying `T`-typed target.
     pub fn target_ref(&self) -> &T {
-        match self {
-            Self::Grpc { target, .. } => target,
-            Self::Http { target, .. } => target,
-        }
+        &self.target
     }
 
     /// Consumes this permitted `T`, returning the inner `T`.
     pub fn into_target(self) -> T {
-        match self {
-            Self::Grpc { target, .. } => target,
-            Self::Http { target, .. } => target,
-        }
+        self.target
     }
 
     /// Consumes this permitted `T`, returning the `T` and its permit.
     pub fn into_parts(self) -> (T, HttpRoutePermit) {
-        match self {
-            Self::Grpc { target, permit } => (target, permit),
-            Self::Http { target, permit } => (target, permit),
-        }
+        let Self {
+            permit,
+            protocol: _,
+            target,
+        } = self;
+
+        (target, permit)
     }
 
     /// Returns the [`RouteLabels`] from the underlying permit.
