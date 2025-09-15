@@ -10,11 +10,24 @@ use linkerd_app_core::{
     },
     svc,
 };
-use linkerd_http_prom::count_reqs::{NewCountRequests, RequestCount};
+use linkerd_http_prom::{
+    body_data::response::{BodyDataMetrics, NewRecordBodyData},
+    count_reqs::{NewCountRequests, RequestCount},
+};
 
 pub(super) fn layer<N>(
-    InboundMetrics { request_count, .. }: &InboundMetrics,
-) -> impl svc::Layer<N, Service = NewCountRequests<ExtractRequestCount, N>> {
+    InboundMetrics {
+        request_count,
+        response_body_data,
+        ..
+    }: &InboundMetrics,
+) -> impl svc::Layer<
+    N,
+    Service = NewCountRequests<
+        ExtractRequestCount,
+        NewRecordBodyData<ExtractRecordBodyDataMetrics, N>,
+    >,
+> {
     use svc::Layer as _;
 
     let count = {
@@ -22,7 +35,12 @@ pub(super) fn layer<N>(
         NewCountRequests::layer_via(extract)
     };
 
-    svc::layer::mk(move |inner| count.layer(inner))
+    let body = {
+        let extract = ExtractRecordBodyDataMetrics(response_body_data.clone());
+        NewRecordBodyData::layer_via(extract)
+    };
+
+    svc::layer::mk(move |inner| count.layer(body.layer(inner)))
 }
 
 #[derive(Clone, Debug)]
@@ -38,6 +56,20 @@ pub struct RequestCountLabels {
 
 #[derive(Clone, Debug)]
 pub struct ExtractRequestCount(pub RequestCountFamilies);
+
+#[derive(Clone, Debug)]
+pub struct ResponseBodyFamilies {
+    grpc: linkerd_http_prom::body_data::response::ResponseBodyFamilies<ResponseBodyDataLabels>,
+    http: linkerd_http_prom::body_data::response::ResponseBodyFamilies<ResponseBodyDataLabels>,
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct ResponseBodyDataLabels {
+    route: RouteLabels,
+}
+
+#[derive(Clone, Debug)]
+pub struct ExtractRecordBodyDataMetrics(ResponseBodyFamilies);
 
 // === impl RequestCountFamilies ===
 
@@ -112,5 +144,81 @@ impl EncodeLabelSetMut for RequestCountLabels {
 impl EncodeLabelSet for RequestCountLabels {
     fn encode(&self, mut enc: LabelSetEncoder<'_>) -> std::fmt::Result {
         self.encode_label_set(&mut enc)
+    }
+}
+
+// === impl ResponseBodyFamilies ===
+
+impl ResponseBodyFamilies {
+    /// Registers a new [`ResponseBodyDataFamilies`] with the given registry.
+    pub fn register(reg: &mut prom::Registry) -> Self {
+        let grpc = {
+            let reg = reg.sub_registry_with_prefix("grpc");
+            linkerd_http_prom::body_data::response::ResponseBodyFamilies::register(reg)
+        };
+
+        let http = {
+            let reg = reg.sub_registry_with_prefix("http");
+            linkerd_http_prom::body_data::response::ResponseBodyFamilies::register(reg)
+        };
+
+        Self { grpc, http }
+    }
+
+    /// Fetches the proper body frame metrics family, given a permitted target.
+    fn family<T>(
+        &self,
+        permitted: &Permitted<T>,
+    ) -> &linkerd_http_prom::body_data::response::ResponseBodyFamilies<ResponseBodyDataLabels> {
+        let Self { grpc, http } = self;
+        match permitted {
+            Permitted::Grpc { .. } => grpc,
+            Permitted::Http { .. } => http,
+        }
+    }
+}
+
+// === impl ResponseBodyDataLabels ===
+
+impl EncodeLabelSetMut for ResponseBodyDataLabels {
+    fn encode_label_set(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
+        use encoding::EncodeLabel as _;
+
+        let Self {
+            route:
+                RouteLabels {
+                    server: ServerLabel(parent, port),
+                    route,
+                },
+        } = self;
+
+        ("parent_group", parent.group()).encode(enc.encode_label())?;
+        ("parent_kind", parent.kind()).encode(enc.encode_label())?;
+        ("parent_name", parent.name()).encode(enc.encode_label())?;
+        ("parent_port", *port).encode(enc.encode_label())?;
+
+        ("route_group", route.group()).encode(enc.encode_label())?;
+        ("route_kind", route.kind()).encode(enc.encode_label())?;
+        ("route_name", route.name()).encode(enc.encode_label())?;
+
+        Ok(())
+    }
+}
+
+impl EncodeLabelSet for ResponseBodyDataLabels {
+    fn encode(&self, mut enc: LabelSetEncoder<'_>) -> std::fmt::Result {
+        self.encode_label_set(&mut enc)
+    }
+}
+
+// === impl ExtractRecordBodyDataMetrics ===
+
+impl<T> svc::ExtractParam<BodyDataMetrics, Permitted<T>> for ExtractRecordBodyDataMetrics {
+    fn extract_param(&self, permitted: &Permitted<T>) -> BodyDataMetrics {
+        let Self(families) = self;
+        let family = families.family(permitted);
+        let route = permitted.route_labels();
+
+        family.metrics(&ResponseBodyDataLabels { route })
     }
 }
