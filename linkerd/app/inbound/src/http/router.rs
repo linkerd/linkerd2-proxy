@@ -1,4 +1,7 @@
-use crate::{policy, stack_labels, Inbound};
+use crate::{
+    policy::{self, HttpRoutePermit},
+    stack_labels, Inbound,
+};
 use linkerd_app_core::{
     classify, errors, http_tracing, profiles,
     proxy::{http, tap},
@@ -259,14 +262,14 @@ impl<C> Inbound<C> {
 
 // === impl LogicalPerRequest ===
 
-impl<'a, T> From<&'a policy::Permitted<T>> for LogicalPerRequest
+impl<'a, T> From<&'a T> for LogicalPerRequest
 where
     T: Param<Remote<ServerAddr>>,
     T: Param<tls::ConditionalServerTls>,
+    T: Param<HttpRoutePermit>,
 {
-    fn from(permitted: &'a policy::Permitted<T>) -> Self {
-        let target = permitted.target_ref();
-        let permit = permitted.permit_ref();
+    fn from(target: &'a T) -> Self {
+        let permit: HttpRoutePermit = target.param();
 
         let labels = [
             ("srv", &permit.labels.route.server.0),
@@ -286,7 +289,7 @@ where
         Self {
             server: target.param(),
             tls: target.param(),
-            permit: permit.clone(),
+            permit,
             labels: labels.into(),
         }
     }
