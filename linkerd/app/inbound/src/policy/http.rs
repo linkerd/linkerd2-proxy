@@ -7,8 +7,8 @@ use futures::{future, TryFutureExt};
 use linkerd_app_core::{
     metrics::{RouteAuthzLabels, RouteLabels},
     svc::{self, ServiceExt},
-    tls,
-    transport::{ClientAddr, OrigDstAddr, Remote},
+    tls::{self, ConditionalServerTls},
+    transport::{ClientAddr, OrigDstAddr, Remote, ServerAddr},
     Conditional, Error, Result,
 };
 use linkerd_proxy_server_policy::{grpc, http, route::RouteMatch};
@@ -408,6 +408,42 @@ fn apply_grpc_filters<B>(route: &grpc::Policy, req: &mut ::http::Request<B>) -> 
 }
 
 // === impl Permitted ===
+
+impl<T> svc::Param<Remote<ServerAddr>> for Permitted<T>
+where
+    T: svc::Param<Remote<ServerAddr>>,
+{
+    fn param(&self) -> Remote<ServerAddr> {
+        self.target.param()
+    }
+}
+
+impl<T> svc::Param<ConditionalServerTls> for Permitted<T>
+where
+    T: svc::Param<ConditionalServerTls>,
+{
+    fn param(&self) -> ConditionalServerTls {
+        self.target.param()
+    }
+}
+
+impl<T> svc::Param<HttpRoutePermit> for Permitted<T> {
+    fn param(&self) -> HttpRoutePermit {
+        self.permit_ref().clone()
+    }
+}
+
+impl<T> svc::Param<PermitVariant> for Permitted<T> {
+    fn param(&self) -> PermitVariant {
+        self.variant()
+    }
+}
+
+impl<T> svc::Param<RouteLabels> for Permitted<T> {
+    fn param(&self) -> RouteLabels {
+        self.route_labels()
+    }
+}
 
 impl<T> Permitted<T> {
     /// Returns a reference to the [`HttpRoutePermit`] authorizing this `T`.
