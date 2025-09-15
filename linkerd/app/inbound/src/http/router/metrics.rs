@@ -1,4 +1,4 @@
-use crate::policy::Permitted;
+use crate::{policy::Permitted, InboundMetrics};
 use linkerd_app_core::{
     metrics::{
         prom::{
@@ -13,14 +13,16 @@ use linkerd_app_core::{
 use linkerd_http_prom::count_reqs::{NewCountRequests, RequestCount};
 
 pub(super) fn layer<N>(
-    request_count: RequestCountFamilies,
-    // TODO(kate): other metrics families will added here.
+    InboundMetrics { request_count, .. }: &InboundMetrics,
 ) -> impl svc::Layer<N, Service = NewCountRequests<ExtractRequestCount, N>> {
-    svc::layer::mk(move |inner| {
-        use svc::Layer as _;
+    use svc::Layer as _;
+
+    let count = {
         let extract = ExtractRequestCount(request_count.clone());
-        NewCountRequests::layer_via(extract).layer(inner)
-    })
+        NewCountRequests::layer_via(extract)
+    };
+
+    svc::layer::mk(move |inner| count.layer(inner))
 }
 
 #[derive(Clone, Debug)]
