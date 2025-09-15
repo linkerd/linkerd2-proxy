@@ -10,90 +10,71 @@ use std::marker::PhantomData;
 
 /// A [`NewService<T>`] that creates [`RecordBodyData`] services.
 #[derive(Clone, Debug)]
-pub struct NewRecordBodyData<N, X, ReqX, L> {
+pub struct NewRecordBodyData<N, X, ReqX> {
     /// The inner [`NewService<T>`].
     inner: N,
     extract: X,
-    metrics: RequestBodyFamilies<L>,
     marker: PhantomData<ReqX>,
 }
 
 /// Tracks body frames for an inner `S`-typed [`Service`].
 #[derive(Clone, Debug)]
-pub struct RecordBodyData<S, ReqX, L> {
+pub struct RecordBodyData<S, ReqX> {
     /// The inner [`Service<T>`].
     inner: S,
     extract: ReqX,
-    metrics: RequestBodyFamilies<L>,
 }
 
 // === impl NewRecordBodyData ===
 
-impl<N, X, ReqX, L> NewRecordBodyData<N, X, ReqX, L>
+impl<N, X, ReqX> NewRecordBodyData<N, X, ReqX>
 where
     X: Clone,
-    L: Clone,
 {
     /// Returns a [`Layer<S>`] that tracks body chunks.
     ///
     /// This uses an `X`-typed [`ExtractParam<P, T>`] implementation to extract service parameters
     /// from a `T`-typed target.
-    pub fn new(extract: X, metrics: RequestBodyFamilies<L>) -> impl Layer<N, Service = Self> {
+    pub fn new(extract: X) -> impl Layer<N, Service = Self> {
         svc::layer::mk(move |inner| Self {
             inner,
             extract: extract.clone(),
-            metrics: metrics.clone(),
             marker: PhantomData,
         })
     }
 }
 
-impl<T, N, X, ReqX, L> NewService<T> for NewRecordBodyData<N, X, ReqX, L>
+impl<T, N, X, ReqX> NewService<T> for NewRecordBodyData<N, X, ReqX>
 where
     N: NewService<T>,
     X: ExtractParam<ReqX, T>,
-    L: Clone,
 {
-    type Service = RecordBodyData<N::Service, ReqX, L>;
+    type Service = RecordBodyData<N::Service, ReqX>;
 
     fn new_service(&self, target: T) -> Self::Service {
         let Self {
             inner,
             extract,
-            metrics,
             marker: _,
         } = self;
 
         let extract = extract.extract_param(&target);
         let inner = inner.new_service(target);
-        let metrics = metrics.clone();
 
-        RecordBodyData {
-            inner,
-            extract,
-            metrics,
-        }
+        RecordBodyData { inner, extract }
     }
 }
 
 // === impl RecordBodyData ===
 
-impl<ReqB, RespB, S, ReqX, L> Service<Request<ReqB>> for RecordBodyData<S, ReqX, L>
+impl<ReqB, RespB, S, ReqX> Service<Request<ReqB>> for RecordBodyData<S, ReqX>
 where
     S: Service<Request<BoxBody>, Response = Response<RespB>>,
     S::Future: Send + 'static,
     ReqB: http_body::Body + Send + 'static,
     ReqB::Data: Send + 'static,
     ReqB::Error: Into<Error>,
-    ReqX: ExtractParam<L, Request<ReqB>>,
-    L: linkerd_metrics::prom::encoding::EncodeLabelSet
-        + std::fmt::Debug
-        + std::hash::Hash
-        + Eq
-        + Clone
-        + Send
-        + Sync
-        + 'static,
+    ReqX: ExtractParam<BodyDataMetrics, Request<ReqB>>,
 {
     type Response = S::Response;
     type Error = S::Error;
@@ -108,15 +89,10 @@ where
     }
 
     fn call(&mut self, req: Request<ReqB>) -> Self::Future {
-        let Self {
-            inner,
-            extract,
-            metrics,
-        } = self;
+        let Self { inner, extract } = self;
 
         let req = {
-            let labels = extract.extract_param(&req);
-            let metrics = metrics.metrics(&labels);
+            let metrics = extract.extract_param(&req);
             let instrument = |b| super::body::Body::new(b, metrics);
             req.map(instrument).map(BoxBody::new)
         };
