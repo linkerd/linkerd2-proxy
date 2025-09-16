@@ -10,7 +10,7 @@ use linkerd_app_core::{
 use std::{fmt, net::SocketAddr};
 use tracing::{debug, debug_span};
 
-pub use self::metrics::RequestCountFamilies;
+pub use self::metrics::*;
 
 mod metrics;
 
