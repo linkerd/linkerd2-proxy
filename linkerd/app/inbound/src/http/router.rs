@@ -10,7 +10,7 @@ use linkerd_app_core::{
 use std::{fmt, net::SocketAddr};
 use tracing::{debug, debug_span};
 
-pub use self::metrics::RequestCountFamilies;
+pub use self::metrics::*;
 
 mod metrics;
 
@@ -245,7 +245,7 @@ impl<C> Inbound<C> {
                 .push(svc::NewOneshotRoute::layer_via(|t: &policy::Permitted<T>| {
                     LogicalPerRequest::from(t)
                 }))
-                .push(self::metrics::layer(rt.metrics.request_count.clone()))
+                .push(self::metrics::layer(rt.metrics.request_count.clone(), rt.metrics.responses.clone()))
                 .check_new_service::<policy::Permitted<T>, http::Request<http::BoxBody>>()
                 .push(svc::ArcNewService::layer())
                 .push(policy::NewHttpPolicy::layer(rt.metrics.http_authz.clone()))
