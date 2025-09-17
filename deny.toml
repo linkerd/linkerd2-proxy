@@ -45,27 +45,16 @@ deny = [
     # aws-lc-rs should be used instead.
     { name = "ring" }
 ]
-skip = [
-    # `linkerd-trace-context`, `rustls-pemfile` and `tonic` depend on `base64`
-    # v0.13.1 while `rcgen` depends on v0.21.5
-    { name = "base64" },
-    # tonic/axum depend on a newer `tower`, which we are still catching up to.
-    # see #3744.
-    { name = "tower", version = "0.5" },
-]
+skip = []
 skip-tree = [
-    # thiserror v2 is still propagating through the ecosystem
-    { name = "thiserror", version = "1" },
     # rand v0.9 is still propagating through the ecosystem
     { name = "rand", version = "0.8" },
-    # rust v1.0 is still propagating through the ecosystem
-    { name = "rustix", version = "0.38" },
     # `pprof` uses a number of old dependencies. for now, we skip its subtree.
     { name = "pprof" },
-    # aws-lc-rs uses a slightly outdated version of bindgen
-    { name = "bindgen", version = "0.69.5" },
     # socket v0.6 is still propagating through the ecosystem
     { name = "socket2", version = "0.5" },
+    # zerocopy v0.8 is still propagating through the ecosystem
+    { name = "zerocopy", version = "0.7" },
 ]
 
 [sources]
