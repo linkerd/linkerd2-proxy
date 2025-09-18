@@ -15,7 +15,7 @@ pub fn unpack_w3c_trace_context<B>(request: &http::Request<B>) -> Option<TraceCo
 /// assign it to the tracecontext header value, in order to propagate
 /// the trace context downstream.
 pub fn increment_http_span_id<B>(request: &mut http::Request<B>, context: &TraceContext) -> Id {
-    let span_id = Id::new_span_id(&mut rand::thread_rng());
+    let span_id = Id::new_span_id(&mut rand::rng());
 
     trace!(%span_id, "Incremented span id");
 
