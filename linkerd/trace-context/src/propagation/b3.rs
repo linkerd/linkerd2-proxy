@@ -1,9 +1,9 @@
 use crate::propagation::try_split_to;
 use crate::{Flags, Id};
+use base64::Engine;
 use bytes::Bytes;
 use http::header::{HeaderName, HeaderValue};
 use linkerd_error::Error;
-use rand::thread_rng;
 
 use tracing::{debug, trace};
 
@@ -22,7 +22,7 @@ const GRPC_TRACE_FIELD_TRACE_OPTIONS: u8 = 2;
 // the `vec![]` macro, despite clippy's suggestions otherwise...
 #[allow(clippy::vec_init_then_push)]
 pub fn increment_grpc_span_id<B>(request: &mut http::Request<B>, context: &TraceContext) -> Id {
-    let span_id = Id::new_span_id(&mut thread_rng());
+    let span_id = Id::new_span_id(&mut rand::rng());
 
     trace!(%span_id, "Incremented span id");
 
@@ -43,7 +43,7 @@ pub fn increment_grpc_span_id<B>(request: &mut http::Request<B>, context: &Trace
     bytes.push(GRPC_TRACE_FIELD_TRACE_OPTIONS);
     bytes.push(context.flags.0);
 
-    let bytes_b64 = base64::encode(&bytes);
+    let bytes_b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
 
     if let Ok(hv) = HeaderValue::from_str(&bytes_b64) {
         request.headers_mut().insert(&GRPC_TRACE_HEADER, hv);
@@ -54,7 +54,7 @@ pub fn increment_grpc_span_id<B>(request: &mut http::Request<B>, context: &Trace
 }
 
 pub fn increment_http_span_id<B>(request: &mut http::Request<B>) -> Id {
-    let span_id = Id::new_span_id(&mut thread_rng());
+    let span_id = Id::new_span_id(&mut rand::rng());
 
     trace!(%span_id, "Incremented span id");
 
@@ -71,7 +71,7 @@ pub fn increment_http_span_id<B>(request: &mut http::Request<B>) -> Id {
 pub fn unpack_grpc_trace_context<B>(request: &http::Request<B>) -> Option<TraceContext> {
     get_header_str(request, &GRPC_TRACE_HEADER)
         .and_then(|header_str| {
-            base64::decode(header_str)
+            base64::engine::general_purpose::STANDARD.decode(header_str)
                 .map_err(|error| debug!(header = %GRPC_TRACE_HEADER, header_value = %header_str, %error, "Failed to unpack trace context due to invalid base64 encoding"))
                 .ok()
         })
