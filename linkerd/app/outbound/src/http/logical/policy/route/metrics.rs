@@ -68,7 +68,6 @@ pub fn layer<T, N>(
     N,
     Service = NewRecordBodyData<
         NewRecordDuration<T, RequestMetrics<T::StreamLabel>, N>,
-        (),
         T,
         labels::Route,
     >,
@@ -78,7 +77,7 @@ where
     T: svc::ExtractParam<labels::Route, http::Request<http::BoxBody>>,
 {
     let record = NewRecordDuration::layer_via(ExtractRecordDurationParams(metrics.clone()));
-    let body_data = NewRecordBodyData::new((), body_data.clone());
+    let body_data = NewRecordBodyData::new(body_data.clone());
 
     svc::layer::mk(move |inner| {
         use svc::Layer;
