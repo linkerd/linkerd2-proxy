@@ -259,7 +259,7 @@ pub mod proto {
                         Ok(ModifyPath::ReplaceFullPath(path))
                     }
                     api::path_modifier::Replace::Prefix(prefix) => {
-                        if prefix.starts_with('/') {
+                        if !prefix.starts_with('/') {
                             return Err(InvalidRequestRedirect::RelativePath);
                         }
                         Ok(ModifyPath::ReplacePrefixMatch(prefix))
