@@ -12,7 +12,7 @@ use linkerd_app_core::{
 };
 use linkerd_http_prom::{
     body_data::{self, BodyDataMetrics},
-    count_reqs::{self, NewCountRequests, RequestCount},
+    count_reqs::{self, RequestCount},
 };
 
 pub(super) fn layer<N>(
@@ -21,13 +21,7 @@ pub(super) fn layer<N>(
         response_body_data,
         ..
     }: &InboundMetrics,
-) -> impl svc::Layer<
-    N,
-    Service = NewCountRequests<
-        ExtractRequestCount,
-        body_data::response::NewRecordBodyData<ExtractResponseBodyDataMetrics, N>,
-    >,
-> {
+) -> impl svc::Layer<N, Service = Instrumented<N>> {
     use svc::Layer as _;
 
     let count = {
@@ -37,11 +31,17 @@ pub(super) fn layer<N>(
 
     let body = {
         let extract = ExtractResponseBodyDataMetrics(response_body_data.clone());
-        body_data::response::NewRecordBodyData::layer_via(extract)
+        NewRecordResponseBodyData::layer_via(extract)
     };
 
     svc::layer::mk(move |inner| count.layer(body.layer(inner)))
 }
+
+/// An `N`-typed service instrumented with metrics middleware.
+type Instrumented<N> = NewCountRequests<NewRecordResponseBodyData<N>>;
+
+/// An `N`-typed `NewService<T>` instrumented with request counting metrics.
+type NewCountRequests<N> = count_reqs::NewCountRequests<ExtractRequestCount, N>;
 
 #[derive(Clone, Debug)]
 pub struct RequestCountFamilies {
@@ -56,6 +56,10 @@ pub struct RequestCountLabels {
 
 #[derive(Clone, Debug)]
 pub struct ExtractRequestCount(pub RequestCountFamilies);
+
+/// An `N`-typed `NewService<T>` instrumented with response body metrics.
+type NewRecordResponseBodyData<N> =
+    body_data::response::NewRecordBodyData<ExtractResponseBodyDataMetrics, N>;
 
 #[derive(Clone, Debug)]
 pub struct ResponseBodyFamilies {
