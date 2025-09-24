@@ -11,7 +11,7 @@ use linkerd_app_core::{
     svc,
 };
 use linkerd_http_prom::{
-    body_data::response::{BodyDataMetrics, NewRecordBodyData},
+    body_data::{response::NewRecordBodyData, BodyDataMetrics},
     count_reqs::{NewCountRequests, RequestCount},
 };
 
