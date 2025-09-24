@@ -38,20 +38,6 @@ pub fn layer<T, N>(
 > + Clone
 where
     T: MkStreamLabel,
-    N: svc::NewService<T>,
-    NewRecordBodyData<
-        ExtractRecordBodyDataParams,
-        NewCountRequests<
-            ExtractRequestCount,
-            NewResponseDuration<T, ExtractRecordDurationParams<ResponseMetrics<T::StreamLabel>>, N>,
-        >,
-    >: svc::NewService<T>,
-    NewCountRequests<
-        ExtractRequestCount,
-        NewResponseDuration<T, ExtractRecordDurationParams<ResponseMetrics<T::StreamLabel>>, N>,
-    >: svc::NewService<T>,
-    NewResponseDuration<T, ExtractRecordDurationParams<ResponseMetrics<T::StreamLabel>>, N>:
-        svc::NewService<T>,
 {
     let RouteBackendMetrics {
         requests,
