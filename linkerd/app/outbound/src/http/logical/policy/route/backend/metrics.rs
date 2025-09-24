@@ -38,6 +38,7 @@ pub fn layer<T, N>(
 > + Clone
 where
     T: MkStreamLabel,
+    N: svc::NewService<T>,
 {
     let RouteBackendMetrics {
         requests,
