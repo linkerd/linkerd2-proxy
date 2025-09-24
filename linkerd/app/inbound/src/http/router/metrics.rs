@@ -25,7 +25,7 @@ pub(super) fn layer<N>(
     N,
     Service = NewCountRequests<
         ExtractRequestCount,
-        NewRecordBodyData<ExtractRecordBodyDataMetrics, N>,
+        NewRecordBodyData<ExtractResponseBodyDataMetrics, N>,
     >,
 > {
     use svc::Layer as _;
@@ -36,7 +36,7 @@ pub(super) fn layer<N>(
     };
 
     let body = {
-        let extract = ExtractRecordBodyDataMetrics(response_body_data.clone());
+        let extract = ExtractResponseBodyDataMetrics(response_body_data.clone());
         NewRecordBodyData::layer_via(extract)
     };
 
@@ -69,7 +69,7 @@ pub struct ResponseBodyDataLabels {
 }
 
 #[derive(Clone, Debug)]
-pub struct ExtractRecordBodyDataMetrics(ResponseBodyFamilies);
+pub struct ExtractResponseBodyDataMetrics(ResponseBodyFamilies);
 
 // === impl RequestCountFamilies ===
 
@@ -216,9 +216,9 @@ impl EncodeLabelSet for ResponseBodyDataLabels {
     }
 }
 
-// === impl ExtractRecordBodyDataMetrics ===
+// === impl ExtractResponseBodyDataMetrics ===
 
-impl<T> svc::ExtractParam<BodyDataMetrics, T> for ExtractRecordBodyDataMetrics
+impl<T> svc::ExtractParam<BodyDataMetrics, T> for ExtractResponseBodyDataMetrics
 where
     T: svc::Param<PermitVariant> + svc::Param<RouteLabels>,
 {
