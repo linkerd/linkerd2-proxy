@@ -11,8 +11,8 @@ use linkerd_app_core::{
     svc,
 };
 use linkerd_http_prom::{
-    body_data::{response::NewRecordBodyData, BodyDataMetrics},
-    count_reqs::{NewCountRequests, RequestCount},
+    body_data::{self, BodyDataMetrics},
+    count_reqs::{self, NewCountRequests, RequestCount},
 };
 
 pub(super) fn layer<N>(
@@ -25,19 +25,19 @@ pub(super) fn layer<N>(
     N,
     Service = NewCountRequests<
         ExtractRequestCount,
-        NewRecordBodyData<ExtractResponseBodyDataMetrics, N>,
+        body_data::response::NewRecordBodyData<ExtractResponseBodyDataMetrics, N>,
     >,
 > {
     use svc::Layer as _;
 
     let count = {
         let extract = ExtractRequestCount(request_count.clone());
-        NewCountRequests::layer_via(extract)
+        count_reqs::NewCountRequests::layer_via(extract)
     };
 
     let body = {
         let extract = ExtractResponseBodyDataMetrics(response_body_data.clone());
-        NewRecordBodyData::layer_via(extract)
+        body_data::response::NewRecordBodyData::layer_via(extract)
     };
 
     svc::layer::mk(move |inner| count.layer(body.layer(inner)))
@@ -45,8 +45,8 @@ pub(super) fn layer<N>(
 
 #[derive(Clone, Debug)]
 pub struct RequestCountFamilies {
-    grpc: linkerd_http_prom::count_reqs::RequestCountFamilies<RequestCountLabels>,
-    http: linkerd_http_prom::count_reqs::RequestCountFamilies<RequestCountLabels>,
+    grpc: count_reqs::RequestCountFamilies<RequestCountLabels>,
+    http: count_reqs::RequestCountFamilies<RequestCountLabels>,
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -59,8 +59,8 @@ pub struct ExtractRequestCount(pub RequestCountFamilies);
 
 #[derive(Clone, Debug)]
 pub struct ResponseBodyFamilies {
-    grpc: linkerd_http_prom::body_data::response::ResponseBodyFamilies<ResponseBodyDataLabels>,
-    http: linkerd_http_prom::body_data::response::ResponseBodyFamilies<ResponseBodyDataLabels>,
+    grpc: body_data::response::ResponseBodyFamilies<ResponseBodyDataLabels>,
+    http: body_data::response::ResponseBodyFamilies<ResponseBodyDataLabels>,
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -78,12 +78,12 @@ impl RequestCountFamilies {
     pub fn register(reg: &mut prom::Registry) -> Self {
         let grpc = {
             let reg = reg.sub_registry_with_prefix("grpc");
-            linkerd_http_prom::count_reqs::RequestCountFamilies::register(reg)
+            count_reqs::RequestCountFamilies::register(reg)
         };
 
         let http = {
             let reg = reg.sub_registry_with_prefix("http");
-            linkerd_http_prom::count_reqs::RequestCountFamilies::register(reg)
+            count_reqs::RequestCountFamilies::register(reg)
         };
 
         Self { grpc, http }
@@ -93,7 +93,7 @@ impl RequestCountFamilies {
     fn family(
         &self,
         variant: PermitVariant,
-    ) -> &linkerd_http_prom::count_reqs::RequestCountFamilies<RequestCountLabels> {
+    ) -> &count_reqs::RequestCountFamilies<RequestCountLabels> {
         let Self { grpc, http } = self;
         match variant {
             PermitVariant::Grpc => grpc,
@@ -159,12 +159,12 @@ impl ResponseBodyFamilies {
     pub fn register(reg: &mut prom::Registry) -> Self {
         let grpc = {
             let reg = reg.sub_registry_with_prefix("grpc");
-            linkerd_http_prom::body_data::response::ResponseBodyFamilies::register(reg)
+            body_data::response::ResponseBodyFamilies::register(reg)
         };
 
         let http = {
             let reg = reg.sub_registry_with_prefix("http");
-            linkerd_http_prom::body_data::response::ResponseBodyFamilies::register(reg)
+            body_data::response::ResponseBodyFamilies::register(reg)
         };
 
         Self { grpc, http }
@@ -174,7 +174,7 @@ impl ResponseBodyFamilies {
     fn family(
         &self,
         variant: PermitVariant,
-    ) -> &linkerd_http_prom::body_data::response::ResponseBodyFamilies<ResponseBodyDataLabels> {
+    ) -> &body_data::response::ResponseBodyFamilies<ResponseBodyDataLabels> {
         let Self { grpc, http } = self;
         match variant {
             PermitVariant::Grpc => grpc,
