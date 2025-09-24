@@ -7,8 +7,8 @@ use futures::{future, TryFutureExt};
 use linkerd_app_core::{
     metrics::{RouteAuthzLabels, RouteLabels},
     svc::{self, ServiceExt},
-    tls,
-    transport::{ClientAddr, OrigDstAddr, Remote},
+    tls::{self, ConditionalServerTls},
+    transport::{ClientAddr, OrigDstAddr, Remote, ServerAddr},
     Conditional, Error, Result,
 };
 use linkerd_proxy_server_policy::{grpc, http, route::RouteMatch};
@@ -48,9 +48,16 @@ struct ConnectionMeta {
 
 /// A `T`-typed target with policy enforced by a [`NewHttpPolicy<N>`] layer.
 #[derive(Debug)]
-pub enum Permitted<T> {
-    Grpc { permit: HttpRoutePermit, target: T },
-    Http { permit: HttpRoutePermit, target: T },
+pub struct Permitted<T> {
+    permit: HttpRoutePermit,
+    protocol: PermitVariant,
+    target: T,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum PermitVariant {
+    Grpc,
+    Http,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -170,12 +177,20 @@ where
             Some(Routes::Http(routes)) => {
                 let (permit, mtch, route) = try_fut!(self.authorize(&routes, &req));
                 try_fut!(apply_http_filters(mtch, route, &mut req));
-                Permitted::Http { permit, target }
+                Permitted {
+                    permit,
+                    target,
+                    protocol: PermitVariant::Http,
+                }
             }
             Some(Routes::Grpc(routes)) => {
                 let (permit, _, route) = try_fut!(self.authorize(&routes, &req));
                 try_fut!(apply_grpc_filters(route, &mut req));
-                Permitted::Grpc { permit, target }
+                Permitted {
+                    permit,
+                    target,
+                    protocol: PermitVariant::Grpc,
+                }
             }
         };
 
@@ -394,47 +409,72 @@ fn apply_grpc_filters<B>(route: &grpc::Policy, req: &mut ::http::Request<B>) -> 
 
 // === impl Permitted ===
 
-/// An authorized `T`-typed target can produce `P`-typed parameters.
-impl<T, P> svc::Param<P> for Permitted<T>
+impl<T> svc::Param<Remote<ServerAddr>> for Permitted<T>
 where
-    T: svc::Param<P>,
+    T: svc::Param<Remote<ServerAddr>>,
 {
-    fn param(&self) -> P {
-        self.target_ref().param()
+    fn param(&self) -> Remote<ServerAddr> {
+        self.target.param()
+    }
+}
+
+impl<T> svc::Param<ConditionalServerTls> for Permitted<T>
+where
+    T: svc::Param<ConditionalServerTls>,
+{
+    fn param(&self) -> ConditionalServerTls {
+        self.target.param()
+    }
+}
+
+impl<T> svc::Param<HttpRoutePermit> for Permitted<T> {
+    fn param(&self) -> HttpRoutePermit {
+        self.permit_ref().clone()
+    }
+}
+
+impl<T> svc::Param<PermitVariant> for Permitted<T> {
+    fn param(&self) -> PermitVariant {
+        self.variant()
+    }
+}
+
+impl<T> svc::Param<RouteLabels> for Permitted<T> {
+    fn param(&self) -> RouteLabels {
+        self.route_labels()
     }
 }
 
 impl<T> Permitted<T> {
     /// Returns a reference to the [`HttpRoutePermit`] authorizing this `T`.
     pub fn permit_ref(&self) -> &HttpRoutePermit {
-        match self {
-            Self::Grpc { permit, .. } => permit,
-            Self::Http { permit, .. } => permit,
-        }
+        &self.permit
+    }
+
+    /// Returns the [`PermitVariant`] of the permitting policy.
+    pub fn variant(&self) -> PermitVariant {
+        self.protocol
     }
 
     /// Returns a reference to the underlying `T`-typed target.
     pub fn target_ref(&self) -> &T {
-        match self {
-            Self::Grpc { target, .. } => target,
-            Self::Http { target, .. } => target,
-        }
+        &self.target
     }
 
     /// Consumes this permitted `T`, returning the inner `T`.
     pub fn into_target(self) -> T {
-        match self {
-            Self::Grpc { target, .. } => target,
-            Self::Http { target, .. } => target,
-        }
+        self.target
     }
 
     /// Consumes this permitted `T`, returning the `T` and its permit.
     pub fn into_parts(self) -> (T, HttpRoutePermit) {
-        match self {
-            Self::Grpc { target, permit } => (target, permit),
-            Self::Http { target, permit } => (target, permit),
-        }
+        let Self {
+            permit,
+            protocol: _,
+            target,
+        } = self;
+
+        (target, permit)
     }
 
     /// Returns the [`RouteLabels`] from the underlying permit.

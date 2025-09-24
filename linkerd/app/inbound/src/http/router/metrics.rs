@@ -1,4 +1,4 @@
-use crate::{policy::Permitted, InboundMetrics};
+use crate::{policy::PermitVariant, InboundMetrics};
 use linkerd_app_core::{
     metrics::{
         prom::{
@@ -90,25 +90,30 @@ impl RequestCountFamilies {
     }
 
     /// Fetches the proper request counting family, given a permitted target.
-    fn family<T>(
+    fn family(
         &self,
-        permitted: &Permitted<T>,
+        variant: PermitVariant,
     ) -> &linkerd_http_prom::count_reqs::RequestCountFamilies<RequestCountLabels> {
         let Self { grpc, http } = self;
-        match permitted {
-            Permitted::Grpc { .. } => grpc,
-            Permitted::Http { .. } => http,
+        match variant {
+            PermitVariant::Grpc => grpc,
+            PermitVariant::Http => http,
         }
     }
 }
 
 // === impl ExtractRequestCount ===
 
-impl<T> svc::ExtractParam<RequestCount, Permitted<T>> for ExtractRequestCount {
-    fn extract_param(&self, permitted: &Permitted<T>) -> RequestCount {
+impl<T> svc::ExtractParam<RequestCount, T> for ExtractRequestCount
+where
+    T: svc::Param<PermitVariant> + svc::Param<RouteLabels>,
+{
+    fn extract_param(&self, target: &T) -> RequestCount {
         let Self(families) = self;
-        let family = families.family(permitted);
-        let route = permitted.route_labels();
+        let variant = target.param();
+        let route = target.param();
+
+        let family = families.family(variant);
 
         family.metrics(&RequestCountLabels { route })
     }
@@ -166,14 +171,14 @@ impl ResponseBodyFamilies {
     }
 
     /// Fetches the proper body frame metrics family, given a permitted target.
-    fn family<T>(
+    fn family(
         &self,
-        permitted: &Permitted<T>,
+        variant: PermitVariant,
     ) -> &linkerd_http_prom::body_data::response::ResponseBodyFamilies<ResponseBodyDataLabels> {
         let Self { grpc, http } = self;
-        match permitted {
-            Permitted::Grpc { .. } => grpc,
-            Permitted::Http { .. } => http,
+        match variant {
+            PermitVariant::Grpc => grpc,
+            PermitVariant::Http => http,
         }
     }
 }
@@ -213,11 +218,16 @@ impl EncodeLabelSet for ResponseBodyDataLabels {
 
 // === impl ExtractRecordBodyDataMetrics ===
 
-impl<T> svc::ExtractParam<BodyDataMetrics, Permitted<T>> for ExtractRecordBodyDataMetrics {
-    fn extract_param(&self, permitted: &Permitted<T>) -> BodyDataMetrics {
+impl<T> svc::ExtractParam<BodyDataMetrics, T> for ExtractRecordBodyDataMetrics
+where
+    T: svc::Param<PermitVariant> + svc::Param<RouteLabels>,
+{
+    fn extract_param(&self, target: &T) -> BodyDataMetrics {
         let Self(families) = self;
-        let family = families.family(permitted);
-        let route = permitted.route_labels();
+        let variant = target.param();
+        let route = target.param();
+
+        let family = families.family(variant);
 
         family.metrics(&ResponseBodyDataLabels { route })
     }
