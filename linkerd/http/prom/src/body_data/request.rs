@@ -35,7 +35,7 @@ where
     ///
     /// This uses an `X`-typed [`ExtractParam<P, T>`] implementation to extract service parameters
     /// from a `T`-typed target.
-    pub fn new(extract: X) -> impl Layer<N, Service = Self> {
+    pub fn layer_via(extract: X) -> impl Layer<N, Service = Self> {
         svc::layer::mk(move |inner| Self {
             inner,
             extract: extract.clone(),
