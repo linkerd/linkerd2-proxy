@@ -112,6 +112,10 @@ impl<L> Layers<L> {
     pub fn push_instrument<G: Clone>(self, get_span: G) -> Layers<Pair<L, NewInstrumentLayer<G>>> {
         self.push(NewInstrumentLayer::new(get_span))
     }
+
+    pub fn into_inner(self) -> L {
+        self.0
+    }
 }
 
 impl<M, L: Layer<M>> Layer<M> for Layers<L> {
