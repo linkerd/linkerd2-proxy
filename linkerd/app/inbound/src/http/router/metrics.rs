@@ -18,6 +18,7 @@ use linkerd_http_prom::{
 pub(super) fn layer<N>(
     InboundMetrics {
         request_count,
+        request_body_data,
         response_body_data,
         ..
     }: &InboundMetrics,
@@ -34,11 +35,16 @@ pub(super) fn layer<N>(
         NewRecordResponseBodyData::layer_via(extract)
     };
 
-    svc::layer::mk(move |inner| count.layer(body.layer(inner)))
+    let request = {
+        let extract = ExtractRequestBodyDataParams(request_body_data.clone());
+        NewRecordRequestBodyData::new(extract)
+    };
+
+    svc::layer::mk(move |inner| count.layer(body.layer(request.layer(inner))))
 }
 
 /// An `N`-typed service instrumented with metrics middleware.
-type Instrumented<N> = NewCountRequests<NewRecordResponseBodyData<N>>;
+type Instrumented<N> = NewCountRequests<NewRecordResponseBodyData<NewRecordRequestBodyData<N>>>;
 
 /// An `N`-typed `NewService<T>` instrumented with request counting metrics.
 type NewCountRequests<N> = count_reqs::NewCountRequests<ExtractRequestCount, N>;
@@ -74,6 +80,30 @@ pub struct ResponseBodyDataLabels {
 
 #[derive(Clone, Debug)]
 pub struct ExtractResponseBodyDataMetrics(ResponseBodyFamilies);
+
+/// An `N`-typed `NewService<T>` instrumented with request body metrics.
+type NewRecordRequestBodyData<N> = body_data::request::NewRecordBodyData<
+    N,
+    ExtractRequestBodyDataParams,
+    ExtractRequestBodyDataMetrics,
+>;
+
+#[derive(Clone, Debug)]
+pub struct RequestBodyFamilies {
+    grpc: body_data::request::RequestBodyFamilies<RequestBodyDataLabels>,
+    http: body_data::request::RequestBodyFamilies<RequestBodyDataLabels>,
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct RequestBodyDataLabels {
+    route: RouteLabels,
+}
+
+#[derive(Clone, Debug)]
+pub struct ExtractRequestBodyDataParams(RequestBodyFamilies);
+
+#[derive(Clone, Debug)]
+pub struct ExtractRequestBodyDataMetrics(BodyDataMetrics);
 
 // === impl RequestCountFamilies ===
 
@@ -234,5 +264,97 @@ where
         let family = families.family(variant);
 
         family.metrics(&ResponseBodyDataLabels { route })
+    }
+}
+
+// === impl RequestBodyFamilies ===
+
+impl RequestBodyFamilies {
+    /// Registers a new [`RequestBodyDataFamilies`] with the given registry.
+    pub fn register(reg: &mut prom::Registry) -> Self {
+        let grpc = {
+            let reg = reg.sub_registry_with_prefix("grpc");
+            body_data::request::RequestBodyFamilies::register(reg)
+        };
+
+        let http = {
+            let reg = reg.sub_registry_with_prefix("http");
+            body_data::request::RequestBodyFamilies::register(reg)
+        };
+
+        Self { grpc, http }
+    }
+
+    /// Fetches the proper body frame metrics family, given a permitted target.
+    fn family(
+        &self,
+        variant: PermitVariant,
+    ) -> &body_data::request::RequestBodyFamilies<RequestBodyDataLabels> {
+        let Self { grpc, http } = self;
+        match variant {
+            PermitVariant::Grpc => grpc,
+            PermitVariant::Http => http,
+        }
+    }
+}
+
+// === impl RequestBodyDataLabels ===
+
+impl EncodeLabelSetMut for RequestBodyDataLabels {
+    fn encode_label_set(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
+        use encoding::EncodeLabel as _;
+
+        let Self {
+            route:
+                RouteLabels {
+                    server: ServerLabel(parent, port),
+                    route,
+                },
+        } = self;
+
+        ("parent_group", parent.group()).encode(enc.encode_label())?;
+        ("parent_kind", parent.kind()).encode(enc.encode_label())?;
+        ("parent_name", parent.name()).encode(enc.encode_label())?;
+        ("parent_port", *port).encode(enc.encode_label())?;
+
+        ("route_group", route.group()).encode(enc.encode_label())?;
+        ("route_kind", route.kind()).encode(enc.encode_label())?;
+        ("route_name", route.name()).encode(enc.encode_label())?;
+
+        Ok(())
+    }
+}
+
+impl EncodeLabelSet for RequestBodyDataLabels {
+    fn encode(&self, mut enc: LabelSetEncoder<'_>) -> std::fmt::Result {
+        self.encode_label_set(&mut enc)
+    }
+}
+
+// === impl ExtractRequestBodyDataParams ===
+
+impl<T> svc::ExtractParam<ExtractRequestBodyDataMetrics, T> for ExtractRequestBodyDataParams
+where
+    T: svc::Param<PermitVariant> + svc::Param<RouteLabels>,
+{
+    fn extract_param(&self, target: &T) -> ExtractRequestBodyDataMetrics {
+        let Self(families) = self;
+        let variant = target.param();
+        let route = target.param();
+
+        let family = families.family(variant);
+        let metrics = family.metrics(&RequestBodyDataLabels { route });
+
+        ExtractRequestBodyDataMetrics(metrics)
+    }
+}
+
+// === impl ExtractRequestBodyDataMetrics ===
+
+impl<T> svc::ExtractParam<BodyDataMetrics, T> for ExtractRequestBodyDataMetrics {
+    fn extract_param(&self, _: &T) -> BodyDataMetrics {
+        let Self(metrics) = self;
+
+        metrics.clone()
     }
 }
