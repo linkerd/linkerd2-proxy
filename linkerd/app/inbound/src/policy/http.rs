@@ -1,11 +1,12 @@
 use super::{RoutePolicy, Routes};
 use crate::{
+    http::router::RouteLabels,
     metrics::authz::HttpAuthzMetrics,
     policy::{AllowPolicy, HttpRoutePermit},
 };
 use futures::{future, TryFutureExt};
 use linkerd_app_core::{
-    metrics::{RouteAuthzLabels, RouteLabels},
+    metrics::RouteAuthzLabels,
     svc::{self, ServiceExt},
     tls::{self, ConditionalServerTls},
     transport::{ClientAddr, OrigDstAddr, Remote, ServerAddr},
@@ -217,7 +218,7 @@ impl<T, N> HttpPolicyService<T, N> {
         let (r#match, route) =
             super::route::find(routes, req).ok_or_else(|| self.mk_route_not_found())?;
 
-        let labels = RouteLabels {
+        let labels = linkerd_app_core::metrics::RouteLabels {
             route: route.meta.clone(),
             server: self.policy.server_label(),
         };
@@ -479,6 +480,6 @@ impl<T> Permitted<T> {
 
     /// Returns the [`RouteLabels`] from the underlying permit.
     pub fn route_labels(&self) -> RouteLabels {
-        self.permit_ref().labels.route.clone()
+        self.permit_ref().labels.route.clone().into()
     }
 }
