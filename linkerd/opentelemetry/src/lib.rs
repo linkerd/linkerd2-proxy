@@ -28,7 +28,10 @@ use opentelemetry_proto::{
 };
 use opentelemetry_sdk::trace::{SpanData, SpanLinks};
 pub use opentelemetry_sdk::{self as sdk};
-use tokio::{sync::mpsc, time};
+use tokio::{
+    sync::mpsc,
+    time::{self, Instant, MissedTickBehavior},
+};
 use tonic::{self as grpc, body::Body as TonicBody, client::GrpcService};
 use tracing::{debug, info, trace};
 
@@ -72,7 +75,7 @@ where
     S: Stream<Item = ExportSpan> + Unpin,
 {
     const MAX_BATCH_SIZE: usize = 1000;
-    const MAX_BATCH_IDLE: time::Duration = time::Duration::from_secs(10);
+    const BATCH_INTERVAL: time::Duration = time::Duration::from_secs(10);
 
     fn new(client: T, spans: S, resource: ResourceAttributesWithSchema, metrics: Registry) -> Self {
         Self {
@@ -191,6 +194,10 @@ where
     ) -> Result<(), SpanRxClosed> {
         let mut input_accum: Vec<SpanData> = vec![];
 
+        let mut interval =
+            time::interval_at(Instant::now() + Self::BATCH_INTERVAL, Self::BATCH_INTERVAL);
+        interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+
         let res = loop {
             if input_accum.len() == Self::MAX_BATCH_SIZE {
                 trace!(capacity = Self::MAX_BATCH_SIZE, "Batch capacity reached");
@@ -216,11 +223,11 @@ where
                     None => break Err(SpanRxClosed),
                 },
 
-                // Don't hold spans indefinitely. Return if we hit an idle
-                // timeout and spans have been collected.
-                _ = time::sleep(Self::MAX_BATCH_IDLE) => {
+                // Don't hold spans indefinitely. Return if we hit an interval tick and spans have
+                // been collected.
+                _ = interval.tick() => {
                     if !input_accum.is_empty() {
-                        trace!(spans = input_accum.len(), "Flushing spans due to inactivitiy");
+                        trace!(spans = input_accum.len(), "Flushing spans due to interval tick");
                         break Ok(());
                     }
                 }
