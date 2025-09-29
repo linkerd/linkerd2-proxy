@@ -27,13 +27,13 @@ pub type RouteBackendRsp<L> = Rsp<RouteBackend, L>;
 pub type HttpRouteBackendRsp = RouteBackendRsp<HttpRsp>;
 pub type GrpcRouteBackendRsp = RouteBackendRsp<GrpcRsp>;
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Hash, PartialEq, Eq)]
 pub struct HttpRsp {
     pub status: Option<http::StatusCode>,
     pub error: Option<Error>,
 }
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Hash, PartialEq, Eq)]
 pub struct GrpcRsp {
     pub status: Option<tonic::Code>,
     pub error: Option<Error>,
@@ -150,6 +150,29 @@ impl<P: EncodeLabelSetMut, L: EncodeLabelSetMut> EncodeLabelSet for Rsp<P, L> {
 
 // === impl HttpRsp ===
 
+impl HttpRsp {
+    pub fn status(status: http::StatusCode) -> Self {
+        Self {
+            status: Some(status),
+            error: None,
+        }
+    }
+
+    pub fn error(error: Error) -> Self {
+        Self {
+            status: None,
+            error: Some(error),
+        }
+    }
+
+    pub fn unknown() -> Self {
+        Self {
+            status: None,
+            error: Some(Error::Unknown),
+        }
+    }
+}
+
 impl EncodeLabelSetMut for HttpRsp {
     fn encode_label_set(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
         let Self { status, error } = self;
@@ -168,6 +191,29 @@ impl EncodeLabelSet for HttpRsp {
 }
 
 // === impl GrpcRsp ===
+
+impl GrpcRsp {
+    pub fn status(status: tonic::Code) -> Self {
+        Self {
+            status: Some(status),
+            error: None,
+        }
+    }
+
+    pub fn error(error: Error) -> Self {
+        Self {
+            status: None,
+            error: Some(error),
+        }
+    }
+
+    pub fn unknown() -> Self {
+        Self {
+            status: None,
+            error: Some(Error::Unknown),
+        }
+    }
+}
 
 impl EncodeLabelSetMut for GrpcRsp {
     fn encode_label_set(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
