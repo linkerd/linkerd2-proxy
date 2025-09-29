@@ -1,12 +1,9 @@
 use crate::{policy::PermitVariant, InboundMetrics};
 use linkerd_app_core::{
-    metrics::{
-        prom::{
-            self,
-            encoding::{self, EncodeLabelSet, LabelSetEncoder},
-            EncodeLabelSetMut,
-        },
-        RouteLabels, ServerLabel,
+    metrics::prom::{
+        self,
+        encoding::{EncodeLabelSet, LabelSetEncoder},
+        EncodeLabelSetMut,
     },
     svc,
 };
@@ -14,6 +11,10 @@ use linkerd_http_prom::{
     body_data::{self, BodyDataMetrics},
     count_reqs::{self, RequestCount},
 };
+
+pub use self::labels::RouteLabels;
+
+mod labels;
 
 pub(super) fn layer<N>(
     InboundMetrics {
@@ -157,24 +158,9 @@ where
 
 impl EncodeLabelSetMut for RequestCountLabels {
     fn encode_label_set(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
-        use encoding::EncodeLabel as _;
+        let Self { route } = self;
 
-        let Self {
-            route:
-                RouteLabels {
-                    server: ServerLabel(parent, port),
-                    route,
-                },
-        } = self;
-
-        ("parent_group", parent.group()).encode(enc.encode_label())?;
-        ("parent_kind", parent.kind()).encode(enc.encode_label())?;
-        ("parent_name", parent.name()).encode(enc.encode_label())?;
-        ("parent_port", *port).encode(enc.encode_label())?;
-
-        ("route_group", route.group()).encode(enc.encode_label())?;
-        ("route_kind", route.kind()).encode(enc.encode_label())?;
-        ("route_name", route.name()).encode(enc.encode_label())?;
+        route.encode_label_set(enc)?;
 
         Ok(())
     }
@@ -221,24 +207,9 @@ impl ResponseBodyFamilies {
 
 impl EncodeLabelSetMut for ResponseBodyDataLabels {
     fn encode_label_set(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
-        use encoding::EncodeLabel as _;
+        let Self { route } = self;
 
-        let Self {
-            route:
-                RouteLabels {
-                    server: ServerLabel(parent, port),
-                    route,
-                },
-        } = self;
-
-        ("parent_group", parent.group()).encode(enc.encode_label())?;
-        ("parent_kind", parent.kind()).encode(enc.encode_label())?;
-        ("parent_name", parent.name()).encode(enc.encode_label())?;
-        ("parent_port", *port).encode(enc.encode_label())?;
-
-        ("route_group", route.group()).encode(enc.encode_label())?;
-        ("route_kind", route.kind()).encode(enc.encode_label())?;
-        ("route_name", route.name()).encode(enc.encode_label())?;
+        route.encode_label_set(enc)?;
 
         Ok(())
     }
@@ -302,24 +273,9 @@ impl RequestBodyFamilies {
 
 impl EncodeLabelSetMut for RequestBodyDataLabels {
     fn encode_label_set(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
-        use encoding::EncodeLabel as _;
+        let Self { route } = self;
 
-        let Self {
-            route:
-                RouteLabels {
-                    server: ServerLabel(parent, port),
-                    route,
-                },
-        } = self;
-
-        ("parent_group", parent.group()).encode(enc.encode_label())?;
-        ("parent_kind", parent.kind()).encode(enc.encode_label())?;
-        ("parent_name", parent.name()).encode(enc.encode_label())?;
-        ("parent_port", *port).encode(enc.encode_label())?;
-
-        ("route_group", route.group()).encode(enc.encode_label())?;
-        ("route_kind", route.kind()).encode(enc.encode_label())?;
-        ("route_name", route.name()).encode(enc.encode_label())?;
+        route.encode_label_set(enc)?;
 
         Ok(())
     }
