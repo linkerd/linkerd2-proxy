@@ -171,6 +171,20 @@ impl HttpRsp {
             error: Some(Error::Unknown),
         }
     }
+
+    /// Merges the two collections of label values.
+    ///
+    /// NB: Values from the left-hand side take precedent.
+    pub fn apply(self, rhs: Option<Self>) -> Self {
+        let Some(Self { status, error }) = rhs else {
+            return self;
+        };
+
+        Self {
+            status: self.status.or(status),
+            error: self.error.or(error),
+        }
+    }
 }
 
 impl EncodeLabelSetMut for HttpRsp {
@@ -223,6 +237,20 @@ impl GrpcRsp {
         Self {
             status: None,
             error: Some(Error::Unknown),
+        }
+    }
+
+    /// Merges the two collections of label values.
+    ///
+    /// NB: Values from the left-hand side take precedent.
+    pub fn apply(self, rhs: Option<Self>) -> Self {
+        let Some(Self { status, error }) = rhs else {
+            return self;
+        };
+
+        Self {
+            status: self.status.or(status),
+            error: self.error.or(error),
         }
     }
 }
