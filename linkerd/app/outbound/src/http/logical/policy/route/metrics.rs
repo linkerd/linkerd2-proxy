@@ -7,7 +7,7 @@ use linkerd_app_core::{
 use linkerd_http_prom::{
     body_data::request::{BodyDataMetrics, NewRecordBodyData, RequestBodyFamilies},
     record_response,
-    stream_label::{LabelSet, StreamLabel},
+    stream_label::{error::LabelError, status::LabelHttpStatus, LabelSet, StreamLabel},
 };
 
 pub use linkerd_http_prom::stream_label::MkStreamLabel;
@@ -46,8 +46,8 @@ pub type GrpcRouteMetrics = RouteMetrics<LabelGrpcRouteRsp, LabelGrpcRouteBacken
 #[derive(Clone, Debug)]
 pub struct LabelHttpRsp<L> {
     parent: L,
-    status: Option<http::StatusCode>,
-    error: Option<labels::Error>,
+    status: LabelHttpStatus,
+    error: LabelHttpError,
 }
 
 /// Tracks gRPC streams to produce response labels.
@@ -57,6 +57,8 @@ pub struct LabelGrpcRsp<L> {
     status: Option<tonic::Code>,
     error: Option<labels::Error>,
 }
+
+type LabelHttpError = LabelError<labels::HttpRsp>;
 
 pub type LabelHttpRouteRsp = LabelHttpRsp<labels::Route>;
 pub type LabelGrpcRouteRsp = LabelGrpcRsp<labels::Route>;
@@ -256,8 +258,8 @@ impl<P> From<P> for LabelHttpRsp<P> {
     fn from(parent: P) -> Self {
         Self {
             parent,
-            status: None,
-            error: None,
+            status: Default::default(),
+            error: Default::default(),
         }
     }
 }
@@ -270,30 +272,37 @@ where
     type DurationLabels = P;
 
     fn init_response<B>(&mut self, rsp: &http::Response<B>) {
-        self.status = Some(rsp.status());
+        let Self {
+            parent: _,
+            status,
+            error,
+        } = self;
+        status.init_response(rsp);
+        error.init_response(rsp);
     }
 
     fn end_response(&mut self, res: Result<Option<&http::HeaderMap>, &linkerd_app_core::Error>) {
-        if let Err(e) = res {
-            match labels::Error::new_or_status(e) {
-                Ok(l) => self.error = Some(l),
-                Err(code) => match http::StatusCode::from_u16(code) {
-                    Ok(s) => self.status = Some(s),
-                    // This is kind of pathological, so mark it as an unkown error.
-                    Err(_) => self.error = Some(labels::Error::Unknown),
-                },
-            }
-        }
+        let Self {
+            parent: _,
+            status,
+            error,
+        } = self;
+        status.end_response(res);
+        error.end_response(res);
     }
 
     fn status_labels(&self) -> Self::StatusLabels {
-        labels::Rsp(
-            self.parent.clone(),
-            labels::HttpRsp {
-                status: self.status,
-                error: self.error,
-            },
-        )
+        let Self {
+            parent,
+            status,
+            error,
+        } = self;
+
+        let error = error.status_labels();
+        let status = status.status_labels().map(labels::HttpRsp::status);
+        let rsp = labels::HttpRsp::default().apply(status).apply(error);
+
+        labels::Rsp(parent.clone(), rsp)
     }
 
     fn duration_labels(&self) -> Self::DurationLabels {
