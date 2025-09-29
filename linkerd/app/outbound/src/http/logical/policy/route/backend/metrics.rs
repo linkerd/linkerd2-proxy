@@ -3,11 +3,12 @@ use linkerd_app_core::{metrics::prom, svc};
 use linkerd_http_prom::{
     body_data::response::{BodyDataMetrics, NewRecordBodyData, ResponseBodyFamilies},
     count_reqs::{NewCountRequests, RequestCount, RequestCountFamilies},
-    record_response::{self, NewResponseDuration, StreamLabel},
+    record_response::{self, NewResponseDuration},
+    stream_label::StreamLabel,
 };
 
 pub use super::super::metrics::*;
-pub use linkerd_http_prom::record_response::MkStreamLabel;
+pub use linkerd_http_prom::stream_label::MkStreamLabel;
 
 #[cfg(test)]
 mod tests;
