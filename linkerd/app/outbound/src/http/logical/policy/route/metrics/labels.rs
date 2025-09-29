@@ -190,6 +190,18 @@ impl EncodeLabelSet for HttpRsp {
     }
 }
 
+impl From<&linkerd_app_core::Error> for HttpRsp {
+    fn from(error: &linkerd_app_core::Error) -> Self {
+        match Error::new_or_status(error) {
+            Ok(error) => Self::error(error),
+            Err(code) => http::StatusCode::from_u16(code)
+                .map(Self::status)
+                // This is kind of pathological, so mark it as an unkown error.
+                .unwrap_or_else(|_| Self::unknown()),
+        }
+    }
+}
+
 // === impl GrpcRsp ===
 
 impl GrpcRsp {
@@ -252,6 +264,18 @@ impl EncodeLabelSetMut for GrpcRsp {
 impl EncodeLabelSet for GrpcRsp {
     fn encode(&self, mut enc: LabelSetEncoder<'_>) -> std::fmt::Result {
         self.encode_label_set(&mut enc)
+    }
+}
+
+impl From<&linkerd_app_core::Error> for GrpcRsp {
+    fn from(error: &linkerd_app_core::Error) -> Self {
+        match Error::new_or_status(error)
+            .map_err(i32::from)
+            .map_err(tonic::Code::from_i32)
+        {
+            Ok(error) => Self::error(error),
+            Err(code) => Self::status(code),
+        }
     }
 }
 
