@@ -90,7 +90,7 @@ where
     T: svc::ExtractParam<labels::Route, http::Request<http::BoxBody>>,
 {
     let record = NewRecordDuration::layer_via(ExtractRecordDurationParams(metrics.clone()));
-    let body_data = NewRecordBodyData::new(ExtractBodyDataParams(body_data.clone()));
+    let body_data = NewRecordBodyData::layer_via(ExtractBodyDataParams(body_data.clone()));
 
     svc::layer::mk(move |inner| {
         use svc::Layer;

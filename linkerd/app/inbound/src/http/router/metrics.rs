@@ -30,7 +30,7 @@ pub(super) fn layer<N>(
 
     let request = {
         let extract = ExtractRequestBodyDataParams::new(request_body_data.clone());
-        NewRecordRequestBodyData::new(extract)
+        NewRecordRequestBodyData::layer_via(extract)
     };
 
     svc::layer::mk(move |inner| count.layer(body.layer(request.layer(inner))))
