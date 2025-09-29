@@ -14,13 +14,24 @@ use std::{
 /// A "mock" body.
 ///
 /// This type contains polling results for [`Body`].
-#[derive(Default)]
 pub struct MockBody {
     data_polls: VecDeque<Poll<Option<Result<Bytes, Error>>>>,
     trailer_polls: VecDeque<Poll<Option<Result<http::HeaderMap, Error>>>>,
+    /// If true, [`Body::is_end_stream()`] will report when the body is exhausted.
+    report_eos: bool,
 }
 
 // === impl MockBody ===
+
+impl Default for MockBody {
+    fn default() -> Self {
+        Self {
+            data_polls: Default::default(),
+            trailer_polls: Default::default(),
+            report_eos: true,
+        }
+    }
+}
 
 impl MockBody {
     /// Appends a poll outcome for [`Body::poll_frame()`].
@@ -37,6 +48,14 @@ impl MockBody {
         poll: Poll<Option<Result<http::HeaderMap, Error>>>,
     ) -> Self {
         self.trailer_polls.push_back(poll);
+        self
+    }
+
+    /// Disables end-of-stream reporting via [`Body::is_end_stream()`].
+    ///
+    /// Bodies always return `false` by default; this can help write tests exercising this.
+    pub fn without_eos(mut self) -> Self {
+        self.report_eos = false;
         self
     }
 
@@ -60,6 +79,7 @@ impl Body for MockBody {
         let Self {
             data_polls,
             trailer_polls,
+            report_eos: _,
         } = self.get_mut();
 
         let poll = {
@@ -79,6 +99,12 @@ impl Body for MockBody {
     }
 
     fn is_end_stream(&self) -> bool {
-        self.data_polls.is_empty() && self.trailer_polls.is_empty()
+        let Self {
+            data_polls,
+            trailer_polls,
+            report_eos,
+        } = self;
+
+        *report_eos && data_polls.is_empty() && trailer_polls.is_empty()
     }
 }
