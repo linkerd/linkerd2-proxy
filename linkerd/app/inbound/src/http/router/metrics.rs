@@ -7,13 +7,11 @@ use linkerd_app_core::{
     },
     svc,
 };
-use linkerd_http_prom::{
-    body_data::{self, BodyDataMetrics},
-    count_reqs::{self, RequestCount},
-};
+use linkerd_http_prom::body_data::{self, BodyDataMetrics};
 
-pub use self::labels::RouteLabels;
+pub use self::{count_reqs::*, labels::RouteLabels};
 
+mod count_reqs;
 mod labels;
 
 pub(super) fn layer<N>(
@@ -46,23 +44,6 @@ pub(super) fn layer<N>(
 
 /// An `N`-typed service instrumented with metrics middleware.
 type Instrumented<N> = NewCountRequests<NewRecordResponseBodyData<NewRecordRequestBodyData<N>>>;
-
-/// An `N`-typed `NewService<T>` instrumented with request counting metrics.
-type NewCountRequests<N> = count_reqs::NewCountRequests<ExtractRequestCount, N>;
-
-#[derive(Clone, Debug)]
-pub struct RequestCountFamilies {
-    grpc: count_reqs::RequestCountFamilies<RequestCountLabels>,
-    http: count_reqs::RequestCountFamilies<RequestCountLabels>,
-}
-
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct RequestCountLabels {
-    route: RouteLabels,
-}
-
-#[derive(Clone, Debug)]
-pub struct ExtractRequestCount(pub RequestCountFamilies);
 
 /// An `N`-typed `NewService<T>` instrumented with response body metrics.
 type NewRecordResponseBodyData<N> =
@@ -105,72 +86,6 @@ pub struct ExtractRequestBodyDataParams(RequestBodyFamilies);
 
 #[derive(Clone, Debug)]
 pub struct ExtractRequestBodyDataMetrics(BodyDataMetrics);
-
-// === impl RequestCountFamilies ===
-
-impl RequestCountFamilies {
-    /// Registers a new [`RequestCountFamilies`] with the given registry.
-    pub fn register(reg: &mut prom::Registry) -> Self {
-        let grpc = {
-            let reg = reg.sub_registry_with_prefix("grpc");
-            count_reqs::RequestCountFamilies::register(reg)
-        };
-
-        let http = {
-            let reg = reg.sub_registry_with_prefix("http");
-            count_reqs::RequestCountFamilies::register(reg)
-        };
-
-        Self { grpc, http }
-    }
-
-    /// Fetches the proper request counting family, given a permitted target.
-    fn family(
-        &self,
-        variant: PermitVariant,
-    ) -> &count_reqs::RequestCountFamilies<RequestCountLabels> {
-        let Self { grpc, http } = self;
-        match variant {
-            PermitVariant::Grpc => grpc,
-            PermitVariant::Http => http,
-        }
-    }
-}
-
-// === impl ExtractRequestCount ===
-
-impl<T> svc::ExtractParam<RequestCount, T> for ExtractRequestCount
-where
-    T: svc::Param<PermitVariant> + svc::Param<RouteLabels>,
-{
-    fn extract_param(&self, target: &T) -> RequestCount {
-        let Self(families) = self;
-        let variant = target.param();
-        let route = target.param();
-
-        let family = families.family(variant);
-
-        family.metrics(&RequestCountLabels { route })
-    }
-}
-
-// === impl RequestCountLabels ===
-
-impl EncodeLabelSetMut for RequestCountLabels {
-    fn encode_label_set(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
-        let Self { route } = self;
-
-        route.encode_label_set(enc)?;
-
-        Ok(())
-    }
-}
-
-impl EncodeLabelSet for RequestCountLabels {
-    fn encode(&self, mut enc: LabelSetEncoder<'_>) -> std::fmt::Result {
-        self.encode_label_set(&mut enc)
-    }
-}
 
 // === impl ResponseBodyFamilies ===
 
