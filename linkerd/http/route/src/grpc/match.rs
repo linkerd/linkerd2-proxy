@@ -111,9 +111,6 @@ pub mod proto {
 
     #[derive(Debug, thiserror::Error)]
     pub enum InvalidRouteMatch {
-        #[error("invalid RPC match: {0}")]
-        Rpc(#[from] InvalidRpcMatch),
-
         #[error("invalid header match: {0}")]
         Header(#[from] InvalidHeaderMatch),
 
@@ -121,17 +118,12 @@ pub mod proto {
         MissingRpc,
     }
 
-    // Currently, RPC match conversion is infallible; but this could change in
-    // the future.
-    #[derive(Debug, thiserror::Error)]
-    pub enum InvalidRpcMatch {}
-
     impl TryFrom<api::GrpcRouteMatch> for MatchRoute {
         type Error = InvalidRouteMatch;
 
         fn try_from(pb: api::GrpcRouteMatch) -> Result<Self, Self::Error> {
             Ok(MatchRoute {
-                rpc: pb.rpc.ok_or(InvalidRouteMatch::MissingRpc)?.try_into()?,
+                rpc: pb.rpc.ok_or(InvalidRouteMatch::MissingRpc)?.into(),
                 headers: pb
                     .headers
                     .into_iter()
@@ -140,11 +132,10 @@ pub mod proto {
             })
         }
     }
-    impl TryFrom<api::GrpcRpcMatch> for MatchRpc {
-        type Error = InvalidRpcMatch;
 
-        fn try_from(pb: api::GrpcRpcMatch) -> Result<Self, Self::Error> {
-            Ok(MatchRpc {
+    impl From<api::GrpcRpcMatch> for MatchRpc {
+        fn from(pb: api::GrpcRpcMatch) -> Self {
+            MatchRpc {
                 service: if pb.service.is_empty() {
                     None
                 } else {
@@ -155,7 +146,7 @@ pub mod proto {
                 } else {
                     Some(pb.method)
                 },
-            })
+            }
         }
     }
 }

@@ -226,7 +226,7 @@ where
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
-        let res = futures::ready!(this.inner.poll(cx)).map_err(Into::into);
+        let res = futures::ready!(this.inner.poll(cx));
         let mut state = this.state.take();
         match res {
             Ok(rsp) => {

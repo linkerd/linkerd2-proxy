@@ -27,7 +27,7 @@ jobs:
   list-changed:
     timeout-minutes: 3
     runs-on: ${{ vars.LINKERD2_PROXY_RUNNER || 'ubuntu-24.04' }}
-    container: docker://rust:1.88.0
+    container: docker://rust:1.90.0
     steps:
       - run: apt update && apt install -y jo
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
@@ -48,7 +48,7 @@ jobs:
     needs: [list-changed]
     timeout-minutes: 40
     runs-on: ${{ vars.LINKERD2_PROXY_RUNNER || 'ubuntu-24.04' }}
-    container: docker://rust:1.88.0
+    container: docker://rust:1.90.0
     strategy:
       matrix:
         dir: ${{ fromJson(needs.list-changed.outputs.dirs) }}

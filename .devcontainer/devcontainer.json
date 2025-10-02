@@ -3,7 +3,7 @@
 	"build": {
 		"dockerfile": "Dockerfile",
 		"args": {
-			"DEV_VERSION": "v47",
+			"DEV_VERSION": "v48",
 			"http_proxy": "${localEnv:http_proxy}",
 			"https_proxy": "${localEnv:https_proxy}"
 		}

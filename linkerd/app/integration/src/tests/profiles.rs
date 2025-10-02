@@ -130,7 +130,7 @@ impl TestBuilder {
                 .unwrap()
         })
         .route_async("/0.5", move |req| {
-            let fail = counter.fetch_add(1, Ordering::Relaxed) % 2 == 0;
+            let fail = counter.fetch_add(1, Ordering::Relaxed).is_multiple_of(2);
             async move {
                 // Read the entire body before responding, so that the
                 // client doesn't fail when writing it out.
@@ -154,7 +154,7 @@ impl TestBuilder {
         })
         .route_fn("/0.5/sleep", move |_req| {
             ::std::thread::sleep(Duration::from_secs(1));
-            if counter2.fetch_add(1, Ordering::Relaxed) % 2 == 0 {
+            if counter2.fetch_add(1, Ordering::Relaxed).is_multiple_of(2) {
                 Response::builder()
                     .status(533)
                     .body(BoxBody::from_static("nope"))
@@ -167,7 +167,7 @@ impl TestBuilder {
             }
         })
         .route_fn("/0.5/100KB", move |_req| {
-            if counter3.fetch_add(1, Ordering::Relaxed) % 2 == 0 {
+            if counter3.fetch_add(1, Ordering::Relaxed).is_multiple_of(2) {
                 Response::builder()
                     .status(533)
                     .body(BoxBody::new(http_body_util::Full::new(Bytes::from(vec![
