@@ -1374,7 +1374,6 @@ dependencies = [
  "linkerd-app-inbound",
  "linkerd-app-outbound",
  "linkerd-error",
- "linkerd-opencensus",
  "linkerd-opentelemetry",
  "linkerd-tonic-stream",
  "linkerd-workers",
@@ -1436,7 +1435,6 @@ dependencies = [
  "linkerd-meshtls",
  "linkerd-metrics",
  "linkerd-mock-http-body",
- "linkerd-opencensus",
  "linkerd-opentelemetry",
  "linkerd-proxy-api-resolve",
  "linkerd-proxy-balance",
@@ -2060,22 +2058,6 @@ dependencies = [
 [[package]]
 name = "linkerd-opaq-route"
 version = "0.1.0"
-
-[[package]]
-name = "linkerd-opencensus"
-version = "0.1.0"
-dependencies = [
- "futures",
- "http-body",
- "linkerd-error",
- "linkerd-metrics",
- "linkerd-trace-context",
- "opencensus-proto",
- "tokio",
- "tokio-stream",
- "tonic",
- "tracing",
-]
 
 [[package]]
 name = "linkerd-opentelemetry"
@@ -2928,16 +2910,6 @@ checksum = "42f5e15c9953c5e4ccceeb2e7382a716482c34515315f7b03532b8b4e8393d2d"
 dependencies = [
  "critical-section",
  "portable-atomic",
-]
-
-[[package]]
-name = "opencensus-proto"
-version = "0.1.0"
-dependencies = [
- "prost 0.13.5",
- "prost-types 0.13.5",
- "tonic",
- "tonic-build",
 ]
 
 [[package]]

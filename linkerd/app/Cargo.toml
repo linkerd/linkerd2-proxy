@@ -25,7 +25,6 @@ linkerd-app-gateway = { path = "./gateway" }
 linkerd-app-inbound = { path = "./inbound" }
 linkerd-app-outbound = { path = "./outbound" }
 linkerd-error = { path = "../error" }
-linkerd-opencensus = { path = "../opencensus" }
 linkerd-opentelemetry = { path = "../opentelemetry" }
 linkerd-tonic-stream = { path = "../tonic-stream" }
 linkerd-workers = { path = "../workers" }

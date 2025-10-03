@@ -11,7 +11,6 @@ use tokio::sync::mpsc;
 #[derive(Debug, Copy, Clone, Default)]
 pub enum CollectorProtocol {
     #[default]
-    OpenCensus,
     OpenTelemetry,
 }
 
@@ -19,9 +18,7 @@ impl FromStr for CollectorProtocol {
     type Err = ();
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.eq_ignore_ascii_case("opencensus") {
-            Ok(Self::OpenCensus)
-        } else if s.eq_ignore_ascii_case("opentelemetry") {
+        if s.eq_ignore_ascii_case("opentelemetry") {
             Ok(Self::OpenTelemetry)
         } else {
             Err(())
