@@ -3,7 +3,6 @@ use linkerd_app_core::{
     addr,
     config::*,
     control::{Config as ControlConfig, ControlAddr},
-    http_tracing::CollectorProtocol,
     proxy::http::{h1, h2},
     tls,
     transport::{DualListenAddr, Keepalive, ListenAddr, UserTimeout},
@@ -155,7 +154,6 @@ const ENV_INBOUND_METRICS_AUTHORITY_LABELS: &str =
     "LINKERD2_PROXY_INBOUND_METRICS_AUTHORITY_LABELS";
 
 const ENV_TRACE_ATTRIBUTES_PATH: &str = "LINKERD2_PROXY_TRACE_ATTRIBUTES_PATH";
-const ENV_TRACE_PROTOCOL: &str = "LINKERD2_PROXY_TRACE_PROTOCOL";
 const ENV_TRACE_SERVICE_NAME: &str = "LINKERD2_PROXY_TRACE_SERVICE_NAME";
 const ENV_TRACE_EXTRA_ATTRIBUTES: &str = "LINKERD2_PROXY_TRACE_EXTRA_ATTRIBUTES";
 // This doesn't have the LINKERD2_ prefix because it is a conventional env var from OpenTelemetry:
@@ -445,7 +443,6 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     let trace_attributes_file_path = strings.get(ENV_TRACE_ATTRIBUTES_PATH);
     let trace_extra_attributes = strings.get(ENV_TRACE_EXTRA_ATTRIBUTES);
     let trace_otel_attributes = strings.get(ENV_OTEL_TRACE_ATTRIBUTES);
-    let trace_protocol = strings.get(ENV_TRACE_PROTOCOL);
     let trace_service_name = strings.get(ENV_TRACE_SERVICE_NAME);
 
     let trace_collector_addr = parse_control_addr(strings, ENV_TRACE_COLLECTOR_SVC_BASE);
@@ -873,12 +870,6 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 }
             }
 
-            let trace_protocol = trace_protocol
-                .map(|proto| proto.and_then(|p| p.parse::<CollectorProtocol>().ok()))
-                .ok()
-                .flatten()
-                .unwrap_or_default();
-
             let trace_service_name = trace_service_name.ok().flatten();
 
             trace_collector::Config::Enabled(Box::new(trace_collector::EnabledConfig {
@@ -893,7 +884,6 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                         failfast_timeout,
                     },
                 },
-                kind: trace_protocol,
             }))
         }
     };
