@@ -2,7 +2,6 @@ coverage:
   ignore:
     - "linkerd/app/integration/src/**"
     - "**/src/gen/**"
-    - "tools/**"
 
   precision: 2
   round: down
@@ -18,7 +17,6 @@ coverage:
         paths:
           - "!linkerd/app/integration/src/**"
           - "!**/src/gen/**"
-          - "!tools/**"
 
     patch:
       default:

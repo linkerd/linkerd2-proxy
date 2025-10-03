@@ -206,16 +206,8 @@ impl Config {
             let dns = dns.resolver("trace_collector");
             let client_metrics = metrics.control.clone();
             let otel_metrics = metrics.opentelemetry;
-            let oc_metrics = metrics.opencensus;
             info_span!("tracing").in_scope(|| {
-                trace_collector.build(
-                    identity,
-                    dns,
-                    oc_metrics,
-                    otel_metrics,
-                    control_metrics,
-                    client_metrics,
-                )
+                trace_collector.build(identity, dns, otel_metrics, control_metrics, client_metrics)
             })
         }?;
 

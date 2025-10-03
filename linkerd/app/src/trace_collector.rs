@@ -3,14 +3,13 @@ use linkerd_app_core::{
     http_tracing::{CollectorProtocol, SpanSink},
     identity,
     metrics::ControlHttp as HttpMetrics,
-    opencensus, opentelemetry,
+    opentelemetry,
     svc::NewService,
 };
 use linkerd_error::Error;
 use otel_collector::OtelCollectorAttributes;
 use std::{collections::HashMap, future::Future, pin::Pin};
 
-pub mod oc_collector;
 pub mod otel_collector;
 
 const SPAN_BUFFER_CAPACITY: usize = 100;
@@ -59,7 +58,6 @@ impl Config {
         match self {
             Config::Disabled => None,
             Config::Enabled(config) => match config.kind {
-                CollectorProtocol::OpenCensus => Some("opencensus"),
                 CollectorProtocol::OpenTelemetry => Some("opentelemetry"),
             },
         }
@@ -69,7 +67,6 @@ impl Config {
         self,
         identity: identity::NewClient,
         dns: dns::Resolver,
-        legacy_oc_metrics: opencensus::metrics::Registry,
         legacy_otel_metrics: opentelemetry::metrics::Registry,
         control_metrics: control::Metrics,
         client_metrics: HttpMetrics,
@@ -87,14 +84,6 @@ impl Config {
                     .unwrap_or_else(|| SERVICE_NAME.to_string());
 
                 let collector = match inner.kind {
-                    CollectorProtocol::OpenCensus => oc_collector::create_collector(
-                        addr.clone(),
-                        inner.hostname,
-                        svc_name,
-                        inner.attributes,
-                        svc,
-                        legacy_oc_metrics,
-                    ),
                     CollectorProtocol::OpenTelemetry => {
                         let attributes = OtelCollectorAttributes {
                             hostname: inner.hostname,
