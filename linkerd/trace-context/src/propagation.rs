@@ -45,6 +45,9 @@ pub fn unpack_trace_context<B>(request: &http::Request<B>) -> Option<TraceContex
         .or_else(|| b3::unpack_grpc_trace_context(request))
         .or_else(|| b3::unpack_http_trace_context(request))
 }
+pub fn generate_trace_context() -> TraceContext {
+    w3c::generate_trace_context()
+}
 
 // Generates a new span id, writes it to the request in the appropriate
 // propagation format and returns the generated span id.

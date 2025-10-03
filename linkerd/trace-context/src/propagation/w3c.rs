@@ -7,6 +7,16 @@ use crate::{Flags, Id};
 static HTTP_TRACEPARENT: HeaderName = HeaderName::from_static("traceparent");
 const VERSION_00: &str = "00";
 
+pub fn generate_trace_context() -> TraceContext {
+    let mut rng = rand::rng();
+    TraceContext {
+        propagation: Propagation::W3CHttp,
+        trace_id: Id::new_span_id(&mut rng),
+        parent_id: Id::new_span_id(&mut rng),
+        flags: Flags(1),
+    }
+}
+
 pub fn unpack_w3c_trace_context<B>(request: &http::Request<B>) -> Option<TraceContext> {
     get_header_str(request, &HTTP_TRACEPARENT).and_then(parse_context)
 }

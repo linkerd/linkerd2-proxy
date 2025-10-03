@@ -75,7 +75,7 @@ where
     S: Stream<Item = ExportSpan> + Unpin,
 {
     const MAX_BATCH_SIZE: usize = 1000;
-    const BATCH_INTERVAL: time::Duration = time::Duration::from_secs(10);
+    const BATCH_INTERVAL: time::Duration = time::Duration::from_secs(1);
 
     fn new(client: T, spans: S, resource: ResourceAttributesWithSchema, metrics: Registry) -> Self {
         Self {
@@ -247,8 +247,8 @@ fn convert_span(span: ExportSpan) -> Result<SpanData, Error> {
     for (k, v) in labels.iter() {
         attributes.push(KeyValue::new(k.clone(), v.clone()));
     }
-    for (k, v) in span.labels.iter() {
-        attributes.push(KeyValue::new(*k, v.clone()));
+    for (k, v) in span.labels.into_iter() {
+        attributes.push(KeyValue::new(k, v));
     }
     let is_remote = kind != trace_context::export::SpanKind::Client;
     Ok(SpanData {

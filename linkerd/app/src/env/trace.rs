@@ -1,5 +1,28 @@
 use std::collections::HashMap;
 
+static ROOT_PARENT_LABELS: &[&str] = &[
+    "linkerd.io/proxy-root-parent",
+    "linkerd.io/proxy-deployment",
+    "linkerd.io/proxy-daemonset",
+    "linkerd.io/proxy-statefulset",
+    "linkerd.io/proxy-cronjob",
+    "linkerd.io/proxy-job",
+    "linkerd.io/proxy-replicaset",
+    "linkerd.io/proxy-replicationcontroller",
+];
+
+pub(super) fn get_trace_service_name(
+    attrs: &HashMap<String, String>,
+    default_trace_service_name: Option<String>,
+) -> Option<String> {
+    for &label in ROOT_PARENT_LABELS {
+        if let Some(name) = attrs.get(label) {
+            return Some(format!("{name}-linkerd-proxy"));
+        }
+    }
+    default_trace_service_name
+}
+
 pub(super) fn read_trace_attributes(path: &std::path::Path) -> HashMap<String, String> {
     match std::fs::read_to_string(path) {
         Ok(attrs) => parse_attrs(&attrs),

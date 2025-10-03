@@ -446,7 +446,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     let trace_extra_attributes = strings.get(ENV_TRACE_EXTRA_ATTRIBUTES);
     let trace_otel_attributes = strings.get(ENV_OTEL_TRACE_ATTRIBUTES);
     let trace_protocol = strings.get(ENV_TRACE_PROTOCOL);
-    let trace_service_name = strings.get(ENV_TRACE_SERVICE_NAME);
+    let default_trace_service_name = strings.get(ENV_TRACE_SERVICE_NAME);
 
     let trace_collector_addr = parse_control_addr(strings, ENV_TRACE_COLLECTOR_SVC_BASE);
 
@@ -879,7 +879,10 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 .flatten()
                 .unwrap_or_default();
 
-            let trace_service_name = trace_service_name.ok().flatten();
+            let trace_service_name = trace::get_trace_service_name(
+                &attributes,
+                default_trace_service_name.ok().flatten(),
+            );
 
             trace_collector::Config::Enabled(Box::new(trace_collector::EnabledConfig {
                 attributes,

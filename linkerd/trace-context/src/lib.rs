@@ -9,6 +9,7 @@ pub use self::service::TraceContext;
 use bytes::Bytes;
 use linkerd_error::Error;
 use rand::Rng;
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt;
 use std::time::SystemTime;
@@ -55,7 +56,7 @@ pub struct Span {
     pub span_name: String,
     pub start: SystemTime,
     pub end: SystemTime,
-    pub labels: HashMap<&'static str, String>,
+    pub labels: HashMap<Cow<'static, str>, String>,
 }
 
 pub trait SpanSink {

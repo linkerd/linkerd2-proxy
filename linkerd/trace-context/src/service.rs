@@ -2,6 +2,7 @@ use crate::{propagation, Span, SpanSink};
 use futures::{future::Either, prelude::*};
 use http::Uri;
 use linkerd_stack::layer;
+use std::borrow::Cow;
 use std::{
     collections::HashMap,
     pin::Pin,
@@ -40,17 +41,31 @@ impl<K: Clone, S> TraceContext<K, S> {
     /// The OpenTelemetry spec defines the semantic conventions that HTTP
     /// services should use for the labels included in traces:
     /// https://opentelemetry.io/docs/specs/semconv/http/http-spans/
-    fn request_labels<B>(req: &http::Request<B>) -> HashMap<&'static str, String> {
-        let mut labels = HashMap::with_capacity(7);
-        labels.insert("http.request.method", format!("{}", req.method()));
+    fn request_labels<B>(req: &http::Request<B>) -> HashMap<Cow<'static, str>, String> {
+        let mut labels = HashMap::<Cow<'static, str>, _>::new();
+        labels.insert("http.request.method".into(), format!("{}", req.method()));
         let url = req.uri();
         if let Some(scheme) = url.scheme_str() {
-            labels.insert("url.scheme", scheme.to_string());
+            labels.insert("url.scheme".into(), scheme.to_string());
         }
-        labels.insert("url.path", url.path().to_string());
+        labels.insert("url.path".into(), url.path().to_string());
         if let Some(query) = url.query() {
-            labels.insert("url.query", query.to_string());
+            labels.insert("url.query".into(), query.to_string());
         }
+        if let Some(size) = req.headers().get("content-length") {
+            labels.insert(
+                "http.request.body.size".into(),
+                String::from_utf8_lossy(size.as_bytes()).to_string(),
+            );
+        }
+        if let Some(user_agent) = req.headers().get("user-agent") {
+            labels.insert(
+                "user_agent.original".into(),
+                String::from_utf8_lossy(user_agent.as_bytes()).to_string(),
+            );
+        }
+        labels.insert("url.full".into(), url.to_string());
+        labels.insert("network.transport".into(), "tcp".to_string());
 
         // This is the order of precendence for host headers,
         // see https://opentelemetry.io/docs/specs/semconv/http/http-spans/
@@ -60,14 +75,21 @@ impl<K: Clone, S> TraceContext<K, S> {
             .or_else(|| req.headers().get(":authority"))
             .or_else(|| req.headers().get("host"));
 
+        for (name, value) in req.headers() {
+            labels.insert(
+                format!("http.request.header.{name}").into(),
+                String::from_utf8_lossy(value.as_bytes()).to_string(),
+            );
+        }
+
         if let Some(host) = host_header {
             if let Ok(host) = host.to_str() {
                 if let Ok(uri) = host.parse::<Uri>() {
                     if let Some(host) = uri.host() {
-                        labels.insert("server.address", host.to_string());
+                        labels.insert("server.address".into(), host.to_string());
                     }
                     if let Some(port) = uri.port() {
-                        labels.insert("server.port", port.to_string());
+                        labels.insert("server.port".into(), port.to_string());
                     }
                 }
             }
@@ -76,13 +98,21 @@ impl<K: Clone, S> TraceContext<K, S> {
     }
 
     fn add_response_labels<B>(
-        mut labels: HashMap<&'static str, String>,
+        mut labels: HashMap<Cow<'static, str>, String>,
         rsp: &http::Response<B>,
-    ) -> HashMap<&'static str, String> {
+    ) -> HashMap<Cow<'static, str>, String> {
         labels.insert(
-            "http.response.status_code",
+            "http.response.status_code".into(),
             rsp.status().as_str().to_string(),
         );
+
+        for (name, value) in rsp.headers() {
+            labels.insert(
+                format!("http.request.header.{}", name.as_str().to_lowercase()).into(),
+                String::from_utf8_lossy(value.as_bytes()).to_string(),
+            );
+        }
+
         labels
     }
 }
@@ -108,36 +138,36 @@ where
 
     fn call(&mut self, mut req: http::Request<ReqB>) -> Self::Future {
         if self.sink.is_enabled() {
-            if let Some(context) = propagation::unpack_trace_context(&req) {
-                // Update the trace ID if the request set one and the proxy is configured to emit
-                // spans.
-                let span_id = propagation::increment_span_id(&mut req, &context);
-                debug!(?span_id, sampled = context.is_sampled());
+            let context = propagation::unpack_trace_context(&req)
+                .unwrap_or_else(|| propagation::generate_trace_context());
+            // Update the trace ID if the request set one and the proxy is configured to emit
+            // spans.
+            let span_id = propagation::increment_span_id(&mut req, &context);
+            debug!(?span_id, sampled = context.is_sampled());
 
-                if context.is_sampled() {
-                    // If the request has been marked for sampling, record its metadata.
-                    let start = SystemTime::now();
-                    let req_labels = Self::request_labels(&req);
-                    let mut sink = self.sink.clone();
-                    let span_name = req.uri().path().to_owned();
-                    return Either::Right(Box::pin(self.inner.call(req).map_ok(move |rsp| {
-                        // Emit the completed span with the response metadata.
-                        let span = Span {
-                            span_id,
-                            trace_id: context.trace_id,
-                            parent_id: context.parent_id,
-                            span_name,
-                            start,
-                            end: SystemTime::now(),
-                            labels: Self::add_response_labels(req_labels, &rsp),
-                        };
-                        trace!(?span);
-                        if let Err(error) = sink.try_send(span) {
-                            info!(%error, "Span dropped");
-                        }
-                        rsp
-                    })));
-                }
+            if context.is_sampled() {
+                // If the request has been marked for sampling, record its metadata.
+                let start = SystemTime::now();
+                let req_labels = Self::request_labels(&req);
+                let mut sink = self.sink.clone();
+                let span_name = req.uri().path().to_owned();
+                return Either::Right(Box::pin(self.inner.call(req).map_ok(move |rsp| {
+                    // Emit the completed span with the response metadata.
+                    let span = Span {
+                        span_id,
+                        trace_id: context.trace_id,
+                        parent_id: context.parent_id,
+                        span_name,
+                        start,
+                        end: SystemTime::now(),
+                        labels: Self::add_response_labels(req_labels, &rsp),
+                    };
+                    trace!(?span);
+                    if let Err(error) = sink.try_send(span) {
+                        info!(%error, "Span dropped");
+                    }
+                    rsp
+                })));
             }
         }
 

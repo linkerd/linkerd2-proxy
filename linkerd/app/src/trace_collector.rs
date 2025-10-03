@@ -9,6 +9,7 @@ use linkerd_app_core::{
 use linkerd_error::Error;
 use otel_collector::OtelCollectorAttributes;
 use std::{collections::HashMap, future::Future, pin::Pin};
+use tracing::debug;
 
 pub mod oc_collector;
 pub mod otel_collector;
@@ -85,6 +86,7 @@ impl Config {
                 let svc_name = inner
                     .service_name
                     .unwrap_or_else(|| SERVICE_NAME.to_string());
+                debug!(%svc_name, "Setting trace service name");
 
                 let collector = match inner.kind {
                     CollectorProtocol::OpenCensus => oc_collector::create_collector(
