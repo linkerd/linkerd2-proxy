@@ -1,10 +1,6 @@
 use linkerd_app_core::{
-    control, dns,
-    http_tracing::{CollectorProtocol, SpanSink},
-    identity,
-    metrics::ControlHttp as HttpMetrics,
-    opentelemetry,
-    svc::NewService,
+    control, dns, http_tracing::SpanSink, identity, metrics::ControlHttp as HttpMetrics,
+    opentelemetry, svc::NewService,
 };
 use linkerd_error::Error;
 use otel_collector::OtelCollectorAttributes;
@@ -27,7 +23,6 @@ pub struct EnabledConfig {
     pub attributes: HashMap<String, String>,
     pub hostname: Option<String>,
     pub service_name: Option<String>,
-    pub kind: CollectorProtocol,
 }
 
 pub type Task = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
@@ -39,7 +34,6 @@ pub enum TraceCollector {
 
 pub struct EnabledCollector {
     pub addr: control::ControlAddr,
-    pub kind: CollectorProtocol,
     pub span_sink: SpanSink,
     pub task: Task,
 }
@@ -57,9 +51,7 @@ impl Config {
     pub fn metrics_prefix(&self) -> Option<&'static str> {
         match self {
             Config::Disabled => None,
-            Config::Enabled(config) => match config.kind {
-                CollectorProtocol::OpenTelemetry => Some("opentelemetry"),
-            },
+            Config::Enabled(_) => Some("opentelemetry"),
         }
     }
 
@@ -83,20 +75,18 @@ impl Config {
                     .service_name
                     .unwrap_or_else(|| SERVICE_NAME.to_string());
 
-                let collector = match inner.kind {
-                    CollectorProtocol::OpenTelemetry => {
-                        let attributes = OtelCollectorAttributes {
-                            hostname: inner.hostname,
-                            service_name: svc_name,
-                            extra: inner.attributes,
-                        };
-                        otel_collector::create_collector(
-                            addr.clone(),
-                            attributes,
-                            svc,
-                            legacy_otel_metrics,
-                        )
-                    }
+                let collector = {
+                    let attributes = OtelCollectorAttributes {
+                        hostname: inner.hostname,
+                        service_name: svc_name,
+                        extra: inner.attributes,
+                    };
+                    otel_collector::create_collector(
+                        addr.clone(),
+                        attributes,
+                        svc,
+                        legacy_otel_metrics,
+                    )
                 };
 
                 Ok(TraceCollector::Enabled(Box::new(collector)))

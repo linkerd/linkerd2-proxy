@@ -5,26 +5,8 @@ use linkerd_trace_context::{
     export::{ExportSpan, SpanKind, SpanLabels},
     Span, TraceContext,
 };
-use std::{str::FromStr, sync::Arc};
+use std::sync::Arc;
 use tokio::sync::mpsc;
-
-#[derive(Debug, Copy, Clone, Default)]
-pub enum CollectorProtocol {
-    #[default]
-    OpenTelemetry,
-}
-
-impl FromStr for CollectorProtocol {
-    type Err = ();
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.eq_ignore_ascii_case("opentelemetry") {
-            Ok(Self::OpenTelemetry)
-        } else {
-            Err(())
-        }
-    }
-}
 
 pub type SpanSink = mpsc::Sender<ExportSpan>;
 

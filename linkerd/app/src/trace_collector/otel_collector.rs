@@ -1,7 +1,5 @@
 use super::EnabledCollector;
-use linkerd_app_core::{
-    control::ControlAddr, http_tracing::CollectorProtocol, proxy::http::Body, Error,
-};
+use linkerd_app_core::{control::ControlAddr, proxy::http::Body, Error};
 use linkerd_opentelemetry::{
     self as opentelemetry, metrics,
     proto::{
@@ -82,7 +80,6 @@ where
         addr,
         task,
         span_sink,
-        kind: CollectorProtocol::OpenTelemetry,
     }
 }
 
