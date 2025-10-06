@@ -133,4 +133,5 @@ default-features = false
 features = ["tokio", "tracing"]
 
 [workspace.dependencies.linkerd2-proxy-api]
-version = "0.17.0"
+git = "https://github.com/linkerd/linkerd2-proxy-api"
+branch = "sfleen/tonic-0.14"
