@@ -1394,7 +1394,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-stream",
- "tonic 0.13.1",
+ "tonic 0.14.2",
  "tower",
  "tracing",
 ]
@@ -1479,7 +1479,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-stream",
- "tonic 0.13.1",
+ "tonic 0.14.2",
  "tower",
  "tracing",
 ]
@@ -1500,7 +1500,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-test",
- "tonic 0.13.1",
+ "tonic 0.14.2",
  "tower",
  "tower-test",
  "tracing",
@@ -1539,7 +1539,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-test",
- "tonic 0.13.1",
+ "tonic 0.14.2",
  "tower",
  "tracing",
 ]
@@ -1576,7 +1576,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tokio-stream",
- "tonic 0.13.1",
+ "tonic 0.14.2",
  "tower",
  "tracing",
  "tracing-subscriber",
@@ -1624,7 +1624,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tokio-test",
- "tonic 0.13.1",
+ "tonic 0.14.2",
  "tower",
  "tower-test",
  "tracing",
@@ -1650,7 +1650,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tokio-test",
- "tonic 0.13.1",
+ "tonic 0.14.2",
  "tower",
  "tracing",
  "tracing-subscriber",
@@ -2084,7 +2084,7 @@ dependencies = [
  "opentelemetry-proto",
  "opentelemetry_sdk",
  "tokio",
- "tonic 0.13.1",
+ "tonic 0.14.2",
  "tracing",
 ]
 
@@ -2148,7 +2148,7 @@ dependencies = [
  "linkerd-tls",
  "linkerd-tonic-stream",
  "linkerd2-proxy-api",
- "tonic 0.13.1",
+ "tonic 0.14.2",
  "tower",
  "tracing",
 ]
@@ -2213,9 +2213,9 @@ dependencies = [
  "linkerd-tls-route",
  "linkerd2-proxy-api",
  "once_cell",
- "prost-types 0.13.5",
+ "prost-types 0.14.1",
  "thiserror",
- "tonic 0.13.1",
+ "tonic 0.14.2",
 ]
 
 [[package]]
@@ -2293,7 +2293,7 @@ dependencies = [
  "linkerd2-proxy-api",
  "thiserror",
  "tokio",
- "tonic 0.13.1",
+ "tonic 0.14.2",
  "tracing",
 ]
 
@@ -2321,7 +2321,7 @@ dependencies = [
  "linkerd-identity",
  "linkerd2-proxy-api",
  "maplit",
- "prost-types 0.13.5",
+ "prost-types 0.14.1",
  "quickcheck",
  "thiserror",
  "tokio",
@@ -2342,7 +2342,7 @@ dependencies = [
  "spiffe-proto",
  "thiserror",
  "tokio",
- "tonic 0.13.1",
+ "tonic 0.14.2",
  "tower",
  "tracing",
  "x509-parser",
@@ -2369,11 +2369,11 @@ dependencies = [
  "linkerd2-proxy-api",
  "parking_lot",
  "pin-project",
- "prost-types 0.13.5",
+ "prost-types 0.14.1",
  "quickcheck",
  "thiserror",
  "tokio",
- "tonic 0.13.1",
+ "tonic 0.14.2",
  "tower",
  "tracing",
 ]
@@ -2469,13 +2469,13 @@ dependencies = [
  "linkerd-tonic-watch",
  "linkerd2-proxy-api",
  "once_cell",
- "prost-types 0.13.5",
+ "prost-types 0.14.1",
  "quickcheck",
  "regex",
  "thiserror",
  "tokio",
  "tokio-stream",
- "tonic 0.13.1",
+ "tonic 0.14.2",
  "tower",
  "tracing",
 ]
@@ -2572,7 +2572,7 @@ dependencies = [
  "pin-project",
  "tokio",
  "tokio-stream",
- "tonic 0.13.1",
+ "tonic 0.14.2",
  "tracing",
 ]
 
@@ -2586,7 +2586,7 @@ dependencies = [
  "linkerd-tracing",
  "tokio",
  "tokio-stream",
- "tonic 0.13.1",
+ "tonic 0.14.2",
  "tower-test",
  "tracing",
 ]
@@ -2632,8 +2632,8 @@ dependencies = [
  "linkerd-error",
  "linkerd-io",
  "linkerd-stack",
- "prost 0.13.5",
- "prost-build 0.13.5",
+ "prost 0.14.1",
+ "prost-build 0.14.1",
  "tokio",
  "tokio-test",
  "tracing",
@@ -3248,9 +3248,9 @@ dependencies = [
 
 [[package]]
 name = "prost-build"
-version = "0.13.5"
+version = "0.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be769465445e8c1474e9c5dac2018218498557af32d9ed057325ec9a41ae81bf"
+checksum = "ac6c3320f9abac597dcbc668774ef006702672474aad53c6d596b62e487b40b1"
 dependencies = [
  "heck",
  "itertools",
@@ -3259,8 +3259,8 @@ dependencies = [
  "once_cell",
  "petgraph",
  "prettyplease",
- "prost 0.13.5",
- "prost-types 0.13.5",
+ "prost 0.14.1",
+ "prost-types 0.14.1",
  "regex",
  "syn",
  "tempfile",
@@ -3321,6 +3321,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52c2c1bf36ddb1a1c396b3601a3cec27c2462e45f07c386894ec3ccf5332bd16"
 dependencies = [
  "prost 0.13.5",
+]
+
+[[package]]
+name = "prost-types"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b9b4db3d6da204ed77bb26ba83b6122a73aeb2e87e25fbf7ad2e84c4ccbf8f72"
+dependencies = [
+ "prost 0.14.1",
 ]
 
 [[package]]
@@ -3726,9 +3735,10 @@ dependencies = [
 name = "spiffe-proto"
 version = "0.1.0"
 dependencies = [
- "prost 0.13.5",
- "tonic 0.13.1",
- "tonic-build",
+ "prost 0.14.1",
+ "tonic 0.14.2",
+ "tonic-prost",
+ "tonic-prost-build",
 ]
 
 [[package]]
@@ -4044,23 +4054,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7e581ba15a835f4d9ea06c55ab1bd4dce26fc53752c69a04aac00703bfb49ba9"
 dependencies = [
  "async-trait",
- "axum",
  "base64",
  "bytes",
- "h2",
  "http",
  "http-body",
  "http-body-util",
- "hyper",
- "hyper-timeout",
- "hyper-util",
  "percent-encoding",
  "pin-project",
  "prost 0.13.5",
- "socket2 0.5.10",
- "tokio",
  "tokio-stream",
- "tower",
  "tower-layer",
  "tower-service",
  "tracing",
@@ -4073,8 +4075,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eb7613188ce9f7df5bfe185db26c5814347d110db17920415cf2fbcad85e7203"
 dependencies = [
  "async-trait",
+ "axum",
  "base64",
  "bytes",
+ "h2",
  "http",
  "http-body",
  "http-body-util",
@@ -4083,6 +4087,7 @@ dependencies = [
  "hyper-util",
  "percent-encoding",
  "pin-project",
+ "socket2 0.6.0",
  "sync_wrapper",
  "tokio",
  "tokio-stream",
@@ -4094,14 +4099,12 @@ dependencies = [
 
 [[package]]
 name = "tonic-build"
-version = "0.13.1"
+version = "0.14.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eac6f67be712d12f0b41328db3137e0d0757645d8904b4cb7d51cd9c2279e847"
+checksum = "4c40aaccc9f9eccf2cd82ebc111adc13030d23e887244bc9cfa5d1d636049de3"
 dependencies = [
  "prettyplease",
  "proc-macro2",
- "prost-build 0.13.5",
- "prost-types 0.13.5",
  "quote",
  "syn",
 ]
@@ -4115,6 +4118,22 @@ dependencies = [
  "bytes",
  "prost 0.14.1",
  "tonic 0.14.2",
+]
+
+[[package]]
+name = "tonic-prost-build"
+version = "0.14.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b4a16cba4043dc3ff43fcb3f96b4c5c154c64cbd18ca8dce2ab2c6a451d058a2"
+dependencies = [
+ "prettyplease",
+ "proc-macro2",
+ "prost-build 0.14.1",
+ "prost-types 0.14.1",
+ "quote",
+ "syn",
+ "tempfile",
+ "tonic-build",
 ]
 
 [[package]]

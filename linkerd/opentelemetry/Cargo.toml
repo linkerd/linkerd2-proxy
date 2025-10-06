@@ -16,7 +16,6 @@ opentelemetry = { version = "0.31", default-features = false, features = ["trace
 opentelemetry_sdk = { version = "0.31", default-features = false, features = ["trace"] }
 opentelemetry-proto = { version = "0.31" }
 tonic = { workspace = true, default-features = false, features = [
-    "prost",
     "codegen",
 ] }
 tokio = { version = "1", features = ["macros", "sync", "time"] }
