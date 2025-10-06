@@ -18,7 +18,6 @@ use tracing::Instrument;
 
 pub(super) struct OtelCollectorAttributes {
     pub hostname: Option<String>,
-    pub service_name: String,
     pub extra: HashMap<String, String>,
 }
 
@@ -40,10 +39,6 @@ where
 
     let mut resources = ResourceAttributesWithSchema::default();
 
-    resources
-        .attributes
-        .0
-        .push(attributes.service_name.with_key("service.name"));
     resources
         .attributes
         .0

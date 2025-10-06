@@ -36,3 +36,6 @@ tokio-stream = { version = "0.1", features = ["time", "sync"] }
 tonic = { workspace = true, default-features = false, features = ["prost"] }
 tower = { workspace = true }
 tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

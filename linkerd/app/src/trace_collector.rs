@@ -9,7 +9,6 @@ use std::{collections::HashMap, future::Future, pin::Pin};
 pub mod otel_collector;
 
 const SPAN_BUFFER_CAPACITY: usize = 100;
-const SERVICE_NAME: &str = "linkerd-proxy";
 
 #[derive(Clone, Debug)]
 pub enum Config {
@@ -22,7 +21,6 @@ pub struct EnabledConfig {
     pub control: control::Config,
     pub attributes: HashMap<String, String>,
     pub hostname: Option<String>,
-    pub service_name: Option<String>,
 }
 
 pub type Task = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
@@ -71,14 +69,10 @@ impl Config {
                     .control
                     .build(dns, client_metrics, control_metrics, identity)
                     .new_service(());
-                let svc_name = inner
-                    .service_name
-                    .unwrap_or_else(|| SERVICE_NAME.to_string());
 
                 let collector = {
                     let attributes = OtelCollectorAttributes {
                         hostname: inner.hostname,
-                        service_name: svc_name,
                         extra: inner.attributes,
                     };
                     otel_collector::create_collector(
