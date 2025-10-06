@@ -2,6 +2,7 @@ use crate::{propagation, Span, SpanSink};
 use futures::{future::Either, prelude::*};
 use http::Uri;
 use linkerd_stack::layer;
+use std::fmt::{Display, Formatter};
 use std::{
     collections::HashMap,
     pin::Pin,
@@ -41,8 +42,9 @@ impl<K: Clone, S> TraceContext<K, S> {
     /// services should use for the labels included in traces:
     /// https://opentelemetry.io/docs/specs/semconv/http/http-spans/
     fn request_labels<B>(req: &http::Request<B>) -> HashMap<&'static str, String> {
-        let mut labels = HashMap::with_capacity(7);
+        let mut labels = HashMap::with_capacity(13);
         labels.insert("http.request.method", format!("{}", req.method()));
+
         let url = req.uri();
         if let Some(scheme) = url.scheme_str() {
             labels.insert("url.scheme", scheme.to_string());
@@ -52,7 +54,12 @@ impl<K: Clone, S> TraceContext<K, S> {
             labels.insert("url.query", query.to_string());
         }
 
-        // This is the order of precendence for host headers,
+        labels.insert("url.full", UrlLabel(url).to_string());
+
+        // linkerd currently only proxies tcp-based connections
+        labels.insert("network.transport", "tcp".to_string());
+
+        // This is the order of precedence for host headers,
         // see https://opentelemetry.io/docs/specs/semconv/http/http-spans/
         let host_header = req
             .headers()
@@ -72,7 +79,34 @@ impl<K: Clone, S> TraceContext<K, S> {
                 }
             }
         }
+
+        Self::populate_header_values(&mut labels, req);
+
         labels
+    }
+
+    /// Populates labels for common header values from the request.
+    ///
+    /// OpenTelemetry semantic conventions allow for setting arbitrary
+    /// `http.request.header.<header>` values, but we shouldn't unconditionally populate all headers
+    /// as they often contain authorization tokens/secrets/etc. Instead, we populate a subset of
+    /// common headers into their respective labels.
+    fn populate_header_values<B>(
+        labels: &mut HashMap<&'static str, String>,
+        req: &http::Request<B>,
+    ) {
+        static HEADER_LABELS: &[(&str, &str)] = &[
+            ("user-agent", "user_agent.original"),
+            // http.request.body.size is available as a semantic convention, but is not stable.
+            ("content-length", "http.request.header.content-length"),
+            ("content-type", "http.request.header.content-type"),
+            ("l5d-orig-proto", "http.request.header.l5d-orig-proto"),
+        ];
+        for &(header, label) in HEADER_LABELS {
+            if let Some(value) = req.headers().get(header) {
+                labels.insert(label, String::from_utf8_lossy(value.as_bytes()).to_string());
+            }
+        }
     }
 
     fn add_response_labels<B>(
@@ -84,6 +118,39 @@ impl<K: Clone, S> TraceContext<K, S> {
             rsp.status().as_str().to_string(),
         );
         labels
+    }
+}
+
+struct UrlLabel<'a>(&'a Uri);
+
+impl Display for UrlLabel<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if let Some(scheme) = self.0.scheme() {
+            write!(f, "{}://", scheme)?;
+        }
+
+        // Separately write authority parts so that username:password credentials can be redacted.
+        if let Some(authority) = self.0.authority() {
+            if let Some((creds, _)) = authority.as_str().split_once('@') {
+                if creds.contains(':') {
+                    f.write_str("REDACTED:REDACTED@")?;
+                } else {
+                    f.write_str("REDACTED@")?;
+                }
+            }
+            write!(f, "{}", authority.host())?;
+            if let Some(port) = authority.port() {
+                write!(f, ":{}", port)?;
+            }
+        }
+
+        write!(f, "{}", self.0.path())?;
+
+        if let Some(query) = self.0.query() {
+            write!(f, "?{}", query)?;
+        }
+
+        Ok(())
     }
 }
 

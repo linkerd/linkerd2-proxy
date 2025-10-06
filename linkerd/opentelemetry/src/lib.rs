@@ -247,8 +247,8 @@ fn convert_span(span: ExportSpan) -> Result<SpanData, Error> {
     for (k, v) in labels.iter() {
         attributes.push(KeyValue::new(k.clone(), v.clone()));
     }
-    for (k, v) in span.labels.iter() {
-        attributes.push(KeyValue::new(*k, v.clone()));
+    for (k, v) in span.labels.into_iter() {
+        attributes.push(KeyValue::new(k, v));
     }
     let is_remote = kind != trace_context::export::SpanKind::Client;
     Ok(SpanData {
