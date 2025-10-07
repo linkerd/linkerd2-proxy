@@ -253,6 +253,7 @@ fn convert_span(span: ExportSpan) -> Result<SpanData, Error> {
     let is_remote = kind != trace_context::export::SpanKind::Client;
     Ok(SpanData {
         parent_span_id: SpanId::from_bytes(span.parent_id.into_bytes()?),
+        parent_span_is_remote: true, // we do not originate any spans locally
         span_kind: match kind {
             trace_context::export::SpanKind::Server => SpanKind::Server,
             trace_context::export::SpanKind::Client => SpanKind::Client,

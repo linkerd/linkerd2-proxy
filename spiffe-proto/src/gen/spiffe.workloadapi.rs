@@ -19,10 +19,8 @@ pub struct X509svidResponse {
     /// the workload should trust, keyed by the SPIFFE ID of the foreign trust
     /// domain. Bundles are ASN.1 DER encoded.
     #[prost(map = "string, bytes", tag = "3")]
-    pub federated_bundles: ::std::collections::HashMap<
-        ::prost::alloc::string::String,
-        ::prost::alloc::vec::Vec<u8>,
-    >,
+    pub federated_bundles:
+        ::std::collections::HashMap<::prost::alloc::string::String, ::prost::alloc::vec::Vec<u8>>,
 }
 /// The X509SVID message carries a single SVID and all associated information,
 /// including the X.509 bundle for the trust domain.
@@ -49,10 +47,10 @@ pub mod spiffe_workload_api_client {
         dead_code,
         missing_docs,
         clippy::wildcard_imports,
-        clippy::let_unit_value,
+        clippy::let_unit_value
     )]
-    use tonic::codegen::*;
     use tonic::codegen::http::Uri;
+    use tonic::codegen::*;
     #[derive(Debug, Clone)]
     pub struct SpiffeWorkloadApiClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -85,9 +83,8 @@ pub mod spiffe_workload_api_client {
                     <T as tonic::client::GrpcService<tonic::body::Body>>::ResponseBody,
                 >,
             >,
-            <T as tonic::codegen::Service<
-                http::Request<tonic::body::Body>,
-            >>::Error: Into<StdError> + std::marker::Send + std::marker::Sync,
+            <T as tonic::codegen::Service<http::Request<tonic::body::Body>>>::Error:
+                Into<StdError> + std::marker::Send + std::marker::Sync,
         {
             SpiffeWorkloadApiClient::new(InterceptedService::new(inner, interceptor))
         }
@@ -133,18 +130,11 @@ pub mod spiffe_workload_api_client {
             tonic::Response<tonic::codec::Streaming<super::X509svidResponse>>,
             tonic::Status,
         > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/SpiffeWorkloadAPI/FetchX509SVID",
-            );
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::unknown(format!("Service was not ready: {}", e.into()))
+            })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/SpiffeWorkloadAPI/FetchX509SVID");
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("SpiffeWorkloadAPI", "FetchX509SVID"));
