@@ -1343,6 +1343,7 @@ dependencies = [
  "linkerd-workers",
  "rangemap",
  "regex",
+ "tempfile",
  "thiserror",
  "tokio",
  "tokio-stream",

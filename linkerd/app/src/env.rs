@@ -8,12 +8,7 @@ use linkerd_app_core::{
     transport::{DualListenAddr, Keepalive, ListenAddr, UserTimeout},
     AddrMatch, Conditional, IpNet,
 };
-use std::{
-    collections::{HashMap, HashSet},
-    net::SocketAddr,
-    path::PathBuf,
-    time::Duration,
-};
+use std::{collections::HashSet, net::SocketAddr, path::PathBuf, time::Duration};
 use thiserror::Error;
 use tracing::{debug, error, info, warn};
 
@@ -440,11 +435,6 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
     let hostname = strings.get(ENV_HOSTNAME);
 
-    let trace_attributes_file_path = strings.get(ENV_TRACE_ATTRIBUTES_PATH);
-    let trace_extra_attributes = strings.get(ENV_TRACE_EXTRA_ATTRIBUTES);
-    let trace_otel_attributes = strings.get(ENV_OTEL_TRACE_ATTRIBUTES);
-    let trace_service_name = strings.get(ENV_TRACE_SERVICE_NAME);
-
     let trace_collector_addr = parse_control_addr(strings, ENV_TRACE_COLLECTOR_SVC_BASE);
 
     let gateway_suffixes = parse(strings, ENV_INBOUND_GATEWAY_SUFFIXES, parse_dns_suffixes);
@@ -853,29 +843,12 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             } else {
                 outbound.http_request_queue.failfast_timeout
             };
-            let mut attributes = trace_attributes_file_path
-                .map(|path| match path.and_then(|p| p.parse::<PathBuf>().ok()) {
-                    Some(path) => trace::read_trace_attributes(&path),
-                    None => HashMap::new(),
-                })
-                .unwrap_or_default();
-            if let Ok(Some(attrs)) = trace_extra_attributes {
-                if !attrs.is_empty() {
-                    attributes.extend(trace::parse_env_trace_attributes(&attrs));
-                }
-            }
-            if let Ok(Some(attrs)) = trace_otel_attributes {
-                if !attrs.is_empty() {
-                    attributes.extend(trace::parse_env_trace_attributes(&attrs));
-                }
-            }
 
-            let trace_service_name = trace_service_name.ok().flatten();
+            let attributes = trace::TraceAttributes::new(strings).into_labels();
 
             trace_collector::Config::Enabled(Box::new(trace_collector::EnabledConfig {
                 attributes,
                 hostname: hostname?,
-                service_name: trace_service_name,
                 control: ControlConfig {
                     addr,
                     connect,
