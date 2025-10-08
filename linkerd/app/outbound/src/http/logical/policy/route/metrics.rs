@@ -6,10 +6,11 @@ use linkerd_app_core::{
 };
 use linkerd_http_prom::{
     body_data::request::{BodyDataMetrics, NewRecordBodyData, RequestBodyFamilies},
-    record_response::{self, StreamLabel},
+    record_response,
+    stream_label::StreamLabel,
 };
 
-pub use linkerd_http_prom::record_response::MkStreamLabel;
+pub use linkerd_http_prom::stream_label::MkStreamLabel;
 
 pub mod labels;
 #[cfg(test)]

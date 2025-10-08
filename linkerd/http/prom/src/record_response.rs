@@ -1,14 +1,12 @@
+use crate::stream_label::{MkStreamLabel, StreamLabel};
 use http_body::Body;
 use linkerd_error::Error;
 use linkerd_http_box::BoxBody;
 use linkerd_metrics::prom::Counter;
 use linkerd_stack as svc;
-use prometheus_client::{
-    encoding::EncodeLabelSet,
-    metrics::{
-        family::{Family, MetricConstructor},
-        histogram::Histogram,
-    },
+use prometheus_client::metrics::{
+    family::{Family, MetricConstructor},
+    histogram::Histogram,
 };
 use std::{
     future::Future,
@@ -25,63 +23,6 @@ pub use self::{
     request::{NewRequestDuration, RecordRequestDuration, RequestMetrics},
     response::{NewResponseDuration, RecordResponseDuration, ResponseMetrics},
 };
-
-/// A strategy for labeling request/responses streams for status and duration
-/// metrics.
-///
-/// This is specifically to support higher-cardinality status counters and
-/// lower-cardinality stream duration histograms.
-pub trait MkStreamLabel {
-    type DurationLabels: EncodeLabelSet
-        + Clone
-        + Eq
-        + std::fmt::Debug
-        + std::hash::Hash
-        + Send
-        + Sync
-        + 'static;
-    type StatusLabels: EncodeLabelSet
-        + Clone
-        + Eq
-        + std::fmt::Debug
-        + std::hash::Hash
-        + Send
-        + Sync
-        + 'static;
-
-    type StreamLabel: StreamLabel<
-        DurationLabels = Self::DurationLabels,
-        StatusLabels = Self::StatusLabels,
-    >;
-
-    /// Returns None when the request should not be recorded.
-    fn mk_stream_labeler<B>(&self, req: &http::Request<B>) -> Option<Self::StreamLabel>;
-}
-
-pub trait StreamLabel: Send + 'static {
-    type DurationLabels: EncodeLabelSet
-        + Clone
-        + Eq
-        + std::fmt::Debug
-        + std::hash::Hash
-        + Send
-        + Sync
-        + 'static;
-    type StatusLabels: EncodeLabelSet
-        + Clone
-        + Eq
-        + std::fmt::Debug
-        + std::hash::Hash
-        + Send
-        + Sync
-        + 'static;
-
-    fn init_response<B>(&mut self, rsp: &http::Response<B>);
-    fn end_response(&mut self, trailers: Result<Option<&http::HeaderMap>, &Error>);
-
-    fn status_labels(&self) -> Self::StatusLabels;
-    fn duration_labels(&self) -> Self::DurationLabels;
-}
 
 /// A set of parameters that can be used to construct a `RecordResponse` layer.
 pub struct Params<L: MkStreamLabel, M> {

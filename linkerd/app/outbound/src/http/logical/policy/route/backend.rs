@@ -1,7 +1,7 @@
 use super::{super::Concrete, filters};
 use crate::{BackendRef, ParentRef, RouteRef};
 use linkerd_app_core::{proxy::http, svc, Error, Result};
-use linkerd_http_prom::record_response::MkStreamLabel;
+use linkerd_http_prom::stream_label::MkStreamLabel;
 use linkerd_http_route as http_route;
 use linkerd_proxy_client_policy as policy;
 use std::{fmt::Debug, hash::Hash, sync::Arc};
