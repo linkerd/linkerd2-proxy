@@ -45,11 +45,11 @@ impl TraceAttributes {
         }
 
         if let Some(extra_attrs) = self.extra_attrs {
-            trace_labels.extend(parse_env_trace_attributes(&extra_attrs));
+            trace_labels.extend(parse_attrs(&extra_attrs));
         }
 
         if let Some(otel_attrs) = self.otel_attrs {
-            trace_labels.extend(parse_env_trace_attributes(&otel_attrs));
+            trace_labels.extend(parse_attrs(&otel_attrs));
         }
 
         trace_labels
@@ -69,10 +69,6 @@ fn read_trace_attributes(path: &str) -> HashMap<String, String> {
             HashMap::new()
         }
     }
-}
-
-fn parse_env_trace_attributes(attrs: &str) -> HashMap<String, String> {
-    parse_attrs(attrs)
 }
 
 fn parse_attrs(attrs: &str) -> HashMap<String, String> {
