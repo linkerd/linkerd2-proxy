@@ -1,40 +1,59 @@
-use std::collections::HashMap;
-use std::path::Path;
+use crate::env::Strings;
+use std::{collections::HashMap, path::Path};
 
-pub(super) struct TraceLabelConfig {
+pub(super) struct TraceAttributes {
     pub labels_path: Option<String>,
     pub extra_attrs: Option<String>,
     pub otel_attrs: Option<String>,
     pub service_name: Option<String>,
 }
 
-pub(super) fn generate_trace_service_labels(config: TraceLabelConfig) -> HashMap<String, String> {
-    let mut trace_labels = HashMap::new();
+impl TraceAttributes {
+    pub(super) fn new<S: Strings>(strings: &S) -> Self {
+        let labels_path = strings.get(super::ENV_TRACE_ATTRIBUTES_PATH).ok().flatten();
+        let extra_attrs = strings
+            .get(super::ENV_TRACE_EXTRA_ATTRIBUTES)
+            .ok()
+            .flatten();
+        let otel_attrs = strings.get(super::ENV_OTEL_TRACE_ATTRIBUTES).ok().flatten();
+        let service_name = strings.get(super::ENV_TRACE_SERVICE_NAME).ok().flatten();
 
-    // This defines the precedence order for trace labels. Checks later in this chain take higher
-    // precedence than ones before. The current precedence is:
-    // - Values from OTEL_RESOURCE_ATTRIBUTES
-    // - Values from LINKERD2_PROXY_TRACE_EXTRA_ATTRIBUTES
-    // - Pod labels in the downward API
-    // - The service name from LINKERD2_PROXY_TRACE_SERVICE_NAME
-
-    if let Some(service_name) = config.service_name {
-        trace_labels.insert("service.name".to_string(), service_name);
+        Self {
+            labels_path,
+            extra_attrs,
+            otel_attrs,
+            service_name,
+        }
     }
 
-    if let Some(labels_path) = config.labels_path {
-        trace_labels.extend(read_trace_attributes(&labels_path));
-    }
+    /// Returns a map of trace attributes.
+    ///
+    /// The current precedence of labels is:
+    /// - Values from OTEL_RESOURCE_ATTRIBUTES
+    /// - Values from LINKERD2_PROXY_TRACE_EXTRA_ATTRIBUTES
+    /// - Pod labels in the downward API
+    /// - The service name from LINKERD2_PROXY_TRACE_SERVICE_NAME
+    pub(super) fn into_labels(self) -> HashMap<String, String> {
+        let mut trace_labels = HashMap::new();
 
-    if let Some(extra_attrs) = config.extra_attrs {
-        trace_labels.extend(parse_env_trace_attributes(&extra_attrs));
-    }
+        if let Some(service_name) = self.service_name {
+            trace_labels.insert("service.name".to_string(), service_name);
+        }
 
-    if let Some(otel_attrs) = config.otel_attrs {
-        trace_labels.extend(parse_env_trace_attributes(&otel_attrs));
-    }
+        if let Some(labels_path) = self.labels_path {
+            trace_labels.extend(read_trace_attributes(&labels_path));
+        }
 
-    trace_labels
+        if let Some(extra_attrs) = self.extra_attrs {
+            trace_labels.extend(parse_env_trace_attributes(&extra_attrs));
+        }
+
+        if let Some(otel_attrs) = self.otel_attrs {
+            trace_labels.extend(parse_env_trace_attributes(&otel_attrs));
+        }
+
+        trace_labels
+    }
 }
 
 fn read_trace_attributes(path: &str) -> HashMap<String, String> {
@@ -160,12 +179,13 @@ service.name="web-linkerd-proxy"
         .to_vec();
         expected.sort_unstable();
 
-        let mut actual = generate_trace_service_labels(TraceLabelConfig {
+        let mut actual = TraceAttributes {
             labels_path: Some(labels_file.path().to_string_lossy().to_string()),
             extra_attrs: Some(extra.to_string()),
             otel_attrs: None,
             service_name: Some(service_name.to_string()),
-        })
+        }
+        .into_labels()
         .into_iter()
         .collect::<Vec<_>>();
         actual.sort_unstable();

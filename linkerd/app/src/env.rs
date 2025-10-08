@@ -435,11 +435,6 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
     let hostname = strings.get(ENV_HOSTNAME);
 
-    let trace_attributes_file_path = strings.get(ENV_TRACE_ATTRIBUTES_PATH);
-    let trace_extra_attributes = strings.get(ENV_TRACE_EXTRA_ATTRIBUTES);
-    let trace_otel_attributes = strings.get(ENV_OTEL_TRACE_ATTRIBUTES);
-    let default_trace_service_name = strings.get(ENV_TRACE_SERVICE_NAME);
-
     let trace_collector_addr = parse_control_addr(strings, ENV_TRACE_COLLECTOR_SVC_BASE);
 
     let gateway_suffixes = parse(strings, ENV_INBOUND_GATEWAY_SUFFIXES, parse_dns_suffixes);
@@ -849,12 +844,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 outbound.http_request_queue.failfast_timeout
             };
 
-            let attributes = trace::generate_trace_service_labels(trace::TraceLabelConfig {
-                labels_path: trace_attributes_file_path.ok().flatten(),
-                extra_attrs: trace_extra_attributes.ok().flatten(),
-                otel_attrs: trace_otel_attributes.ok().flatten(),
-                service_name: default_trace_service_name.ok().flatten(),
-            });
+            let attributes = trace::TraceAttributes::new(strings).into_labels();
 
             trace_collector::Config::Enabled(Box::new(trace_collector::EnabledConfig {
                 attributes,
