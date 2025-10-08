@@ -2,9 +2,9 @@ use crate::{propagation, Span, SpanSink};
 use futures::{future::Either, prelude::*};
 use http::Uri;
 use linkerd_stack::layer;
-use std::fmt::{Display, Formatter};
 use std::{
     collections::HashMap,
+    fmt::{Display, Formatter},
     pin::Pin,
     task::{Context, Poll},
     time::SystemTime,
