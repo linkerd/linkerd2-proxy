@@ -1,6 +1,6 @@
 use super::IdentityRequired;
 use crate::{http, trace_labels, Outbound};
-use linkerd_app_core::{drain, errors, http_tracing, io, svc, Error, Result};
+use linkerd_app_core::{drain, errors, http_tracing, io, svc, Error, Result, MYNTRA_NFR_TEST_HEADER};
 
 #[derive(Copy, Clone, Debug)]
 pub(crate) struct ServerRescue {
@@ -54,6 +54,15 @@ impl<T> Outbound<svc::ArcNewCloneHttp<T>> {
                 // `Client`.
                 .push(http::NewNormalizeUri::layer())
                 // Record when a HTTP/1 URI originated in absolute form
+                // Add MYNTRA_NFR_TEST header before any routing/discovery occurs.
+                .push(http::NewHeaderFromTarget::<http::HeaderPair, _, _>::layer_via(
+                    |_: &T| {
+                        http::HeaderPair(
+                            http::HeaderName::from_static(MYNTRA_NFR_TEST_HEADER),
+                            http::HeaderValue::from_static("TRUE"),
+                        )
+                    },
+                ))
                 .push_on_service(http::normalize_uri::MarkAbsoluteForm::layer())
                 .arc_new_clone_http()
         })

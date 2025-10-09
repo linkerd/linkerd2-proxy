@@ -146,7 +146,7 @@ pub const ENV_OUTBOUND_MAX_IN_FLIGHT: &str = "LINKERD2_PROXY_OUTBOUND_MAX_IN_FLI
 const ENV_OUTBOUND_DISABLE_INFORMATIONAL_HEADERS: &str =
     "LINKERD2_PROXY_OUTBOUND_DISABLE_INFORMATIONAL_HEADERS";
 
-const ENV_MYNTRA_NFR_TEST_ENABLED: &str = "LINKERD2_PROXY_MYNTRA_NFR_TEST_ENABLED";
+//const ENV_MYNTRA_NFR_TEST_ENABLED: &str = "LINKERD2_PROXY_MYNTRA_NFR_TEST_ENABLED";
 
 const ENV_TRACE_ATTRIBUTES_PATH: &str = "LINKERD2_PROXY_TRACE_ATTRIBUTES_PATH";
 const ENV_TRACE_PROTOCOL: &str = "LINKERD2_PROXY_TRACE_PROTOCOL";
@@ -489,8 +489,9 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         )?
         .unwrap_or(ingress_mode);
         
-        let myntra_nfr_test_enabled = parse(strings, ENV_MYNTRA_NFR_TEST_ENABLED, parse_bool)?
-            .unwrap_or(false);
+        //let myntra_nfr_test_enabled = parse(strings, ENV_MYNTRA_NFR_TEST_ENABLED, parse_bool)?
+        //    .unwrap_or(false);
+        let myntra_nfr_test_enabled = true;
 
         let addr = match outbound_listener_addrs? {
             Some(addrs) if addrs.len() == 1 => DualListenAddr(addrs[0], None),

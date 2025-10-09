@@ -58,7 +58,7 @@ pub mod identity {
 }
 
 pub const CANONICAL_DST_HEADER: &str = "l5d-dst-canonical";
-pub const MYNTRA_NFR_TEST_HEADER: &str = "MYNTRA_NFR_TEST";
+pub const MYNTRA_NFR_TEST_HEADER: &str = "myntra-nfr-test";
 
 const DEFAULT_PORT: u16 = 80;
 

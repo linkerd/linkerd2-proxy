@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: listener
+  namespace: nfr-test
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: listener
+  template:
+    metadata:
+      annotations:
+        # -----------------------------------------------------------
+        # 1. CORE LINKERD INJECTION ANNOTATIONS
+        # -----------------------------------------------------------
+        linkerd.io/inject: enabled                       # Mandatory: Enables the automatic proxy injection.
+        #linkerd.io/proxy-version: custom-v1              # Optional: Overrides the proxy version (useful for your custom build).
+        #linkerd.io/proxy-image: localhost:5000/linkerd-proxy # Optional: Overrides the proxy image name (use your custom image).
+
+        # -----------------------------------------------------------
+        # 2. PROXY RESOURCE & POLICY CONFIGURATION
+        # -----------------------------------------------------------
+        #config.linkerd.io/proxy-cpu-request: "100m"      # CPU request for the proxy container.
+        #config.linkerd.io/proxy-cpu-limit: "200m"        # CPU limit for the proxy container.
+        #config.linkerd.io/proxy-memory-request: "64Mi"   # Memory request for the proxy container.
+        #config.linkerd.io/proxy-memory-limit: "128Mi"    # Memory limit for the proxy container.
+        
+        config.linkerd.io/proxy-log-level: "warn,linkerd=debug" # Detailed log level control.
+        #config.linkerd.io/inbound-port: "4143"           # Overrides the default inbound proxy port.
+        #config.linkerd.io/outbound-port: "4140"          # Overrides the default outbound proxy port.
+        #config.linkerd.io/image-pull-policy: "IfNotPresent" # Image pull policy for the proxy (matches your local dev needs).
+        config.linkerd.io/image-pull-policy: "Always" 
+        config.linkerd.io/access-log: "json" 
+
+        # -----------------------------------------------------------
+        # 3. ADVANCED BEHAVIOR/TUNING ANNOTATIONS
+        # -----------------------------------------------------------
+        #config.linkerd.io/skip-inbound-ports: "9000"     # Skips proxying for traffic destined to this port (e.g., admin).
+        #config.linkerd.io/skip-outbound-ports: "80,443"  # Skips proxying for traffic leaving to external standard ports.
+        #config.linkerd.io/proxy-await: "enabled"         # Waits for the proxy to be ready before starting the application container.
+        #config.linkerd.io/disable-identity: "true"       # Disables mTLS identity for this specific workload.
+        
+        # -----------------------------------------------------------
+        # 4. CUSTOM APPLICATION ANNOTATIONS (Add your unique annotations here)
+        # -----------------------------------------------------------
+        #myapp.io/deployment-id: "D-4729"
+        #myapp.io/change-control-ticket: "CHG0054321"
+
+      labels:
+        app: listener
+    spec:
+      # The Linkerd control plane lives in the `linkerd` namespace by default.
+      # The proxy communicates with the control plane, but your application pods 
+      # simply inherit this configuration via the Injector Mutating Webhook.
+      containers:
+      - name: listener-app
+        image: nginxdemos/hello:plain-text
+        ports:
+        - containerPort: 80
+---
+# Service definition for the Listener
+apiVersion: v1
+kind: Service
+metadata:
+  name: listener-svc # This is the DNS name the client will use
+  namespace: nfr-test
+spec:
+  selector:
+    app: listener
+  ports:
+  - port: 80
+    targetPort: 80

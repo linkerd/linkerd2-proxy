@@ -6,7 +6,7 @@ use crate::{service_meta, BackendRef, ParentRef, UNKNOWN_META};
 use linkerd_app_core::{
     classify, metrics,
     proxy::http::{self, balance},
-    svc, Error,
+    svc, Error, MYNTRA_NFR_TEST_HEADER,
 };
 use linkerd_distribute as distribute;
 use std::{fmt::Debug, hash::Hash, sync::Arc, time};
@@ -282,6 +282,14 @@ impl<T> RouteParams<T> {
                             CanonicalDstHeader(addr)
                         },
                     ),
+                )
+                .push(
+                    http::NewHeaderFromTarget::<http::HeaderPair, _, _>::layer_via(|_: &Self| {
+                        http::HeaderPair(
+                            http::HeaderName::from_static(MYNTRA_NFR_TEST_HEADER),
+                            http::HeaderValue::from_static("TRUE"),
+                        )
+                    }),
                 )
                 // Sets the per-route response classifier as a request
                 // extension.
