@@ -3,6 +3,9 @@ use crate::{
     protocol::{self, Protocol},
     tls, Discovery, Outbound, ParentRef,
 };
+use http::Request;
+use linkerd_app_core::proxy::tap::{Inspect, Labels};
+use linkerd_app_core::tls::{ConditionalClientTls, ConditionalServerTls};
 use linkerd_app_core::{
     io, profiles,
     proxy::{
@@ -14,6 +17,7 @@ use linkerd_app_core::{
     Addr, Error,
 };
 use std::fmt::Debug;
+use std::net::SocketAddr;
 use tokio::sync::watch;
 use tracing::info_span;
 
@@ -334,6 +338,38 @@ impl std::hash::Hash for HttpSidecar {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.orig_dst.hash(state);
         self.version.hash(state);
+    }
+}
+
+impl Inspect for HttpSidecar {
+    fn src_addr<B>(&self, _req: &Request<B>) -> Option<SocketAddr> {
+        todo!()
+    }
+
+    fn src_tls<B>(&self, _req: &Request<B>) -> ConditionalServerTls {
+        ConditionalServerTls::None(linkerd_app_core::tls::NoServerTls::Loopback)
+    }
+
+    fn dst_addr<B>(&self, _req: &Request<B>) -> Option<SocketAddr> {
+        Some(self.orig_dst.0)
+    }
+
+    fn dst_labels<B>(&self, _req: &Request<B>) -> Option<Labels> {
+        todo!()
+    }
+
+    fn dst_tls<B>(&self, _req: &Request<B>) -> ConditionalClientTls {
+        todo!()
+    }
+
+    fn route_labels<B>(&self, req: &Request<B>) -> Option<Labels> {
+        req.extensions()
+            .get::<profiles::http::Route>()
+            .map(|r| r.labels().clone())
+    }
+
+    fn is_outbound<B>(&self, _req: &Request<B>) -> bool {
+        true
     }
 }
 

@@ -4,6 +4,7 @@ use bytes::Buf;
 use futures::ready;
 use futures::stream::Stream;
 use http_body::Body;
+use linkerd2_proxy_api::tap::{ObserveTraceRequest, ObserveTraceResponse};
 use linkerd2_proxy_api::{http_types, tap as api};
 use linkerd_conditional::Conditional;
 use linkerd_proxy_http::HasH2Reason;
@@ -14,10 +15,11 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Weak};
 use std::task::{Context, Poll};
-use tokio::sync::mpsc;
+use std::time::Duration;
+use tokio::sync::{mpsc, watch};
 use tokio::time::Instant;
-use tonic::{self as grpc, Response};
-use tracing::{debug, trace, warn};
+use tonic::{self as grpc, Request, Response, Status, Streaming};
+use tracing::{debug, info, trace, warn};
 
 #[derive(Clone, Debug)]
 pub struct Server {
@@ -52,6 +54,34 @@ struct TapTx {
 #[derive(Clone, Debug)]
 pub struct Tap {
     shared: Weak<Shared>,
+}
+
+pub type TapTraces = watch::Receiver<Option<TapTrace>>;
+
+#[derive(Clone, Debug)]
+pub struct TapTrace {
+    pub inner: Arc<TapTraceInner>,
+}
+
+impl TapTrace {
+    pub fn matches<B, I: Inspect>(&self, req: &http::Request<B>, inspect: &I) -> bool {
+        if !self.inner.matcher.matches(req, inspect) {
+            return false;
+        }
+
+        if let Some(sample) = &self.inner.sample_percent {
+            return rand::distr::Distribution::sample(sample, &mut rand::rng());
+        }
+
+        true
+    }
+}
+
+#[derive(Debug)]
+pub struct TapTraceInner {
+    sample_percent: Option<rand::distr::Bernoulli>,
+    pub report_interval: Option<Duration>,
+    matcher: Match,
 }
 
 #[derive(Debug)]
@@ -180,6 +210,55 @@ impl api::tap_server::Tap for Server {
         };
 
         Ok(Response::new(rsp))
+    }
+
+    async fn observe_trace(
+        &self,
+        request: Request<Streaming<ObserveTraceRequest>>,
+    ) -> Result<Response<ObserveTraceResponse>, Status> {
+        let mut request = request.into_inner();
+        loop {
+            let msg = match request.message().await {
+                Ok(None) => {
+                    info!("Tap stream finished");
+                    break;
+                }
+                Err(e) => {
+                    warn!(error=%e, "Tap stream sent an error");
+                    break;
+                }
+                Ok(Some(msg)) => msg,
+            };
+
+            let match_ = match Match::try_new(msg.r#match) {
+                Ok(m) => m,
+                Err(e) => {
+                    warn!(err = %e, "invalid tap request");
+                    let err = Self::invalid_arg(e.to_string());
+                    return Err(err);
+                }
+            };
+
+            let report_interval = msg.report_interval.and_then(|d| {
+                let nanos = Duration::from_nanos(u64::try_from(d.nanos).ok()?);
+                let secs = Duration::from_secs(u64::try_from(d.seconds).ok()?);
+                Some(nanos + secs)
+            });
+
+            let trace = TapTrace {
+                inner: Arc::new(TapTraceInner {
+                    sample_percent: msg.sample_percent.map(|s| {
+                        rand::distr::Bernoulli::new(s.clamp(0.0, 1.0) as f64)
+                            .expect("Must be in range")
+                    }),
+                    report_interval,
+                    matcher: match_,
+                }),
+            };
+            self.registry.set_trace(trace);
+        }
+        self.registry.clear_trace();
+        Ok(Response::new(ObserveTraceResponse {}))
     }
 }
 

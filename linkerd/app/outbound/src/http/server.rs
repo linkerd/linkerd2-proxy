@@ -1,5 +1,6 @@
 use super::IdentityRequired;
 use crate::{http, trace_labels, Outbound};
+use linkerd_app_core::proxy::tap;
 use linkerd_app_core::{drain, errors, http_tracing, io, svc, Error, Result};
 
 #[derive(Copy, Clone, Debug)]
@@ -25,6 +26,7 @@ impl<T> Outbound<svc::ArcNewCloneHttp<T>> {
     where
         // Target
         T: svc::Param<http::normalize_uri::DefaultAuthority> + 'static,
+        T: tap::Inspect + Clone + Send + Sync,
     {
         self.map_stack(|config, rt, http| {
             http.check_new_service::<T, _>()
@@ -48,7 +50,11 @@ impl<T> Outbound<svc::ArcNewCloneHttp<T>> {
                 .push(ServerRescue::layer(config.emit_headers))
                 .check_new_service::<T, http::Request<_>>()
                 // Initiates OpenTelemetry tracing.
-                .push_on_service(http_tracing::server(rt.span_sink.clone(), trace_labels()))
+                .push(http_tracing::server(
+                    rt.span_sink.clone(),
+                    trace_labels(),
+                    rt.tap.get_traces(),
+                ))
                 .push_on_service(http::BoxResponse::layer())
                 // Convert origin form HTTP/1 URIs to absolute form for Hyper's
                 // `Client`.

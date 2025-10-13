@@ -101,7 +101,7 @@ impl Config {
 impl Tap {
     pub fn registry(&self) -> tap::Registry {
         match self {
-            Tap::Disabled { ref registry } => registry.clone(),
+            Tap::Disabled { ref registry, .. } => registry.clone(),
             Tap::Enabled { ref registry, .. } => registry.clone(),
         }
     }

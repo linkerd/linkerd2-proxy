@@ -2,6 +2,10 @@ use crate::{
     policy::{self, AllowPolicy},
     GatewayAddr, Inbound,
 };
+use http::Request;
+use linkerd_app_core::proxy::tap;
+use linkerd_app_core::proxy::tap::Labels;
+use linkerd_app_core::tls::{ConditionalClientTls, ConditionalServerTls};
 use linkerd_app_core::{
     identity, io, profiles,
     proxy::http,
@@ -12,6 +16,7 @@ use linkerd_app_core::{
     Conditional, Error, Infallible, NameAddr, Result,
 };
 use std::fmt::Debug;
+use std::net::SocketAddr;
 use thiserror::Error;
 use tracing::{debug_span, info_span};
 
@@ -380,6 +385,41 @@ impl svc::Param<tls::ConditionalServerTls> for LocalHttp {
             client_id: Some(self.client.client_id.clone()),
             negotiated_protocol: self.client.alpn.clone(),
         })
+    }
+}
+
+impl tap::Inspect for LocalHttp {
+    fn src_addr<B>(&self, _req: &Request<B>) -> Option<SocketAddr> {
+        Some(self.client.client_addr.into())
+    }
+
+    fn src_tls<B>(&self, req: &Request<B>) -> ConditionalServerTls {
+        req.extensions()
+            .get::<tls::ConditionalServerTls>()
+            .cloned()
+            .unwrap_or(tls::ConditionalServerTls::None(tls::NoServerTls::Disabled))
+    }
+
+    fn dst_addr<B>(&self, _req: &Request<B>) -> Option<SocketAddr> {
+        Some(self.addr.into())
+    }
+
+    fn dst_labels<B>(&self, _req: &Request<B>) -> Option<Labels> {
+        todo!()
+    }
+
+    fn dst_tls<B>(&self, _req: &Request<B>) -> ConditionalClientTls {
+        ConditionalClientTls::None(tls::NoClientTls::Loopback)
+    }
+
+    fn route_labels<B>(&self, req: &Request<B>) -> Option<Labels> {
+        req.extensions()
+            .get::<profiles::http::Route>()
+            .map(|r| r.labels().clone())
+    }
+
+    fn is_outbound<B>(&self, _req: &Request<B>) -> bool {
+        false
     }
 }
 

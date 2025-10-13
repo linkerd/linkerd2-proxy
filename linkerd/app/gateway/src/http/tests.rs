@@ -1,4 +1,6 @@
 use super::*;
+use linkerd_app_core::proxy::tap::Labels;
+use linkerd_app_core::tls::{ConditionalClientTls, ConditionalServerTls};
 use linkerd_app_core::{
     svc::{NewService, ServiceExt},
     trace::test::trace_init,
@@ -6,6 +8,7 @@ use linkerd_app_core::{
 };
 use linkerd_app_inbound::GatewayLoop;
 use linkerd_proxy_server_policy as policy;
+use std::net::SocketAddr;
 use std::{str::FromStr, sync::Arc, time};
 use tower_test::mock;
 
@@ -136,6 +139,36 @@ async fn upgraded_request_remains_relative_form() {
                 tx.closed().await;
             });
             policy
+        }
+    }
+
+    impl tap::Inspect for Target {
+        fn src_addr<B>(&self, _req: &::http::Request<B>) -> Option<SocketAddr> {
+            todo!()
+        }
+
+        fn src_tls<B>(&self, _req: &::http::Request<B>) -> ConditionalServerTls {
+            todo!()
+        }
+
+        fn dst_addr<B>(&self, _req: &::http::Request<B>) -> Option<SocketAddr> {
+            todo!()
+        }
+
+        fn dst_labels<B>(&self, _req: &::http::Request<B>) -> Option<Labels> {
+            todo!()
+        }
+
+        fn dst_tls<B>(&self, _req: &::http::Request<B>) -> ConditionalClientTls {
+            todo!()
+        }
+
+        fn route_labels<B>(&self, _req: &::http::Request<B>) -> Option<Labels> {
+            todo!()
+        }
+
+        fn is_outbound<B>(&self, _req: &::http::Request<B>) -> bool {
+            todo!()
         }
     }
 

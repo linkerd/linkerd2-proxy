@@ -1,7 +1,8 @@
 use crate::{propagation, Span, SpanSink};
 use futures::{future::Either, prelude::*};
 use http::Uri;
-use linkerd_stack::layer;
+use linkerd_proxy_tap::{Inspect, TapTraces};
+use linkerd_stack::{layer, NewService};
 use std::{
     collections::HashMap,
     fmt::{Display, Formatter},
@@ -10,6 +11,13 @@ use std::{
     time::SystemTime,
 };
 use tracing::{debug, info, trace};
+
+#[derive(Clone, Debug)]
+pub struct NewTraceContext<K, S> {
+    inner: S,
+    sink: K,
+    tap: TapTraces,
+}
 
 /// A layer that adds distributed tracing instrumentation.
 ///
@@ -21,21 +29,44 @@ use tracing::{debug, info, trace};
 /// about the span to the given SpanSink when the span is complete, i.e. when
 /// we receive the response.
 #[derive(Clone, Debug)]
-pub struct TraceContext<K, S> {
+pub struct TraceContext<K, I, S> {
     inner: S,
+    inspect: I,
     sink: K,
+    tap: TapTraces,
 }
 
 // === impl TraceContext ===
 
-impl<K: Clone, S> TraceContext<K, S> {
-    pub fn layer(sink: K) -> impl layer::Layer<S, Service = TraceContext<K, S>> + Clone {
-        layer::mk(move |inner| TraceContext {
+impl<K: Clone, S> NewTraceContext<K, S> {
+    pub fn layer(sink: K, tap: TapTraces) -> impl layer::Layer<S, Service = Self> + Clone {
+        layer::mk(move |inner| NewTraceContext {
             inner,
             sink: sink.clone(),
+            tap: tap.clone(),
         })
     }
+}
 
+impl<K, I, S> NewService<I> for NewTraceContext<K, S>
+where
+    K: Clone,
+    I: Clone,
+    S: NewService<I>,
+{
+    type Service = TraceContext<K, I, S::Service>;
+
+    fn new_service(&self, target: I) -> Self::Service {
+        TraceContext {
+            inner: self.inner.new_service(target.clone()),
+            inspect: target,
+            sink: self.sink.clone(),
+            tap: self.tap.clone(),
+        }
+    }
+}
+
+impl<K: Clone, I, S> TraceContext<K, I, S> {
     /// Returns labels for the provided request.
     ///
     /// The OpenTelemetry spec defines the semantic conventions that HTTP
@@ -154,9 +185,10 @@ impl Display for UrlLabel<'_> {
     }
 }
 
-impl<K, S, ReqB, RspB> tower::Service<http::Request<ReqB>> for TraceContext<K, S>
+impl<K, I, S, ReqB, RspB> tower::Service<http::Request<ReqB>> for TraceContext<K, I, S>
 where
     K: Clone + SpanSink + Send + 'static,
+    I: Inspect,
     S: tower::Service<http::Request<ReqB>, Response = http::Response<RspB>>,
     S::Error: Send,
     S::Future: Send + 'static,
@@ -175,7 +207,16 @@ where
 
     fn call(&mut self, mut req: http::Request<ReqB>) -> Self::Future {
         if self.sink.is_enabled() {
-            if let Some(context) = propagation::unpack_trace_context(&req) {
+            let mut context = propagation::unpack_trace_context(&req);
+            if context.is_none() {
+                if let Some(tap) = self.tap.borrow().clone() {
+                    if tap.matches(&req, &self.inspect) {
+                        context = Some(propagation::generate_trace_context());
+                    }
+                }
+            }
+
+            if let Some(context) = context {
                 // Update the trace ID if the request set one and the proxy is configured to emit
                 // spans.
                 let span_id = propagation::increment_span_id(&mut req, &context);

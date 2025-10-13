@@ -9,6 +9,8 @@ mod grpc;
 mod registry;
 mod service;
 
+pub use crate::grpc::TapTraces;
+
 pub use self::{accept::AcceptPermittedClients, service::NewTapHttp};
 
 /// A registry containing all the active taps that have registered with the

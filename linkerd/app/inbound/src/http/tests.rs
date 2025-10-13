@@ -7,6 +7,9 @@ use crate::{
     Config, Inbound,
 };
 use hyper::{Request, Response};
+use linkerd_app_core::proxy::tap;
+use linkerd_app_core::proxy::tap::Labels;
+use linkerd_app_core::tls::{ConditionalClientTls, ConditionalServerTls};
 use linkerd_app_core::{
     classify,
     errors::header::L5D_PROXY_ERROR,
@@ -969,6 +972,36 @@ impl svc::Param<http::Variant> for Target {
 impl svc::Param<tls::ConditionalServerTls> for Target {
     fn param(&self) -> tls::ConditionalServerTls {
         self.1.clone()
+    }
+}
+
+impl tap::Inspect for Target {
+    fn src_addr<B>(&self, _req: &Request<B>) -> Option<SocketAddr> {
+        todo!()
+    }
+
+    fn src_tls<B>(&self, _req: &Request<B>) -> ConditionalServerTls {
+        todo!()
+    }
+
+    fn dst_addr<B>(&self, _req: &Request<B>) -> Option<SocketAddr> {
+        todo!()
+    }
+
+    fn dst_labels<B>(&self, _req: &Request<B>) -> Option<Labels> {
+        todo!()
+    }
+
+    fn dst_tls<B>(&self, _req: &Request<B>) -> ConditionalClientTls {
+        todo!()
+    }
+
+    fn route_labels<B>(&self, _req: &Request<B>) -> Option<Labels> {
+        todo!()
+    }
+
+    fn is_outbound<B>(&self, _req: &Request<B>) -> bool {
+        todo!()
     }
 }
 

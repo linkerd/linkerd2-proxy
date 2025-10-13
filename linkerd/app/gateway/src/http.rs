@@ -1,5 +1,6 @@
 use super::Gateway;
 use inbound::{policy::Permitted, GatewayAddr, GatewayDomainInvalid};
+use linkerd_app_core::proxy::tap;
 use linkerd_app_core::{
     metrics::ServerLabel,
     profiles,
@@ -76,7 +77,7 @@ impl Gateway {
         T: svc::Param<Option<watch::Receiver<profiles::Profile>>>,
         T: svc::Param<http::Variant>,
         T: svc::Param<http::normalize_uri::DefaultAuthority>,
-        T: Clone + Send + Sync + Unpin + 'static,
+        T: tap::Inspect + Clone + Send + Sync + Unpin + 'static,
         // Endpoint resolution.
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
         R::Resolution: Unpin,

@@ -2,9 +2,13 @@ use crate::{
     policy::{self, AllowPolicy, Protocol, ServerPermit},
     Inbound,
 };
+use http::Request;
+use linkerd_app_core::proxy::tap::{Inspect, Labels};
+use linkerd_app_core::tls::{ConditionalClientTls, ConditionalServerTls, NoClientTls};
 use linkerd_app_core::{
     identity, io,
     metrics::{prom, ServerLabel},
+    profiles,
     proxy::http,
     svc, tls,
     transport::{
@@ -14,6 +18,7 @@ use linkerd_app_core::{
     },
     Error, Infallible,
 };
+use std::net::SocketAddr;
 use std::{fmt::Debug, time};
 use tracing::info;
 
@@ -433,6 +438,38 @@ impl svc::Param<transport::labels::Key> for Http {
             self.tls.orig_dst_addr.into(),
             self.tls.policy.server_label(),
         )
+    }
+}
+
+impl Inspect for Http {
+    fn src_addr<B>(&self, _req: &Request<B>) -> Option<SocketAddr> {
+        Some(*self.tls.client_addr)
+    }
+
+    fn src_tls<B>(&self, _req: &Request<B>) -> ConditionalServerTls {
+        self.tls.status.clone()
+    }
+
+    fn dst_addr<B>(&self, _req: &Request<B>) -> Option<SocketAddr> {
+        Some(self.tls.orig_dst_addr.0)
+    }
+
+    fn dst_labels<B>(&self, _req: &Request<B>) -> Option<Labels> {
+        None
+    }
+
+    fn dst_tls<B>(&self, _req: &Request<B>) -> ConditionalClientTls {
+        ConditionalClientTls::None(NoClientTls::Loopback)
+    }
+
+    fn route_labels<B>(&self, req: &Request<B>) -> Option<Labels> {
+        req.extensions()
+            .get::<profiles::http::Route>()
+            .map(|r| r.labels().clone())
+    }
+
+    fn is_outbound<B>(&self, _req: &Request<B>) -> bool {
+        false
     }
 }
 

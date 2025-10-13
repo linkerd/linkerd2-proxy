@@ -1,6 +1,7 @@
 use super::set_identity_header::NewSetIdentityHeader;
 use crate::{policy, Inbound};
 pub use linkerd_app_core::proxy::http::{normalize_uri, Variant};
+use linkerd_app_core::proxy::tap;
 use linkerd_app_core::{
     config::ProxyConfig,
     errors, http_tracing, io,
@@ -37,7 +38,7 @@ impl<H> Inbound<H> {
             + Param<ServerLabel>
             + Param<OrigDstAddr>
             + Param<Remote<ClientAddr>>,
-        T: Clone + Send + Sync + Unpin + 'static,
+        T: tap::Inspect + Clone + Send + Sync + Unpin + 'static,
         // Inner HTTP stack.
         H: svc::NewService<T, Service = HSvc> + Clone + Send + Sync + Unpin + 'static,
         HSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
@@ -78,9 +79,10 @@ impl<H> Inbound<H> {
                 .push_on_service(svc::MapErr::layer_boxed())
                 .push(rt.metrics.http_errors.to_layer())
                 .push(ServerRescue::layer())
-                .push_on_service(http_tracing::server(
+                .push(http_tracing::server(
                     rt.span_sink.clone(),
                     super::trace_labels(),
+                    rt.tap.get_traces(),
                 ))
                 // Record when an HTTP/1 URI was in absolute form
                 .push_on_service(http::normalize_uri::MarkAbsoluteForm::layer())

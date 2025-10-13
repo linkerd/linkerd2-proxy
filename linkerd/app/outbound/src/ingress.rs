@@ -1,4 +1,7 @@
 use crate::{http, opaq, policy, Discovery, Outbound, ParentRef};
+use http::Request;
+use linkerd_app_core::proxy::tap::{Inspect, Labels};
+use linkerd_app_core::tls::{ConditionalClientTls, ConditionalServerTls};
 use linkerd_app_core::{
     errors, io, profiles,
     proxy::{
@@ -11,6 +14,7 @@ use linkerd_app_core::{
     Addr, Error, Infallible, NameAddr, Result,
 };
 use once_cell::sync::Lazy;
+use std::net::SocketAddr;
 use std::{fmt::Debug, hash::Hash, sync::Arc};
 use thiserror::Error;
 use tokio::sync::watch;
@@ -424,6 +428,38 @@ impl svc::Param<http::normalize_uri::DefaultAuthority> for Http<Logical> {
 impl svc::Param<watch::Receiver<http::Routes>> for Http<Logical> {
     fn param(&self) -> watch::Receiver<http::Routes> {
         self.parent.routes.clone()
+    }
+}
+
+impl Inspect for Http<Logical> {
+    fn src_addr<B>(&self, _req: &Request<B>) -> Option<SocketAddr> {
+        todo!()
+    }
+
+    fn src_tls<B>(&self, _req: &Request<B>) -> ConditionalServerTls {
+        todo!()
+    }
+
+    fn dst_addr<B>(&self, _req: &Request<B>) -> Option<SocketAddr> {
+        todo!()
+    }
+
+    fn dst_labels<B>(&self, _req: &Request<B>) -> Option<Labels> {
+        todo!()
+    }
+
+    fn dst_tls<B>(&self, _req: &Request<B>) -> ConditionalClientTls {
+        todo!()
+    }
+
+    fn route_labels<B>(&self, req: &Request<B>) -> Option<Labels> {
+        req.extensions()
+            .get::<profiles::http::Route>()
+            .map(|r| r.labels().clone())
+    }
+
+    fn is_outbound<B>(&self, _req: &Request<B>) -> bool {
+        true
     }
 }
 

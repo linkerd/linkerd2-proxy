@@ -195,6 +195,8 @@ impl Config {
             })
         }?;
 
+        let tap_registry = tap.registry();
+
         debug!(config = ?trace_collector, "Building trace collector");
         let trace_collector = {
             let control_metrics = if let Some(prefix) = trace_collector.metrics_prefix() {
@@ -207,14 +209,21 @@ impl Config {
             let client_metrics = metrics.control.clone();
             let otel_metrics = metrics.opentelemetry;
             info_span!("tracing").in_scope(|| {
-                trace_collector.build(identity, dns, otel_metrics, control_metrics, client_metrics)
+                trace_collector.build(
+                    identity,
+                    dns,
+                    otel_metrics,
+                    control_metrics,
+                    client_metrics,
+                    tap_registry.get_traces(),
+                )
             })
         }?;
 
         let runtime = ProxyRuntime {
             identity: identity.receiver(),
             metrics: metrics.proxy,
-            tap: tap.registry(),
+            tap: tap_registry,
             span_sink: trace_collector.span_sink(),
             drain: drain_rx.clone(),
         };

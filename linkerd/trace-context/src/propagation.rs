@@ -34,6 +34,10 @@ impl TraceContext {
     }
 }
 
+pub fn generate_trace_context() -> TraceContext {
+    w3c::generate_w3c_trace_context()
+}
+
 /// Given an http request, attempt to unpack a distributed tracing context from
 /// the headers. Only w3c and b3 context propagation formats are supported. The
 /// former is tried first, and if no headers are present, function will attempt

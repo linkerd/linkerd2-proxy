@@ -11,6 +11,7 @@ futures = { version = "0.3", default-features = false }
 http-body = { workspace = true }
 linkerd-error = { path = "../error" }
 linkerd-metrics = { path = "../metrics" }
+linkerd-proxy-tap = { path = "../proxy/tap" }
 linkerd-trace-context = { path = "../trace-context" }
 opentelemetry = { version = "0.30", default-features = false, features = ["trace"] }
 opentelemetry_sdk = { version = "0.30", default-features = false, features = ["trace"] }

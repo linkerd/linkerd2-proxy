@@ -14,6 +14,7 @@ hex = "0.4"
 http = { workspace = true }
 linkerd-error = { path = "../error" }
 linkerd-stack = { path = "../stack" }
+linkerd-proxy-tap = { path = "../proxy/tap" }
 rand = "0.9"
 thiserror = "2"
 tower = { workspace = true, default-features = false, features = ["util"] }

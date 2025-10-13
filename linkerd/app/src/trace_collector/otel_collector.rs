@@ -1,4 +1,5 @@
 use super::EnabledCollector;
+use linkerd_app_core::proxy::tap::TapTraces;
 use linkerd_app_core::{control::ControlAddr, proxy::http::Body, Error};
 use linkerd_opentelemetry::{
     self as opentelemetry, metrics,
@@ -26,6 +27,7 @@ pub(super) fn create_collector<S>(
     attributes: OtelCollectorAttributes,
     svc: S,
     legacy_metrics: metrics::Registry,
+    tap: TapTraces,
 ) -> EnabledCollector
 where
     S: GrpcService<TonicBody> + Clone + Send + 'static,
@@ -67,7 +69,7 @@ where
 
     let addr = addr.clone();
     let task = Box::pin(
-        opentelemetry::export_spans(svc, spans_rx, resources, legacy_metrics)
+        opentelemetry::export_spans(svc, spans_rx, resources, legacy_metrics, tap)
             .instrument(tracing::debug_span!("opentelemetry", peer.addr = %addr).or_current()),
     );
 

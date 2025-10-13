@@ -7,6 +7,7 @@ use self::metrics::Registry;
 use futures::stream::{Stream, StreamExt};
 use http_body::Body;
 use linkerd_error::Error;
+use linkerd_proxy_tap::TapTraces;
 use linkerd_trace_context::{self as trace_context, export::ExportSpan};
 pub use opentelemetry as otel;
 use opentelemetry::{
@@ -40,6 +41,7 @@ pub async fn export_spans<T, S>(
     spans: S,
     resource: ResourceAttributesWithSchema,
     metrics: Registry,
+    tap: TapTraces,
 ) where
     T: GrpcService<TonicBody> + Clone,
     T::Error: Into<Error>,
@@ -48,7 +50,7 @@ pub async fn export_spans<T, S>(
     S: Stream<Item = ExportSpan> + Unpin,
 {
     debug!("Span exporter running");
-    SpanExporter::new(client, spans, resource, metrics)
+    SpanExporter::new(client, spans, resource, metrics, tap)
         .run()
         .await
 }
@@ -59,6 +61,7 @@ struct SpanExporter<T, S> {
     spans: S,
     resource: ResourceAttributesWithSchema,
     metrics: Registry,
+    tap: TapTraces,
 }
 
 #[derive(Debug)]
@@ -77,12 +80,19 @@ where
     const MAX_BATCH_SIZE: usize = 1000;
     const BATCH_INTERVAL: time::Duration = time::Duration::from_secs(10);
 
-    fn new(client: T, spans: S, resource: ResourceAttributesWithSchema, metrics: Registry) -> Self {
+    fn new(
+        client: T,
+        spans: S,
+        resource: ResourceAttributesWithSchema,
+        metrics: Registry,
+        tap: TapTraces,
+    ) -> Self {
         Self {
             client,
             spans,
             resource,
             metrics,
+            tap,
         }
     }
 
@@ -92,6 +102,7 @@ where
             mut spans,
             resource,
             mut metrics,
+            mut tap,
         } = self;
 
         // Holds the batch of pending spans. Cleared as the spans are flushed.
@@ -131,7 +142,7 @@ where
             // simultaneously.
             tokio::select! {
                 _ = recv_future => {}
-                res = Self::export(&tx, &mut spans, &resource, &mut accum) => match res {
+                res = Self::export(&tx, &mut spans, &resource, &mut accum, &mut tap) => match res {
                     // The export stream closed; reconnect.
                     Ok(()) => {},
                     // No more spans.
@@ -149,10 +160,11 @@ where
         spans: &mut S,
         resource: &ResourceAttributesWithSchema,
         accum: &mut Vec<ResourceSpans>,
+        tap_traces: &mut TapTraces,
     ) -> Result<(), SpanRxClosed> {
         loop {
             // Collect spans into a batch.
-            let collect = Self::collect_batch(spans, resource, accum).await;
+            let collect = Self::collect_batch(spans, resource, accum, tap_traces).await;
 
             // If we collected spans, flush them.
             if !accum.is_empty() {
@@ -191,11 +203,17 @@ where
         span_stream: &mut S,
         resource: &ResourceAttributesWithSchema,
         accum: &mut Vec<ResourceSpans>,
+        tap_traces: &mut TapTraces,
     ) -> Result<(), SpanRxClosed> {
         let mut input_accum: Vec<SpanData> = vec![];
 
-        let mut interval =
-            time::interval_at(Instant::now() + Self::BATCH_INTERVAL, Self::BATCH_INTERVAL);
+        let interval = tap_traces
+            .borrow_and_update()
+            .as_ref()
+            .and_then(|t| t.inner.report_interval)
+            .unwrap_or(Self::BATCH_INTERVAL);
+
+        let mut interval = time::interval_at(Instant::now() + interval, interval);
         interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
         let res = loop {
@@ -222,6 +240,15 @@ where
                     }
                     None => break Err(SpanRxClosed),
                 },
+
+                _ = tap_traces.changed() => {
+                    let interval_time = tap_traces
+                        .borrow_and_update()
+                        .as_ref()
+                        .and_then(|t| t.inner.report_interval)
+                        .unwrap_or(Self::BATCH_INTERVAL);
+                    interval = time::interval(interval_time);
+                }
 
                 // Don't hold spans indefinitely. Return if we hit an interval tick and spans have
                 // been collected.

@@ -24,10 +24,12 @@ linkerd-stack = { path = "../../stack" }
 linkerd-tls = { path = "../../tls" }
 parking_lot = "0.12"
 prost-types = { workspace = true }
+rand = "0.9"
 thiserror = "2"
 tokio = { version = "1", features = ["time"] }
 tower = { workspace = true, default-features = false }
 tonic = { workspace = true, default-features = false }
+tonic-reflection = "0.13"
 tracing = { workspace = true }
 pin-project = "1"
 

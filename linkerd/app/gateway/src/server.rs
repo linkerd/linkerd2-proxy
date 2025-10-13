@@ -1,4 +1,8 @@
 use crate::Gateway;
+use http::Request;
+use linkerd_app_core::proxy::tap;
+use linkerd_app_core::proxy::tap::Labels;
+use linkerd_app_core::tls::{ConditionalClientTls, ConditionalServerTls};
 use linkerd_app_core::{
     io, profiles, proxy::http, svc, tls, transport::addrs::*, transport_header::SessionProtocol,
     Addr, Error,
@@ -6,6 +10,7 @@ use linkerd_app_core::{
 use linkerd_app_inbound::{self as inbound, GatewayAddr, GatewayDomainInvalid};
 use linkerd_app_outbound::{self as outbound};
 use std::fmt::Debug;
+use std::net::SocketAddr;
 use tokio::sync::watch;
 
 /// Target for HTTP stacks.
@@ -252,5 +257,35 @@ where
 {
     fn param(&self) -> inbound::policy::ServerLabel {
         (***self).param().server_label()
+    }
+}
+
+impl<T> tap::Inspect for Http<T> {
+    fn src_addr<B>(&self, _req: &Request<B>) -> Option<SocketAddr> {
+        todo!()
+    }
+
+    fn src_tls<B>(&self, _req: &Request<B>) -> ConditionalServerTls {
+        todo!()
+    }
+
+    fn dst_addr<B>(&self, _req: &Request<B>) -> Option<SocketAddr> {
+        todo!()
+    }
+
+    fn dst_labels<B>(&self, _req: &Request<B>) -> Option<Labels> {
+        todo!()
+    }
+
+    fn dst_tls<B>(&self, _req: &Request<B>) -> ConditionalClientTls {
+        todo!()
+    }
+
+    fn route_labels<B>(&self, _req: &Request<B>) -> Option<Labels> {
+        todo!()
+    }
+
+    fn is_outbound<B>(&self, _req: &Request<B>) -> bool {
+        todo!()
     }
 }

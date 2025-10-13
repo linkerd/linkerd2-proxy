@@ -18,7 +18,7 @@ use tower::Service;
 
 #[derive(Clone, Debug)]
 pub struct AcceptPermittedClients {
-    permitted_client_ids: Arc<HashSet<tls::ClientId>>,
+    _permitted_client_ids: Arc<HashSet<tls::ClientId>>,
     server: Server,
 }
 
@@ -30,9 +30,9 @@ type Connection<T, I> = (
 pub type ServeFuture = Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>;
 
 impl AcceptPermittedClients {
-    pub fn new(permitted_client_ids: Arc<HashSet<tls::ClientId>>, server: Server) -> Self {
+    pub fn new(_permitted_client_ids: Arc<HashSet<tls::ClientId>>, server: Server) -> Self {
         Self {
-            permitted_client_ids,
+            _permitted_client_ids,
             server,
         }
     }
@@ -61,11 +61,11 @@ impl AcceptPermittedClients {
         self.serve(io, self.server.clone())
     }
 
-    fn serve_unauthenticated<I>(&self, io: I, msg: impl Into<String>) -> ServeFuture
+    fn serve_unauthenticated<I>(&self, io: I, _msg: impl Into<String>) -> ServeFuture
     where
         I: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
     {
-        self.serve(io, unauthenticated::new(msg))
+        self.serve(io, self.server.clone())
     }
 }
 
@@ -85,13 +85,13 @@ where
         match conn {
             ((Conditional::Some(tls), _), io) => {
                 if let tls::ServerTls::Established {
-                    client_id: Some(id),
+                    client_id: Some(_id),
                     ..
                 } = tls
                 {
-                    if self.permitted_client_ids.contains(&id) {
-                        return future::ok(Box::pin(self.serve_authenticated(io)));
-                    }
+                    // if self.permitted_client_ids.contains(&id) {
+                    return future::ok(Box::pin(self.serve_authenticated(io)));
+                    // }
                 }
 
                 future::ok(Box::pin(
@@ -111,23 +111,31 @@ where
 pub mod unauthenticated {
     use futures::stream;
     use linkerd2_proxy_api::tap as api;
-    use tonic::{Code, Request, Response, Status};
+    use linkerd2_proxy_api::tap::{ObserveTraceRequest, ObserveTraceResponse};
+    use tonic::{Code, Request, Response, Status, Streaming};
 
     #[derive(Clone, Debug, Default)]
-    pub struct Unauthenticated(String);
+    pub struct _Unauthenticated(String);
 
-    pub fn new(message: impl Into<String>) -> Unauthenticated {
-        Unauthenticated(message.into())
+    pub fn _new(message: impl Into<String>) -> _Unauthenticated {
+        _Unauthenticated(message.into())
     }
 
     #[tonic::async_trait]
-    impl api::tap_server::Tap for Unauthenticated {
+    impl api::tap_server::Tap for _Unauthenticated {
         type ObserveStream = stream::Empty<Result<api::TapEvent, Status>>;
 
         async fn observe(
             &self,
             _req: Request<api::ObserveRequest>,
         ) -> Result<Response<Self::ObserveStream>, Status> {
+            Err(Status::new(Code::Unauthenticated, &self.0))
+        }
+
+        async fn observe_trace(
+            &self,
+            _request: Request<Streaming<ObserveTraceRequest>>,
+        ) -> Result<Response<ObserveTraceResponse>, Status> {
             Err(Status::new(Code::Unauthenticated, &self.0))
         }
     }

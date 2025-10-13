@@ -117,9 +117,10 @@ impl<T> Outbound<svc::ArcNewHttp<T, http::BoxBody>> {
                         .http_endpoint
                         .to_layer::<classify::Response, _, _>(),
                 )
-                .push_on_service(http_tracing::client(
+                .push(http_tracing::client(
                     rt.span_sink.clone(),
                     crate::trace_labels(),
+                    rt.tap.get_traces(),
                 ))
                 .push(NewRequireIdentity::layer())
                 .push(http::NewOverrideAuthority::layer(vec![

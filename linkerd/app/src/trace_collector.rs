@@ -1,3 +1,4 @@
+use linkerd_app_core::proxy::tap::TapTraces;
 use linkerd_app_core::{
     control, dns, http_tracing::SpanSink, identity, metrics::ControlHttp as HttpMetrics,
     opentelemetry, svc::NewService,
@@ -60,6 +61,7 @@ impl Config {
         legacy_otel_metrics: opentelemetry::metrics::Registry,
         control_metrics: control::Metrics,
         client_metrics: HttpMetrics,
+        tap: TapTraces,
     ) -> Result<TraceCollector, Error> {
         match self {
             Config::Disabled => Ok(TraceCollector::Disabled),
@@ -80,6 +82,7 @@ impl Config {
                         attributes,
                         svc,
                         legacy_otel_metrics,
+                        tap,
                     )
                 };
 
