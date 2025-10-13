@@ -10,7 +10,7 @@ use tonic::Code;
 /// A [`MkStreamLabel`] implementation for gRPC traffic.
 ///
 /// This generates [`LabelGrpcStatus`] labelers.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct MkLabelGrpcStatus;
 
 /// A [`StreamLabel`] implementation for gRPC traffic.
@@ -24,7 +24,7 @@ pub struct LabelGrpcStatus {
 /// A [`MkStreamLabel`] implementation for HTTP traffic.
 ///
 /// This generates [`LabelHttpStatus`] labelers.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct MkLabelHttpStatus;
 
 /// A [`StreamLabel`] implementation for HTTP traffic.

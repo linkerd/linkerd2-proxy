@@ -14,9 +14,10 @@ test-util = []
 
 [dependencies]
 bytes = { workspace = true }
-futures = { version = "0.3", default-features = false }
+futures = { version = "0.3", default-features = false, features = ["executor"] }
 http = { workspace = true }
 http-body = { workspace = true }
+http-body-util = { workspace = true }
 pin-project = "1"
 prometheus-client = { workspace = true }
 thiserror = "2"
@@ -28,3 +29,6 @@ linkerd-http-body-eos = { path = "../body-eos" }
 linkerd-http-box = { path = "../box" }
 linkerd-metrics = { path = "../../metrics" }
 linkerd-stack = { path = "../../stack" }
+
+[dev-dependencies]
+linkerd-mock-http-body = { path = "../../mock/http-body" }

@@ -32,7 +32,7 @@ pub struct Params<L: MkStreamLabel, M> {
 
 #[derive(Clone, Debug, thiserror::Error)]
 #[error("request was cancelled before completion")]
-pub struct RequestCancelled(());
+pub struct RequestCancelled(pub ());
 
 /// Instruments an `N`-typed [`svc::NewService<T>`] with metrics.
 ///
