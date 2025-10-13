@@ -6,7 +6,7 @@ use linkerd_app_core::{
 };
 use linkerd_http_prom::{
     body_data::request::{BodyDataMetrics, NewRecordBodyData, RequestBodyFamilies},
-    record_response,
+    record_response, status,
     stream_label::{
         error::LabelError,
         status::{LabelGrpcStatus, LabelHttpStatus},
@@ -39,6 +39,7 @@ where
 {
     pub(super) retry: retry::RouteRetryMetrics,
     pub(super) requests: RequestMetrics<R>,
+    pub(super) statuses: status::StatusMetrics<R::StatusLabels>,
     pub(super) backend: backend::RouteBackendMetrics<B>,
     pub(super) body_data: RequestBodyFamilies<labels::Route>,
 }
@@ -153,6 +154,7 @@ where
         Self {
             requests: Default::default(),
             backend: Default::default(),
+            statuses: Default::default(),
             retry: Default::default(),
             body_data: Default::default(),
         }
@@ -172,6 +174,7 @@ where
         Self {
             requests: self.requests.clone(),
             backend: self.backend.clone(),
+            statuses: self.statuses.clone(),
             retry: self.retry.clone(),
             body_data: self.body_data.clone(),
         }
@@ -195,11 +198,16 @@ where
             Self::RESPONSE_BUCKETS.iter().copied(),
         );
 
+        let statuses = status::StatusMetrics::register(
+            reg.sub_registry_with_prefix("request"),
+            "Completed request-response streams",
+        );
         let retry = retry::RouteRetryMetrics::register(reg.sub_registry_with_prefix("retry"));
         let body_data = RequestBodyFamilies::register(reg);
 
         Self {
             requests,
+            statuses,
             backend,
             retry,
             body_data,
