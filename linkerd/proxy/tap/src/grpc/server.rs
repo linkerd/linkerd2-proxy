@@ -10,6 +10,7 @@ use linkerd_conditional::Conditional;
 use linkerd_proxy_http::HasH2Reason;
 use linkerd_tls as tls;
 use pin_project::pin_project;
+use std::collections::HashMap;
 use std::iter;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -64,16 +65,21 @@ pub struct TapTrace {
 }
 
 impl TapTrace {
-    pub fn matches<B, I: Inspect>(&self, req: &http::Request<B>, inspect: &I) -> bool {
-        if !self.inner.matcher.matches(req, inspect) {
-            return false;
+    pub fn matches<B, I: Inspect>(&self, req: &http::Request<B>, inspect: &I) -> Vec<String> {
+        let mut matched_ids = vec![];
+        for (k, m) in &self.inner.matchers {
+            if m.matches(req, inspect) {
+                matched_ids.push(k.clone());
+            }
         }
 
         if let Some(sample) = &self.inner.sample_percent {
-            return rand::distr::Distribution::sample(sample, &mut rand::rng());
+            if !rand::distr::Distribution::sample(sample, &mut rand::rng()) {
+                return vec![];
+            }
         }
 
-        true
+        matched_ids
     }
 }
 
@@ -81,7 +87,7 @@ impl TapTrace {
 pub struct TapTraceInner {
     sample_percent: Option<rand::distr::Bernoulli>,
     pub report_interval: Option<Duration>,
-    matcher: Match,
+    matchers: HashMap<String, Match>,
 }
 
 #[derive(Debug)]
@@ -230,7 +236,12 @@ impl api::tap_server::Tap for Server {
                 Ok(Some(msg)) => msg,
             };
 
-            let match_ = match Match::try_new(msg.r#match) {
+            let match_ = match msg
+                .matches
+                .into_iter()
+                .map(|m| Match::try_new(m.r#match).map(|mr| (m.id, mr)))
+                .collect::<Result<_, _>>()
+            {
                 Ok(m) => m,
                 Err(e) => {
                     warn!(err = %e, "invalid tap request");
@@ -252,7 +263,7 @@ impl api::tap_server::Tap for Server {
                             .expect("Must be in range")
                     }),
                     report_interval,
-                    matcher: match_,
+                    matchers: match_,
                 }),
             };
             self.registry.set_trace(trace);

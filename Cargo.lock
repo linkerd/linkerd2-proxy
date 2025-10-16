@@ -2634,7 +2634,7 @@ dependencies = [
 [[package]]
 name = "linkerd2-proxy-api"
 version = "0.17.0"
-source = "git+https://github.com/linkerd/linkerd2-proxy-api?rev=e1f9077543d3ffbbdbb66a1ab4ea41a28750fcc3#e1f9077543d3ffbbdbb66a1ab4ea41a28750fcc3"
+source = "git+https://github.com/linkerd/linkerd2-proxy-api?branch=sfleen%2Ftap-v2#f127bae5c204b40e4d9be6e4594e766bacf00680"
 dependencies = [
  "h2",
  "http",

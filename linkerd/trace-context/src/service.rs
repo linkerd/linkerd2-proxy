@@ -72,8 +72,8 @@ impl<K: Clone, I, S> TraceContext<K, I, S> {
     /// The OpenTelemetry spec defines the semantic conventions that HTTP
     /// services should use for the labels included in traces:
     /// https://opentelemetry.io/docs/specs/semconv/http/http-spans/
-    fn request_labels<B>(req: &http::Request<B>) -> HashMap<&'static str, String> {
-        let mut labels = HashMap::with_capacity(13);
+    fn request_labels<B>(req: &http::Request<B>, ids: Vec<String>) -> HashMap<&'static str, String> {
+        let mut labels = HashMap::with_capacity(14);
         labels.insert("http.request.method", format!("{}", req.method()));
 
         let url = req.uri();
@@ -109,6 +109,10 @@ impl<K: Clone, I, S> TraceContext<K, I, S> {
                     }
                 }
             }
+        }
+
+        if !ids.is_empty() {
+            labels.insert("linkerd.tap.id", ids.join(","));
         }
 
         Self::populate_header_values(&mut labels, req);
@@ -208,11 +212,14 @@ where
     fn call(&mut self, mut req: http::Request<ReqB>) -> Self::Future {
         if self.sink.is_enabled() {
             let mut context = propagation::unpack_trace_context(&req);
+            let mut ids = vec![];
             if context.is_none() {
                 if let Some(tap) = self.tap.borrow().clone() {
-                    if tap.matches(&req, &self.inspect) {
+                    let matched_ids = tap.matches(&req, &self.inspect);
+                    if !matched_ids.is_empty() {
                         context = Some(propagation::generate_trace_context());
                     }
+                    ids = matched_ids;
                 }
             }
 
@@ -225,7 +232,7 @@ where
                 if context.is_sampled() {
                     // If the request has been marked for sampling, record its metadata.
                     let start = SystemTime::now();
-                    let req_labels = Self::request_labels(&req);
+                    let req_labels = Self::request_labels(&req, ids);
                     let mut sink = self.sink.clone();
                     let span_name = req.uri().path().to_owned();
                     return Either::Right(Box::pin(self.inner.call(req).map_ok(move |rsp| {

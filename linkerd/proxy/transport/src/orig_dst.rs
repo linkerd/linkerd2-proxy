@@ -6,7 +6,10 @@ use futures::prelude::*;
 use linkerd_error::Result;
 use linkerd_io as io;
 use linkerd_stack::Param;
-use std::{net::SocketAddr, pin::Pin};
+#[cfg(not(target_os = "macos"))]
+use std::net::SocketAddr;
+use std::pin::Pin;
+use socket2::SockAddr;
 use tokio::net::TcpStream;
 
 #[derive(Copy, Clone, Debug, Default)]
@@ -99,6 +102,7 @@ fn orig_dst(sock: TcpStream, client_addr: ClientAddr) -> io::Result<(OrigDstAddr
         socket2::Socket::from(stream)
     };
 
+    #[cfg(not(target_os = "macos"))]
     let orig_dst = match client_addr {
         // IPv4-mapped IPv6 addresses are unwrapped by BindTcp::bind() and received here as
         // SocketAddr::V4. We must call getsockopt with IPv4 constants (via
@@ -106,6 +110,9 @@ fn orig_dst(sock: TcpStream, client_addr: ClientAddr) -> io::Result<(OrigDstAddr
         ClientAddr(SocketAddr::V4(_)) => sock.original_dst_v4()?,
         ClientAddr(SocketAddr::V6(_)) => sock.original_dst_v6()?,
     };
+
+    #[cfg(target_os = "macos")]
+    let orig_dst: SockAddr = client_addr.0.into();
 
     let orig_dst = orig_dst.as_socket().ok_or(io::Error::new(
         io::ErrorKind::InvalidInput,

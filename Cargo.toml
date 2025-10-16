@@ -132,4 +132,5 @@ features = ["tokio", "tracing"]
 [workspace.dependencies.linkerd2-proxy-api]
 #version = "0.17.0"
 git = "https://github.com/linkerd/linkerd2-proxy-api"
-rev = "e1f9077543d3ffbbdbb66a1ab4ea41a28750fcc3"
+branch = "sfleen/tap-v2"
+#rev = "e1f9077543d3ffbbdbb66a1ab4ea41a28750fcc3"
