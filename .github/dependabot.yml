@@ -43,6 +43,10 @@ updates:
       opentelemetry:
         patterns:
           - "opentelemetry*"
+      regex:
+        patterns:
+          - "regex"
+          - "regex-*"
       rustls:
         patterns:
           - "tokio-rustls"
