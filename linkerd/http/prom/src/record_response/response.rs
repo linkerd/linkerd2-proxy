@@ -1,3 +1,5 @@
+use super::{DurationFamily, MkDurationHistogram};
+use crate::stream_label::{LabelSet, MkStreamLabel};
 use http_body::Frame;
 use linkerd_error::Error;
 use linkerd_http_box::BoxBody;
@@ -14,8 +16,6 @@ use std::{
     task::{Context, Poll},
 };
 use tokio::{sync::oneshot, time};
-
-use super::{DurationFamily, MkDurationHistogram, MkStreamLabel};
 
 #[derive(Debug)]
 pub struct ResponseMetrics<DurL, StatL> {
@@ -104,6 +104,8 @@ impl<DurL, StatL> Clone for ResponseMetrics<DurL, StatL> {
 impl<M, S> svc::Service<http::Request<BoxBody>> for RecordResponseDuration<M, S>
 where
     M: MkStreamLabel,
+    M::DurationLabels: LabelSet,
+    M::StatusLabels: LabelSet,
     S: svc::Service<http::Request<BoxBody>, Response = http::Response<BoxBody>, Error = Error>,
 {
     type Response = http::Response<BoxBody>;
