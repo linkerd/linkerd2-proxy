@@ -7,7 +7,11 @@ use linkerd_app_core::{
 use linkerd_http_prom::{
     body_data::request::{BodyDataMetrics, NewRecordBodyData, RequestBodyFamilies},
     record_response,
-    stream_label::{error::LabelError, status::LabelHttpStatus, LabelSet, StreamLabel},
+    stream_label::{
+        error::LabelError,
+        status::{LabelGrpcStatus, LabelHttpStatus},
+        LabelSet, StreamLabel,
+    },
 };
 
 pub use linkerd_http_prom::stream_label::MkStreamLabel;
@@ -54,11 +58,12 @@ pub struct LabelHttpRsp<L> {
 #[derive(Clone, Debug)]
 pub struct LabelGrpcRsp<L> {
     parent: L,
-    status: Option<tonic::Code>,
-    error: Option<labels::Error>,
+    status: LabelGrpcStatus,
+    error: LabelGrpcError,
 }
 
 type LabelHttpError = LabelError<labels::HttpRsp>;
+type LabelGrpcError = LabelError<labels::GrpcRsp>;
 
 pub type LabelHttpRouteRsp = LabelHttpRsp<labels::Route>;
 pub type LabelGrpcRouteRsp = LabelGrpcRsp<labels::Route>;
@@ -316,8 +321,8 @@ impl<P> From<P> for LabelGrpcRsp<P> {
     fn from(parent: P) -> Self {
         Self {
             parent,
-            status: None,
-            error: None,
+            status: Default::default(),
+            error: Default::default(),
         }
     }
 }
@@ -330,35 +335,37 @@ where
     type DurationLabels = P;
 
     fn init_response<B>(&mut self, rsp: &http::Response<B>) {
-        self.status = rsp
-            .headers()
-            .get("grpc-status")
-            .map(|v| tonic::Code::from_bytes(v.as_bytes()));
+        let Self {
+            parent: _,
+            status,
+            error,
+        } = self;
+        status.init_response(rsp);
+        error.init_response(rsp);
     }
 
     fn end_response(&mut self, res: Result<Option<&http::HeaderMap>, &linkerd_app_core::Error>) {
-        match res {
-            Ok(Some(trailers)) => {
-                self.status = trailers
-                    .get("grpc-status")
-                    .map(|v| tonic::Code::from_bytes(v.as_bytes()));
-            }
-            Ok(None) => {}
-            Err(e) => match labels::Error::new_or_status(e) {
-                Ok(l) => self.error = Some(l),
-                Err(code) => self.status = Some(tonic::Code::from_i32(i32::from(code))),
-            },
-        }
+        let Self {
+            parent: _,
+            status,
+            error,
+        } = self;
+        status.end_response(res);
+        error.end_response(res);
     }
 
     fn status_labels(&self) -> Self::StatusLabels {
-        labels::Rsp(
-            self.parent.clone(),
-            labels::GrpcRsp {
-                status: self.status,
-                error: self.error,
-            },
-        )
+        let Self {
+            parent,
+            status,
+            error,
+        } = self;
+
+        let error = error.status_labels();
+        let status = status.status_labels().map(labels::GrpcRsp::status);
+        let rsp = labels::GrpcRsp::default().apply(status).apply(error);
+
+        labels::Rsp(parent.clone(), rsp)
     }
 
     fn duration_labels(&self) -> Self::DurationLabels {
