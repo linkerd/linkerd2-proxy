@@ -4,7 +4,7 @@ use linkerd_http_prom::{
     body_data::response::{BodyDataMetrics, NewRecordBodyData, ResponseBodyFamilies},
     count_reqs::{NewCountRequests, RequestCount, RequestCountFamilies},
     record_response::{self, NewResponseDuration},
-    stream_label::StreamLabel,
+    stream_label::{LabelSet, StreamLabel},
 };
 
 pub use super::super::metrics::*;
@@ -14,7 +14,12 @@ pub use linkerd_http_prom::stream_label::MkStreamLabel;
 mod tests;
 
 #[derive(Debug)]
-pub struct RouteBackendMetrics<L: StreamLabel> {
+pub struct RouteBackendMetrics<L>
+where
+    L: StreamLabel,
+    L::DurationLabels: LabelSet,
+    L::StatusLabels: LabelSet,
+{
     requests: RequestCountFamilies<labels::RouteBackend>,
     responses: ResponseMetrics<L>,
     body_metrics: ResponseBodyFamilies<labels::RouteBackend>,
@@ -39,6 +44,8 @@ pub fn layer<T, N>(
 > + Clone
 where
     T: MkStreamLabel,
+    T::DurationLabels: LabelSet,
+    T::StatusLabels: LabelSet,
     N: svc::NewService<T>,
 {
     let RouteBackendMetrics {
@@ -66,7 +73,12 @@ pub struct ExtractRecordBodyDataParams(ResponseBodyFamilies<labels::RouteBackend
 
 // === impl RouteBackendMetrics ===
 
-impl<L: StreamLabel> RouteBackendMetrics<L> {
+impl<L> RouteBackendMetrics<L>
+where
+    L: StreamLabel,
+    L::DurationLabels: LabelSet,
+    L::StatusLabels: LabelSet,
+{
     pub fn register(reg: &mut prom::Registry, histo: impl IntoIterator<Item = f64>) -> Self {
         let requests = RequestCountFamilies::register(reg);
         let responses = record_response::ResponseMetrics::register(reg, histo);
@@ -102,7 +114,12 @@ impl<L: StreamLabel> RouteBackendMetrics<L> {
     }
 }
 
-impl<L: StreamLabel> Default for RouteBackendMetrics<L> {
+impl<L> Default for RouteBackendMetrics<L>
+where
+    L: StreamLabel,
+    L::DurationLabels: LabelSet,
+    L::StatusLabels: LabelSet,
+{
     fn default() -> Self {
         Self {
             requests: Default::default(),
@@ -112,7 +129,12 @@ impl<L: StreamLabel> Default for RouteBackendMetrics<L> {
     }
 }
 
-impl<L: StreamLabel> Clone for RouteBackendMetrics<L> {
+impl<L> Clone for RouteBackendMetrics<L>
+where
+    L: StreamLabel,
+    L::DurationLabels: LabelSet,
+    L::StatusLabels: LabelSet,
+{
     fn clone(&self) -> Self {
         Self {
             requests: self.requests.clone(),

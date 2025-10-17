@@ -2,6 +2,7 @@ use super::super::Concrete;
 use crate::{ParentRef, RouteRef};
 use linkerd_app_core::{classify, proxy::http, svc, Addr, Error, Result};
 use linkerd_distribute as distribute;
+use linkerd_http_prom::stream_label::LabelSet;
 use linkerd_http_route as http_route;
 use linkerd_proxy_client_policy as policy;
 use std::{fmt::Debug, hash::Hash, sync::Arc};
@@ -88,9 +89,13 @@ where
     Self: svc::Param<classify::Request>,
     Self: svc::Param<extensions::Params>,
     Self: metrics::MkStreamLabel,
+    <Self as metrics::MkStreamLabel>::DurationLabels: LabelSet,
+    <Self as metrics::MkStreamLabel>::StatusLabels: LabelSet,
     Self: svc::ExtractParam<metrics::labels::Route, http::Request<http::BoxBody>>,
     MatchedBackend<T, M, F>: filters::Apply,
     MatchedBackend<T, M, F>: metrics::MkStreamLabel,
+    <MatchedBackend<T, M, F> as metrics::MkStreamLabel>::DurationLabels: LabelSet,
+    <MatchedBackend<T, M, F> as metrics::MkStreamLabel>::StatusLabels: LabelSet,
 {
     /// Builds a route stack that applies policy filters to requests and
     /// distributes requests over each route's backends. These [`Concrete`]

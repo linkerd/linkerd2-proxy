@@ -1,7 +1,7 @@
 use super::{super::Concrete, filters};
 use crate::{BackendRef, ParentRef, RouteRef};
 use linkerd_app_core::{proxy::http, svc, Error, Result};
-use linkerd_http_prom::stream_label::MkStreamLabel;
+use linkerd_http_prom::stream_label::{LabelSet, MkStreamLabel};
 use linkerd_http_route as http_route;
 use linkerd_proxy_client_policy as policy;
 use std::{fmt::Debug, hash::Hash, sync::Arc};
@@ -69,6 +69,8 @@ where
     // Assert that filters can be applied.
     Self: filters::Apply,
     Self: metrics::MkStreamLabel,
+    <Self as metrics::MkStreamLabel>::DurationLabels: LabelSet,
+    <Self as metrics::MkStreamLabel>::StatusLabels: LabelSet,
 {
     /// Builds a stack that applies per-route-backend policy filters over an
     /// inner [`Concrete`] stack.
