@@ -11,6 +11,7 @@ use linkerd_app_core::{
 };
 use std::{collections::HashSet, pin::Pin};
 use tower::util::{service_fn, ServiceExt};
+use tracing::info;
 
 #[derive(Clone, Debug)]
 #[allow(clippy::large_enum_variant)]
@@ -72,6 +73,7 @@ impl Config {
                         move |meta: (tls::ConditionalServerTls, B::Addrs)| {
                             let service = service.clone();
                             service_fn(move |io| {
+                                info!("Accepting clients for tap");
                                 let fut = service.clone().oneshot((meta.clone(), io));
                                 Box::pin(async move {
                                     fut.err_into::<Error>().await?.err_into::<Error>().await

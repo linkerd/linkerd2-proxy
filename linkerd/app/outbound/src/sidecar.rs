@@ -19,7 +19,7 @@ use linkerd_app_core::{
 use std::fmt::Debug;
 use std::net::SocketAddr;
 use tokio::sync::watch;
-use tracing::info_span;
+use tracing::{info, info_span};
 
 /// A target type holding discovery information for a sidecar proxy.
 #[derive(Clone, Debug)]
@@ -343,7 +343,7 @@ impl std::hash::Hash for HttpSidecar {
 
 impl Inspect for HttpSidecar {
     fn src_addr<B>(&self, _req: &Request<B>) -> Option<SocketAddr> {
-        todo!()
+        None
     }
 
     fn src_tls<B>(&self, _req: &Request<B>) -> ConditionalServerTls {
@@ -355,17 +355,20 @@ impl Inspect for HttpSidecar {
     }
 
     fn dst_labels<B>(&self, _req: &Request<B>) -> Option<Labels> {
-        todo!()
+        None
     }
 
     fn dst_tls<B>(&self, _req: &Request<B>) -> ConditionalClientTls {
-        todo!()
+        ConditionalClientTls::None(linkerd_app_core::tls::NoClientTls::Loopback)
     }
 
     fn route_labels<B>(&self, req: &Request<B>) -> Option<Labels> {
-        req.extensions()
+        let labels = req
+            .extensions()
             .get::<profiles::http::Route>()
-            .map(|r| r.labels().clone())
+            .map(|r| r.labels().clone());
+        info!(?labels, "route labels");
+        labels
     }
 
     fn is_outbound<B>(&self, _req: &Request<B>) -> bool {

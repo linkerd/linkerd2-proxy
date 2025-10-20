@@ -9,7 +9,6 @@ use linkerd_stack::Param;
 #[cfg(not(target_os = "macos"))]
 use std::net::SocketAddr;
 use std::pin::Pin;
-use socket2::SockAddr;
 use tokio::net::TcpStream;
 
 #[derive(Copy, Clone, Debug, Default)]

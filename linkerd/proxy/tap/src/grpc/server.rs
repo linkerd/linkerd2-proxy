@@ -65,13 +65,15 @@ pub struct TapTrace {
 }
 
 impl TapTrace {
-    pub fn matches<B, I: Inspect>(&self, req: &http::Request<B>, inspect: &I) -> Vec<String> {
+    pub fn matches<B, I: Inspect>(&self, _req: &http::Request<B>, _inspect: &I) -> Vec<String> {
         let mut matched_ids = vec![];
-        for (k, m) in &self.inner.matchers {
-            if m.matches(req, inspect) {
-                matched_ids.push(k.clone());
-            }
+        for k in self.inner.matchers.keys() {
+            // if m.matches(req, inspect) {
+            matched_ids.push(k.clone());
+            // }
         }
+
+        info!(?matched_ids, "Found matches");
 
         if let Some(sample) = &self.inner.sample_percent {
             if !rand::distr::Distribution::sample(sample, &mut rand::rng()) {
