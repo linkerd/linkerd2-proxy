@@ -7,7 +7,7 @@ use linkerd_app_core::{
 use linkerd_http_prom::{
     body_data::request::{BodyDataMetrics, NewRecordBodyData, RequestBodyFamilies},
     record_response,
-    stream_label::StreamLabel,
+    stream_label::{LabelSet, StreamLabel},
 };
 
 pub use linkerd_http_prom::stream_label::MkStreamLabel;
@@ -24,7 +24,15 @@ pub type RequestMetrics<R> = record_response::RequestMetrics<
 >;
 
 #[derive(Debug)]
-pub struct RouteMetrics<R: StreamLabel, B: StreamLabel> {
+pub struct RouteMetrics<R, B>
+where
+    R: StreamLabel,
+    B: StreamLabel,
+    R::DurationLabels: LabelSet,
+    R::StatusLabels: LabelSet,
+    B::DurationLabels: LabelSet,
+    B::StatusLabels: LabelSet,
+{
     pub(super) retry: retry::RouteRetryMetrics,
     pub(super) requests: RequestMetrics<R>,
     pub(super) backend: backend::RouteBackendMetrics<B>,
@@ -101,7 +109,15 @@ where
 
 // === impl RouteMetrics ===
 
-impl<R: StreamLabel, B: StreamLabel> RouteMetrics<R, B> {
+impl<R, B> RouteMetrics<R, B>
+where
+    R: StreamLabel,
+    B: StreamLabel,
+    R::DurationLabels: LabelSet,
+    R::StatusLabels: LabelSet,
+    B::DurationLabels: LabelSet,
+    B::StatusLabels: LabelSet,
+{
     // There are two histograms for which we need to register metrics: request
     // durations, measured on routes, and response durations, measured on
     // route-backends.
@@ -117,7 +133,15 @@ impl<R: StreamLabel, B: StreamLabel> RouteMetrics<R, B> {
     const RESPONSE_BUCKETS: &'static [f64] = &[0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 10.0];
 }
 
-impl<R: StreamLabel, B: StreamLabel> Default for RouteMetrics<R, B> {
+impl<R, B> Default for RouteMetrics<R, B>
+where
+    R: StreamLabel,
+    B: StreamLabel,
+    R::DurationLabels: LabelSet,
+    R::StatusLabels: LabelSet,
+    B::DurationLabels: LabelSet,
+    B::StatusLabels: LabelSet,
+{
     fn default() -> Self {
         Self {
             requests: Default::default(),
@@ -128,7 +152,15 @@ impl<R: StreamLabel, B: StreamLabel> Default for RouteMetrics<R, B> {
     }
 }
 
-impl<R: StreamLabel, B: StreamLabel> Clone for RouteMetrics<R, B> {
+impl<R, B> Clone for RouteMetrics<R, B>
+where
+    R: StreamLabel,
+    B: StreamLabel,
+    R::DurationLabels: LabelSet,
+    R::StatusLabels: LabelSet,
+    B::DurationLabels: LabelSet,
+    B::StatusLabels: LabelSet,
+{
     fn clone(&self) -> Self {
         Self {
             requests: self.requests.clone(),
@@ -139,7 +171,15 @@ impl<R: StreamLabel, B: StreamLabel> Clone for RouteMetrics<R, B> {
     }
 }
 
-impl<R: StreamLabel, B: StreamLabel> RouteMetrics<R, B> {
+impl<R, B> RouteMetrics<R, B>
+where
+    R: StreamLabel,
+    B: StreamLabel,
+    R::DurationLabels: LabelSet,
+    R::StatusLabels: LabelSet,
+    B::DurationLabels: LabelSet,
+    B::StatusLabels: LabelSet,
+{
     pub fn register(reg: &mut prom::Registry) -> Self {
         let requests = RequestMetrics::<R>::register(reg, Self::REQUEST_BUCKETS.iter().copied());
 

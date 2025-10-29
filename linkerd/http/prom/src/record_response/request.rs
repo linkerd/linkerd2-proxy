@@ -1,3 +1,5 @@
+use super::{DurationFamily, MkDurationHistogram};
+use crate::stream_label::{LabelSet, MkStreamLabel};
 use linkerd_error::Error;
 use linkerd_http_box::BoxBody;
 use linkerd_metrics::prom::Counter;
@@ -12,8 +14,6 @@ use std::{
     task::{Context, Poll},
 };
 use tokio::{sync::oneshot, time};
-
-use super::{DurationFamily, MkDurationHistogram, MkStreamLabel};
 
 /// Metrics type that tracks completed requests.
 #[derive(Debug)]
@@ -102,6 +102,8 @@ impl<DurL, StatL> Clone for RequestMetrics<DurL, StatL> {
 impl<ReqB, L, S> svc::Service<http::Request<ReqB>> for RecordRequestDuration<L, S>
 where
     L: MkStreamLabel,
+    L::StatusLabels: LabelSet,
+    L::DurationLabels: LabelSet,
     S: svc::Service<http::Request<ReqB>, Response = http::Response<BoxBody>, Error = Error>,
 {
     type Response = http::Response<BoxBody>;
