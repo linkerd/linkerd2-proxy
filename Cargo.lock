@@ -1711,6 +1711,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd-http-body-eos"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "futures",
+ "http",
+ "http-body",
+ "http-body-util",
+ "linkerd-error",
+ "linkerd-mock-http-body",
+ "pin-project",
+ "tokio",
+]
+
+[[package]]
 name = "linkerd-http-box"
 version = "0.1.0"
 dependencies = [
