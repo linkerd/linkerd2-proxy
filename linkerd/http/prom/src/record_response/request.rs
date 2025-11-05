@@ -1,9 +1,10 @@
+use super::{DurationFamily, MkDurationHistogram};
+use crate::stream_label::{LabelSet, MkStreamLabel};
 use linkerd_error::Error;
 use linkerd_http_box::BoxBody;
 use linkerd_metrics::prom::Counter;
 use linkerd_stack as svc;
 use prometheus_client::{
-    encoding::EncodeLabelSet,
     metrics::family::Family,
     registry::{Registry, Unit},
 };
@@ -12,8 +13,6 @@ use std::{
     task::{Context, Poll},
 };
 use tokio::{sync::oneshot, time};
-
-use super::{DurationFamily, MkDurationHistogram, MkStreamLabel};
 
 /// Metrics type that tracks completed requests.
 #[derive(Debug)]
@@ -39,8 +38,8 @@ pub type RecordRequestDuration<L, S> = super::RecordResponse<
 
 impl<DurL, StatL> RequestMetrics<DurL, StatL>
 where
-    DurL: EncodeLabelSet + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
-    StatL: EncodeLabelSet + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
+    DurL: LabelSet,
+    StatL: LabelSet,
 {
     pub fn register(reg: &mut Registry, histo: impl IntoIterator<Item = f64>) -> Self {
         let duration =
@@ -66,8 +65,8 @@ where
 #[cfg(feature = "test-util")]
 impl<DurL, StatL> RequestMetrics<DurL, StatL>
 where
-    StatL: EncodeLabelSet + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
-    DurL: EncodeLabelSet + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
+    StatL: LabelSet,
+    DurL: LabelSet,
 {
     pub fn get_statuses(&self, labels: &StatL) -> Counter {
         (*self.statuses.get_or_create(labels)).clone()
@@ -79,8 +78,8 @@ where
 
 impl<DurL, StatL> Default for RequestMetrics<DurL, StatL>
 where
-    StatL: EncodeLabelSet + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
-    DurL: EncodeLabelSet + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
+    StatL: LabelSet,
+    DurL: LabelSet,
 {
     fn default() -> Self {
         Self {
@@ -102,6 +101,8 @@ impl<DurL, StatL> Clone for RequestMetrics<DurL, StatL> {
 impl<ReqB, L, S> svc::Service<http::Request<ReqB>> for RecordRequestDuration<L, S>
 where
     L: MkStreamLabel,
+    L::StatusLabels: LabelSet,
+    L::DurationLabels: LabelSet,
     S: svc::Service<http::Request<ReqB>, Response = http::Response<BoxBody>, Error = Error>,
 {
     type Response = http::Response<BoxBody>;
