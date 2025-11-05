@@ -3,6 +3,10 @@
 use linkerd_error::Error;
 use prometheus_client::encoding::EncodeLabelSet;
 
+pub mod error;
+pub mod status;
+pub mod with;
+
 /// A strategy for labeling request/responses streams for status and duration
 /// metrics.
 ///

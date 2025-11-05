@@ -1833,6 +1833,7 @@ dependencies = [
  "prometheus-client",
  "thiserror",
  "tokio",
+ "tonic",
 ]
 
 [[package]]
