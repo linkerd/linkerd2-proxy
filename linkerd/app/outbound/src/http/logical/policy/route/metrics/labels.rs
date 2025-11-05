@@ -27,13 +27,13 @@ pub type RouteBackendRsp<L> = Rsp<RouteBackend, L>;
 pub type HttpRouteBackendRsp = RouteBackendRsp<HttpRsp>;
 pub type GrpcRouteBackendRsp = RouteBackendRsp<GrpcRsp>;
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Hash, PartialEq, Eq)]
 pub struct HttpRsp {
     pub status: Option<http::StatusCode>,
     pub error: Option<Error>,
 }
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Hash, PartialEq, Eq)]
 pub struct GrpcRsp {
     pub status: Option<tonic::Code>,
     pub error: Option<Error>,
@@ -150,6 +150,43 @@ impl<P: EncodeLabelSetMut, L: EncodeLabelSetMut> EncodeLabelSet for Rsp<P, L> {
 
 // === impl HttpRsp ===
 
+impl HttpRsp {
+    pub fn status(status: http::StatusCode) -> Self {
+        Self {
+            status: Some(status),
+            error: None,
+        }
+    }
+
+    pub fn error(error: Error) -> Self {
+        Self {
+            status: None,
+            error: Some(error),
+        }
+    }
+
+    pub fn unknown() -> Self {
+        Self {
+            status: None,
+            error: Some(Error::Unknown),
+        }
+    }
+
+    /// Merges the two collections of label values.
+    ///
+    /// NB: Values from the left-hand side take precedent.
+    pub fn apply(self, rhs: Option<Self>) -> Self {
+        let Some(Self { status, error }) = rhs else {
+            return self;
+        };
+
+        Self {
+            status: self.status.or(status),
+            error: self.error.or(error),
+        }
+    }
+}
+
 impl EncodeLabelSetMut for HttpRsp {
     fn encode_label_set(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
         let Self { status, error } = self;
@@ -167,7 +204,56 @@ impl EncodeLabelSet for HttpRsp {
     }
 }
 
+impl From<&linkerd_app_core::Error> for HttpRsp {
+    fn from(error: &linkerd_app_core::Error) -> Self {
+        match Error::new_or_status(error) {
+            Ok(error) => Self::error(error),
+            Err(code) => http::StatusCode::from_u16(code)
+                .map(Self::status)
+                // This is kind of pathological, so mark it as an unkown error.
+                .unwrap_or_else(|_| Self::unknown()),
+        }
+    }
+}
+
 // === impl GrpcRsp ===
+
+impl GrpcRsp {
+    pub fn status(status: tonic::Code) -> Self {
+        Self {
+            status: Some(status),
+            error: None,
+        }
+    }
+
+    pub fn error(error: Error) -> Self {
+        Self {
+            status: None,
+            error: Some(error),
+        }
+    }
+
+    pub fn unknown() -> Self {
+        Self {
+            status: None,
+            error: Some(Error::Unknown),
+        }
+    }
+
+    /// Merges the two collections of label values.
+    ///
+    /// NB: Values from the left-hand side take precedent.
+    pub fn apply(self, rhs: Option<Self>) -> Self {
+        let Some(Self { status, error }) = rhs else {
+            return self;
+        };
+
+        Self {
+            status: self.status.or(status),
+            error: self.error.or(error),
+        }
+    }
+}
 
 impl EncodeLabelSetMut for GrpcRsp {
     fn encode_label_set(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
@@ -206,6 +292,18 @@ impl EncodeLabelSetMut for GrpcRsp {
 impl EncodeLabelSet for GrpcRsp {
     fn encode(&self, mut enc: LabelSetEncoder<'_>) -> std::fmt::Result {
         self.encode_label_set(&mut enc)
+    }
+}
+
+impl From<&linkerd_app_core::Error> for GrpcRsp {
+    fn from(error: &linkerd_app_core::Error) -> Self {
+        match Error::new_or_status(error)
+            .map_err(i32::from)
+            .map_err(tonic::Code::from_i32)
+        {
+            Ok(error) => Self::error(error),
+            Err(code) => Self::status(code),
+        }
     }
 }
 
