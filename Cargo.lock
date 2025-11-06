@@ -1313,7 +1313,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07033963ba89ebaf1584d767badaa2e8fcec21aedea6b8c0346d487d49c28667"
 dependencies = [
  "cfg-if",
- "windows-targets 0.48.5",
+ "windows-targets 0.52.6",
 ]
 
 [[package]]
@@ -2182,7 +2182,7 @@ dependencies = [
  "linkerd-tls-route",
  "linkerd2-proxy-api",
  "once_cell",
- "prost-types 0.13.5",
+ "prost-types 0.14.1",
  "thiserror",
  "tonic",
 ]
@@ -2290,7 +2290,7 @@ dependencies = [
  "linkerd-identity",
  "linkerd2-proxy-api",
  "maplit",
- "prost-types 0.13.5",
+ "prost-types 0.14.1",
  "quickcheck",
  "thiserror",
  "tokio",
@@ -2338,7 +2338,7 @@ dependencies = [
  "linkerd2-proxy-api",
  "parking_lot",
  "pin-project",
- "prost-types 0.13.5",
+ "prost-types 0.14.1",
  "quickcheck",
  "thiserror",
  "tokio",
@@ -2438,7 +2438,7 @@ dependencies = [
  "linkerd-tonic-watch",
  "linkerd2-proxy-api",
  "once_cell",
- "prost-types 0.13.5",
+ "prost-types 0.14.1",
  "quickcheck",
  "regex",
  "thiserror",
@@ -2601,7 +2601,7 @@ dependencies = [
  "linkerd-error",
  "linkerd-io",
  "linkerd-stack",
- "prost 0.13.5",
+ "prost 0.14.1",
  "prost-build 0.13.5",
  "tokio",
  "tokio-test",
@@ -3168,6 +3168,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "prost"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7231bd9b3d3d33c86b58adbac74b5ec0ad9f496b19d22801d773636feaa95f3d"
+dependencies = [
+ "bytes",
+ "prost-derive 0.14.1",
+]
+
+[[package]]
 name = "prost-build"
 version = "0.12.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3235,6 +3245,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "prost-derive"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9120690fafc389a67ba3803df527d0ec9cbbc9cc45e4cc20b332996dfb672425"
+dependencies = [
+ "anyhow",
+ "itertools",
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "prost-types"
 version = "0.12.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3250,6 +3273,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52c2c1bf36ddb1a1c396b3601a3cec27c2462e45f07c386894ec3ccf5332bd16"
 dependencies = [
  "prost 0.13.5",
+]
+
+[[package]]
+name = "prost-types"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b9b4db3d6da204ed77bb26ba83b6122a73aeb2e87e25fbf7ad2e84c4ccbf8f72"
+dependencies = [
+ "prost 0.14.1",
 ]
 
 [[package]]
@@ -3646,7 +3678,7 @@ dependencies = [
 name = "spiffe-proto"
 version = "0.1.0"
 dependencies = [
- "prost 0.13.5",
+ "prost 0.14.1",
  "tonic",
  "tonic-build",
 ]
