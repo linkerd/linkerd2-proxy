@@ -2657,8 +2657,9 @@ dependencies = [
 
 [[package]]
 name = "linkerd2-proxy-api"
-version = "0.17.0"
-source = "git+https://github.com/linkerd/linkerd2-proxy-api?branch=sfleen%2Ftonic-0.14#cf87b359be5fa117ce9613947de19768c6adb451"
+version = "0.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ba9e3b341ca4992feaf43a4d2bdbfe2081aa3e2b9a503753544ce55242af6342"
 dependencies = [
  "h2",
  "http",
