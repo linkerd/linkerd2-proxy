@@ -215,7 +215,6 @@ impl Config {
             identity: identity.receiver(),
             metrics: metrics.proxy,
             tap: tap.registry(),
-            span_sink: trace_collector.span_sink(),
             drain: drain_rx.clone(),
         };
         let inbound = Inbound::new(
@@ -399,7 +398,6 @@ impl App {
             admin,
             drain,
             identity,
-            trace_collector: collector,
             start_proxy,
             tap,
             ..
@@ -462,10 +460,6 @@ impl App {
                                     .instrument(info_span!("tap_clean").or_current()),
                             );
                             tokio::spawn(serve.instrument(info_span!("tap").or_current()));
-                        }
-
-                        if let trace_collector::TraceCollector::Enabled(collector) = collector {
-                            tokio::spawn(collector.task.instrument(info_span!("tracing")));
                         }
 
                         // we don't care if the admin shutdown channel is

@@ -65,7 +65,6 @@ pub struct ProxyRuntime {
     pub identity: identity::creds::Receiver,
     pub metrics: metrics::Proxy,
     pub tap: proxy::tap::Registry,
-    pub span_sink: Option<http_tracing::SpanSink>,
     pub drain: drain::Watch,
 }
 

@@ -7,16 +7,15 @@ edition = { workspace = true }
 publish = { workspace = true }
 
 [dependencies]
-futures = { version = "0.3", default-features = false }
 http-body = { workspace = true }
 linkerd-error = { path = "../error" }
 linkerd-metrics = { path = "../metrics" }
-linkerd-trace-context = { path = "../trace-context" }
 opentelemetry = { version = "0.31", default-features = false, features = ["trace"] }
+opentelemetry-semantic-conventions = { version = "0.31", features = ["semconv_experimental"] }
 opentelemetry_sdk = { version = "0.31", default-features = false, features = ["trace"] }
 opentelemetry-proto = { version = "0.31" }
+opentelemetry-zipkin = { version = "0.31", default-features = false }
 tonic = { workspace = true, default-features = false, features = [
     "codegen",
 ] }
-tokio = { version = "1", features = ["macros", "sync", "time"] }
 tracing = { workspace = true }

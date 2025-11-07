@@ -11,25 +11,15 @@ use tokio::sync::mpsc;
 pub type SpanSink = mpsc::Sender<ExportSpan>;
 
 pub fn server<S>(
-    sink: Option<SpanSink>,
     labels: impl Into<SpanLabels>,
-) -> impl layer::Layer<S, Service = TraceContext<Option<SpanConverter>, S>> + Clone {
-    TraceContext::layer(sink.map(move |sink| SpanConverter {
-        kind: SpanKind::Server,
-        sink,
-        labels: labels.into(),
-    }))
+) -> impl layer::Layer<S, Service = TraceContext<S>> + Clone {
+    TraceContext::layer(opentelemetry::trace::SpanKind::Server, labels.into())
 }
 
 pub fn client<S>(
-    sink: Option<SpanSink>,
     labels: impl Into<SpanLabels>,
-) -> impl layer::Layer<S, Service = TraceContext<Option<SpanConverter>, S>> + Clone {
-    TraceContext::layer(sink.map(move |sink| SpanConverter {
-        kind: SpanKind::Client,
-        sink,
-        labels: labels.into(),
-    }))
+) -> impl layer::Layer<S, Service = TraceContext<S>> + Clone {
+    TraceContext::layer(opentelemetry::trace::SpanKind::Client, labels.into())
 }
 
 #[derive(Clone)]

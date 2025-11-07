@@ -7,14 +7,15 @@ edition = { workspace = true }
 publish = { workspace = true }
 
 [dependencies]
-base64 = "0.22"
 bytes = { workspace = true }
+const_format = "0.2"
 futures = { version = "0.3", default-features = false }
-hex = "0.4"
 http = { workspace = true }
 linkerd-error = { path = "../error" }
 linkerd-stack = { path = "../stack" }
-rand = "0.9"
+opentelemetry-semantic-conventions = { version = "0.31", features = ["semconv_experimental"] }
+opentelemetry-http = { version = "0.31", default-features = false, features = ["internal-logs", "hyper"] }
+opentelemetry = { version = "0.31", default-features = false, features = ["trace"] }
 thiserror = "2"
 tower = { workspace = true, default-features = false, features = ["util"] }
 tracing = { workspace = true }

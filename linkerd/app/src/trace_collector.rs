@@ -1,14 +1,11 @@
 use linkerd_app_core::{
-    control, dns, http_tracing::SpanSink, identity, metrics::ControlHttp as HttpMetrics,
-    opentelemetry, svc::NewService,
+    control, dns, identity, metrics::ControlHttp as HttpMetrics, opentelemetry, svc::NewService,
 };
 use linkerd_error::Error;
 use otel_collector::OtelCollectorAttributes;
 use std::{collections::HashMap, future::Future, pin::Pin};
 
 pub mod otel_collector;
-
-const SPAN_BUFFER_CAPACITY: usize = 100;
 
 #[derive(Clone, Debug)]
 pub enum Config {
@@ -32,17 +29,6 @@ pub enum TraceCollector {
 
 pub struct EnabledCollector {
     pub addr: control::ControlAddr,
-    pub span_sink: SpanSink,
-    pub task: Task,
-}
-
-impl TraceCollector {
-    pub fn span_sink(&self) -> Option<SpanSink> {
-        match self {
-            TraceCollector::Disabled => None,
-            TraceCollector::Enabled(inner) => Some(inner.span_sink.clone()),
-        }
-    }
 }
 
 impl Config {

@@ -2,19 +2,15 @@
 #![forbid(unsafe_code)]
 
 pub mod export;
-mod propagation;
 mod service;
 
 pub use self::service::TraceContext;
 use bytes::Bytes;
 use linkerd_error::Error;
-use rand::Rng;
 use std::collections::HashMap;
 use std::fmt;
 use std::time::SystemTime;
 use thiserror::Error;
-
-const SPAN_ID_LEN: usize = 8;
 
 #[derive(Debug, Default)]
 pub struct Id(Vec<u8>);
@@ -77,14 +73,6 @@ impl<K: SpanSink> SpanSink for Option<K> {
 }
 
 // === impl Id ===
-
-impl Id {
-    fn new_span_id<R: Rng>(rng: &mut R) -> Self {
-        let mut bytes = vec![0; SPAN_ID_LEN];
-        rng.fill(bytes.as_mut_slice());
-        Self(bytes)
-    }
-}
 
 impl From<Id> for Vec<u8> {
     fn from(Id(bytes): Id) -> Vec<u8> {
