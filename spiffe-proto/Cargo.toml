@@ -8,16 +8,16 @@ publish = { workspace = true }
 
 [dependencies]
 prost = { workspace = true }
+tonic-prost = { workspace = true }
 
 [dependencies.tonic]
 workspace = true
 default-features = false
-features = ["prost", "codegen"]
+features = ["codegen"]
 
-[dev-dependencies.tonic-build]
+[dev-dependencies.tonic-prost-build]
 workspace = true
 default-features = false
-features = ["prost"]
 
 [lib]
 doctest = false

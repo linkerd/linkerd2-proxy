@@ -51,8 +51,6 @@ skip-tree = [
     { name = "rand", version = "0.8" },
     # `pprof` uses a number of old dependencies. for now, we skip its subtree.
     { name = "pprof" },
-    # socket v0.6 is still propagating through the ecosystem
-    { name = "socket2", version = "0.5" },
     # zerocopy v0.8 is still propagating through the ecosystem
     { name = "zerocopy", version = "0.7" },
 ]

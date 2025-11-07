@@ -22,11 +22,11 @@ fn bootstrap() {
 /// Generates protobuf bindings into the given directory
 fn generate(out_dir: &std::path::Path) {
     let iface_files = &["spiffe/proto/workload.proto"];
-    if let Err(error) = tonic_build::configure()
+    if let Err(error) = tonic_prost_build::configure()
         .build_client(true)
         .build_server(false)
         .emit_rerun_if_changed(false)
-        .disable_package_emission()
+        .emit_package(false)
         .out_dir(out_dir)
         .compile_protos(iface_files, &["."])
     {
