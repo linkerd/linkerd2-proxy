@@ -478,7 +478,7 @@ impl<T> Permitted<T> {
         (target, permit)
     }
 
-    /// Returns the [`RouteLabels`] from the underlying permit.
+    /// Returns the route labels from the underlying permit.
     pub fn route_labels(&self) -> RouteLabels {
         self.permit_ref().labels.route.clone().into()
     }
