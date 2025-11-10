@@ -1,9 +1,9 @@
 use crate::{BackendRef, ParentRef, RouteRef};
 use linkerd_app_core::{metrics::prom, svc};
 use linkerd_http_prom::{
-    body_data::response::{BodyDataMetrics, NewRecordBodyData, ResponseBodyFamilies},
-    count_reqs::{NewCountRequests, RequestCount, RequestCountFamilies},
-    record_response::{self, NewResponseDuration},
+    body_data::response::{BodyDataMetrics, ResponseBodyFamilies},
+    count_reqs::{RequestCount, RequestCountFamilies},
+    record_response,
     stream_label::{LabelSet, StreamLabel},
 };
 
@@ -30,18 +30,19 @@ type ResponseMetrics<L> = record_response::ResponseMetrics<
     <L as StreamLabel>::StatusLabels,
 >;
 
+type Instrumented<T, N> = NewRecordBodyData<NewCountRequests<NewResponseDuration<T, N>>>;
+type NewRecordBodyData<N> =
+    linkerd_http_prom::body_data::response::NewRecordBodyData<ExtractRecordBodyDataParams, N>;
+type NewCountRequests<N> = linkerd_http_prom::count_reqs::NewCountRequests<ExtractRequestCount, N>;
+type NewResponseDuration<T, N> = linkerd_http_prom::record_response::NewResponseDuration<
+    T,
+    ExtractRecordDurationParams<ResponseMetrics<<T as MkStreamLabel>::StreamLabel>>,
+    N,
+>;
+
 pub fn layer<T, N>(
     metrics: &RouteBackendMetrics<T::StreamLabel>,
-) -> impl svc::Layer<
-    N,
-    Service = NewRecordBodyData<
-        ExtractRecordBodyDataParams,
-        NewCountRequests<
-            ExtractRequestCount,
-            NewResponseDuration<T, ExtractRecordDurationParams<ResponseMetrics<T::StreamLabel>>, N>,
-        >,
-    >,
-> + Clone
+) -> impl svc::Layer<N, Service = Instrumented<T, N>> + Clone
 where
     T: MkStreamLabel,
     T::DurationLabels: LabelSet,
