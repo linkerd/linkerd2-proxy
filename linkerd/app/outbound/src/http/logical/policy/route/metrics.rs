@@ -91,27 +91,46 @@ pub struct ExtractBodyDataMetrics<X> {
     extract: X,
 }
 
+/// An `N`-typed [`NewService<T>`] with status code metrics.
+pub type NewRecordStatusCode<T, N> = status::NewRecordStatusCode<
+    N,
+    ExtractStatusCodeParams<<T as MkStreamLabel>::StatusLabels>,
+    T,
+    <T as MkStreamLabel>::StatusLabels,
+>;
+
+/// [`NewRecordStatusCode<T, N>`] parameters.
+type StatusCodeParams<T> = status::Params<T, <T as MkStreamLabel>::StatusLabels>;
+
+/// Extracts parameters for request status code metrics.
+#[derive(Clone, Debug)]
+pub struct ExtractStatusCodeParams<L>(status::StatusMetrics<L>);
+
 pub fn layer<T, N>(
     metrics: &RequestMetrics<T::StreamLabel>,
+    statuses: &status::StatusMetrics<T::StatusLabels>,
     body_data: &RequestBodyFamilies<labels::Route>,
 ) -> impl svc::Layer<
     N,
     Service = NewRecordBodyData<
-        NewRecordDuration<T, RequestMetrics<T::StreamLabel>, N>,
+        NewRecordStatusCode<T, NewRecordDuration<T, RequestMetrics<T::StreamLabel>, N>>,
         ExtractBodyDataParams,
         ExtractBodyDataMetrics<T>,
     >,
 >
 where
+    N: svc::NewService<T>,
     T: Clone + MkStreamLabel,
     T: svc::ExtractParam<labels::Route, http::Request<http::BoxBody>>,
+    T::StatusLabels: Clone,
 {
     let record = NewRecordDuration::layer_via(ExtractRecordDurationParams(metrics.clone()));
+    let status = NewRecordStatusCode::layer_via(ExtractStatusCodeParams(statuses.clone()));
     let body_data = NewRecordBodyData::layer_via(ExtractBodyDataParams(body_data.clone()));
 
     svc::layer::mk(move |inner| {
         use svc::Layer;
-        body_data.layer(record.layer(inner))
+        body_data.layer(status.layer(record.layer(inner)))
     })
 }
 
@@ -262,6 +281,27 @@ where
         let Self { metrics, extract } = self;
         let labels = extract.extract_param(req);
         metrics.metrics(&labels)
+    }
+}
+
+// === impl ExtractStatusCodeParams ===
+
+impl<L, T> svc::ExtractParam<StatusCodeParams<T>, T> for ExtractStatusCodeParams<L>
+where
+    T: Clone,
+    T: MkStreamLabel<StatusLabels = L>,
+    L: Clone,
+{
+    fn extract_param(&self, target: &T) -> StatusCodeParams<T> {
+        let Self(metrics) = self;
+
+        let mk_stream_label = target.clone();
+        let metrics = metrics.clone();
+
+        StatusCodeParams {
+            mk_stream_label,
+            metrics,
+        }
     }
 }
 
