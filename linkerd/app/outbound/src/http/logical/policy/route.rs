@@ -135,7 +135,12 @@ where
                 // Set request extensions based on the route configuration
                 // AND/OR headers
                 .push(extensions::NewSetExtensions::layer())
-                .push(metrics::layer(&metrics.requests, &metrics.body_data))
+                .push(metrics::layer(
+                    &metrics.requests,
+                    &metrics.statuses,
+                    &metrics.body_data,
+                ))
+                .push_on_service(crate::http::BoxResponse::layer())
                 .check_new::<Self>()
                 .check_new_service::<Self, http::Request<http::BoxBody>>()
                 // Configure a classifier to use in the endpoint stack.
