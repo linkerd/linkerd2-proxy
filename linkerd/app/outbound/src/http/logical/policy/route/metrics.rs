@@ -286,6 +286,12 @@ where
 
 // === impl ExtractStatusCodeParams ===
 
+impl<L> ExtractStatusCodeParams<L> {
+    pub fn new(metrics: status::StatusMetrics<L>) -> Self {
+        Self(metrics)
+    }
+}
+
 impl<L, T> svc::ExtractParam<StatusCodeParams<T>, T> for ExtractStatusCodeParams<L>
 where
     T: Clone,
