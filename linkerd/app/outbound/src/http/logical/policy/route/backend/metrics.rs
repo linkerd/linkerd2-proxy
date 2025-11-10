@@ -56,12 +56,13 @@ where
 
     svc::layer::mk(move |inner| {
         use svc::Layer;
-        NewRecordBodyData::layer_via(ExtractRecordBodyDataParams(body_metrics.clone())).layer(
-            NewCountRequests::layer_via(ExtractRequestCount(requests.clone())).layer(
-                NewRecordDuration::layer_via(ExtractRecordDurationParams(responses.clone()))
-                    .layer(inner),
-            ),
-        )
+
+        let record = NewRecordDuration::layer_via(ExtractRecordDurationParams(responses.clone()));
+        let count = NewCountRequests::layer_via(ExtractRequestCount(requests.clone()));
+        let body_data =
+            NewRecordBodyData::layer_via(ExtractRecordBodyDataParams(body_metrics.clone()));
+
+        body_data.layer(count.layer(record.layer(inner)))
     })
 }
 
