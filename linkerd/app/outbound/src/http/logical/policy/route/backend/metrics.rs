@@ -31,7 +31,8 @@ type ResponseMetrics<L> = record_response::ResponseMetrics<
     <L as StreamLabel>::StatusLabels,
 >;
 
-type Instrumented<T, N> = NewRecordBodyData<NewCountRequests<NewResponseDuration<T, N>>>;
+type Instrumented<T, N> =
+    NewRecordBodyData<NewCountRequests<NewRecordStatusCode<T, NewResponseDuration<T, N>>>>;
 type NewRecordBodyData<N> =
     linkerd_http_prom::body_data::response::NewRecordBodyData<ExtractRecordBodyDataParams, N>;
 type NewCountRequests<N> = linkerd_http_prom::count_reqs::NewCountRequests<ExtractRequestCount, N>;
@@ -53,7 +54,7 @@ where
     let RouteBackendMetrics {
         requests,
         responses,
-        statuses: _,
+        statuses,
         body_metrics,
     } = metrics.clone();
 
@@ -62,10 +63,11 @@ where
 
         let record = NewRecordDuration::layer_via(ExtractRecordDurationParams(responses.clone()));
         let count = NewCountRequests::layer_via(ExtractRequestCount(requests.clone()));
+        let status = NewRecordStatusCode::layer_via(ExtractStatusCodeParams::new(statuses.clone()));
         let body_data =
             NewRecordBodyData::layer_via(ExtractRecordBodyDataParams(body_metrics.clone()));
 
-        body_data.layer(count.layer(record.layer(inner)))
+        body_data.layer(count.layer(status.layer(record.layer(inner))))
     })
 }
 
