@@ -40,6 +40,7 @@ updates:
       icu4x:
         patterns:
           - "icu_*"
+          - "writeable"
       opentelemetry:
         patterns:
           - "opentelemetry*"
