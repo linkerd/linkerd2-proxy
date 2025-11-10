@@ -22,10 +22,7 @@ pub(super) mod test_util;
 #[cfg(test)]
 mod tests;
 
-pub type RequestMetrics<R> = record_response::RequestMetrics<
-    <R as StreamLabel>::DurationLabels,
-    <R as StreamLabel>::StatusLabels,
->;
+pub type RequestMetrics<R> = record_response::RequestMetrics<<R as StreamLabel>::DurationLabels>;
 
 #[derive(Debug)]
 pub struct RouteMetrics<R, B>

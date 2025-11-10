@@ -3,12 +3,8 @@ use crate::stream_label::{LabelSet, MkStreamLabel};
 use http_body::Frame;
 use linkerd_error::Error;
 use linkerd_http_box::BoxBody;
-use linkerd_metrics::prom::Counter;
 use linkerd_stack as svc;
-use prometheus_client::{
-    metrics::family::Family,
-    registry::{Registry, Unit},
-};
+use prometheus_client::registry::{Registry, Unit};
 use std::{
     pin::Pin,
     sync::Arc,
@@ -17,23 +13,15 @@ use std::{
 use tokio::{sync::oneshot, time};
 
 #[derive(Debug)]
-pub struct ResponseMetrics<DurL, StatL> {
-    duration: DurationFamily<DurL>,
-    statuses: Family<StatL, Counter>,
+pub struct ResponseMetrics<L> {
+    duration: DurationFamily<L>,
 }
 
-pub type NewResponseDuration<L, X, N> = super::NewRecordResponse<
-    L,
-    X,
-    ResponseMetrics<<L as MkStreamLabel>::DurationLabels, <L as MkStreamLabel>::StatusLabels>,
-    N,
->;
+pub type NewResponseDuration<L, X, N> =
+    super::NewRecordResponse<L, X, ResponseMetrics<<L as MkStreamLabel>::DurationLabels>, N>;
 
-pub type RecordResponseDuration<L, S> = super::RecordResponse<
-    L,
-    ResponseMetrics<<L as MkStreamLabel>::DurationLabels, <L as MkStreamLabel>::StatusLabels>,
-    S,
->;
+pub type RecordResponseDuration<L, S> =
+    super::RecordResponse<L, ResponseMetrics<<L as MkStreamLabel>::DurationLabels>, S>;
 
 /// Notifies the response body when the request body is flushed.
 #[pin_project::pin_project(PinnedDrop)]
@@ -45,11 +33,7 @@ struct RequestBody<B> {
 
 // === impl ResponseMetrics ===
 
-impl<DurL, StatL> ResponseMetrics<DurL, StatL>
-where
-    DurL: LabelSet,
-    StatL: LabelSet,
-{
+impl<L: LabelSet> ResponseMetrics<L> {
     pub fn register(reg: &mut Registry, histo: impl IntoIterator<Item = f64>) -> Self {
         let duration =
             DurationFamily::new_with_constructor(MkDurationHistogram(histo.into_iter().collect()));
@@ -60,42 +44,22 @@ where
             duration.clone(),
         );
 
-        let statuses = Family::default();
-        reg.register("response_statuses", "Completed responses", statuses.clone());
-
-        Self { duration, statuses }
+        Self { duration }
     }
 }
 
-#[cfg(feature = "test-util")]
-impl<DurL, StatL> ResponseMetrics<DurL, StatL>
-where
-    StatL: LabelSet,
-    DurL: LabelSet,
-{
-    pub fn get_statuses(&self, labels: &StatL) -> Counter {
-        (*self.statuses.get_or_create(labels)).clone()
-    }
-}
-
-impl<DurL, StatL> Default for ResponseMetrics<DurL, StatL>
-where
-    StatL: LabelSet,
-    DurL: LabelSet,
-{
+impl<L: LabelSet> Default for ResponseMetrics<L> {
     fn default() -> Self {
         Self {
             duration: DurationFamily::new_with_constructor(MkDurationHistogram(Arc::new([]))),
-            statuses: Default::default(),
         }
     }
 }
 
-impl<DurL, StatL> Clone for ResponseMetrics<DurL, StatL> {
+impl<L> Clone for ResponseMetrics<L> {
     fn clone(&self) -> Self {
         Self {
             duration: self.duration.clone(),
-            statuses: self.statuses.clone(),
         }
     }
 }
@@ -104,7 +68,6 @@ impl<M, S> svc::Service<http::Request<BoxBody>> for RecordResponseDuration<M, S>
 where
     M: MkStreamLabel,
     M::DurationLabels: LabelSet,
-    M::StatusLabels: LabelSet,
     S: svc::Service<http::Request<BoxBody>, Response = http::Response<BoxBody>, Error = Error>,
 {
     type Response = http::Response<BoxBody>;
@@ -127,12 +90,11 @@ where
                     flushed: Some(tx),
                 })
             });
-            let ResponseMetrics { duration, statuses } = self.metric.clone();
+            let ResponseMetrics { duration } = self.metric.clone();
             Some(super::ResponseState {
                 labeler,
                 start,
                 duration,
-                statuses,
             })
         } else {
             None

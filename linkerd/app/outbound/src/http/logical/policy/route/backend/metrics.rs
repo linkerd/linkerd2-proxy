@@ -26,10 +26,7 @@ where
     body_metrics: ResponseBodyFamilies<labels::RouteBackend>,
 }
 
-type ResponseMetrics<L> = record_response::ResponseMetrics<
-    <L as StreamLabel>::DurationLabels,
-    <L as StreamLabel>::StatusLabels,
->;
+type ResponseMetrics<L> = record_response::ResponseMetrics<<L as StreamLabel>::DurationLabels>;
 
 type Instrumented<T, N> =
     NewRecordBodyData<NewCountRequests<NewRecordStatusCode<T, NewResponseDuration<T, N>>>>;
@@ -113,7 +110,7 @@ where
 
     #[cfg(test)]
     pub(crate) fn get_statuses(&self, l: &L::StatusLabels) -> prom::Counter {
-        self.responses.get_statuses(l)
+        self.statuses.metric(l)
     }
 
     #[cfg(test)]

@@ -48,7 +48,7 @@ async fn http_request_statuses() {
     );
 
     // Send one request and ensure it's counted.
-    let ok = requests.get_statuses(&labels::Rsp(
+    let ok = statuses.metric(&labels::Rsp(
         labels::Route::new(parent_ref.clone(), route_ref.clone(), None),
         labels::HttpRsp {
             status: Some(http::StatusCode::OK),
@@ -67,7 +67,7 @@ async fn http_request_statuses() {
 
     // Send another request and ensure it's counted with a different response
     // status.
-    let no_content = requests.get_statuses(&labels::Rsp(
+    let no_content = statuses.metric(&labels::Rsp(
         labels::Route::new(parent_ref.clone(), route_ref.clone(), None),
         labels::HttpRsp {
             status: Some(http::StatusCode::NO_CONTENT),
@@ -91,7 +91,7 @@ async fn http_request_statuses() {
     .await;
 
     // Emit a response with an error and ensure it's counted.
-    let unknown = requests.get_statuses(&labels::Rsp(
+    let unknown = statuses.metric(&labels::Rsp(
         labels::Route::new(parent_ref.clone(), route_ref.clone(), None),
         labels::HttpRsp {
             status: None,
@@ -105,7 +105,7 @@ async fn http_request_statuses() {
 
     // Emit a successful response with a body that fails and ensure that both
     // the status and error are recorded.
-    let mixed = requests.get_statuses(&labels::Rsp(
+    let mixed = statuses.metric(&labels::Rsp(
         labels::Route::new(parent_ref, route_ref, None),
         labels::HttpRsp {
             status: Some(http::StatusCode::OK),
@@ -122,9 +122,9 @@ async fn http_request_statuses() {
     })
     .await;
 
-    assert_eq!(unknown.get(), 1);
     assert_eq!(ok.get(), 1);
     assert_eq!(no_content.get(), 1);
+    assert_eq!(unknown.get(), 1);
     assert_eq!(mixed.get(), 1);
 }
 
@@ -158,7 +158,7 @@ async fn http_request_hostnames() {
     );
 
     let get_counter = |host: Option<&'static str>, status: Option<http::StatusCode>| {
-        requests.get_statuses(&labels::Rsp(
+        statuses.metric(&labels::Rsp(
             labels::Route::new_with_name(
                 parent_ref.clone(),
                 route_ref.clone(),
@@ -295,7 +295,7 @@ async fn http_request_hostnames_disabled() {
     );
 
     let get_counter = |host: Option<&'static str>, status: Option<http::StatusCode>| {
-        requests.get_statuses(&labels::Rsp(
+        statuses.metric(&labels::Rsp(
             labels::Route::new_with_name(
                 parent_ref.clone(),
                 route_ref.clone(),
@@ -570,14 +570,14 @@ async fn http_response_body_drop_on_eos() {
         .unwrap();
 
     // Two counters for 200 responses that do/don't have an error.
-    let ok = requests.get_statuses(&labels::Rsp(
+    let ok = statuses.metric(&labels::Rsp(
         labels::Route::new(parent_ref.clone(), route_ref.clone(), None),
         labels::HttpRsp {
             status: Some(http::StatusCode::OK),
             error: None,
         },
     ));
-    let err = requests.get_statuses(&labels::Rsp(
+    let err = statuses.metric(&labels::Rsp(
         labels::Route::new(parent_ref.clone(), route_ref.clone(), None),
         labels::HttpRsp {
             status: Some(http::StatusCode::OK),
@@ -655,14 +655,14 @@ async fn http_response_body_drop_early() {
         .unwrap();
 
     // Two counters for 200 responses that do/don't have an error.
-    let ok = requests.get_statuses(&labels::Rsp(
+    let ok = statuses.metric(&labels::Rsp(
         labels::Route::new(parent_ref.clone(), route_ref.clone(), None),
         labels::HttpRsp {
             status: Some(http::StatusCode::OK),
             error: None,
         },
     ));
-    let err = requests.get_statuses(&labels::Rsp(
+    let err = statuses.metric(&labels::Rsp(
         labels::Route::new(parent_ref.clone(), route_ref.clone(), None),
         labels::HttpRsp {
             status: Some(http::StatusCode::OK),
@@ -720,7 +720,7 @@ async fn grpc_request_statuses_ok() {
     );
 
     // Send one request and ensure it's counted.
-    let ok = requests.get_statuses(&labels::Rsp(
+    let ok = statuses.metric(&labels::Rsp(
         labels::Route::new(
             parent_ref.clone(),
             route_ref.clone(),
@@ -776,7 +776,7 @@ async fn grpc_request_statuses_not_found() {
 
     // Send another request and ensure it's counted with a different response
     // status.
-    let not_found = requests.get_statuses(&labels::Rsp(
+    let not_found = statuses.metric(&labels::Rsp(
         labels::Route::new(
             parent_ref.clone(),
             route_ref.clone(),
@@ -829,7 +829,7 @@ async fn grpc_request_statuses_error_response() {
         EXPORT_HOSTNAME_LABELS,
     );
 
-    let unknown = requests.get_statuses(&labels::Rsp(
+    let unknown = statuses.metric(&labels::Rsp(
         labels::Route::new(
             parent_ref.clone(),
             route_ref.clone(),
@@ -876,7 +876,7 @@ async fn grpc_request_statuses_error_body() {
         EXPORT_HOSTNAME_LABELS,
     );
 
-    let unknown = requests.get_statuses(&labels::Rsp(
+    let unknown = statuses.metric(&labels::Rsp(
         labels::Route::new(
             parent_ref.clone(),
             route_ref.clone(),
@@ -950,14 +950,14 @@ async fn grpc_response_body_drop_on_eos() {
         .unwrap();
 
     // Two counters for 200 responses that do/don't have an error.
-    let ok = requests.get_statuses(&labels::Rsp(
+    let ok = statuses.metric(&labels::Rsp(
         labels::Route::new(parent_ref.clone(), route_ref.clone(), None),
         labels::GrpcRsp {
             status: Some(tonic::Code::Ok),
             error: None,
         },
     ));
-    let err = requests.get_statuses(&labels::Rsp(
+    let err = statuses.metric(&labels::Rsp(
         labels::Route::new(parent_ref.clone(), route_ref.clone(), None),
         labels::GrpcRsp {
             status: Some(tonic::Code::Ok),
@@ -1057,14 +1057,14 @@ async fn grpc_response_body_drop_early() {
         .unwrap();
 
     // Two counters for 200 responses that do/don't have an error.
-    let ok = requests.get_statuses(&labels::Rsp(
+    let ok = statuses.metric(&labels::Rsp(
         labels::Route::new(parent_ref.clone(), route_ref.clone(), None),
         labels::GrpcRsp {
             status: Some(tonic::Code::Ok),
             error: None,
         },
     ));
-    let err = requests.get_statuses(&labels::Rsp(
+    let err = statuses.metric(&labels::Rsp(
         labels::Route::new(parent_ref.clone(), route_ref.clone(), None),
         labels::GrpcRsp {
             status: None,

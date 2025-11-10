@@ -2,7 +2,6 @@ use crate::stream_label::{LabelSet, MkStreamLabel, StreamLabel};
 use http_body::Body;
 use linkerd_error::Error;
 use linkerd_http_box::BoxBody;
-use linkerd_metrics::prom::Counter;
 use linkerd_stack as svc;
 use prometheus_client::metrics::{
     family::{Family, MetricConstructor},
@@ -73,7 +72,6 @@ struct ResponseBody<L>
 where
     L: StreamLabel,
     L::DurationLabels: LabelSet,
-    L::StatusLabels: LabelSet,
 {
     #[pin]
     inner: BoxBody,
@@ -82,7 +80,6 @@ where
 
 struct ResponseState<L: StreamLabel> {
     labeler: L,
-    statuses: Family<L::StatusLabels, Counter>,
     duration: DurationFamily<L::DurationLabels>,
     start: oneshot::Receiver<time::Instant>,
 }
@@ -167,7 +164,6 @@ impl<L, F> Future for ResponseFuture<L, F>
 where
     L: StreamLabel,
     L::DurationLabels: LabelSet,
-    L::StatusLabels: LabelSet,
     F: Future<Output = Result<http::Response<BoxBody>, Error>>,
 {
     type Output = Result<http::Response<BoxBody>, Error>;
@@ -205,7 +201,6 @@ impl<L> http_body::Body for ResponseBody<L>
 where
     L: StreamLabel,
     L::DurationLabels: LabelSet,
-    L::StatusLabels: LabelSet,
 {
     type Data = <BoxBody as http_body::Body>::Data;
     type Error = Error;
@@ -247,7 +242,6 @@ impl<L> PinnedDrop for ResponseBody<L>
 where
     L: StreamLabel,
     L::DurationLabels: LabelSet,
-    L::StatusLabels: LabelSet,
 {
     fn drop(self: Pin<&mut Self>) {
         let this = self.project();
@@ -263,11 +257,9 @@ fn end_stream<L>(
 ) where
     L: StreamLabel,
     L::DurationLabels: LabelSet,
-    L::StatusLabels: LabelSet,
 {
     let Some(ResponseState {
         duration,
-        statuses: total,
         mut start,
         mut labeler,
     }) = state.take()
@@ -276,8 +268,6 @@ fn end_stream<L>(
     };
 
     labeler.end_response(res);
-
-    total.get_or_create(&labeler.status_labels()).inc();
 
     let elapsed = if let Ok(start) = start.try_recv() {
         time::Instant::now().saturating_duration_since(start)
