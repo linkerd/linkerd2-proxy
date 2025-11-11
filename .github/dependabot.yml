@@ -37,9 +37,6 @@ updates:
       hickory:
         patterns:
           - "hickory*"
-      icu4x:
-        patterns:
-          - "icu_*"
       opentelemetry:
         patterns:
           - "opentelemetry*"
@@ -62,6 +59,10 @@ updates:
       tracing:
         patterns:
           - "tracing*"
+      unicode-org:
+        patterns:
+          - "icu_*"
+          - "writeable"
 
   - package-ecosystem: cargo
     directory: /linkerd/addr/fuzz
