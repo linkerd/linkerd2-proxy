@@ -28,6 +28,7 @@ use opentelemetry_proto::{
 };
 use opentelemetry_sdk::trace::{SpanData, SpanLinks};
 pub use opentelemetry_sdk::{self as sdk};
+pub use opentelemetry_semantic_conventions as semconv;
 use tokio::{
     sync::mpsc,
     time::{self, Instant, MissedTickBehavior},

@@ -6,6 +6,7 @@ use linkerd_opentelemetry::{
         tonic::common::v1::{any_value, AnyValue, KeyValue},
         transform::common::tonic::ResourceAttributesWithSchema,
     },
+    semconv,
 };
 use std::{
     collections::HashMap,
@@ -42,7 +43,7 @@ where
     resources
         .attributes
         .0
-        .push((std::process::id() as i64).with_key("process.pid"));
+        .push((std::process::id() as i64).with_key(semconv::attribute::PROCESS_PID));
 
     resources.attributes.0.push(
         SystemTime::now()
@@ -55,7 +56,7 @@ where
         attributes
             .hostname
             .unwrap_or_default()
-            .with_key("host.name"),
+            .with_key(semconv::attribute::HOST_NAME),
     );
 
     resources.attributes.0.extend(
