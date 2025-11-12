@@ -185,6 +185,8 @@ fn convert_span(span: ExportSpan) -> Result<SpanData, Error> {
 mod tests {
     use super::*;
     use linkerd_trace_context::{export::SpanKind, Id, Span};
+    use opentelemetry_proto::tonic::common::v1::any_value::Value::StringValue;
+    use opentelemetry_proto::tonic::common::v1::AnyValue;
     use opentelemetry_proto::tonic::common::v1::InstrumentationScope;
     use std::{collections::HashMap, sync::Arc, time::SystemTime};
     use tokio::sync::mpsc;
