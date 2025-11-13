@@ -2,15 +2,17 @@
 #![forbid(unsafe_code)]
 
 pub mod metrics;
+pub mod propagation;
 
 use self::metrics::Registry;
+use crate::propagation::OrderedPropagator;
 use futures::stream::{Stream, StreamExt};
 use http_body::Body;
 use linkerd_error::Error;
 use linkerd_trace_context::{self as trace_context, export::ExportSpan};
 pub use opentelemetry as otel;
 use opentelemetry::{
-    trace::{SpanContext, SpanId, SpanKind, Status, TraceFlags, TraceId, TraceState},
+    trace::{SpanContext, SpanKind, Status, TraceFlags, TraceState},
     KeyValue,
 };
 pub use opentelemetry_proto as proto;
@@ -55,6 +57,8 @@ where
             .build(),
     )
     .build();
+
+    opentelemetry::global::set_text_map_propagator(OrderedPropagator::new());
 
     SpanExportTask::new(spans, processor).run().await;
 }
@@ -151,12 +155,12 @@ fn convert_span(span: ExportSpan) -> Result<SpanData, Error> {
     for (k, v) in labels.iter() {
         attributes.push(KeyValue::new(k.clone(), v.clone()));
     }
-    for (k, v) in span.labels.into_iter() {
-        attributes.push(KeyValue::new(k, v));
+    for kv in span.labels.into_iter() {
+        attributes.push(kv);
     }
     let is_remote = kind != trace_context::export::SpanKind::Client;
     Ok(SpanData {
-        parent_span_id: SpanId::from_bytes(span.parent_id.into_bytes()?),
+        parent_span_id: span.parent_id,
         parent_span_is_remote: true, // we do not originate any spans locally
         span_kind: match kind {
             trace_context::export::SpanKind::Server => SpanKind::Server,
@@ -170,8 +174,8 @@ fn convert_span(span: ExportSpan) -> Result<SpanData, Error> {
         links: SpanLinks::default(),
         status: Status::Unset, // TODO: this is gRPC status; we must read response trailers to populate this
         span_context: SpanContext::new(
-            TraceId::from_bytes(span.trace_id.into_bytes()?),
-            SpanId::from_bytes(span.span_id.into_bytes()?),
+            span.trace_id,
+            span.span_id,
             TraceFlags::default(),
             is_remote,
             TraceState::NONE,
@@ -184,26 +188,19 @@ fn convert_span(span: ExportSpan) -> Result<SpanData, Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use linkerd_trace_context::{export::SpanKind, Id, Span};
-    use opentelemetry_proto::tonic::common::v1::any_value::Value::StringValue;
-    use opentelemetry_proto::tonic::common::v1::AnyValue;
+    use linkerd_trace_context::{export::SpanKind, Span};
+    use opentelemetry::{SpanId, TraceId};
     use opentelemetry_proto::tonic::common::v1::InstrumentationScope;
-    use std::{collections::HashMap, sync::Arc, time::SystemTime};
+    use std::{sync::Arc, time::SystemTime};
     use tokio::sync::mpsc;
-    use tonic::codegen::{tokio_stream::wrappers::ReceiverStream, tokio_stream::StreamExt, Bytes};
+    use tonic::codegen::{tokio_stream::wrappers::ReceiverStream, tokio_stream::StreamExt};
     use tonic_prost::ProstDecoder;
 
     #[tokio::test(flavor = "current_thread")]
     async fn send_span() {
-        let trace_id = Id::from(Bytes::from(
-            hex::decode("0123456789abcedffedcba9876543210").expect("decode"),
-        ));
-        let span_id = Id::from(Bytes::from(
-            hex::decode("fedcba9876543210").expect("decode"),
-        ));
-        let parent_id = Id::from(Bytes::from(
-            hex::decode("0123456789abcedf").expect("decode"),
-        ));
+        let trace_id = TraceId::from_hex("0123456789abcedffedcba9876543210").expect("trace id");
+        let parent_id = SpanId::from_hex("fedcba9876543210").expect("parent id");
+        let span_id = SpanId::from_hex("0123456789abcedf").expect("span id");
         let span_name = "test".to_string();
 
         let start = SystemTime::now();
@@ -211,13 +208,13 @@ mod tests {
 
         let span = ExportSpan {
             span: Span {
-                trace_id: trace_id.clone(),
-                span_id: span_id.clone(),
-                parent_id: parent_id.clone(),
+                trace_id,
+                span_id,
+                parent_id,
                 span_name: span_name.clone(),
                 start,
                 end,
-                labels: HashMap::new(),
+                labels: Vec::new(),
             },
             kind: SpanKind::Server,
             labels: Arc::new(Default::default()),
@@ -263,18 +260,9 @@ mod tests {
         assert_eq!(scope_span.spans.len(), 1);
 
         let span = scope_span.spans.remove(0);
-        assert_eq!(
-            span.span_id,
-            span_id.into_bytes::<8>().expect("into_bytes").to_vec()
-        );
-        assert_eq!(
-            span.parent_span_id,
-            parent_id.into_bytes::<8>().expect("into_bytes").to_vec()
-        );
-        assert_eq!(
-            span.trace_id,
-            trace_id.into_bytes::<16>().expect("into_bytes").to_vec()
-        );
+        assert_eq!(span.span_id, span_id.to_bytes().to_vec(),);
+        assert_eq!(span.parent_span_id, parent_id.to_bytes().to_vec(),);
+        assert_eq!(span.trace_id, trace_id.to_bytes().to_vec(),);
         assert_eq!(span.name, span_name);
         assert_eq!(
             span.start_time_unix_nano,
@@ -308,7 +296,7 @@ mod tests {
         tokio::spawn(export_spans(
             inner,
             ReceiverStream::new(span_rx),
-            opentelemetry_sdk::Resource::builder().build(),
+            Resource::builder().build(),
             metrics,
         ));
 

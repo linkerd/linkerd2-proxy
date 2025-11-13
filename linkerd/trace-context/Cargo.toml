@@ -15,6 +15,9 @@ hex = "0.4"
 http = { workspace = true }
 linkerd-error = { path = "../error" }
 linkerd-stack = { path = "../stack" }
+opentelemetry = { version = "0.31", default-features = false, features = ["trace"] }
+opentelemetry_sdk = { version = "0.31", default-features = false, features = ["trace"] }
+opentelemetry-http = { version = "0.31", default-features = false }
 opentelemetry-semantic-conventions = { version = "0.31", default-features = false, features = ["semconv_experimental"] }
 rand = "0.9"
 thiserror = "2"
@@ -22,7 +25,10 @@ tower = { workspace = true, default-features = false, features = ["util"] }
 tracing = { workspace = true }
 
 [dev-dependencies]
+linkerd-app-core = { path = "../app/core" }
 linkerd-http-box = { path = "../http/box" }
+linkerd-io = { path = "../io" }
 linkerd-tracing = { path = "../tracing" }
+linkerd-opentelemetry = { path = "../opentelemetry" }
 tokio = { version = "1", features = ["test-util"] }
 tower-test = { workspace = true }

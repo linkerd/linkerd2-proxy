@@ -8,6 +8,15 @@ pub enum SpanKind {
     Client = 2,
 }
 
+impl From<SpanKind> for opentelemetry::trace::SpanKind {
+    fn from(value: SpanKind) -> Self {
+        match value {
+            SpanKind::Server => opentelemetry::trace::SpanKind::Server,
+            SpanKind::Client => opentelemetry::trace::SpanKind::Client,
+        }
+    }
+}
+
 pub type SpanLabels = Arc<HashMap<String, String>>;
 
 #[derive(Debug)]
