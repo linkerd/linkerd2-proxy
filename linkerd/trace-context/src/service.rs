@@ -212,3 +212,178 @@ where
         Either::Left(self.inner.call(req))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Id;
+    use bytes::Bytes;
+    use http::HeaderMap;
+    use linkerd_error::Error;
+    use linkerd_http_box::BoxBody;
+    use std::collections::BTreeMap;
+    use tokio::sync::mpsc;
+    use tower::{Layer, Service, ServiceExt};
+
+    const W3C_TRACEPARENT_HEADER: &str = "traceparent";
+    const B3_TRACE_ID_HEADER: &str = "x-b3-traceid";
+    const B3_SPAN_ID_HEADER: &str = "x-b3-spanid";
+    const B3_SAMPLED_HEADER: &str = "x-b3-sampled";
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn w3c_propagation() {
+        let _trace = linkerd_tracing::test::trace_init();
+
+        let (req_headers, exported_span) = send_mock_request(
+            http::Request::builder()
+                .header(
+                    W3C_TRACEPARENT_HEADER,
+                    "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+                )
+                .body(BoxBody::empty())
+                .expect("request"),
+        )
+        .await;
+
+        assert!(req_headers.get(W3C_TRACEPARENT_HEADER).is_some());
+        assert!(req_headers.get(B3_TRACE_ID_HEADER).is_none());
+        assert!(req_headers.get(B3_SPAN_ID_HEADER).is_none());
+        assert!(req_headers.get(B3_SAMPLED_HEADER).is_none());
+
+        assert_eq!(
+            exported_span.trace_id,
+            Id::from(Bytes::from(
+                hex::decode("4bf92f3577b34da6a3ce929d0e0e4736").expect("decode")
+            )),
+        );
+        assert_eq!(
+            exported_span.parent_id,
+            Id::from(Bytes::from(
+                hex::decode("00f067aa0ba902b7").expect("decode")
+            )),
+        );
+        assert_ne!(
+            exported_span.span_id,
+            Id::from(Bytes::from(
+                hex::decode("00f067aa0ba902b7").expect("decode")
+            )),
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn b3_propagation() {
+        let _trace = linkerd_tracing::test::trace_init();
+
+        let (req_headers, exported_span) = send_mock_request(
+            http::Request::builder()
+                .header(B3_TRACE_ID_HEADER, "4bf92f3577b34da6a3ce929d0e0e4736")
+                .header(B3_SPAN_ID_HEADER, "00f067aa0ba902b7")
+                .header(B3_SAMPLED_HEADER, "1")
+                .body(BoxBody::empty())
+                .expect("request"),
+        )
+        .await;
+
+        assert!(req_headers.get(W3C_TRACEPARENT_HEADER).is_none());
+        assert!(req_headers.get(B3_TRACE_ID_HEADER).is_some());
+        assert!(req_headers.get(B3_SPAN_ID_HEADER).is_some());
+        assert!(req_headers.get(B3_SAMPLED_HEADER).is_some());
+
+        assert_eq!(
+            exported_span.trace_id,
+            Id::from(Bytes::from(
+                hex::decode("4bf92f3577b34da6a3ce929d0e0e4736").expect("decode")
+            )),
+        );
+        assert_eq!(
+            exported_span.parent_id,
+            Id::from(Bytes::from(
+                hex::decode("00f067aa0ba902b7").expect("decode")
+            )),
+        );
+        assert_ne!(
+            exported_span.span_id,
+            Id::from(Bytes::from(
+                hex::decode("00f067aa0ba902b7").expect("decode")
+            )),
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn trace_labels() {
+        let _trace = linkerd_tracing::test::trace_init();
+
+        let (_, exported_span) = send_mock_request(
+            http::Request::builder()
+                .uri("http://example.com:80/foo?bar=baz")
+                .header(
+                    W3C_TRACEPARENT_HEADER,
+                    "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+                )
+                .header("user-agent", "tokio-test")
+                .header("content-length", "0")
+                .header("content-type", "text/plain")
+                .header("l5d-orig-proto", "HTTP/1.1")
+                .body(BoxBody::empty())
+                .expect("request"),
+        )
+        .await;
+
+        let labels = exported_span.labels.into_iter().collect::<BTreeMap<_, _>>();
+        assert_eq!(
+            labels,
+            BTreeMap::from_iter([
+                ("http.request.header.content-length", "0".to_string()),
+                ("http.request.header.content-type", "text/plain".to_string()),
+                ("http.request.header.l5d-orig-proto", "HTTP/1.1".to_string()),
+                ("http.request.method", "GET".to_string()),
+                ("http.response.status_code", "200".to_string()),
+                ("network.transport", "tcp".to_string()),
+                ("url.full", "http://example.com:80/foo?bar=baz".to_string()),
+                ("url.path", "/foo".to_string()),
+                ("url.query", "bar=baz".to_string()),
+                ("url.scheme", "http".to_string()),
+                ("user_agent.original", "tokio-test".to_string())
+            ])
+        )
+    }
+
+    async fn send_mock_request(req: http::Request<BoxBody>) -> (HeaderMap, Span) {
+        let (span_tx, mut span_rx) = mpsc::channel(1);
+
+        let (inner, mut handle) =
+            tower_test::mock::pair::<http::Request<BoxBody>, http::Response<BoxBody>>();
+        let mut stack = TraceContext::<TestSink, _>::layer(TestSink(span_tx)).layer(inner);
+        handle.allow(1);
+
+        let stack = stack.ready().await.expect("ready");
+
+        let (_, req_headers): (http::Response<BoxBody>, _) = tokio::join! {
+            stack.call(req).map(|res| res.expect("must not fail")),
+            handle.next_request().map(|req| {
+                let (req, tx) = req.expect("request");
+                tx.send_response(http::Response::default());
+                req.headers().clone()
+            }),
+        };
+
+        (
+            req_headers,
+            span_rx.try_recv().expect("must have exported span"),
+        )
+    }
+
+    #[derive(Clone)]
+    struct TestSink(mpsc::Sender<Span>);
+
+    impl SpanSink for TestSink {
+        fn is_enabled(&self) -> bool {
+            true
+        }
+
+        fn try_send(&mut self, span: Span) -> Result<(), Error> {
+            self.0.try_send(span)?;
+            Ok(())
+        }
+    }
+}
