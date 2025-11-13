@@ -2581,10 +2581,14 @@ dependencies = [
  "hex",
  "http",
  "linkerd-error",
+ "linkerd-http-box",
  "linkerd-stack",
+ "linkerd-tracing",
  "rand 0.9.2",
  "thiserror",
+ "tokio",
  "tower",
+ "tower-test",
  "tracing",
 ]
 

@@ -18,3 +18,9 @@ rand = "0.9"
 thiserror = "2"
 tower = { workspace = true, default-features = false, features = ["util"] }
 tracing = { workspace = true }
+
+[dev-dependencies]
+linkerd-http-box = { path = "../http/box" }
+linkerd-tracing = { path = "../tracing" }
+tokio = { version = "1", features = ["test-util"] }
+tower-test = { workspace = true }
