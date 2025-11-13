@@ -2081,6 +2081,7 @@ dependencies = [
  "opentelemetry",
  "opentelemetry-proto",
  "opentelemetry-semantic-conventions",
+ "opentelemetry-zipkin",
  "opentelemetry_sdk",
  "tokio",
  "tonic",
@@ -2602,11 +2603,17 @@ dependencies = [
  "futures",
  "hex",
  "http",
+ "linkerd-app-core",
  "linkerd-error",
  "linkerd-http-box",
+ "linkerd-io",
+ "linkerd-opentelemetry",
  "linkerd-stack",
  "linkerd-tracing",
+ "opentelemetry",
+ "opentelemetry-http",
  "opentelemetry-semantic-conventions",
+ "opentelemetry_sdk",
  "rand 0.9.2",
  "thiserror",
  "tokio",
@@ -2947,6 +2954,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "opentelemetry-http"
+version = "0.31.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d7a6d09a73194e6b66df7c8f1b680f156d916a1a942abf2de06823dd02b7855d"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "http",
+ "opentelemetry",
+]
+
+[[package]]
 name = "opentelemetry-proto"
 version = "0.31.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2968,6 +2987,23 @@ name = "opentelemetry-semantic-conventions"
 version = "0.31.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e62e29dfe041afb8ed2a6c9737ab57db4907285d999ef8ad3a59092a36bdc846"
+
+[[package]]
+name = "opentelemetry-zipkin"
+version = "0.31.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f27fcd074586dab55936b003c6a499acaabd6debbd539c3f36356bca2ef2fce2"
+dependencies = [
+ "http",
+ "once_cell",
+ "opentelemetry",
+ "opentelemetry-http",
+ "opentelemetry_sdk",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "typed-builder",
+]
 
 [[package]]
 name = "opentelemetry_sdk"
@@ -4221,6 +4257,26 @@ name = "try-lock"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
+
+[[package]]
+name = "typed-builder"
+version = "0.20.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cd9d30e3a08026c78f246b173243cf07b3696d274debd26680773b6773c2afc7"
+dependencies = [
+ "typed-builder-macro",
+]
+
+[[package]]
+name = "typed-builder-macro"
+version = "0.20.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3c36781cc0e46a83726d9879608e4cf6c2505237e263a8eb8c24502989cfdb28"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
 
 [[package]]
 name = "typenum"
