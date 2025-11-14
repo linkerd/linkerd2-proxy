@@ -20,3 +20,12 @@ tonic = { workspace = true, default-features = false, features = [
 ] }
 tokio = { version = "1", features = ["macros", "sync", "time"] }
 tracing = { workspace = true }
+hex = "0.4.3"
+http-body-util = "0.1.3"
+
+[dev-dependencies]
+http = "1"
+linkerd-tracing = { path = "../tracing" }
+tonic-prost = { workspace = true, default-features = false }
+tokio = { version = "1", features = ["test-util"] }
+tower-test = { workspace = true }

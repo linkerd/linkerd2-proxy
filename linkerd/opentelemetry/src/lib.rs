@@ -276,3 +276,135 @@ fn convert_span(span: ExportSpan) -> Result<SpanData, Error> {
         instrumentation_scope: Default::default(),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use linkerd_trace_context::{export::SpanKind, Id, Span};
+    use opentelemetry_proto::tonic::{common::v1::InstrumentationScope, resource::v1::Resource};
+    use std::{collections::HashMap, sync::Arc, time::SystemTime};
+    use tokio::sync::mpsc;
+    use tonic::codegen::{tokio_stream::wrappers::ReceiverStream, tokio_stream::StreamExt, Bytes};
+    use tonic_prost::ProstDecoder;
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn send_span() {
+        let trace_id = Id::from(Bytes::from(
+            hex::decode("0123456789abcedffedcba9876543210").expect("decode"),
+        ));
+        let span_id = Id::from(Bytes::from(
+            hex::decode("fedcba9876543210").expect("decode"),
+        ));
+        let parent_id = Id::from(Bytes::from(
+            hex::decode("0123456789abcedf").expect("decode"),
+        ));
+        let span_name = "test".to_string();
+
+        let start = SystemTime::now();
+        let end = SystemTime::now();
+
+        let span = ExportSpan {
+            span: Span {
+                trace_id: trace_id.clone(),
+                span_id: span_id.clone(),
+                parent_id: parent_id.clone(),
+                span_name: span_name.clone(),
+                start,
+                end,
+                labels: HashMap::new(),
+            },
+            kind: SpanKind::Server,
+            labels: Arc::new(Default::default()),
+        };
+
+        let mut req = send_mock_request(span).await;
+
+        assert_eq!(req.resource_spans.len(), 1);
+        let mut resource_span = req.resource_spans.remove(0);
+        assert_eq!(
+            resource_span.resource,
+            Some(Resource {
+                attributes: vec![],
+                dropped_attributes_count: 0,
+                entity_refs: vec![],
+            })
+        );
+        assert_eq!(resource_span.schema_url, "");
+        assert_eq!(resource_span.scope_spans.len(), 1);
+
+        let mut scope_span = resource_span.scope_spans.remove(0);
+        assert_eq!(scope_span.schema_url, "");
+        assert_eq!(
+            scope_span.scope,
+            Some(InstrumentationScope {
+                name: "".to_string(),
+                version: "".to_string(),
+                attributes: vec![],
+                dropped_attributes_count: 0,
+            })
+        );
+        assert_eq!(scope_span.spans.len(), 1);
+
+        let span = scope_span.spans.remove(0);
+        assert_eq!(
+            span.span_id,
+            span_id.into_bytes::<8>().expect("into_bytes").to_vec()
+        );
+        assert_eq!(
+            span.parent_span_id,
+            parent_id.into_bytes::<8>().expect("into_bytes").to_vec()
+        );
+        assert_eq!(
+            span.trace_id,
+            trace_id.into_bytes::<16>().expect("into_bytes").to_vec()
+        );
+        assert_eq!(span.name, span_name);
+        assert_eq!(
+            span.start_time_unix_nano,
+            start
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .expect("duration")
+                .as_nanos() as u64
+        );
+        assert_eq!(
+            span.end_time_unix_nano,
+            end.duration_since(SystemTime::UNIX_EPOCH)
+                .expect("duration")
+                .as_nanos() as u64
+        );
+        assert_eq!(span.flags, 0b11_0000_0000);
+    }
+
+    async fn send_mock_request(span: ExportSpan) -> ExportTraceServiceRequest {
+        let _trace = linkerd_tracing::test::trace_init();
+        let (span_tx, span_rx) = mpsc::channel(1);
+
+        let (inner, mut handle) = tower_test::mock::pair::<
+            http::Request<tonic::body::Body>,
+            http::Response<tonic::body::Body>,
+        >();
+        handle.allow(1);
+
+        span_tx.try_send(span).expect("Must have space");
+
+        let (metrics, _) = metrics::new();
+        tokio::spawn(export_spans(
+            inner,
+            ReceiverStream::new(span_rx),
+            ResourceAttributesWithSchema::default(),
+            metrics,
+        ));
+
+        let (req, _tx) = handle.next_request().await.expect("next request");
+        let req = tonic::Request::from_http(req);
+        let mut req = tonic::codec::Streaming::<ExportTraceServiceRequest>::new_request(
+            ProstDecoder::default(),
+            req.into_inner(),
+            None,
+            None,
+        );
+        let req = req.next().await.expect("next").expect("must succeed");
+
+        req
+    }
+}

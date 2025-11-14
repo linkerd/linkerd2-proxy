@@ -16,7 +16,7 @@ use thiserror::Error;
 
 const SPAN_ID_LEN: usize = 8;
 
-#[derive(Debug, Default, Eq, PartialEq)]
+#[derive(Debug, Default, Clone, Eq, PartialEq)]
 pub struct Id(Vec<u8>);
 
 #[derive(Debug, Error)]
