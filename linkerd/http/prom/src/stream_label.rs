@@ -1,11 +1,12 @@
 //! Stream labeling facilities.
 
-use linkerd_error::Error;
 use prometheus_client::encoding::EncodeLabelSet;
 
 pub mod error;
 pub mod status;
 pub mod with;
+
+pub use linkerd_http_body_eos::EosRef;
 
 /// A strategy for labeling request/responses streams for status and duration
 /// metrics.
@@ -30,7 +31,7 @@ pub trait StreamLabel: Send + 'static {
     type StatusLabels;
 
     fn init_response<B>(&mut self, rsp: &http::Response<B>);
-    fn end_response(&mut self, trailers: Result<Option<&http::HeaderMap>, &Error>);
+    fn end_response(&mut self, trailers: EosRef<'_>);
 
     fn status_labels(&self) -> Self::StatusLabels;
     fn duration_labels(&self) -> Self::DurationLabels;

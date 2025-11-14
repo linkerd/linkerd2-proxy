@@ -4,7 +4,7 @@
 
 use crate::stream_label::{MkStreamLabel, StreamLabel};
 use http::{HeaderMap, HeaderValue, Response, StatusCode};
-use linkerd_error::Error;
+use linkerd_http_body_eos::EosRef;
 use tonic::Code;
 
 /// A [`MkStreamLabel`] implementation for gRPC traffic.
@@ -58,8 +58,10 @@ impl StreamLabel for LabelGrpcStatus {
         self.code = Self::get_grpc_status(headers);
     }
 
-    fn end_response(&mut self, trailers: Result<Option<&HeaderMap>, &Error>) {
-        let Ok(Some(trailers)) = trailers else { return };
+    fn end_response(&mut self, trailers: EosRef<'_>) {
+        let EosRef::Trailers(trailers) = trailers else {
+            return;
+        };
         self.code = Self::get_grpc_status(trailers);
     }
 
@@ -101,7 +103,7 @@ impl StreamLabel for LabelHttpStatus {
         self.status = Some(rsp.status());
     }
 
-    fn end_response(&mut self, _: Result<Option<&http::HeaderMap>, &linkerd_error::Error>) {}
+    fn end_response(&mut self, _: EosRef<'_>) {}
 
     fn status_labels(&self) -> Self::StatusLabels {
         self.status
