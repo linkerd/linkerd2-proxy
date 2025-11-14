@@ -23,10 +23,25 @@ updates:
         patterns:
           - "arbitrary"
           - "derive_arbitrary"
+      asn1:
+        patterns:
+          - "asn1-rs*"
+      aws-ls:
+        patterns:
+          - "aws-lc-*"
+      axum:
+        patterns:
+          - "axum*"
       boring:
         patterns:
           - "tokio-boring"
           - "boring*"
+      crossbeam:
+        patterns:
+          - "crossbeam*"
+      equator:
+        patterns:
+          - "equator*"
       futures:
         patterns:
           - "futures*"
@@ -37,9 +52,25 @@ updates:
       hickory:
         patterns:
           - "hickory*"
+      hyper:
+        patterns:
+          - "hyper*"
+      jiff:
+        patterns:
+          - "jiff*"
       opentelemetry:
         patterns:
           - "opentelemetry*"
+      pin-project:
+        patterns:
+          - "pin-project*"
+      procfs:
+        patterns:
+          - "procfs*"
+      rand:
+        patterns:
+          - "rand"
+          - "rand_*"
       regex:
         patterns:
           - "regex"
@@ -56,13 +87,21 @@ updates:
       symbolic:
         patterns:
           - "symbolic-*"
+      time:
+        patterns:
+          - "time"
+          - "time-*"
       tracing:
         patterns:
           - "tracing*"
       unicode-org:
         patterns:
           - "icu_*"
+          - "potential_utf"
           - "writeable"
+      zerocopy:
+        patterns:
+          - "zerocopy*"
 
   - package-ecosystem: cargo
     directory: /linkerd/addr/fuzz
