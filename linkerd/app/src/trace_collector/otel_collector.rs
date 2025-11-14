@@ -5,7 +5,6 @@ use std::{
     collections::HashMap,
     time::{SystemTime, UNIX_EPOCH},
 };
-use tokio::sync::mpsc;
 use tonic::{body::Body as TonicBody, client::GrpcService};
 
 pub(super) struct OtelCollectorAttributes {
@@ -26,8 +25,6 @@ where
     S::ResponseBody: Body<Data = tonic::codegen::Bytes> + Send + 'static,
     <S::ResponseBody as Body>::Error: Into<Error> + Send,
 {
-    let (span_sink, _) = mpsc::channel(crate::trace_collector::SPAN_BUFFER_CAPACITY);
-
     let resource = sdk::Resource::builder()
         .with_attribute(KeyValue::new(
             semconv::attribute::PROCESS_PID,
@@ -55,5 +52,5 @@ where
     let addr = addr.clone();
     opentelemetry::install_opentelemetry_providers(svc, resource, legacy_metrics);
 
-    EnabledCollector { addr, span_sink }
+    EnabledCollector { addr }
 }

@@ -134,7 +134,7 @@ impl<C> Inbound<C> {
                             endpoint_labels(unsafe_authority_labels),
                         ),
                 )
-                .push_on_service(http_tracing::client(rt.span_sink.clone(), super::trace_labels()))
+                .push_on_service(http_tracing::client(super::trace_labels()))
                 .push_on_service(http::BoxResponse::layer())
                 .arc_new_http();
 

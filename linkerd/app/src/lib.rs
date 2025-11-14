@@ -215,7 +215,6 @@ impl Config {
             identity: identity.receiver(),
             metrics: metrics.proxy,
             tap: tap.registry(),
-            span_sink: trace_collector.span_sink(),
             drain: drain_rx.clone(),
         };
         let inbound = Inbound::new(
