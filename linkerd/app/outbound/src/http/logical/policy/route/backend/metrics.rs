@@ -3,7 +3,7 @@ use linkerd_app_core::{metrics::prom, svc};
 use linkerd_http_prom::{
     body_data::response::{BodyDataMetrics, ResponseBodyFamilies},
     count_reqs::{RequestCount, RequestCountFamilies},
-    record_response,
+    record_response, status,
     stream_label::{LabelSet, StreamLabel},
 };
 
@@ -22,15 +22,14 @@ where
 {
     requests: RequestCountFamilies<labels::RouteBackend>,
     responses: ResponseMetrics<L>,
+    statuses: status::StatusMetrics<L::StatusLabels>,
     body_metrics: ResponseBodyFamilies<labels::RouteBackend>,
 }
 
-type ResponseMetrics<L> = record_response::ResponseMetrics<
-    <L as StreamLabel>::DurationLabels,
-    <L as StreamLabel>::StatusLabels,
->;
+type ResponseMetrics<L> = record_response::ResponseMetrics<<L as StreamLabel>::DurationLabels>;
 
-type Instrumented<T, N> = NewRecordBodyData<NewCountRequests<NewResponseDuration<T, N>>>;
+type Instrumented<T, N> =
+    NewRecordBodyData<NewCountRequests<NewRecordStatusCode<T, NewResponseDuration<T, N>>>>;
 type NewRecordBodyData<N> =
     linkerd_http_prom::body_data::response::NewRecordBodyData<ExtractRecordBodyDataParams, N>;
 type NewCountRequests<N> = linkerd_http_prom::count_reqs::NewCountRequests<ExtractRequestCount, N>;
@@ -52,6 +51,7 @@ where
     let RouteBackendMetrics {
         requests,
         responses,
+        statuses,
         body_metrics,
     } = metrics.clone();
 
@@ -60,10 +60,11 @@ where
 
         let record = NewRecordDuration::layer_via(ExtractRecordDurationParams(responses.clone()));
         let count = NewCountRequests::layer_via(ExtractRequestCount(requests.clone()));
+        let status = NewRecordStatusCode::layer_via(ExtractStatusCodeParams::new(statuses.clone()));
         let body_data =
             NewRecordBodyData::layer_via(ExtractRecordBodyDataParams(body_metrics.clone()));
 
-        body_data.layer(count.layer(record.layer(inner)))
+        body_data.layer(count.layer(status.layer(record.layer(inner))))
     })
 }
 
@@ -84,10 +85,15 @@ where
     pub fn register(reg: &mut prom::Registry, histo: impl IntoIterator<Item = f64>) -> Self {
         let requests = RequestCountFamilies::register(reg);
         let responses = record_response::ResponseMetrics::register(reg, histo);
+        let statuses = status::StatusMetrics::register(
+            reg.sub_registry_with_prefix("response"),
+            "Completed responses",
+        );
         let body_metrics = ResponseBodyFamilies::register(reg);
         Self {
             requests,
             responses,
+            statuses,
             body_metrics,
         }
     }
@@ -104,7 +110,7 @@ where
 
     #[cfg(test)]
     pub(crate) fn get_statuses(&self, l: &L::StatusLabels) -> prom::Counter {
-        self.responses.get_statuses(l)
+        self.statuses.metric(l)
     }
 
     #[cfg(test)]
@@ -126,6 +132,7 @@ where
         Self {
             requests: Default::default(),
             responses: Default::default(),
+            statuses: Default::default(),
             body_metrics: Default::default(),
         }
     }
@@ -141,6 +148,7 @@ where
         Self {
             requests: self.requests.clone(),
             responses: self.responses.clone(),
+            statuses: self.statuses.clone(),
             body_metrics: self.body_metrics.clone(),
         }
     }

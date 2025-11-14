@@ -2,12 +2,8 @@ use super::{DurationFamily, MkDurationHistogram};
 use crate::stream_label::{LabelSet, MkStreamLabel};
 use linkerd_error::Error;
 use linkerd_http_box::BoxBody;
-use linkerd_metrics::prom::Counter;
 use linkerd_stack as svc;
-use prometheus_client::{
-    metrics::family::Family,
-    registry::{Registry, Unit},
-};
+use prometheus_client::registry::{Registry, Unit};
 use std::{
     sync::Arc,
     task::{Context, Poll},
@@ -16,30 +12,21 @@ use tokio::{sync::oneshot, time};
 
 /// Metrics type that tracks completed requests.
 #[derive(Debug)]
-pub struct RequestMetrics<DurL, StatL> {
-    duration: DurationFamily<DurL>,
-    statuses: Family<StatL, Counter>,
+pub struct RequestMetrics<L> {
+    duration: DurationFamily<L>,
 }
 
-pub type NewRequestDuration<L, X, N> = super::NewRecordResponse<
-    L,
-    X,
-    RequestMetrics<<L as MkStreamLabel>::DurationLabels, <L as MkStreamLabel>::StatusLabels>,
-    N,
->;
+pub type NewRequestDuration<L, X, N> =
+    super::NewRecordResponse<L, X, RequestMetrics<<L as MkStreamLabel>::DurationLabels>, N>;
 
-pub type RecordRequestDuration<L, S> = super::RecordResponse<
-    L,
-    RequestMetrics<<L as MkStreamLabel>::DurationLabels, <L as MkStreamLabel>::StatusLabels>,
-    S,
->;
+pub type RecordRequestDuration<L, S> =
+    super::RecordResponse<L, RequestMetrics<<L as MkStreamLabel>::DurationLabels>, S>;
 
 // === impl RequestMetrics ===
 
-impl<DurL, StatL> RequestMetrics<DurL, StatL>
+impl<L> RequestMetrics<L>
 where
-    DurL: LabelSet,
-    StatL: LabelSet,
+    L: LabelSet,
 {
     pub fn register(reg: &mut Registry, histo: impl IntoIterator<Item = f64>) -> Self {
         let duration =
@@ -51,49 +38,25 @@ where
             duration.clone(),
         );
 
-        let statuses = Family::default();
-        reg.register(
-            "request_statuses",
-            "Completed request-response streams",
-            statuses.clone(),
-        );
-
-        Self { duration, statuses }
+        Self { duration }
     }
 }
 
-#[cfg(feature = "test-util")]
-impl<DurL, StatL> RequestMetrics<DurL, StatL>
+impl<L> Default for RequestMetrics<L>
 where
-    StatL: LabelSet,
-    DurL: LabelSet,
-{
-    pub fn get_statuses(&self, labels: &StatL) -> Counter {
-        (*self.statuses.get_or_create(labels)).clone()
-    }
-
-    // TODO(kate): it'd be nice if we could avoid creating a time series if it does not exist,
-    // so that tests can confirm that certain label sets do not exist within the family.
-}
-
-impl<DurL, StatL> Default for RequestMetrics<DurL, StatL>
-where
-    StatL: LabelSet,
-    DurL: LabelSet,
+    L: LabelSet,
 {
     fn default() -> Self {
         Self {
             duration: DurationFamily::new_with_constructor(MkDurationHistogram(Arc::new([]))),
-            statuses: Default::default(),
         }
     }
 }
 
-impl<DurL, StatL> Clone for RequestMetrics<DurL, StatL> {
+impl<L> Clone for RequestMetrics<L> {
     fn clone(&self) -> Self {
         Self {
             duration: self.duration.clone(),
-            statuses: self.statuses.clone(),
         }
     }
 }
@@ -118,12 +81,11 @@ where
         let state = self.labeler.mk_stream_labeler(&req).map(|labeler| {
             let (tx, start) = oneshot::channel();
             tx.send(time::Instant::now()).unwrap();
-            let RequestMetrics { statuses, duration } = self.metric.clone();
+            let RequestMetrics { duration } = self.metric.clone();
             super::ResponseState {
                 labeler,
                 start,
                 duration,
-                statuses,
             }
         });
 
