@@ -10,7 +10,6 @@ use linkerd_app_core::{
     config::{ProxyConfig, QueueConfig},
     drain,
     exp_backoff::ExponentialBackoff,
-    http_tracing::SpanSink,
     identity, io,
     metrics::prom,
     profiles,
@@ -97,7 +96,6 @@ struct Runtime {
     metrics: OutboundMetrics,
     identity: identity::NewClient,
     tap: tap::Registry,
-    span_sink: Option<SpanSink>,
     drain: drain::Watch,
 }
 
@@ -127,7 +125,6 @@ impl Outbound<()> {
             metrics: OutboundMetrics::new(runtime.metrics, prom),
             identity: runtime.identity.new_client(),
             tap: runtime.tap,
-            span_sink: runtime.span_sink,
             drain: runtime.drain,
         };
         Self {

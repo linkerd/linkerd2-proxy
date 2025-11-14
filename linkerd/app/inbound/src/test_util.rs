@@ -99,7 +99,6 @@ pub fn runtime() -> (ProxyRuntime, drain::Signal) {
         identity: identity::creds::default_for_test().1,
         metrics: metrics.proxy,
         tap,
-        span_sink: None,
         drain,
     };
     (runtime, drain_tx)

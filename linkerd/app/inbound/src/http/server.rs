@@ -78,10 +78,7 @@ impl<H> Inbound<H> {
                 .push_on_service(svc::MapErr::layer_boxed())
                 .push(rt.metrics.http_errors.to_layer())
                 .push(ServerRescue::layer())
-                .push_on_service(http_tracing::server(
-                    rt.span_sink.clone(),
-                    super::trace_labels(),
-                ))
+                .push_on_service(http_tracing::server(super::trace_labels()))
                 // Record when an HTTP/1 URI was in absolute form
                 .push_on_service(http::normalize_uri::MarkAbsoluteForm::layer())
                 .push_on_service(http::BoxResponse::layer())
