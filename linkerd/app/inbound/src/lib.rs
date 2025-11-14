@@ -25,9 +25,7 @@ pub use self::{
 };
 use linkerd_app_core::{
     config::{ProxyConfig, QueueConfig},
-    drain,
-    http_tracing::SpanSink,
-    identity,
+    drain, identity,
     metrics::prom,
     proxy::tap,
     svc,
@@ -71,7 +69,6 @@ struct Runtime {
     metrics: InboundMetrics,
     identity: identity::creds::Receiver,
     tap: tap::Registry,
-    span_sink: Option<SpanSink>,
     drain: drain::Watch,
 }
 
@@ -154,7 +151,6 @@ impl Inbound<()> {
             metrics: InboundMetrics::new(runtime.metrics, prom),
             identity: runtime.identity,
             tap: runtime.tap,
-            span_sink: runtime.span_sink,
             drain: runtime.drain,
         };
         Self {

@@ -63,7 +63,6 @@ pub(crate) fn runtime() -> (ProxyRuntime, drain::Signal) {
         identity: linkerd_meshtls::creds::default_for_test().1,
         metrics: metrics.proxy,
         tap,
-        span_sink: None,
         drain,
     };
     (runtime, drain_tx)

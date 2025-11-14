@@ -6,7 +6,6 @@ mod service;
 
 pub use self::service::TraceContext;
 use bytes::Bytes;
-use linkerd_error::Error;
 use opentelemetry::{KeyValue, SpanId, TraceId};
 use std::fmt;
 use std::time::SystemTime;
@@ -52,24 +51,6 @@ pub struct Span {
     pub start: SystemTime,
     pub end: SystemTime,
     pub labels: Vec<KeyValue>,
-}
-
-pub trait SpanSink {
-    fn is_enabled(&self) -> bool;
-
-    fn try_send(&mut self, span: Span) -> Result<(), Error>;
-}
-
-impl<K: SpanSink> SpanSink for Option<K> {
-    #[inline]
-    fn is_enabled(&self) -> bool {
-        self.as_ref().map(SpanSink::is_enabled).unwrap_or(false)
-    }
-
-    #[inline]
-    fn try_send(&mut self, span: Span) -> Result<(), Error> {
-        self.as_mut().expect("Must be enabled").try_send(span)
-    }
 }
 
 // === impl Id ===
