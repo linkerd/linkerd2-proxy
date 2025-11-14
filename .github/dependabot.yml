@@ -97,6 +97,7 @@ updates:
       unicode-org:
         patterns:
           - "icu_*"
+          - "potential_utf"
           - "writeable"
       zerocopy:
         patterns:
