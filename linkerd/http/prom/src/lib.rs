@@ -4,4 +4,5 @@
 pub mod body_data;
 pub mod count_reqs;
 pub mod record_response;
+pub mod status;
 pub mod stream_label;
