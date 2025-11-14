@@ -1,19 +1,18 @@
-use crate::{Span, SpanSink};
+use crate::export::{SpanKind, SpanLabels};
 use futures::{future::Either, prelude::*};
 use http::Uri;
 use linkerd_stack::layer;
-use opentelemetry::trace::{TraceContextExt, Tracer, TracerProvider};
+use opentelemetry::context::FutureExt;
+use opentelemetry::trace::{Span, SpanRef, TraceContextExt, Tracer};
 use opentelemetry::KeyValue;
 use opentelemetry_http::{HeaderExtractor, HeaderInjector};
-use opentelemetry_sdk::trace::{SdkTracer, SdkTracerProvider};
 use opentelemetry_semantic_conventions as semconv;
 use std::{
     fmt::{Display, Formatter},
     pin::Pin,
     task::{Context, Poll},
-    time::SystemTime,
 };
-use tracing::{info, trace};
+use tracing::trace;
 
 /// A layer that adds distributed tracing instrumentation.
 ///
@@ -25,20 +24,23 @@ use tracing::{info, trace};
 /// about the span to the given SpanSink when the span is complete, i.e. when
 /// we receive the response.
 #[derive(Clone, Debug)]
-pub struct TraceContext<K, S> {
+pub struct TraceContext<S> {
     inner: S,
-    sink: K,
-    tracer: SdkTracer,
+    kind: SpanKind,
+    labels: SpanLabels,
 }
 
 // === impl TraceContext ===
 
-impl<K: Clone, S> TraceContext<K, S> {
-    pub fn layer(sink: K) -> impl layer::Layer<S, Service = TraceContext<K, S>> + Clone {
+impl<S> TraceContext<S> {
+    pub fn layer(
+        kind: SpanKind,
+        labels: SpanLabels,
+    ) -> impl layer::Layer<S, Service = TraceContext<S>> + Clone {
         layer::mk(move |inner| TraceContext {
             inner,
-            sink: sink.clone(),
-            tracer: SdkTracerProvider::builder().build().tracer(""),
+            kind,
+            labels: labels.clone(),
         })
     }
 
@@ -47,35 +49,34 @@ impl<K: Clone, S> TraceContext<K, S> {
     /// The OpenTelemetry spec defines the semantic conventions that HTTP
     /// services should use for the labels included in traces:
     /// https://opentelemetry.io/docs/specs/semconv/http/http-spans/
-    fn request_labels<B>(&self, req: &http::Request<B>) -> Vec<KeyValue> {
-        let mut attributes = Vec::with_capacity(13);
-        attributes.push(KeyValue::new(
+    fn add_request_labels<Sp: Span, B>(&self, span: &mut Sp, req: &http::Request<B>) {
+        span.set_attribute(KeyValue::new(
             semconv::trace::HTTP_REQUEST_METHOD,
             req.method().to_string(),
         ));
 
         let url = req.uri();
         if let Some(scheme) = url.scheme_str() {
-            attributes.push(KeyValue::new(
+            span.set_attribute(KeyValue::new(
                 semconv::trace::URL_SCHEME,
                 scheme.to_string(),
             ));
         }
-        attributes.push(KeyValue::new(
+        span.set_attribute(KeyValue::new(
             semconv::trace::URL_PATH,
             url.path().to_string(),
         ));
         if let Some(query) = url.query() {
-            attributes.push(KeyValue::new(semconv::trace::URL_QUERY, query.to_string()));
+            span.set_attribute(KeyValue::new(semconv::trace::URL_QUERY, query.to_string()));
         }
 
-        attributes.push(KeyValue::new(
+        span.set_attribute(KeyValue::new(
             semconv::trace::URL_FULL,
             UrlLabel(url).to_string(),
         ));
 
         // linkerd currently only proxies tcp-based connections
-        attributes.push(KeyValue::new(semconv::trace::NETWORK_TRANSPORT, "tcp"));
+        span.set_attribute(KeyValue::new(semconv::trace::NETWORK_TRANSPORT, "tcp"));
 
         // This is the order of precedence for host headers,
         // see https://opentelemetry.io/docs/specs/semconv/http/http-spans/
@@ -89,22 +90,28 @@ impl<K: Clone, S> TraceContext<K, S> {
             if let Ok(host) = host.to_str() {
                 if let Ok(uri) = host.parse::<Uri>() {
                     if let Some(host) = uri.host() {
-                        attributes.push(KeyValue::new(
+                        span.set_attribute(KeyValue::new(
                             semconv::trace::SERVER_ADDRESS,
                             host.to_string(),
                         ));
                     }
                     if let Some(port) = uri.port() {
-                        attributes
-                            .push(KeyValue::new(semconv::trace::SERVER_PORT, port.to_string()));
+                        span.set_attribute(KeyValue::new(
+                            semconv::trace::SERVER_PORT,
+                            port.to_string(),
+                        ));
                     }
                 }
             }
         }
 
-        Self::populate_header_values(&mut attributes, req);
+        Self::populate_header_values(span, req);
 
-        attributes
+        span.set_attributes(
+            self.labels
+                .iter()
+                .map(|(k, v)| KeyValue::new(k.clone(), v.clone())),
+        );
     }
 
     /// Populates labels for common header values from the request.
@@ -113,7 +120,7 @@ impl<K: Clone, S> TraceContext<K, S> {
     /// `http.request.header.<header>` values, but we shouldn't unconditionally populate all headers
     /// as they often contain authorization tokens/secrets/etc. Instead, we populate a subset of
     /// common headers into their respective labels.
-    fn populate_header_values<B>(labels: &mut Vec<KeyValue>, req: &http::Request<B>) {
+    fn populate_header_values<Sp: Span, B>(span: &mut Sp, req: &http::Request<B>) {
         static HEADER_LABELS: &[(&str, &str)] = &[
             ("user-agent", semconv::trace::USER_AGENT_ORIGINAL),
             // http.request.body.size is available as a semantic convention, but is not stable.
@@ -132,7 +139,7 @@ impl<K: Clone, S> TraceContext<K, S> {
         ];
         for &(header, label) in HEADER_LABELS {
             if let Some(value) = req.headers().get(header) {
-                labels.push(KeyValue::new(
+                span.set_attribute(KeyValue::new(
                     label,
                     String::from_utf8_lossy(value.as_bytes()).to_string(),
                 ));
@@ -140,12 +147,11 @@ impl<K: Clone, S> TraceContext<K, S> {
         }
     }
 
-    fn add_response_labels<B>(mut labels: Vec<KeyValue>, rsp: &http::Response<B>) -> Vec<KeyValue> {
-        labels.push(KeyValue::new(
+    fn add_response_labels<B>(span: SpanRef<'_>, rsp: &http::Response<B>) {
+        span.set_attribute(KeyValue::new(
             semconv::trace::HTTP_RESPONSE_STATUS_CODE,
             rsp.status().as_str().to_string(),
         ));
-        labels
     }
 }
 
@@ -182,9 +188,8 @@ impl Display for UrlLabel<'_> {
     }
 }
 
-impl<K, S, ReqB, RspB> tower::Service<http::Request<ReqB>> for TraceContext<K, S>
+impl<S, ReqB, RspB> tower::Service<http::Request<ReqB>> for TraceContext<S>
 where
-    K: Clone + SpanSink + Send + 'static,
     S: tower::Service<http::Request<ReqB>, Response = http::Response<RspB>>,
     S::Error: Send,
     S::Future: Send + 'static,
@@ -203,12 +208,11 @@ where
 
     fn call(&mut self, mut req: http::Request<ReqB>) -> Self::Future {
         'outer: {
-            if !self.sink.is_enabled() {
-                trace!("Sink not enabled, skipping");
-                break 'outer;
-            }
             let parent_ctx = opentelemetry::global::get_text_map_propagator(|prop| {
-                prop.extract(&HeaderExtractor(req.headers()))
+                prop.extract_with_context(
+                    &opentelemetry::Context::new(),
+                    &HeaderExtractor(req.headers()),
+                )
             });
             if !parent_ctx.span().span_context().is_valid()
                 || !parent_ctx.span().span_context().is_sampled()
@@ -217,10 +221,14 @@ where
                 break 'outer;
             }
 
-            let span = self
-                .tracer
-                .span_builder("".to_string())
-                .start_with_context(&self.tracer, &parent_ctx);
+            let tracer = opentelemetry::global::tracer("");
+            let span_name = req.uri().path().to_owned();
+            let mut span = tracer
+                .span_builder(span_name)
+                .with_kind(self.kind.into())
+                .start_with_context(&tracer, &parent_ctx);
+            self.add_request_labels(&mut span, &req);
+
             let ctx = parent_ctx.with_span(span);
 
             opentelemetry::global::get_text_map_propagator(|prop| {
@@ -228,27 +236,18 @@ where
             });
 
             // If the request has been marked for sampling, record its metadata.
-            let start = SystemTime::now();
-            let req_labels = self.request_labels(&req);
-            let mut sink = self.sink.clone();
-            let span_name = req.uri().path().to_owned();
-            return Either::Right(Box::pin(self.inner.call(req).map_ok(move |rsp| {
-                // Emit the completed span with the response metadata.
-                let span = Span {
-                    span_id: ctx.span().span_context().span_id(),
-                    trace_id: ctx.span().span_context().trace_id(),
-                    parent_id: parent_ctx.span().span_context().span_id(),
-                    span_name,
-                    start,
-                    end: SystemTime::now(),
-                    labels: Self::add_response_labels(req_labels, &rsp),
-                };
-                trace!(?span);
-                if let Err(error) = sink.try_send(span) {
-                    info!(%error, "Span dropped");
-                }
-                rsp
-            })));
+            return Either::Right(Box::pin(
+                self.inner
+                    .call(req)
+                    .map_ok(move |rsp| {
+                        let cx = opentelemetry::Context::current();
+                        let span = cx.span();
+                        trace!(?span);
+                        Self::add_response_labels(span, &rsp);
+                        rsp
+                    })
+                    .with_context(ctx),
+            ));
         }
 
         // If there's no tracing to be done, just pass on the request to the inner service.
@@ -260,11 +259,10 @@ where
 mod tests {
     use super::*;
     use http::HeaderMap;
-    use linkerd_error::Error;
     use linkerd_http_box::BoxBody;
     use opentelemetry::{SpanId, TraceId};
-    use std::collections::BTreeMap;
-    use tokio::sync::mpsc;
+    use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider, SpanData};
+    use std::collections::{BTreeMap, HashMap};
     use tower::{Layer, Service, ServiceExt};
 
     const W3C_TRACEPARENT_HEADER: &str = "traceparent";
@@ -313,14 +311,14 @@ mod tests {
         );
 
         assert_eq!(
-            exported_span.trace_id,
+            exported_span.span_context.trace_id(),
             TraceId::from_hex("4bf92f3577b34da6a3ce929d0e0e4736").expect("trace id")
         );
         assert_eq!(
-            exported_span.parent_id,
+            exported_span.parent_span_id,
             SpanId::from_hex("00f067aa0ba902b7").expect("span id")
         );
-        assert_eq!(exported_span.span_id, sent_span_cx.span_id());
+        assert_eq!(exported_span.span_context.span_id(), sent_span_cx.span_id());
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -363,14 +361,14 @@ mod tests {
         );
 
         assert_eq!(
-            exported_span.trace_id,
+            exported_span.span_context.trace_id(),
             TraceId::from_hex("4bf92f3577b34da6a3ce929d0e0e4736").expect("trace id")
         );
         assert_eq!(
-            exported_span.parent_id,
+            exported_span.parent_span_id,
             SpanId::from_hex("00f067aa0ba902b7").expect("span id")
         );
-        assert_eq!(exported_span.span_id, sent_span_cx.span_id());
+        assert_eq!(exported_span.span_context.span_id(), sent_span_cx.span_id());
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -397,7 +395,7 @@ mod tests {
         .await;
 
         let labels = exported_span
-            .labels
+            .attributes
             .into_iter()
             .map(|kv| (kv.key.to_string(), kv.value.to_string()))
             .collect::<BTreeMap<_, _>>();
@@ -431,12 +429,18 @@ mod tests {
         )
     }
 
-    async fn send_mock_request(req: http::Request<BoxBody>) -> (HeaderMap, Span) {
-        let (span_tx, mut span_rx) = mpsc::channel(1);
+    async fn send_mock_request(req: http::Request<BoxBody>) -> (HeaderMap, SpanData) {
+        let exporter = InMemorySpanExporter::default();
+        opentelemetry::global::set_tracer_provider(
+            SdkTracerProvider::builder()
+                .with_simple_exporter(exporter.clone())
+                .build(),
+        );
 
         let (inner, mut handle) =
             tower_test::mock::pair::<http::Request<BoxBody>, http::Response<BoxBody>>();
-        let mut stack = TraceContext::<TestSink, _>::layer(TestSink(span_tx)).layer(inner);
+        let mut stack =
+            TraceContext::layer(SpanKind::Server, SpanLabels::new(HashMap::default())).layer(inner);
         handle.allow(1);
 
         let stack = stack.ready().await.expect("ready");
@@ -450,23 +454,9 @@ mod tests {
             }),
         };
 
-        (
-            req_headers,
-            span_rx.try_recv().expect("must have exported span"),
-        )
-    }
+        let mut spans = exporter.get_finished_spans().expect("get finished spans");
+        assert_eq!(spans.len(), 1);
 
-    #[derive(Clone)]
-    struct TestSink(mpsc::Sender<Span>);
-
-    impl SpanSink for TestSink {
-        fn is_enabled(&self) -> bool {
-            true
-        }
-
-        fn try_send(&mut self, span: Span) -> Result<(), Error> {
-            self.0.try_send(span)?;
-            Ok(())
-        }
+        (req_headers, spans.remove(0))
     }
 }

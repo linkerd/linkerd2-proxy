@@ -6,15 +6,9 @@ pub mod propagation;
 
 use self::metrics::Registry;
 use crate::propagation::OrderedPropagator;
-use futures::stream::{Stream, StreamExt};
 use http_body::Body;
 use linkerd_error::Error;
-use linkerd_trace_context::{self as trace_context, export::ExportSpan};
 pub use opentelemetry as otel;
-use opentelemetry::{
-    trace::{SpanContext, SpanKind, Status, TraceFlags, TraceState},
-    KeyValue,
-};
 pub use opentelemetry_proto as proto;
 use opentelemetry_proto::{
     tonic::collector::trace::v1::{
@@ -25,42 +19,44 @@ use opentelemetry_proto::{
 pub use opentelemetry_sdk as sdk;
 use opentelemetry_sdk::error::{OTelSdkError, OTelSdkResult};
 use opentelemetry_sdk::trace::{
-    BatchConfigBuilder, BatchSpanProcessor, SpanData, SpanLinks, SpanProcessor,
+    BatchConfigBuilder, BatchSpanProcessor, SdkTracerProvider, SpanData,
 };
 use opentelemetry_sdk::Resource;
 pub use opentelemetry_semantic_conventions as semconv;
 use std::fmt::{Debug, Formatter};
 use std::time::Duration;
 use tonic::{body::Body as TonicBody, client::GrpcService};
-use tracing::{debug, info};
+use tracing::debug;
 
-pub async fn export_spans<T, S>(client: T, spans: S, resource: Resource, metrics: Registry)
+pub fn install_opentelemetry_providers<T>(client: T, resource: Resource, metrics: Registry)
 where
     T: GrpcService<TonicBody> + Clone + Send + Sync + 'static,
     T::Error: Into<Error>,
     T::Future: Send,
     T::ResponseBody: Body<Data = tonic::codegen::Bytes> + Send + 'static,
     <T::ResponseBody as Body>::Error: Into<Error> + Send,
-    S: Stream<Item = ExportSpan> + Unpin,
 {
     debug!("Span exporter running");
 
-    let processor = BatchSpanProcessor::builder(SpanExporter {
-        client: TraceServiceClient::new(client),
-        resource,
-        metrics,
-    })
-    .with_batch_config(
-        BatchConfigBuilder::default()
-            .with_max_queue_size(1000)
-            .with_scheduled_delay(Duration::from_secs(5))
+    let provider = SdkTracerProvider::builder()
+        .with_span_processor(
+            BatchSpanProcessor::builder(SpanExporter {
+                client: TraceServiceClient::new(client),
+                resource,
+                metrics,
+            })
+            .with_batch_config(
+                BatchConfigBuilder::default()
+                    .with_max_queue_size(1000)
+                    .with_scheduled_delay(Duration::from_secs(5))
+                    .build(),
+            )
             .build(),
-    )
-    .build();
+        )
+        .build();
 
+    opentelemetry::global::set_tracer_provider(provider);
     opentelemetry::global::set_text_map_propagator(OrderedPropagator::new());
-
-    SpanExportTask::new(spans, processor).run().await;
 }
 
 /// SpanExporter sends a Stream of spans to the given TraceService gRPC service.
@@ -120,113 +116,62 @@ where
     }
 }
 
-struct SpanExportTask<S> {
-    spans: S,
-    processor: BatchSpanProcessor,
-}
-
-impl<S> SpanExportTask<S>
-where
-    S: Stream<Item = ExportSpan> + Unpin,
-{
-    fn new(spans: S, processor: BatchSpanProcessor) -> Self {
-        Self { spans, processor }
-    }
-
-    async fn run(mut self) {
-        while let Some(span) = self.spans.next().await {
-            let s = match convert_span(span) {
-                Ok(s) => s,
-                Err(error) => {
-                    info!(%error, "Span dropped");
-                    continue;
-                }
-            };
-
-            self.processor.on_end(s);
-        }
-    }
-}
-
-fn convert_span(span: ExportSpan) -> Result<SpanData, Error> {
-    let ExportSpan { span, kind, labels } = span;
-
-    let mut attributes = Vec::<KeyValue>::new();
-    for (k, v) in labels.iter() {
-        attributes.push(KeyValue::new(k.clone(), v.clone()));
-    }
-    for kv in span.labels.into_iter() {
-        attributes.push(kv);
-    }
-    let is_remote = kind != trace_context::export::SpanKind::Client;
-    Ok(SpanData {
-        parent_span_id: span.parent_id,
-        parent_span_is_remote: true, // we do not originate any spans locally
-        span_kind: match kind {
-            trace_context::export::SpanKind::Server => SpanKind::Server,
-            trace_context::export::SpanKind::Client => SpanKind::Client,
-        },
-        name: span.span_name.into(),
-        start_time: span.start,
-        end_time: span.end,
-        attributes,
-        dropped_attributes_count: 0,
-        links: SpanLinks::default(),
-        status: Status::Unset, // TODO: this is gRPC status; we must read response trailers to populate this
-        span_context: SpanContext::new(
-            span.trace_id,
-            span.span_id,
-            TraceFlags::default(),
-            is_remote,
-            TraceState::NONE,
-        ),
-        events: Default::default(),
-        instrumentation_scope: Default::default(),
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use linkerd_trace_context::{export::SpanKind, Span};
-    use opentelemetry::{SpanId, TraceId};
-    use opentelemetry_proto::tonic::common::v1::InstrumentationScope;
-    use std::{sync::Arc, time::SystemTime};
-    use tokio::sync::mpsc;
-    use tonic::codegen::{tokio_stream::wrappers::ReceiverStream, tokio_stream::StreamExt};
+    use opentelemetry::trace::{SpanContext, TraceContextExt, TraceState, Tracer};
+    use opentelemetry::{Context, SpanId, TraceFlags, TraceId};
+    use opentelemetry_proto::tonic::common::v1::any_value::Value;
+    use opentelemetry_proto::tonic::common::v1::{AnyValue, InstrumentationScope};
+    use std::collections::HashMap;
+    use tonic::codegen::tokio_stream::StreamExt;
     use tonic_prost::ProstDecoder;
 
     #[tokio::test(flavor = "current_thread")]
     async fn send_span() {
+        let _trace = linkerd_tracing::test::trace_init();
+
         let trace_id = TraceId::from_hex("0123456789abcedffedcba9876543210").expect("trace id");
         let parent_id = SpanId::from_hex("fedcba9876543210").expect("parent id");
         let span_id = SpanId::from_hex("0123456789abcedf").expect("span id");
-        let span_name = "test".to_string();
+        let span_name = "test-span".to_string();
 
-        let start = SystemTime::now();
-        let end = SystemTime::now();
-
-        let span = ExportSpan {
-            span: Span {
-                trace_id,
-                span_id,
-                parent_id,
-                span_name: span_name.clone(),
-                start,
-                end,
-                labels: Vec::new(),
-            },
-            kind: SpanKind::Server,
-            labels: Arc::new(Default::default()),
-        };
-
-        let mut req = send_mock_request(span).await;
+        let mut req = send_mock_request(trace_id, parent_id, span_id, span_name.clone()).await;
 
         assert_eq!(req.resource_spans.len(), 1);
         let mut resource_span = req.resource_spans.remove(0);
         let resource_span_resource = resource_span.resource.expect("must have resource");
         assert_eq!(resource_span_resource.dropped_attributes_count, 0);
         assert_eq!(resource_span_resource.entity_refs, vec![]);
+        let expected: HashMap<&str, Option<&str>> = HashMap::from_iter([
+            ("telemetry.sdk.name", Some("opentelemetry")),
+            ("telemetry.sdk.version", None),
+            ("telemetry.sdk.language", Some("rust")),
+            ("service.name", Some("unknown_service")),
+        ]);
+
+        assert_eq!(expected.len(), resource_span_resource.attributes.len());
+        for (expected_key, expected_value) in expected {
+            let Some(actual) = resource_span_resource
+                .attributes
+                .iter()
+                .find(|kv| kv.key == expected_key)
+            else {
+                panic!("{expected_key} not found in resource attributes");
+            };
+
+            let Some(AnyValue {
+                value: Some(Value::StringValue(actual_value)),
+            }) = &actual.value
+            else {
+                panic!("Unexpected value type: {:?}", actual.value);
+            };
+
+            if let Some(expected_value) = expected_value {
+                assert_eq!(actual_value, expected_value);
+            }
+        }
+
         resource_span_resource
             .attributes
             .iter()
@@ -251,54 +196,52 @@ mod tests {
         assert_eq!(
             scope_span.scope,
             Some(InstrumentationScope {
-                name: "".to_string(),
+                name: "test".to_string(),
                 version: "".to_string(),
                 attributes: vec![],
                 dropped_attributes_count: 0,
             })
         );
-        assert_eq!(scope_span.spans.len(), 1);
 
+        assert_eq!(scope_span.spans.len(), 1);
         let span = scope_span.spans.remove(0);
+
         assert_eq!(span.span_id, span_id.to_bytes().to_vec(),);
         assert_eq!(span.parent_span_id, parent_id.to_bytes().to_vec(),);
         assert_eq!(span.trace_id, trace_id.to_bytes().to_vec(),);
         assert_eq!(span.name, span_name);
-        assert_eq!(
-            span.start_time_unix_nano,
-            start
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .expect("duration")
-                .as_nanos() as u64
-        );
-        assert_eq!(
-            span.end_time_unix_nano,
-            end.duration_since(SystemTime::UNIX_EPOCH)
-                .expect("duration")
-                .as_nanos() as u64
-        );
-        assert_eq!(span.flags, 0b11_0000_0000);
+        assert_eq!(span.flags, 0b11_0000_0001);
     }
 
-    async fn send_mock_request(span: ExportSpan) -> ExportTraceServiceRequest {
-        let _trace = linkerd_tracing::test::trace_init();
-        let (span_tx, span_rx) = mpsc::channel(1);
-
+    async fn send_mock_request(
+        trace_id: TraceId,
+        parent_id: SpanId,
+        span_id: SpanId,
+        span_name: String,
+    ) -> ExportTraceServiceRequest {
         let (inner, mut handle) = tower_test::mock::pair::<
             http::Request<tonic::body::Body>,
             http::Response<tonic::body::Body>,
         >();
         handle.allow(1);
 
-        span_tx.try_send(span).expect("Must have space");
-
         let (metrics, _) = metrics::new();
-        tokio::spawn(export_spans(
-            inner,
-            ReceiverStream::new(span_rx),
-            Resource::builder().build(),
-            metrics,
+        install_opentelemetry_providers(inner, Resource::builder().build(), metrics);
+
+        let parent_cx = Context::new().with_remote_span_context(SpanContext::new(
+            trace_id,
+            parent_id,
+            TraceFlags::SAMPLED,
+            true,
+            TraceState::NONE,
         ));
+
+        let tracer = opentelemetry::global::tracer("test");
+        let span = tracer
+            .span_builder(span_name)
+            .with_span_id(span_id)
+            .start_with_context(&tracer, &parent_cx);
+        drop(span);
 
         let (req, _tx) = handle.next_request().await.expect("next request");
         let req = tonic::Request::from_http(req);
