@@ -1,6 +1,7 @@
 use crate::stream_label::{LabelSet, MkStreamLabel, StreamLabel};
 use http_body::Body;
 use linkerd_error::Error;
+use linkerd_http_body_eos::EosRef;
 use linkerd_http_box::BoxBody;
 use linkerd_stack as svc;
 use prometheus_client::metrics::{
@@ -180,7 +181,7 @@ where
 
                 let (head, inner) = rsp.into_parts();
                 if inner.is_end_stream() {
-                    end_stream(&mut state, Ok(None));
+                    end_stream(&mut state, EosRef::None);
                 }
                 Poll::Ready(Ok(http::Response::from_parts(
                     head,
@@ -188,7 +189,7 @@ where
                 )))
             }
             Err(error) => {
-                end_stream(&mut state, Err(&error));
+                end_stream(&mut state, EosRef::Error(&error));
                 Poll::Ready(Err(error))
             }
         }
@@ -217,14 +218,14 @@ where
 
         match &frame {
             Some(Ok(frame)) => {
-                if let trls @ Some(_) = frame.trailers_ref() {
-                    end_stream(this.state, Ok(trls));
+                if let Some(trls) = frame.trailers_ref() {
+                    end_stream(this.state, EosRef::Trailers(trls));
                 } else if this.inner.is_end_stream() {
-                    end_stream(this.state, Ok(None));
+                    end_stream(this.state, EosRef::None);
                 }
             }
-            Some(Err(error)) => end_stream(this.state, Err(error)),
-            None => end_stream(this.state, Ok(None)),
+            Some(Err(error)) => end_stream(this.state, EosRef::Error(error)),
+            None => end_stream(this.state, EosRef::None),
         }
 
         Poll::Ready(frame)
@@ -246,15 +247,13 @@ where
     fn drop(self: Pin<&mut Self>) {
         let this = self.project();
         if this.state.is_some() {
-            end_stream(this.state, Err(&RequestCancelled.into()));
+            end_stream(this.state, EosRef::Cancelled);
         }
     }
 }
 
-fn end_stream<L>(
-    state: &mut Option<ResponseState<L>>,
-    res: Result<Option<&http::HeaderMap>, &Error>,
-) where
+fn end_stream<L>(state: &mut Option<ResponseState<L>>, res: EosRef<'_>)
+where
     L: StreamLabel,
     L::DurationLabels: LabelSet,
 {
