@@ -15,6 +15,7 @@ linkerd-trace-context = { path = "../trace-context" }
 opentelemetry = { version = "0.31", default-features = false, features = ["trace"] }
 opentelemetry_sdk = { version = "0.31", default-features = false, features = ["trace"] }
 opentelemetry-proto = { version = "0.31" }
+opentelemetry-zipkin = { version = "0.31", default-features = false }
 opentelemetry-semantic-conventions = { version = "0.31", default-features = false, features = ["semconv_experimental"] }
 tonic = { workspace = true, default-features = false, features = [
     "codegen",
