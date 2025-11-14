@@ -2,6 +2,7 @@ use crate::{propagation, Span, SpanSink};
 use futures::{future::Either, prelude::*};
 use http::Uri;
 use linkerd_stack::layer;
+use opentelemetry_semantic_conventions as semconv;
 use std::{
     collections::HashMap,
     fmt::{Display, Formatter},
@@ -43,21 +44,24 @@ impl<K: Clone, S> TraceContext<K, S> {
     /// https://opentelemetry.io/docs/specs/semconv/http/http-spans/
     fn request_labels<B>(req: &http::Request<B>) -> HashMap<&'static str, String> {
         let mut labels = HashMap::with_capacity(13);
-        labels.insert("http.request.method", format!("{}", req.method()));
+        labels.insert(
+            semconv::trace::HTTP_REQUEST_METHOD,
+            format!("{}", req.method()),
+        );
 
         let url = req.uri();
         if let Some(scheme) = url.scheme_str() {
-            labels.insert("url.scheme", scheme.to_string());
+            labels.insert(semconv::trace::URL_SCHEME, scheme.to_string());
         }
-        labels.insert("url.path", url.path().to_string());
+        labels.insert(semconv::trace::URL_PATH, url.path().to_string());
         if let Some(query) = url.query() {
-            labels.insert("url.query", query.to_string());
+            labels.insert(semconv::trace::URL_QUERY, query.to_string());
         }
 
-        labels.insert("url.full", UrlLabel(url).to_string());
+        labels.insert(semconv::trace::URL_FULL, UrlLabel(url).to_string());
 
         // linkerd currently only proxies tcp-based connections
-        labels.insert("network.transport", "tcp".to_string());
+        labels.insert(semconv::trace::NETWORK_TRANSPORT, "tcp".to_string());
 
         // This is the order of precedence for host headers,
         // see https://opentelemetry.io/docs/specs/semconv/http/http-spans/
@@ -71,10 +75,10 @@ impl<K: Clone, S> TraceContext<K, S> {
             if let Ok(host) = host.to_str() {
                 if let Ok(uri) = host.parse::<Uri>() {
                     if let Some(host) = uri.host() {
-                        labels.insert("server.address", host.to_string());
+                        labels.insert(semconv::trace::SERVER_ADDRESS, host.to_string());
                     }
                     if let Some(port) = uri.port() {
-                        labels.insert("server.port", port.to_string());
+                        labels.insert(semconv::trace::SERVER_PORT, port.to_string());
                     }
                 }
             }
@@ -96,11 +100,20 @@ impl<K: Clone, S> TraceContext<K, S> {
         req: &http::Request<B>,
     ) {
         static HEADER_LABELS: &[(&str, &str)] = &[
-            ("user-agent", "user_agent.original"),
+            ("user-agent", semconv::trace::USER_AGENT_ORIGINAL),
             // http.request.body.size is available as a semantic convention, but is not stable.
-            ("content-length", "http.request.header.content-length"),
-            ("content-type", "http.request.header.content-type"),
-            ("l5d-orig-proto", "http.request.header.l5d-orig-proto"),
+            (
+                "content-length",
+                const_format::concatcp!(semconv::trace::HTTP_REQUEST_HEADER, ".content-length"),
+            ),
+            (
+                "content-type",
+                const_format::concatcp!(semconv::trace::HTTP_REQUEST_HEADER, ".content-type"),
+            ),
+            (
+                "l5d-orig-proto",
+                const_format::concatcp!(semconv::trace::HTTP_REQUEST_HEADER, ".l5d-orig-proto"),
+            ),
         ];
         for &(header, label) in HEADER_LABELS {
             if let Some(value) = req.headers().get(header) {
@@ -114,7 +127,7 @@ impl<K: Clone, S> TraceContext<K, S> {
         rsp: &http::Response<B>,
     ) -> HashMap<&'static str, String> {
         labels.insert(
-            "http.response.status_code",
+            semconv::trace::HTTP_RESPONSE_STATUS_CODE,
             rsp.status().as_str().to_string(),
         );
         labels
