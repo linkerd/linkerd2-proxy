@@ -30,5 +30,6 @@ linkerd-http-box = { path = "../http/box" }
 linkerd-io = { path = "../io" }
 linkerd-tracing = { path = "../tracing" }
 linkerd-opentelemetry = { path = "../opentelemetry" }
+opentelemetry_sdk = { version = "0.31", default-features = false, features = ["trace", "testing"] }
 tokio = { version = "1", features = ["test-util"] }
 tower-test = { workspace = true }
