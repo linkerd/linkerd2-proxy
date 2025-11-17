@@ -62,7 +62,7 @@ mod tests {
     use crate::api::Svid;
     use linkerd_error::Result;
     use linkerd_identity::DerX509;
-    use rcgen::{CertificateParams, KeyPair, SanType, SerialNumber};
+    use linkerd_rustls::rcgen::{CertificateParams, KeyPair, SanType, SerialNumber};
     use std::time::SystemTime;
 
     fn gen_svid(id: Id, subject_alt_names: Vec<SanType>, serial: SerialNumber) -> Svid {

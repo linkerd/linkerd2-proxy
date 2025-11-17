@@ -2003,7 +2003,6 @@ dependencies = [
  "linkerd-tls",
  "linkerd-tls-test-util",
  "linkerd-tracing",
- "rcgen",
  "rustls-pemfile",
  "thiserror",
  "tokio",
@@ -2016,7 +2015,7 @@ version = "0.1.0"
 dependencies = [
  "linkerd-error",
  "linkerd-identity",
- "rcgen",
+ "linkerd-rustls",
  "tracing",
  "x509-parser",
 ]
@@ -2326,8 +2325,8 @@ dependencies = [
  "linkerd-exp-backoff",
  "linkerd-identity",
  "linkerd-proxy-http",
+ "linkerd-rustls",
  "linkerd-tonic-watch",
- "rcgen",
  "simple_asn1",
  "spiffe-proto",
  "thiserror",
@@ -2439,6 +2438,7 @@ dependencies = [
 name = "linkerd-rustls"
 version = "0.1.0"
 dependencies = [
+ "rcgen",
  "rustls-webpki",
  "tokio-rustls",
 ]
