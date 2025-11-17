@@ -8,6 +8,11 @@ use linkerd_app_core::{
 };
 use linkerd_app_test::{AsyncReadExt, AsyncWriteExt};
 use linkerd_proxy_client_policy::{self as client_policy, tls::sni};
+use linkerd_rustls::tokio_rustls::rustls::{
+    internal::msgs::codec::{Codec, Reader},
+    pki_types::DnsName,
+    InvalidMessage,
+};
 use parking_lot::Mutex;
 use std::{
     collections::HashMap,
@@ -18,11 +23,6 @@ use std::{
     time::Duration,
 };
 use tokio::sync::watch;
-use tokio_rustls::rustls::{
-    internal::msgs::codec::{Codec, Reader},
-    pki_types::DnsName,
-    InvalidMessage,
-};
 
 mod basic;
 
@@ -174,7 +174,7 @@ fn sni_route(backend: client_policy::Backend, sni: sni::MatchSni) -> client_poli
 
 // generates a sample ClientHello TLS message for testing
 fn generate_client_hello(sni: &str) -> Vec<u8> {
-    use tokio_rustls::rustls::{
+    use linkerd_rustls::tokio_rustls::rustls::{
         internal::msgs::{base::Payload, codec::Codec, message::PlainMessage},
         ContentType, ProtocolVersion,
     };

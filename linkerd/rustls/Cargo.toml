@@ -7,8 +7,16 @@ edition = "2018"
 publish = { workspace = true }
 
 [features]
-rustls-aws-lc-fips = ["tokio-rustls/fips"]
+default = ["tokio-rustls-0-26"]
+tokio-rustls-0-26 = ["dep:tokio-rustls-0-26"]
+rustls-aws-lc-fips = ["tokio-rustls-0-26?/fips"]
 
 [dependencies]
 rustls-webpki = { version = "0.103.8", default-features = false, features = ["std", "aws-lc-rs"] }
-tokio-rustls = { workspace = true, features = ["aws-lc-rs"] }
+
+[dependencies.tokio-rustls-0-26]
+package = "tokio-rustls"
+version = "0.26"
+default-features = false
+features = ["aws-lc-rs", "logging"]
+optional = true

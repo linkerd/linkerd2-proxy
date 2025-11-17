@@ -2,12 +2,12 @@ use super::app_core::svc::http::TokioExecutor;
 use super::*;
 use http::{Request, Response};
 use linkerd_app_core::svc::http::BoxBody;
+use linkerd_rustls::tokio_rustls::{rustls::ServerConfig, TlsAcceptor};
 use std::{
     io,
     sync::atomic::{AtomicUsize, Ordering},
 };
 use tokio::{net::TcpStream, task::JoinHandle};
-use tokio_rustls::{rustls::ServerConfig, TlsAcceptor};
 
 pub fn new() -> Server {
     http2()

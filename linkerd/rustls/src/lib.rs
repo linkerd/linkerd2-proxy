@@ -22,3 +22,10 @@ pub fn get_default_provider() -> Arc<CryptoProvider> {
 
     Arc::clone(CryptoProvider::get_default().expect("Default crypto provider must be installed"))
 }
+
+pub mod tokio_rustls {
+    // TODO(kate): for now, solely work with 0.26.
+
+    #[cfg(feature = "tokio-rustls-0-26")]
+    pub use tokio_rustls_0_26::*;
+}
