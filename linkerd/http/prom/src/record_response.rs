@@ -32,7 +32,7 @@ pub struct Params<L: MkStreamLabel, M> {
 
 #[derive(Clone, Debug, thiserror::Error)]
 #[error("request was cancelled before completion")]
-pub struct RequestCancelled(());
+pub struct RequestCancelled;
 
 /// Instruments an `N`-typed [`svc::NewService<T>`] with metrics.
 ///
@@ -252,7 +252,7 @@ where
     fn drop(self: Pin<&mut Self>) {
         let this = self.project();
         if this.state.is_some() {
-            end_stream(this.state, Err(&RequestCancelled(()).into()));
+            end_stream(this.state, Err(&RequestCancelled.into()));
         }
     }
 }
