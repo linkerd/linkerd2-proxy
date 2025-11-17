@@ -6,9 +6,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 use tokio::sync::mpsc;
-use tokio_stream::wrappers::ReceiverStream;
 use tonic::{body::Body as TonicBody, client::GrpcService};
-use tracing::Instrument;
 
 pub(super) struct OtelCollectorAttributes {
     pub hostname: Option<String>,
@@ -28,8 +26,7 @@ where
     S::ResponseBody: Body<Data = tonic::codegen::Bytes> + Send + 'static,
     <S::ResponseBody as Body>::Error: Into<Error> + Send,
 {
-    let (span_sink, spans_rx) = mpsc::channel(crate::trace_collector::SPAN_BUFFER_CAPACITY);
-    let spans_rx = ReceiverStream::new(spans_rx);
+    let (span_sink, _) = mpsc::channel(crate::trace_collector::SPAN_BUFFER_CAPACITY);
 
     let resource = sdk::Resource::builder()
         .with_attribute(KeyValue::new(
@@ -56,14 +53,7 @@ where
         .build();
 
     let addr = addr.clone();
-    let task = Box::pin(
-        opentelemetry::export_spans(svc, spans_rx, resource, legacy_metrics)
-            .instrument(tracing::debug_span!("opentelemetry", peer.addr = %addr).or_current()),
-    );
+    opentelemetry::install_opentelemetry_providers(svc, resource, legacy_metrics);
 
-    EnabledCollector {
-        addr,
-        task,
-        span_sink,
-    }
+    EnabledCollector { addr, span_sink }
 }

@@ -33,7 +33,6 @@ pub enum TraceCollector {
 pub struct EnabledCollector {
     pub addr: control::ControlAddr,
     pub span_sink: SpanSink,
-    pub task: Task,
 }
 
 impl TraceCollector {
