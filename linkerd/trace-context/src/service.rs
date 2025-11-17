@@ -1,9 +1,9 @@
-use crate::export::{SpanKind, SpanLabels};
+use crate::export::SpanLabels;
 use futures::{future::Either, prelude::*};
 use http::Uri;
 use linkerd_stack::layer;
 use opentelemetry::context::FutureExt;
-use opentelemetry::trace::{Span, SpanRef, TraceContextExt, Tracer};
+use opentelemetry::trace::{Span, SpanKind, SpanRef, TraceContextExt, Tracer};
 use opentelemetry::KeyValue;
 use opentelemetry_http::{HeaderExtractor, HeaderInjector};
 use opentelemetry_semantic_conventions as semconv;
@@ -39,7 +39,7 @@ impl<S> TraceContext<S> {
     ) -> impl layer::Layer<S, Service = TraceContext<S>> + Clone {
         layer::mk(move |inner| TraceContext {
             inner,
-            kind,
+            kind: kind.clone(),
             labels: labels.clone(),
         })
     }
@@ -225,7 +225,7 @@ where
             let span_name = req.uri().path().to_owned();
             let mut span = tracer
                 .span_builder(span_name)
-                .with_kind(self.kind.into())
+                .with_kind(self.kind.clone())
                 .start_with_context(&tracer, &parent_ctx);
             self.add_request_labels(&mut span, &req);
 
