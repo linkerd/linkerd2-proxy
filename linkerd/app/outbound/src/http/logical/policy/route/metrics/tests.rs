@@ -1,3 +1,5 @@
+use crate::http::policy::route::metrics::labels::{GrpcRouteRsp, HttpRouteRsp};
+
 use super::{
     super::{Grpc, Http, Route},
     labels,
@@ -12,10 +14,11 @@ use linkerd_app_core::{
     svc::{
         self,
         http::{uri::Uri, BoxBody},
-        Layer, NewService,
+        NewService,
     },
 };
-use linkerd_http_prom::body_data::request::RequestBodyFamilies;
+use linkerd_http_box::BoxResponse;
+use linkerd_http_prom::{body_data::request::RequestBodyFamilies, status::StatusMetrics};
 use linkerd_proxy_client_policy as policy;
 use std::task::Poll;
 
@@ -29,6 +32,7 @@ async fn http_request_statuses() {
 
     let super::HttpRouteMetrics {
         requests,
+        statuses,
         body_data,
         ..
     } = super::HttpRouteMetrics::default();
@@ -36,6 +40,7 @@ async fn http_request_statuses() {
     let route_ref = crate::RouteRef(policy::Meta::new_default("route"));
     let (mut svc, mut handle) = mock_http_route_metrics(
         &requests,
+        &statuses,
         &body_data,
         &parent_ref,
         &route_ref,
@@ -43,7 +48,7 @@ async fn http_request_statuses() {
     );
 
     // Send one request and ensure it's counted.
-    let ok = requests.get_statuses(&labels::Rsp(
+    let ok = statuses.metric(&labels::Rsp(
         labels::Route::new(parent_ref.clone(), route_ref.clone(), None),
         labels::HttpRsp {
             status: Some(http::StatusCode::OK),
@@ -62,7 +67,7 @@ async fn http_request_statuses() {
 
     // Send another request and ensure it's counted with a different response
     // status.
-    let no_content = requests.get_statuses(&labels::Rsp(
+    let no_content = statuses.metric(&labels::Rsp(
         labels::Route::new(parent_ref.clone(), route_ref.clone(), None),
         labels::HttpRsp {
             status: Some(http::StatusCode::NO_CONTENT),
@@ -86,7 +91,7 @@ async fn http_request_statuses() {
     .await;
 
     // Emit a response with an error and ensure it's counted.
-    let unknown = requests.get_statuses(&labels::Rsp(
+    let unknown = statuses.metric(&labels::Rsp(
         labels::Route::new(parent_ref.clone(), route_ref.clone(), None),
         labels::HttpRsp {
             status: None,
@@ -100,7 +105,7 @@ async fn http_request_statuses() {
 
     // Emit a successful response with a body that fails and ensure that both
     // the status and error are recorded.
-    let mixed = requests.get_statuses(&labels::Rsp(
+    let mixed = statuses.metric(&labels::Rsp(
         labels::Route::new(parent_ref, route_ref, None),
         labels::HttpRsp {
             status: Some(http::StatusCode::OK),
@@ -117,9 +122,9 @@ async fn http_request_statuses() {
     })
     .await;
 
-    assert_eq!(unknown.get(), 1);
     assert_eq!(ok.get(), 1);
     assert_eq!(no_content.get(), 1);
+    assert_eq!(unknown.get(), 1);
     assert_eq!(mixed.get(), 1);
 }
 
@@ -137,6 +142,7 @@ async fn http_request_hostnames() {
 
     let super::HttpRouteMetrics {
         requests,
+        statuses,
         body_data,
         ..
     } = super::HttpRouteMetrics::default();
@@ -144,6 +150,7 @@ async fn http_request_hostnames() {
     let route_ref = crate::RouteRef(policy::Meta::new_default("route"));
     let (mut svc, mut handle) = mock_http_route_metrics(
         &requests,
+        &statuses,
         &body_data,
         &parent_ref,
         &route_ref,
@@ -151,7 +158,7 @@ async fn http_request_hostnames() {
     );
 
     let get_counter = |host: Option<&'static str>, status: Option<http::StatusCode>| {
-        requests.get_statuses(&labels::Rsp(
+        statuses.metric(&labels::Rsp(
             labels::Route::new_with_name(
                 parent_ref.clone(),
                 route_ref.clone(),
@@ -272,6 +279,7 @@ async fn http_request_hostnames_disabled() {
 
     let super::HttpRouteMetrics {
         requests,
+        statuses,
         body_data,
         ..
     } = super::HttpRouteMetrics::default();
@@ -279,6 +287,7 @@ async fn http_request_hostnames_disabled() {
     let route_ref = crate::RouteRef(policy::Meta::new_default("route"));
     let (mut svc, mut handle) = mock_http_route_metrics(
         &requests,
+        &statuses,
         &body_data,
         &parent_ref,
         &route_ref,
@@ -286,7 +295,7 @@ async fn http_request_hostnames_disabled() {
     );
 
     let get_counter = |host: Option<&'static str>, status: Option<http::StatusCode>| {
-        requests.get_statuses(&labels::Rsp(
+        statuses.metric(&labels::Rsp(
             labels::Route::new_with_name(
                 parent_ref.clone(),
                 route_ref.clone(),
@@ -380,6 +389,7 @@ async fn http_route_request_body_frames() {
 
     let super::HttpRouteMetrics {
         requests,
+        statuses,
         body_data,
         ..
     } = super::HttpRouteMetrics::default();
@@ -387,6 +397,7 @@ async fn http_route_request_body_frames() {
     let route_ref = crate::RouteRef(policy::Meta::new_default("route"));
     let (mut svc, mut handle) = mock_http_route_metrics(
         &requests,
+        &statuses,
         &body_data,
         &parent_ref,
         &route_ref,
@@ -536,6 +547,7 @@ async fn http_response_body_drop_on_eos() {
 
     let super::HttpRouteMetrics {
         requests,
+        statuses,
         body_data,
         ..
     } = super::HttpRouteMetrics::default();
@@ -543,6 +555,7 @@ async fn http_response_body_drop_on_eos() {
     let route_ref = crate::RouteRef(policy::Meta::new_default("route"));
     let (mut svc, mut handle) = mock_http_route_metrics(
         &requests,
+        &statuses,
         &body_data,
         &parent_ref,
         &route_ref,
@@ -557,14 +570,14 @@ async fn http_response_body_drop_on_eos() {
         .unwrap();
 
     // Two counters for 200 responses that do/don't have an error.
-    let ok = requests.get_statuses(&labels::Rsp(
+    let ok = statuses.metric(&labels::Rsp(
         labels::Route::new(parent_ref.clone(), route_ref.clone(), None),
         labels::HttpRsp {
             status: Some(http::StatusCode::OK),
             error: None,
         },
     ));
-    let err = requests.get_statuses(&labels::Rsp(
+    let err = statuses.metric(&labels::Rsp(
         labels::Route::new(parent_ref.clone(), route_ref.clone(), None),
         labels::HttpRsp {
             status: Some(http::StatusCode::OK),
@@ -619,6 +632,7 @@ async fn http_response_body_drop_early() {
 
     let super::HttpRouteMetrics {
         requests,
+        statuses,
         body_data,
         ..
     } = super::HttpRouteMetrics::default();
@@ -626,6 +640,7 @@ async fn http_response_body_drop_early() {
     let route_ref = crate::RouteRef(policy::Meta::new_default("route"));
     let (mut svc, mut handle) = mock_http_route_metrics(
         &requests,
+        &statuses,
         &body_data,
         &parent_ref,
         &route_ref,
@@ -640,14 +655,14 @@ async fn http_response_body_drop_early() {
         .unwrap();
 
     // Two counters for 200 responses that do/don't have an error.
-    let ok = requests.get_statuses(&labels::Rsp(
+    let ok = statuses.metric(&labels::Rsp(
         labels::Route::new(parent_ref.clone(), route_ref.clone(), None),
         labels::HttpRsp {
             status: Some(http::StatusCode::OK),
             error: None,
         },
     ));
-    let err = requests.get_statuses(&labels::Rsp(
+    let err = statuses.metric(&labels::Rsp(
         labels::Route::new(parent_ref.clone(), route_ref.clone(), None),
         labels::HttpRsp {
             status: Some(http::StatusCode::OK),
@@ -688,6 +703,7 @@ async fn grpc_request_statuses_ok() {
 
     let super::GrpcRouteMetrics {
         requests,
+        statuses,
         body_data,
         ..
     } = super::GrpcRouteMetrics::default();
@@ -696,6 +712,7 @@ async fn grpc_request_statuses_ok() {
 
     let (mut svc, mut handle) = mock_grpc_route_metrics(
         &requests,
+        &statuses,
         &body_data,
         &parent_ref,
         &route_ref,
@@ -703,7 +720,7 @@ async fn grpc_request_statuses_ok() {
     );
 
     // Send one request and ensure it's counted.
-    let ok = requests.get_statuses(&labels::Rsp(
+    let ok = statuses.metric(&labels::Rsp(
         labels::Route::new(
             parent_ref.clone(),
             route_ref.clone(),
@@ -741,6 +758,7 @@ async fn grpc_request_statuses_not_found() {
 
     let super::GrpcRouteMetrics {
         requests,
+        statuses,
         body_data,
         ..
     } = super::GrpcRouteMetrics::default();
@@ -749,6 +767,7 @@ async fn grpc_request_statuses_not_found() {
 
     let (mut svc, mut handle) = mock_grpc_route_metrics(
         &requests,
+        &statuses,
         &body_data,
         &parent_ref,
         &route_ref,
@@ -757,7 +776,7 @@ async fn grpc_request_statuses_not_found() {
 
     // Send another request and ensure it's counted with a different response
     // status.
-    let not_found = requests.get_statuses(&labels::Rsp(
+    let not_found = statuses.metric(&labels::Rsp(
         labels::Route::new(
             parent_ref.clone(),
             route_ref.clone(),
@@ -795,6 +814,7 @@ async fn grpc_request_statuses_error_response() {
 
     let super::GrpcRouteMetrics {
         requests,
+        statuses,
         body_data,
         ..
     } = super::GrpcRouteMetrics::default();
@@ -802,13 +822,14 @@ async fn grpc_request_statuses_error_response() {
     let route_ref = crate::RouteRef(policy::Meta::new_default("route"));
     let (mut svc, mut handle) = mock_grpc_route_metrics(
         &requests,
+        &statuses,
         &body_data,
         &parent_ref,
         &route_ref,
         EXPORT_HOSTNAME_LABELS,
     );
 
-    let unknown = requests.get_statuses(&labels::Rsp(
+    let unknown = statuses.metric(&labels::Rsp(
         labels::Route::new(
             parent_ref.clone(),
             route_ref.clone(),
@@ -840,6 +861,7 @@ async fn grpc_request_statuses_error_body() {
 
     let super::GrpcRouteMetrics {
         requests,
+        statuses,
         body_data,
         ..
     } = super::GrpcRouteMetrics::default();
@@ -847,13 +869,14 @@ async fn grpc_request_statuses_error_body() {
     let route_ref = crate::RouteRef(policy::Meta::new_default("route"));
     let (mut svc, mut handle) = mock_grpc_route_metrics(
         &requests,
+        &statuses,
         &body_data,
         &parent_ref,
         &route_ref,
         EXPORT_HOSTNAME_LABELS,
     );
 
-    let unknown = requests.get_statuses(&labels::Rsp(
+    let unknown = statuses.metric(&labels::Rsp(
         labels::Route::new(
             parent_ref.clone(),
             route_ref.clone(),
@@ -893,6 +916,7 @@ async fn grpc_response_body_drop_on_eos() {
 
     let super::GrpcRouteMetrics {
         requests,
+        statuses,
         body_data,
         ..
     } = super::GrpcRouteMetrics::default();
@@ -900,6 +924,7 @@ async fn grpc_response_body_drop_on_eos() {
     let route_ref = crate::RouteRef(policy::Meta::new_default("route"));
     let (mut svc, mut handle) = mock_grpc_route_metrics(
         &requests,
+        &statuses,
         &body_data,
         &parent_ref,
         &route_ref,
@@ -925,14 +950,14 @@ async fn grpc_response_body_drop_on_eos() {
         .unwrap();
 
     // Two counters for 200 responses that do/don't have an error.
-    let ok = requests.get_statuses(&labels::Rsp(
+    let ok = statuses.metric(&labels::Rsp(
         labels::Route::new(parent_ref.clone(), route_ref.clone(), None),
         labels::GrpcRsp {
             status: Some(tonic::Code::Ok),
             error: None,
         },
     ));
-    let err = requests.get_statuses(&labels::Rsp(
+    let err = statuses.metric(&labels::Rsp(
         labels::Route::new(parent_ref.clone(), route_ref.clone(), None),
         labels::GrpcRsp {
             status: Some(tonic::Code::Ok),
@@ -998,6 +1023,7 @@ async fn grpc_response_body_drop_early() {
 
     let super::GrpcRouteMetrics {
         requests,
+        statuses,
         body_data,
         ..
     } = super::GrpcRouteMetrics::default();
@@ -1005,6 +1031,7 @@ async fn grpc_response_body_drop_early() {
     let route_ref = crate::RouteRef(policy::Meta::new_default("route"));
     let (mut svc, mut handle) = mock_grpc_route_metrics(
         &requests,
+        &statuses,
         &body_data,
         &parent_ref,
         &route_ref,
@@ -1030,14 +1057,14 @@ async fn grpc_response_body_drop_early() {
         .unwrap();
 
     // Two counters for 200 responses that do/don't have an error.
-    let ok = requests.get_statuses(&labels::Rsp(
+    let ok = statuses.metric(&labels::Rsp(
         labels::Route::new(parent_ref.clone(), route_ref.clone(), None),
         labels::GrpcRsp {
             status: Some(tonic::Code::Ok),
             error: None,
         },
     ));
-    let err = requests.get_statuses(&labels::Rsp(
+    let err = statuses.metric(&labels::Rsp(
         labels::Route::new(parent_ref.clone(), route_ref.clone(), None),
         labels::GrpcRsp {
             status: None,
@@ -1094,6 +1121,7 @@ const MOCK_GRPC_REQ_URI: &str = "http://host/svc/method";
 
 pub fn mock_http_route_metrics(
     metrics: &RequestMetrics<LabelHttpRouteRsp>,
+    statuses: &StatusMetrics<HttpRouteRsp>,
     body_data: &RequestBodyFamilies<labels::Route>,
     parent_ref: &crate::ParentRef,
     route_ref: &crate::RouteRef,
@@ -1121,29 +1149,38 @@ pub fn mock_http_route_metrics(
     .expect("find default route");
 
     let (tx, handle) = tower_test::mock::pair::<http::Request<BoxBody>, http::Response<BoxBody>>();
-    let svc = super::layer(metrics, body_data)
-        .layer(move |_t: Http<()>| tx.clone())
-        .new_service(Http {
-            r#match,
-            params: Route {
-                parent: (),
-                addr: std::net::SocketAddr::new([0, 0, 0, 0].into(), 8080).into(),
-                parent_ref: parent_ref.clone(),
-                route_ref: route_ref.clone(),
-                filters: [].into(),
-                distribution: Default::default(),
-                params: policy::http::RouteParams {
-                    export_hostname_labels,
-                    ..Default::default()
-                },
+
+    let new_svc = {
+        let inner = move |_t: Http<()>| tx.clone();
+        let metrics = super::layer(metrics, statuses, body_data);
+        svc::stack(inner)
+            .push(metrics)
+            .push_on_service(BoxResponse::layer())
+            .check_new_service::<Http<()>, http::Request<BoxBody>>()
+    };
+
+    let svc = new_svc.new_service(Http {
+        r#match,
+        params: Route {
+            parent: (),
+            addr: std::net::SocketAddr::new([0, 0, 0, 0].into(), 8080).into(),
+            parent_ref: parent_ref.clone(),
+            route_ref: route_ref.clone(),
+            filters: [].into(),
+            distribution: Default::default(),
+            params: policy::http::RouteParams {
+                export_hostname_labels,
+                ..Default::default()
             },
-        });
+        },
+    });
 
     (svc::BoxHttp::new(svc), handle)
 }
 
 pub fn mock_grpc_route_metrics(
     metrics: &RequestMetrics<LabelGrpcRouteRsp>,
+    statuses: &StatusMetrics<GrpcRouteRsp>,
     body_data: &RequestBodyFamilies<labels::Route>,
     parent_ref: &crate::ParentRef,
     route_ref: &crate::RouteRef,
@@ -1175,23 +1212,31 @@ pub fn mock_grpc_route_metrics(
     .expect("find default route");
 
     let (tx, handle) = tower_test::mock::pair::<http::Request<BoxBody>, http::Response<BoxBody>>();
-    let svc = super::layer(metrics, body_data)
-        .layer(move |_t: Grpc<()>| tx.clone())
-        .new_service(Grpc {
-            r#match,
-            params: Route {
-                parent: (),
-                addr: std::net::SocketAddr::new([0, 0, 0, 0].into(), 8080).into(),
-                parent_ref: parent_ref.clone(),
-                route_ref: route_ref.clone(),
-                filters: [].into(),
-                distribution: Default::default(),
-                params: policy::grpc::RouteParams {
-                    export_hostname_labels,
-                    ..Default::default()
-                },
+
+    let new_svc = {
+        let inner = move |_t: Grpc<()>| tx.clone();
+        let metrics = super::layer(metrics, statuses, body_data);
+        svc::stack(inner)
+            .push(metrics)
+            .push_on_service(BoxResponse::layer())
+            .check_new_service::<Grpc<()>, http::Request<BoxBody>>()
+    };
+
+    let svc = new_svc.new_service(Grpc {
+        r#match,
+        params: Route {
+            parent: (),
+            addr: std::net::SocketAddr::new([0, 0, 0, 0].into(), 8080).into(),
+            parent_ref: parent_ref.clone(),
+            route_ref: route_ref.clone(),
+            filters: [].into(),
+            distribution: Default::default(),
+            params: policy::grpc::RouteParams {
+                export_hostname_labels,
+                ..Default::default()
             },
-        });
+        },
+    });
 
     (svc::BoxHttp::new(svc), handle)
 }
