@@ -148,7 +148,11 @@ impl id::Credentials for Store {
         let key_der = PrivatePkcs8KeyDer::from(key);
         let provider = rustls::crypto::CryptoProvider::get_default()
             .expect("Failed to get default crypto provider");
-        let key = CertifiedKey::from_der(chain, key_der.into(), provider)?;
+
+        let key = CertifiedKey::new(
+            chain,
+            provider.key_provider.load_private_key(key_der.into())?,
+        );
         let resolver = Arc::new(CertResolver(Arc::new(key)));
 
         // Build new client and server TLS configs.

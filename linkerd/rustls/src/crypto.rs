@@ -37,7 +37,7 @@ static TLS_SUPPORTED_CIPHERSUITES: &[rustls::SupportedCipherSuite] = &[
 #[cfg(not(feature = "rustls-aws-lc-fips"))]
 fn kx_groups() -> Vec<&'static dyn SupportedKxGroup> {
     vec![
-        aws_lc_rs::kx_group::X25519MLKEM768,
+        rustls_post_quantum::X25519MLKEM768,
         aws_lc_rs::kx_group::X25519,
         aws_lc_rs::kx_group::SECP256R1,
         aws_lc_rs::kx_group::SECP384R1,
@@ -122,6 +122,12 @@ mod tests {
                 aws_lc_rs::cipher_suite::TLS13_AES_256_GCM_SHA384,
                 aws_lc_rs::cipher_suite::TLS13_AES_128_GCM_SHA256,
                 aws_lc_rs::cipher_suite::TLS13_CHACHA20_POLY1305_SHA256,
+                aws_lc_rs::cipher_suite::TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+                aws_lc_rs::cipher_suite::TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+                aws_lc_rs::cipher_suite::TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
+                aws_lc_rs::cipher_suite::TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+                aws_lc_rs::cipher_suite::TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+                aws_lc_rs::cipher_suite::TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
             ]
         );
     }
@@ -142,7 +148,6 @@ mod tests {
                 NamedGroup::X25519,
                 NamedGroup::secp256r1,
                 NamedGroup::secp384r1,
-                NamedGroup::X25519MLKEM768,
             ]
         );
     }
@@ -173,9 +178,7 @@ mod tests {
             webpki::aws_lc_rs::RSA_PKCS1_2048_8192_SHA256,
             webpki::aws_lc_rs::RSA_PKCS1_2048_8192_SHA384,
             webpki::aws_lc_rs::RSA_PKCS1_2048_8192_SHA512,
-            webpki::aws_lc_rs::RSA_PKCS1_2048_8192_SHA256_ABSENT_PARAMS,
-            webpki::aws_lc_rs::RSA_PKCS1_2048_8192_SHA384_ABSENT_PARAMS,
-            webpki::aws_lc_rs::RSA_PKCS1_2048_8192_SHA512_ABSENT_PARAMS,
+            webpki::aws_lc_rs::RSA_PKCS1_3072_8192_SHA384,
         ];
         let expected_alg_ids = expected_algs
             .iter()

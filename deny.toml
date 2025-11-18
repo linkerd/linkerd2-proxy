@@ -39,7 +39,7 @@ multiple-versions = "deny"
 wildcards = "allow"
 highlight = "all"
 deny = [
-    { name = "rustls", wrappers = ["tokio-rustls"] },
+    { name = "rustls", wrappers = ["tokio-rustls", "rustls-post-quantum"] },
     # rustls-webpki should be used instead.
     { name = "webpki" },
     # aws-lc-rs should be used instead.
@@ -49,10 +49,12 @@ skip = []
 skip-tree = [
     # rand v0.9 is still propagating through the ecosystem
     { name = "rand", version = "0.8" },
-    # `pprof` uses a number of old dependencies. for now, we skip its subtree.
     { name = "pprof" },
     # zerocopy v0.8 is still propagating through the ecosystem
     { name = "zerocopy", version = "0.7" },
+    # rustls-webpki v0.102 is used by rustls-post-quantum, which can be removed
+    # in a later version of rustls
+    { name = "rustls-webpki", version = "0.102" },
 ]
 
 [sources]
