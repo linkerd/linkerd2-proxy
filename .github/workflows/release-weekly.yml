@@ -44,7 +44,7 @@ jobs:
     runs-on: ${{ vars.LINKERD2_PROXY_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
       - name: Check if the most recent commit is after the last release
         id: recency
         env:

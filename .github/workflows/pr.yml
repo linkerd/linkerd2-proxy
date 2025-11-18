@@ -16,7 +16,7 @@ jobs:
     timeout-minutes: 5
     runs-on: ${{ vars.LINKERD2_PROXY_RUNNER || 'ubuntu-24.04' }}
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
       - id: build
         uses: tj-actions/changed-files@24d32ffd492484c1d75e0c0b894501ddb9d30d62
         with:
@@ -77,7 +77,7 @@ jobs:
     runs-on: ${{ vars.LINKERD2_PROXY_RUNNER || 'ubuntu-24.04' }}
     steps:
       - uses: linkerd/dev/actions/setup-tools@v48
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
       - run: just action-lint
       - run: just action-dev-check
 
@@ -91,7 +91,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - run: git config --global --add safe.directory "$PWD" # actions/runner#2033
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
       - uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1
       - run: just fetch
       - run: cargo deny --all-features check bans licenses sources
@@ -114,7 +114,7 @@ jobs:
         crate: ${{ fromJson(needs.meta.outputs.cargo_crates) }}
     steps:
       - run: git config --global --add safe.directory "$PWD" # actions/runner#2033
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
       - uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1
       - run: just fetch
       - run: just check-crate ${{ matrix.crate }}
@@ -136,7 +136,7 @@ jobs:
           tag=$(linkerd version --client --short)
           echo "linkerd $tag"
           echo "LINKERD_TAG=$tag" >> "$GITHUB_ENV"
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
       - run: just docker
       - run: just k3d-create
       - run: just k3d-load-linkerd
@@ -168,7 +168,7 @@ jobs:
         if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
         run: exit 1
 
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
         if: needs.meta.outputs.is_dependabot == 'true' && needs.meta.outputs.any_changed == 'true'
       - name: "Merge dependabot changes"
         if: needs.meta.outputs.is_dependabot == 'true' && needs.meta.outputs.any_changed == 'true'

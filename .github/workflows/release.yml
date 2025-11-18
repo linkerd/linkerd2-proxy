@@ -61,7 +61,7 @@ jobs:
     timeout-minutes: 5
     runs-on: ${{ vars.LINKERD2_PROXY_RUNNER || 'ubuntu-24.04' }}
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
         if: github.event_name == 'pull_request'
       - id: workflow
         if: github.event_name == 'pull_request'
@@ -170,7 +170,7 @@ jobs:
 
       - name: Configure git
         run: git config --global --add safe.directory "$PWD" # actions/runner#2033
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
         with:
           ref: ${{ needs.meta.outputs.ref }}
       - uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1
@@ -204,7 +204,7 @@ jobs:
           git config --global user.name "$GITHUB_USERNAME"
           git config --global user.email "$GITHUB_USERNAME"@users.noreply.github.com
       # Tag the release.
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
         with:
           token: ${{ secrets.LINKERD2_PROXY_GITHUB_TOKEN || github.token }}
           ref: ${{ needs.meta.outputs.ref }}
