@@ -1,9 +1,6 @@
 //! A tower middleware for counting response status codes.
 
-use crate::{
-    record_response::RequestCancelled,
-    stream_label::{LabelSet, MkStreamLabel, StreamLabel},
-};
+use crate::stream_label::{LabelSet, MkStreamLabel, StreamLabel};
 use http::{Request, Response};
 use http_body::Body;
 use linkerd_error::Error;
@@ -258,16 +255,7 @@ where
     L: Clone + Hash + Eq + Send + Sync + 'static,
 {
     fn on_eos(eos: EosRef<'_, Error>, mut stream_label: SL, metrics: StatusMetrics<L>) {
-        // TODO(kate): a static cancellation error. see linkerd/linkerd2-proxy#4306.
-        let cancelled = RequestCancelled.into();
-
-        stream_label.end_response(match eos {
-            EosRef::None => Ok(None),
-            EosRef::Trailers(trls) => Ok(Some(trls)),
-            EosRef::Error(error) => Err(error),
-            EosRef::Cancelled => Err(&cancelled),
-        });
-
+        stream_label.end_response(eos);
         let labels = stream_label.status_labels();
         let counter = metrics.metric(&labels);
         counter.inc();
