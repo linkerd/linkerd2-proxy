@@ -126,6 +126,7 @@ where
 
 impl<N, T, L, ML, X> NewService<T> for NewRecordStatusCode<N, X, ML, L>
 where
+    // XXX(bound)
     N: NewService<T>,
     X: ExtractParam<Params<ML, L>, T>,
 {
