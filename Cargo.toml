@@ -106,7 +106,7 @@ h2 = { version = "0.4" }
 http = { version = "1" }
 http-body = { version = "1" }
 hyper = { version = "1", default-features = false }
-prometheus-client = { version = "0.23" }
+prometheus-client = { version = "0.24" }
 prost = { version = "0.14" }
 prost-build = { version = "0.14", default-features = false }
 prost-types = { version = "0.14" }
