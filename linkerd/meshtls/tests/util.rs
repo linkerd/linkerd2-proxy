@@ -13,12 +13,12 @@ use linkerd_proxy_transport::{
     listen::{Addrs, Bind, BindTcp},
     ConnectTcp, Keepalive, UserTimeout,
 };
+use linkerd_rustls::rcgen::{BasicConstraints, CertificateParams, IsCa, Issuer, KeyPair, SanType};
 use linkerd_stack::{
     layer::Layer, service_fn, ExtractParam, InsertParam, NewService, Param, ServiceExt,
 };
 use linkerd_tls as tls;
 use linkerd_tls_test_util as test_util;
-use rcgen::{BasicConstraints, CertificateParams, IsCa, Issuer, KeyPair, SanType};
 use std::str::FromStr;
 use std::{
     net::SocketAddr,

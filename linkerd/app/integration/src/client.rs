@@ -1,10 +1,10 @@
 use super::*;
 use http::{Request, Response};
 use linkerd_app_core::{proxy::http::TokioExecutor, svc::http::BoxBody};
+use linkerd_rustls::tokio_rustls::rustls::{self, ClientConfig};
 use parking_lot::Mutex;
 use std::io;
 use tokio::{net::TcpStream, task::JoinHandle};
-use tokio_rustls::rustls::{self, ClientConfig};
 use tracing::info_span;
 
 type ClientError = hyper_util::client::legacy::Error;
@@ -342,7 +342,7 @@ impl tower::Service<hyper::Uri> for Conn {
                 client_config,
             }) = tls
             {
-                let io = tokio_rustls::TlsConnector::from(client_config.clone())
+                let io = linkerd_rustls::tokio_rustls::TlsConnector::from(client_config.clone())
                     .connect(name, io)
                     .await?;
                 Box::pin(io) as Pin<Box<dyn Io + Send + 'static>>

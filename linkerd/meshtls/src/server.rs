@@ -2,12 +2,15 @@ use futures::prelude::*;
 use linkerd_dns_name as dns;
 use linkerd_io as io;
 use linkerd_meshtls_verifier as verifier;
+use linkerd_rustls::tokio_rustls::{
+    self,
+    rustls::{pki_types::CertificateDer, ServerConfig},
+};
 use linkerd_stack::{Param, Service};
 use linkerd_tls::{ClientId, NegotiatedProtocol, NegotiatedProtocolRef, ServerName, ServerTls};
 use std::{pin::Pin, sync::Arc, task::Context};
 use thiserror::Error;
 use tokio::sync::watch;
-use tokio_rustls::rustls::{pki_types::CertificateDer, ServerConfig};
 use tracing::debug;
 
 /// A Service that terminates TLS connections using a dynamically updated server configuration.

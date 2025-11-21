@@ -2,11 +2,14 @@ use futures::prelude::*;
 use linkerd_identity as id;
 use linkerd_io as io;
 use linkerd_meshtls_verifier as verifier;
+use linkerd_rustls::tokio_rustls::{
+    self,
+    rustls::{self, pki_types::CertificateDer, ClientConfig},
+};
 use linkerd_stack::{NewService, Service};
 use linkerd_tls::{client::AlpnProtocols, ClientTls, NegotiatedProtocol, NegotiatedProtocolRef};
 use std::{convert::TryFrom, pin::Pin, sync::Arc, task::Context};
 use tokio::sync::watch;
-use tokio_rustls::rustls::{self, pki_types::CertificateDer, ClientConfig};
 
 /// A `NewService` that produces `Connect` services from a dynamic TLS configuration.
 #[derive(Clone)]

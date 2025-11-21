@@ -58,7 +58,7 @@ mod tests {
     use crate::client_identity;
     use crate::verify_id;
     use linkerd_identity::Id;
-    use rcgen::{CertificateParams, KeyPair, SanType};
+    use linkerd_rustls::rcgen::{CertificateParams, KeyPair, SanType};
 
     fn generate_cert_with_names(subject_alt_names: Vec<SanType>) -> Vec<u8> {
         let key = KeyPair::generate().expect("should generate key");

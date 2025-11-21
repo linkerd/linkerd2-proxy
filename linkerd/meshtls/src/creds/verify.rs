@@ -1,15 +1,20 @@
-use linkerd_rustls::SUPPORTED_SIG_ALGS;
-use std::{convert::TryFrom, sync::Arc};
-use tokio_rustls::rustls::{
-    self,
-    client::{
+use linkerd_rustls::{
+    tokio_rustls::{
         self,
-        danger::{ServerCertVerified, ServerCertVerifier},
+        rustls::{
+            self,
+            client::{
+                self,
+                danger::{ServerCertVerified, ServerCertVerifier},
+            },
+            pki_types::{CertificateDer, ServerName, UnixTime},
+            server::ParsedCertificate,
+            RootCertStore,
+        },
     },
-    pki_types::{CertificateDer, ServerName, UnixTime},
-    server::ParsedCertificate,
-    RootCertStore,
+    SUPPORTED_SIG_ALGS,
 };
+use std::{convert::TryFrom, sync::Arc};
 use tracing::trace;
 
 #[derive(Debug)]

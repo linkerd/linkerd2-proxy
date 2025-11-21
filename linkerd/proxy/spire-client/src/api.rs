@@ -220,7 +220,7 @@ where
 #[cfg(test)]
 mod tests {
     use crate::api::Svid;
-    use rcgen::{CertificateParams, KeyPair, SanType};
+    use linkerd_rustls::rcgen::{CertificateParams, KeyPair, SanType};
     use spiffe_proto::client as api;
 
     fn gen_svid_pb(id: String, subject_alt_names: Vec<SanType>) -> api::X509svid {

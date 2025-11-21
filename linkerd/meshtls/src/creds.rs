@@ -6,10 +6,10 @@ pub use self::{receiver::Receiver, store::Store};
 use linkerd_dns_name as dns;
 use linkerd_error::Result;
 use linkerd_identity as id;
+use linkerd_rustls::tokio_rustls::rustls;
 use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::watch;
-use tokio_rustls::rustls::{self};
 use tracing::warn;
 
 #[derive(Debug, Error)]

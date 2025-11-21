@@ -1541,7 +1541,6 @@ dependencies = [
  "serde_json",
  "socket2 0.6.1",
  "tokio",
- "tokio-rustls",
  "tokio-stream",
  "tonic",
  "tower",
@@ -1577,6 +1576,7 @@ dependencies = [
  "linkerd-opaq-route",
  "linkerd-proxy-client-policy",
  "linkerd-retry",
+ "linkerd-rustls",
  "linkerd-stack",
  "linkerd-tls-route",
  "linkerd-tonic-stream",
@@ -1589,7 +1589,6 @@ dependencies = [
  "prometheus-client",
  "thiserror",
  "tokio",
- "tokio-rustls",
  "tokio-test",
  "tonic",
  "tower",
@@ -2004,12 +2003,9 @@ dependencies = [
  "linkerd-tls",
  "linkerd-tls-test-util",
  "linkerd-tracing",
- "rcgen",
  "rustls-pemfile",
- "rustls-webpki",
  "thiserror",
  "tokio",
- "tokio-rustls",
  "tracing",
 ]
 
@@ -2019,7 +2015,7 @@ version = "0.1.0"
 dependencies = [
  "linkerd-error",
  "linkerd-identity",
- "rcgen",
+ "linkerd-rustls",
  "tracing",
  "x509-parser",
 ]
@@ -2329,8 +2325,8 @@ dependencies = [
  "linkerd-exp-backoff",
  "linkerd-identity",
  "linkerd-proxy-http",
+ "linkerd-rustls",
  "linkerd-tonic-watch",
- "rcgen",
  "simple_asn1",
  "spiffe-proto",
  "thiserror",
@@ -2442,6 +2438,7 @@ dependencies = [
 name = "linkerd-rustls"
 version = "0.1.0"
 dependencies = [
+ "rcgen",
  "rustls-webpki",
  "tokio-rustls",
 ]

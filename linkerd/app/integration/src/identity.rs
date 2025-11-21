@@ -8,8 +8,10 @@ use std::{
 };
 
 use linkerd2_proxy_api::identity as pb;
-use linkerd_rustls::get_default_provider;
-use tokio_rustls::rustls::{self, server::WebPkiClientVerifier};
+use linkerd_rustls::{
+    get_default_provider,
+    tokio_rustls::rustls::{self, server::WebPkiClientVerifier},
+};
 use tonic as grpc;
 
 pub struct Identity {

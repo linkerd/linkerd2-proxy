@@ -1,9 +1,9 @@
 use crate::{NewClient, Server};
 use linkerd_dns_name as dns;
 use linkerd_identity::Id;
+use linkerd_rustls::tokio_rustls::rustls;
 use std::sync::Arc;
 use tokio::sync::watch;
-use tokio_rustls::rustls;
 
 /// Receives TLS config updates to build `NewClient` and `Server` types.
 #[derive(Clone)]

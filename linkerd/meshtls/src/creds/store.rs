@@ -2,14 +2,14 @@ use linkerd_dns_name as dns;
 use linkerd_error::Result;
 use linkerd_identity as id;
 use linkerd_meshtls_verifier as verifier;
-use std::{convert::TryFrom, sync::Arc};
-use tokio::sync::watch;
-use tokio_rustls::rustls::{
+use linkerd_rustls::tokio_rustls::rustls::{
     self,
     pki_types::{PrivatePkcs8KeyDer, UnixTime},
     server::WebPkiClientVerifier,
     sign::CertifiedKey,
 };
+use std::{convert::TryFrom, sync::Arc};
+use tokio::sync::watch;
 use tracing::debug;
 
 pub struct Store {
