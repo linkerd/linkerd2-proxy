@@ -130,3 +130,16 @@ where
         };
     }
 }
+
+// === impl EosRef ===
+
+/// A reference to the end of a stream can be cheaply cloned.
+///
+/// Each of the variants are empty tags, or immutable references.
+impl<'a, E> Clone for EosRef<'a, E> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<'a, E> Copy for EosRef<'a, E> {}
