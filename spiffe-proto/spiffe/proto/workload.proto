@@ -1,7 +1,5 @@
 syntax = "proto3";
 
-package spiffe.workloadapi;
-
 service SpiffeWorkloadAPI {
     // Fetch X.509-SVIDs for all SPIFFE identities the workload is entitled to,
     // as well as related information like trust bundles and CRLs. As this
