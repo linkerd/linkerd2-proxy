@@ -22,22 +22,18 @@ fn bootstrap() {
 /// Generates protobuf bindings into the given directory
 fn generate(out_dir: &std::path::Path) {
     let iface_files = &["spiffe/proto/workload.proto"];
+    let mut config = tonic_prost_build::Config::new();
+    config.default_package_filename("spiffe.workloadapi");
+
     if let Err(error) = tonic_prost_build::configure()
         .build_client(true)
         .build_server(false)
         .emit_rerun_if_changed(false)
         .emit_package(false)
         .out_dir(out_dir)
-        .compile_protos(iface_files, &["."])
+        .compile_with_config(config, iface_files, &["."])
     {
         panic!("failed to compile protobuf: {error}")
-    }
-
-    // Post-process the generated file to rename it
-    let generated_file = out_dir.join("_.rs");
-    if generated_file.exists() {
-        let target_file = out_dir.join("spiffe.workloadapi.rs");
-        std::fs::rename(&generated_file, &target_file).expect("failed to rename generated file");
     }
 }
 
