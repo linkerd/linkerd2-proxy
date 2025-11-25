@@ -37,8 +37,7 @@ fn generate(out_dir: &std::path::Path) {
     let generated_file = out_dir.join("_.rs");
     if generated_file.exists() {
         let target_file = out_dir.join("spiffe.workloadapi.rs");
-        std::fs::rename(&generated_file, &target_file)
-            .expect("failed to rename generated file");
+        std::fs::rename(&generated_file, &target_file).expect("failed to rename generated file");
     }
 }
 
