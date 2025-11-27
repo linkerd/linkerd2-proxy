@@ -92,7 +92,7 @@ jobs:
     steps:
       - run: git config --global --add safe.directory "$PWD" # actions/runner#2033
       - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3
-      - uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1
+      - uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5
       - run: just fetch
       - run: cargo deny --all-features check bans licenses sources
       - run: just check-fmt
@@ -115,7 +115,7 @@ jobs:
     steps:
       - run: git config --global --add safe.directory "$PWD" # actions/runner#2033
       - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3
-      - uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1
+      - uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5
       - run: just fetch
       - run: just check-crate ${{ matrix.crate }}
 
