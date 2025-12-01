@@ -7,6 +7,8 @@
 #![allow(opaque_hidden_inferred_bound)]
 #![forbid(unsafe_code)]
 
+// XXX(kate)
+
 mod accept;
 mod detect;
 pub mod direct;
