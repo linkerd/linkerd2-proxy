@@ -1,6 +1,7 @@
 //! [`StreamLabel`] implementation for labels known in advance.
 
 use super::{MkStreamLabel, StreamLabel};
+use linkerd_http_body_eos::EosRef;
 
 /// A [`MkStreamLabel`] implementation for `L`-typed labels.
 ///
@@ -45,7 +46,7 @@ where
     type StatusLabels = L;
 
     fn init_response<B>(&mut self, _: &http::Response<B>) {}
-    fn end_response(&mut self, _: Result<Option<&http::HeaderMap>, &linkerd_error::Error>) {}
+    fn end_response(&mut self, _: EosRef<'_>) {}
 
     fn status_labels(&self) -> Self::StatusLabels {
         self.labels.clone()

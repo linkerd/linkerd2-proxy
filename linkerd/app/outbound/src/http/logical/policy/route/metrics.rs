@@ -10,7 +10,7 @@ use linkerd_http_prom::{
     stream_label::{
         error::LabelError,
         status::{LabelGrpcStatus, LabelHttpStatus},
-        LabelSet, StreamLabel,
+        EosRef, LabelSet, StreamLabel,
     },
 };
 
@@ -337,7 +337,7 @@ where
         error.init_response(rsp);
     }
 
-    fn end_response(&mut self, res: Result<Option<&http::HeaderMap>, &linkerd_app_core::Error>) {
+    fn end_response(&mut self, res: EosRef<'_>) {
         let Self {
             parent: _,
             status,
@@ -395,7 +395,7 @@ where
         error.init_response(rsp);
     }
 
-    fn end_response(&mut self, res: Result<Option<&http::HeaderMap>, &linkerd_app_core::Error>) {
+    fn end_response(&mut self, res: EosRef<'_>) {
         let Self {
             parent: _,
             status,
