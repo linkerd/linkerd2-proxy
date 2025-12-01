@@ -1,18 +1,20 @@
 use crate::InboundMetrics;
 use linkerd_app_core::svc;
 
-pub use self::{count_reqs::*, labels::RouteLabels, req_body::*, rsp_body::*};
+pub use self::{count_reqs::*, labels::RouteLabels, req_body::*, rsp_body::*, status::*};
 
 mod count_reqs;
 mod labels;
 mod req_body;
 mod rsp_body;
+mod status;
 
 pub(super) fn layer<N>(
     InboundMetrics {
         request_count,
         request_body_data,
         response_body_data,
+        status_codes,
         ..
     }: &InboundMetrics,
 ) -> impl svc::Layer<N, Service = Instrumented<N>> {
@@ -33,8 +35,14 @@ pub(super) fn layer<N>(
         NewRecordRequestBodyData::layer_via(extract)
     };
 
-    svc::layer::mk(move |inner| count.layer(body.layer(request.layer(inner))))
+    let status = {
+        let extract = ExtractStatusCodeParams::new(status_codes.clone());
+        NewRecordStatusCode::layer_via(extract)
+    };
+
+    svc::layer::mk(move |inner| count.layer(body.layer(request.layer(status.layer(inner)))))
 }
 
 /// An `N`-typed service instrumented with metrics middleware.
-type Instrumented<N> = NewCountRequests<NewRecordResponseBodyData<NewRecordRequestBodyData<N>>>;
+type Instrumented<N> =
+    NewCountRequests<NewRecordResponseBodyData<NewRecordRequestBodyData<NewRecordStatusCode<N>>>>;
