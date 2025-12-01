@@ -7,7 +7,7 @@ ARG RUST_IMAGE=ghcr.io/linkerd/dev:v48-rust
 
 # Use an arbitrary ~recent edge release image to get the proxy
 # identity-initializing and linkerd-await wrappers.
-ARG LINKERD2_IMAGE=ghcr.io/linkerd/proxy:edge-23.11.2
+ARG LINKERD2_IMAGE=ghcr.io/linkerd/proxy:edge-25.11.3
 
 FROM $LINKERD2_IMAGE as linkerd2
 
