@@ -7,6 +7,12 @@ ARG RUST_IMAGE=ghcr.io/linkerd/dev:v48-rust
 
 # Use an arbitrary ~recent edge release image to get the proxy
 # identity-initializing and linkerd-await wrappers.
+#
+# To use an image that includes a shell, run the following:
+#
+# ```
+# just docker --build-arg LINKERD2_IMAGE='debian:bookworm-slim'
+# ```
 ARG LINKERD2_IMAGE=ghcr.io/linkerd/proxy:edge-25.11.3
 
 FROM --platform=$BUILDPLATFORM $RUST_IMAGE as fetch
