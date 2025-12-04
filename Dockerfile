@@ -9,8 +9,6 @@ ARG RUST_IMAGE=ghcr.io/linkerd/dev:v48-rust
 # identity-initializing and linkerd-await wrappers.
 ARG LINKERD2_IMAGE=ghcr.io/linkerd/proxy:edge-25.11.3
 
-FROM $LINKERD2_IMAGE as linkerd2
-
 FROM --platform=$BUILDPLATFORM $RUST_IMAGE as fetch
 
 ARG PROXY_FEATURES=""
@@ -49,21 +47,7 @@ RUN --mount=type=cache,id=cargo,target=/usr/local/cargo/registry \
         mv $(just --evaluate profile="$PROFILE" _target_bin) /out/ ; \
         du -sh /out/* )
 
-# Install the proxy binary into a base image that we can at least get a shell
-# for debugging.
-FROM docker.io/library/debian:bookworm-slim as runtime
-
-RUN apt-get update && \
-    apt-get install -y iptables libcap2-bin && \
-    rm -rf /var/lib/apt/lists/*
-
-WORKDIR /linkerd
-COPY --from=linkerd2 /usr/lib/linkerd/* /usr/lib/linkerd/
+# Install the proxy binary into the proxy image.
+FROM $LINKERD2_IMAGE as linkerd2
 COPY --from=build /out/* /usr/lib/linkerd/
-
-USER root
-RUN ["/usr/sbin/setcap", "cap_net_raw,cap_net_admin+eip", "/usr/sbin/xtables-legacy-multi"]
-RUN ["/usr/sbin/setcap", "cap_net_raw,cap_net_admin+eip", "/usr/sbin/xtables-nft-multi"]
-RUN ["/usr/sbin/setcap", "cap_net_raw,cap_net_admin+eip", "/usr/lib/linkerd/linkerd2-proxy-init"]
-
 ENTRYPOINT ["/usr/lib/linkerd/linkerd2-proxy-identity"]
