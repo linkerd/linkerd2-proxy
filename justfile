@@ -243,9 +243,8 @@ action-dev-check:
 
 linkerd-tag := env_var_or_default('LINKERD_TAG', '')
 _controller-image := 'ghcr.io/linkerd/controller'
-_policy-image := 'ghcr.io/linkerd/policy-controller'
-_init-image := 'ghcr.io/linkerd/proxy-init'
-_init-tag := 'v2.4.0'
+_policy-image := 'ghcr.io/linkerd/controller'
+_init-image := 'ghcr.io/linkerd/proxy'
 
 _kubectl := 'just-k3d kubectl'
 _linkerd := 'linkerd --context=k3d-$(just-k3d --evaluate K3D_CLUSTER_NAME)'
@@ -270,7 +269,7 @@ k3d-load-linkerd: _tag-set _k3d-ready
     for i in \
         '{{ _controller-image }}:{{ linkerd-tag }}' \
         '{{ _policy-image }}:{{ linkerd-tag }}' \
-        '{{ _init-image }}:{{ _init-tag }}' \
+        '{{ _init-image }}:{{ linkerd-tag }}' \
     ; do \
         docker pull -q "$i" ; \
     done
@@ -278,7 +277,7 @@ k3d-load-linkerd: _tag-set _k3d-ready
         '{{ docker-image }}' \
         '{{ _controller-image }}:{{ linkerd-tag }}' \
         '{{ _policy-image }}:{{ linkerd-tag }}' \
-        '{{ _init-image }}:{{ _init-tag }}'
+        '{{ _init-image }}:{{ linkerd-tag }}'
 
 # Install crds on the test cluster.
 _linkerd-crds-install: _k3d-ready
@@ -297,11 +296,11 @@ linkerd-install *args='': _tag-set k3d-load-linkerd _linkerd-crds-install && _li
             --set='linkerdVersion={{ linkerd-tag }}' \
             --set='policyController.image.name={{ _policy-image }}' \
             --set='policyController.image.version={{ linkerd-tag }}' \
-            --set='proxy.image.name={{ docker-repo }}' \
-            --set='proxy.image.version={{ docker-tag }}' \
+            --set='proxy.image.name={{ _init-image }}' \
+            --set='proxy.image.version={{ linkerd-tag }}' \
             --set='proxy.logLevel=linkerd=debug\,info' \
             --set='proxyInit.image.name={{ _init-image }}' \
-            --set='proxyInit.image.version={{ _init-tag }}' \
+            --set='proxyInit.image.version={{ linkerd-tag }}' \
             {{ args }} \
         | {{ _kubectl }} apply -f -
 
