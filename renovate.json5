@@ -1,0 +1,32 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Default preset for use with linkerd repos",
+  "extends": [
+    "config:best-practices", // renovate best practices
+    ":prNotPending", // only surface PR when CI completes
+    ":rebaseStalePrs", // rebase PRs that are out-of-date with the main branch
+    // use semantic commits with the "chore(deps):" format
+    ":semanticCommits",
+    ":semanticCommitTypeAll(chore)",
+    ":semanticCommitScope(deps)",
+    // only run during non-office hours (10PM-5AM) in the specified timezone
+    "schedule:nonOfficeHours"
+  ],
+  "timezone": "America/Los_Angeles",
+  "assignees": ["team:linkerd/maintainers"],
+  "commitBodyTable": true,
+  "internalChecksFilter": "strict",
+  "customManagers": [
+    // Dockerfile regex matcher. Example:
+    // # renovate: datasource=github-releases depName=linkerd/linkerd2
+    // ARG LINKERD2_IMAGE=ghcr.io/linkerd/proxy:edge-23.11.2
+    {
+      customType: 'regex',
+      managerFilePatterns: ['Dockerfile.*'],
+      matchStrings: [
+        '#\\s+renovate:\\s+datasource=(?<datasource>.*?)\\s+depName=(?<depName>[\\w/]+)( versioning=(?<versioning>.*?))?\\s+[^:]+:(?<currentValue>\\S+)',
+      ],
+      versioningTemplate: '{{#if versioning}}{{{versioning}}}{{else}}semver{{/if}}',
+    }
+  ]
+}
