@@ -1,6 +1,7 @@
 use crate::{
     addrs::*,
     listen::{self, Bind},
+    WinMeshExpansion,
 };
 use futures::prelude::*;
 use linkerd_error::Result;
@@ -71,6 +72,7 @@ impl<T, B> Bind<T> for BindWithOrigDst<B>
 where
     B: Bind<T, Io = TcpStream> + 'static,
     B::Addrs: Param<Remote<ClientAddr>>,
+    T: Param<WinMeshExpansion>,
 {
     type Addrs = Addrs<B::Addrs>;
     type BoundAddrs = B::BoundAddrs;
@@ -80,11 +82,12 @@ where
 
     fn bind(self, t: &T) -> Result<(Self::BoundAddrs, Self::Incoming)> {
         let (addr, incoming) = self.inner.bind(t)?;
+        let win_mesh_expansion = t.param();
 
-        let incoming = incoming.map(|res| {
+        let incoming = incoming.map(move |res| {
             let (inner, tcp) = res?;
             let Remote(client_addr) = inner.param();
-            let (orig_dst, tcp) = orig_dst(tcp, client_addr)?;
+            let (orig_dst, tcp) = orig_dst(tcp, client_addr, win_mesh_expansion)?;
             let addrs = Addrs { inner, orig_dst };
             Ok((addrs, tcp))
         });
@@ -93,7 +96,22 @@ where
     }
 }
 
-fn orig_dst(sock: TcpStream, client_addr: ClientAddr) -> io::Result<(OrigDstAddr, TcpStream)> {
+fn orig_dst(
+    sock: TcpStream,
+    client_addr: ClientAddr,
+    WinMeshExpansion(win_mesh_expansion): WinMeshExpansion,
+) -> io::Result<(OrigDstAddr, TcpStream)> {
+    #[cfg(target_os = "windows")]
+    if win_mesh_expansion {
+        let local = sock.local_addr()?;
+        match crate::windows::query_original_dst(local, client_addr.into()) {
+            Ok(addr) => return Ok((OrigDstAddr(addr), sock)),
+            Err(e) => {
+                tracing::debug!("windows query_original_dst failed: {}", e);
+            }
+        }
+    }
+
     let sock = {
         let stream = tokio::net::TcpStream::into_std(sock)?;
         socket2::Socket::from(stream)

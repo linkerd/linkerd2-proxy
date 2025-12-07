@@ -48,6 +48,16 @@ fn main() {
         }
     };
 
+    #[cfg(target_os = "windows")]
+    if config.inbound.proxy.server.win_mesh_expansion {
+        let pid = std::process::id();
+        info!("Registering proxy PID {} with Windows driver", pid);
+        if let Err(e) = linkerd_app::transport::windows::register_proxy(pid) {
+            eprintln!("Failed to register proxy with Windows driver: {e}");
+            std::process::exit(1);
+        }
+    }
+
     // Builds a runtime with the appropriate number of cores:
     // `LINKERD2_PROXY_CORES` env or the number of available CPUs (as provided
     // by cgroups, when possible).

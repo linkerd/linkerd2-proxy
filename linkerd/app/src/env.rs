@@ -191,6 +191,8 @@ pub const ENV_INBOUND_PORTS_REQUIRE_IDENTITY: &str =
 
 pub const ENV_INBOUND_PORTS_REQUIRE_TLS: &str = "LINKERD2_PROXY_INBOUND_PORTS_REQUIRE_TLS";
 
+pub const ENV_WIN_MESH_EXPANSION: &str = "LINKERD2_PROXY_WIN_MESH_EXPANSION";
+
 /// Configures the default port policy for inbound connections.
 ///
 /// This must parse to a valid port policy (one of: `deny`, `authenticated`,
@@ -504,6 +506,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             keepalive,
             user_timeout,
             http2: http2::parse_server(strings, "LINKERD2_PROXY_OUTBOUND_SERVER_HTTP2")?,
+            win_mesh_expansion: false,
         };
         let discovery_idle_timeout =
             outbound_discovery_idle_timeout?.unwrap_or(DEFAULT_OUTBOUND_DISCOVERY_IDLE_TIMEOUT);
@@ -589,6 +592,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 .unwrap_or_else(|| parse_socket_addr(DEFAULT_INBOUND_LISTEN_ADDR).unwrap()),
             None,
         );
+        let win_mesh_expansion = parse(strings, ENV_WIN_MESH_EXPANSION, parse_bool)?.unwrap_or(false);
         let keepalive = Keepalive(inbound_accept_keepalive?);
         let user_timeout = UserTimeout(inbound_accept_user_timeout?);
         let server = ServerConfig {
@@ -596,6 +600,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             keepalive,
             user_timeout,
             http2: http2::parse_server(strings, "LINKERD2_PROXY_INBOUND_SERVER_HTTP2")?,
+            win_mesh_expansion,
         };
         let discovery_idle_timeout =
             inbound_discovery_idle_timeout?.unwrap_or(DEFAULT_INBOUND_DISCOVERY_IDLE_TIMEOUT);
@@ -815,6 +820,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             keepalive: inbound.proxy.server.keepalive,
             user_timeout: inbound.proxy.server.user_timeout,
             http2: inbound.proxy.server.http2.clone(),
+            win_mesh_expansion: false,
         },
 
         // TODO(ver) Currently we always enable profiling when the pprof feature
@@ -869,6 +875,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 keepalive: inbound.proxy.server.keepalive,
                 user_timeout: inbound.proxy.server.user_timeout,
                 http2: inbound.proxy.server.http2.clone(),
+                win_mesh_expansion: false,
             },
         })
         .unwrap_or(super::tap::Config::Disabled);

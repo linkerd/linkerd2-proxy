@@ -2397,6 +2397,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tracing",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]

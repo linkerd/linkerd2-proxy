@@ -1,4 +1,6 @@
-use crate::{addrs::DualListenAddr, listen::Bind, Keepalive, ListenAddr, UserTimeout};
+use crate::{
+    addrs::DualListenAddr, listen::Bind, Keepalive, ListenAddr, UserTimeout, WinMeshExpansion,
+};
 use futures::Stream;
 use linkerd_error::Result;
 use linkerd_stack::Param;
@@ -64,6 +66,12 @@ impl<T: Param<Keepalive>> Param<Keepalive> for Listen<T> {
 
 impl<T: Param<UserTimeout>> Param<UserTimeout> for Listen<T> {
     fn param(&self) -> UserTimeout {
+        self.parent.param()
+    }
+}
+
+impl<T: Param<WinMeshExpansion>> Param<WinMeshExpansion> for Listen<T> {
+    fn param(&self) -> WinMeshExpansion {
         self.parent.param()
     }
 }

@@ -2,7 +2,7 @@ pub use crate::exp_backoff::ExponentialBackoff;
 use crate::{
     proxy::http::{h1, h2},
     svc::{queue, ExtractParam, Param},
-    transport::{DualListenAddr, Keepalive, ListenAddr, UserTimeout},
+    transport::{DualListenAddr, Keepalive, ListenAddr, UserTimeout, WinMeshExpansion},
 };
 use std::time::Duration;
 
@@ -12,6 +12,7 @@ pub struct ServerConfig {
     pub keepalive: Keepalive,
     pub user_timeout: UserTimeout,
     pub http2: h2::ServerParams,
+    pub win_mesh_expansion: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -82,5 +83,11 @@ impl Param<Keepalive> for ServerConfig {
 impl Param<UserTimeout> for ServerConfig {
     fn param(&self) -> UserTimeout {
         self.user_timeout
+    }
+}
+
+impl Param<WinMeshExpansion> for ServerConfig {
+    fn param(&self) -> WinMeshExpansion {
+        WinMeshExpansion(self.win_mesh_expansion)
     }
 }

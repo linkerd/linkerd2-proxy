@@ -14,6 +14,9 @@ mod connect;
 pub mod listen;
 pub mod orig_dst;
 
+#[cfg(target_os = "windows")]
+pub mod windows;
+
 pub use self::{
     addrs::{
         AddrPair, ClientAddr, DualListenAddr, ListenAddr, Local, OrigDstAddr, Remote, ServerAddr,
@@ -44,6 +47,9 @@ impl From<UserTimeout> for Option<Duration> {
         duration
     }
 }
+
+#[derive(Copy, Clone, Debug, Default)]
+pub struct WinMeshExpansion(pub bool);
 
 // Misc.
 
