@@ -53,6 +53,8 @@ skip-tree = [
     { name = "pprof" },
     # zerocopy v0.8 is still propagating through the ecosystem
     { name = "zerocopy", version = "0.7" },
+    # socket2 v0.6 is still propagating through the ecosystem
+    { name = "socket2", version = "0.5" },
 ]
 
 [sources]
