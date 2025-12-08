@@ -53,7 +53,8 @@ For Rust source files, enforce this layout:
 
 5. **Impl blocks**  
    - Implement methods in the same order as types above.  
-   - Precede each type’s `impl` block with a header comment: `// === <TypeName> ===`
+   - Precede each type’s `impl` block with a header comment:
+     `// === <TypeName> ===`
 
 6. **Tests**  
    - End with a `tests` module guarded by `#[cfg(test)]`.
