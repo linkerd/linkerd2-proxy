@@ -11,6 +11,7 @@ rustls-aws-lc-fips = ["tokio-rustls/fips"]
 test-util = ["linkerd-tls-test-util"]
 
 [dependencies]
+aws-lc-rs = "1"
 futures = { version = "0.3", default-features = false }
 rustls-pemfile = "2.2"
 rustls-webpki = { version = "0.103.8", default-features = false, features = ["std", "aws-lc-rs"] }

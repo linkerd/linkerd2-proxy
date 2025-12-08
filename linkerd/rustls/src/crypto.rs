@@ -17,8 +17,12 @@ pub fn default_provider() -> CryptoProvider {
 }
 
 // These must be kept in sync:
+pub static SIGNATURE_ALG_RING_SIGNING: &::aws_lc_rs::signature::EcdsaSigningAlgorithm =
+    &::aws_lc_rs::signature::ECDSA_P256_SHA256_ASN1_SIGNING;
 pub const SIGNATURE_ALG_RUSTLS_SCHEME: rustls::SignatureScheme =
     rustls::SignatureScheme::ECDSA_NISTP256_SHA256;
+pub const SIGNATURE_ALG_RUSTLS_ALGORITHM: rustls::SignatureAlgorithm =
+    rustls::SignatureAlgorithm::ECDSA;
 pub static TLS_VERSIONS: &[&rustls::SupportedProtocolVersion] = &[&rustls::version::TLS13];
 
 #[cfg(not(feature = "rustls-aws-lc-fips"))]

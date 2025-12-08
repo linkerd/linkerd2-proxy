@@ -181,6 +181,7 @@ checksum = "5932a7d9d28b0d2ea34c6b3779d35e3dd6f6345317c34e73438c4f1f29144151"
 dependencies = [
  "aws-lc-fips-sys",
  "aws-lc-sys",
+ "untrusted 0.7.1",
  "zeroize",
 ]
 
@@ -1657,7 +1658,7 @@ name = "linkerd-dns-name"
 version = "0.1.0"
 dependencies = [
  "thiserror",
- "untrusted",
+ "untrusted 0.9.0",
 ]
 
 [[package]]
@@ -1990,6 +1991,7 @@ dependencies = [
 name = "linkerd-meshtls"
 version = "0.1.0"
 dependencies = [
+ "aws-lc-rs",
  "futures",
  "linkerd-conditional",
  "linkerd-dns-name",
@@ -2441,6 +2443,7 @@ dependencies = [
 name = "linkerd-rustls"
 version = "0.1.0"
 dependencies = [
+ "aws-lc-rs",
  "rustls-webpki",
  "tokio-rustls",
 ]
@@ -2536,7 +2539,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
- "untrusted",
+ "untrusted 0.9.0",
 ]
 
 [[package]]
@@ -3452,7 +3455,7 @@ dependencies = [
  "cfg-if",
  "getrandom 0.2.16",
  "libc",
- "untrusted",
+ "untrusted 0.9.0",
  "windows-sys 0.52.0",
 ]
 
@@ -3554,7 +3557,7 @@ dependencies = [
  "aws-lc-rs",
  "ring",
  "rustls-pki-types",
- "untrusted",
+ "untrusted 0.9.0",
 ]
 
 [[package]]
@@ -4233,6 +4236,12 @@ name = "unicode-xid"
 version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ebc1c04c71510c7f702b52b7c350734c9ff1295c464a03335b00bb84fc54f853"
+
+[[package]]
+name = "untrusted"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a156c684c91ea7d62626509bce3cb4e1d9ed5c4d978f7b4352658f96a4c26b4a"
 
 [[package]]
 name = "untrusted"

@@ -1,16 +1,23 @@
+use aws_lc_rs::error::KeyRejected;
+use aws_lc_rs::signature::EcdsaKeyPair;
 use linkerd_dns_name as dns;
 use linkerd_error::Result;
 use linkerd_identity as id;
 use linkerd_meshtls_verifier as verifier;
+use linkerd_rustls::{
+    SIGNATURE_ALG_RING_SIGNING, SIGNATURE_ALG_RUSTLS_ALGORITHM, SIGNATURE_ALG_RUSTLS_SCHEME,
+};
 use std::{convert::TryFrom, sync::Arc};
+use thiserror::Error;
 use tokio::sync::watch;
 use tokio_rustls::rustls::{
     self,
     pki_types::{PrivatePkcs8KeyDer, UnixTime},
     server::WebPkiClientVerifier,
     sign::CertifiedKey,
+    Error, InconsistentKeys,
 };
-use tracing::debug;
+use tracing::{debug, warn};
 
 pub struct Store {
     roots: rustls::RootCertStore,
@@ -20,6 +27,13 @@ pub struct Store {
     client_tx: watch::Sender<Arc<rustls::ClientConfig>>,
     server_tx: watch::Sender<Arc<rustls::ServerConfig>>,
 }
+
+#[derive(Debug, Error)]
+#[error(transparent)]
+pub struct InvalidKey(KeyRejected);
+
+#[derive(Clone, Debug)]
+struct Key(Arc<EcdsaKeyPair>);
 
 #[derive(Clone, Debug)]
 struct CertResolver(Arc<rustls::sign::CertifiedKey>);
@@ -145,11 +159,12 @@ impl id::Credentials for Store {
         // Use the client's verifier to validate the certificate for our local name.
         self.validate(&chain)?;
 
-        let key_der = PrivatePkcs8KeyDer::from(key);
-        let provider = rustls::crypto::CryptoProvider::get_default()
-            .expect("Failed to get default crypto provider");
-        let key = CertifiedKey::from_der(chain, key_der.into(), provider)?;
-        let resolver = Arc::new(CertResolver(Arc::new(key)));
+        let key = EcdsaKeyPair::from_pkcs8(SIGNATURE_ALG_RING_SIGNING, &key).map_err(InvalidKey)?;
+
+        let resolver = Arc::new(CertResolver(Arc::new(CertifiedKey::new(
+            chain,
+            Arc::new(Key(Arc::new(key))),
+        ))));
 
         // Build new client and server TLS configs.
         let client = self.client_config(resolver.clone());
@@ -160,6 +175,41 @@ impl id::Credentials for Store {
         let _ = self.server_tx.send(server);
 
         Ok(())
+    }
+}
+
+// === impl Key ===
+
+impl rustls::sign::SigningKey for Key {
+    fn choose_scheme(
+        &self,
+        offered: &[rustls::SignatureScheme],
+    ) -> Option<Box<dyn rustls::sign::Signer>> {
+        if !offered.contains(&SIGNATURE_ALG_RUSTLS_SCHEME) {
+            return None;
+        }
+
+        Some(Box::new(self.clone()))
+    }
+
+    fn algorithm(&self) -> rustls::SignatureAlgorithm {
+        SIGNATURE_ALG_RUSTLS_ALGORITHM
+    }
+}
+
+impl rustls::sign::Signer for Key {
+    fn sign(&self, message: &[u8]) -> Result<Vec<u8>, rustls::Error> {
+        let rng = aws_lc_rs::rand::SystemRandom::new();
+        self.0
+            .sign(&rng, message)
+            .map(|signature| signature.as_ref().to_owned())
+            .map_err(|aws_lc_rs::error::Unspecified| {
+                rustls::Error::General("Signing Failed".to_owned())
+            })
+    }
+
+    fn scheme(&self) -> rustls::SignatureScheme {
+        SIGNATURE_ALG_RUSTLS_SCHEME
     }
 }
 
