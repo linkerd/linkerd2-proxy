@@ -171,8 +171,12 @@ impl CertResolver {
         &self,
         sigschemes: &[rustls::SignatureScheme],
     ) -> Option<Arc<rustls::sign::CertifiedKey>> {
-        if !sigschemes.contains(&linkerd_rustls::SIGNATURE_ALG_RUSTLS_SCHEME) {
+        if !sigschemes
+            .iter()
+            .any(|scheme| linkerd_rustls::SUPPORTED_SIG_SCHEMES.contains(scheme))
+        {
             debug!("Signature scheme not supported -> no certificate");
+            debug!("Requested signature schemes: {sigschemes:?}");
             return None;
         }
 

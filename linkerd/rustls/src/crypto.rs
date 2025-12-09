@@ -1,3 +1,6 @@
+use std::collections::{HashMap, HashSet};
+use std::iter::FromIterator;
+use std::sync::{LazyLock, OnceLock};
 use tokio_rustls::rustls::{
     self,
     crypto::{
@@ -106,6 +109,13 @@ pub static SUPPORTED_SIG_ALGS: &WebPkiSupportedAlgorithms = &WebPkiSupportedAlgo
         ),
     ],
 };
+pub static SUPPORTED_SIG_SCHEMES: LazyLock<Vec<rustls::SignatureScheme>> = LazyLock::new(|| {
+    SUPPORTED_SIG_ALGS
+        .mapping
+        .iter()
+        .map(|(scheme, _)| *scheme)
+        .collect()
+});
 
 #[cfg(test)]
 mod tests {

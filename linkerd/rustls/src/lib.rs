@@ -1,4 +1,6 @@
-pub use crate::crypto::{SIGNATURE_ALG_RUSTLS_SCHEME, SUPPORTED_SIG_ALGS, TLS_VERSIONS};
+pub use crate::crypto::{
+    SIGNATURE_ALG_RUSTLS_SCHEME, SUPPORTED_SIG_ALGS, SUPPORTED_SIG_SCHEMES, TLS_VERSIONS,
+};
 use std::sync::Arc;
 use tokio_rustls::rustls::crypto::CryptoProvider;
 
