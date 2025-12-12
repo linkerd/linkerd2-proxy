@@ -45,6 +45,9 @@ impl From<UserTimeout> for Option<Duration> {
     }
 }
 
+#[derive(Copy, Clone, Debug, Default)]
+pub struct Backlog(pub Option<u32>);
+
 // Misc.
 
 fn set_nodelay_or_warn(socket: &TcpStream) {

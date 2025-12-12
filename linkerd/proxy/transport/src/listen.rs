@@ -1,6 +1,6 @@
 mod dual_bind;
 
-use crate::{addrs::*, Keepalive, UserTimeout};
+use crate::{addrs::*, Backlog, Keepalive, UserTimeout};
 use dual_bind::DualBind;
 use futures::prelude::*;
 use linkerd_error::Result;
@@ -71,7 +71,7 @@ impl BindTcp {
 
 impl<T> Bind<T> for BindTcp
 where
-    T: Param<ListenAddr> + Param<Keepalive> + Param<UserTimeout>,
+    T: Param<ListenAddr> + Param<Keepalive> + Param<UserTimeout> + Param<Backlog>,
 {
     type Addrs = Addrs;
     type BoundAddrs = Local<ServerAddr>;
@@ -81,10 +81,36 @@ where
     fn bind(self, params: &T) -> Result<(Self::BoundAddrs, Self::Incoming)> {
         let listen = {
             let ListenAddr(addr) = params.param();
-            let l = std::net::TcpListener::bind(addr)?;
-            // Ensure that O_NONBLOCK is set on the socket before using it with Tokio.
-            l.set_nonblocking(true)?;
-            tokio::net::TcpListener::from_std(l).expect("listener must be valid")
+            let Backlog(backlog) = params.param();
+
+            match backlog {
+                Some(backlog) => {
+                    // Use TcpSocket to configure a custom listen backlog.
+                    // TcpSocket::new_v4/v6 automatically sets O_NONBLOCK, which is
+                    // required for Tokio's async I/O operations.
+                    let socket = if addr.is_ipv4() {
+                        tokio::net::TcpSocket::new_v4()?
+                    } else {
+                        tokio::net::TcpSocket::new_v6()?
+                    };
+
+                    // Enable SO_REUSEADDR to match std::net::TcpListener::bind
+                    // behavior. On Windows, std does not set SO_REUSEADDR to prevent
+                    // socket hijacking.
+                    #[cfg(not(windows))]
+                    socket.set_reuseaddr(true)?;
+
+                    socket.bind(addr)?;
+                    socket.listen(backlog)?
+                }
+                None => {
+                    // No custom backlog configured; use std::net::TcpListener::bind
+                    // which applies platform-correct defaults.
+                    let l = std::net::TcpListener::bind(addr)?;
+                    l.set_nonblocking(true)?;
+                    tokio::net::TcpListener::from_std(l).expect("listener must be valid")
+                }
+            }
         };
         let server = Local(ServerAddr(listen.local_addr()?));
         let Keepalive(keepalive) = params.param();
@@ -136,5 +162,81 @@ impl Param<AddrPair> for Addrs {
         let Remote(client) = self.client;
         let Local(server) = self.server;
         AddrPair(client, server)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Clone)]
+    struct TestParams {
+        addr: ListenAddr,
+        keepalive: Keepalive,
+        user_timeout: UserTimeout,
+        backlog: crate::Backlog,
+    }
+
+    impl Param<ListenAddr> for TestParams {
+        fn param(&self) -> ListenAddr {
+            self.addr
+        }
+    }
+
+    impl Param<Keepalive> for TestParams {
+        fn param(&self) -> Keepalive {
+            self.keepalive
+        }
+    }
+
+    impl Param<UserTimeout> for TestParams {
+        fn param(&self) -> UserTimeout {
+            self.user_timeout
+        }
+    }
+
+    impl Param<crate::Backlog> for TestParams {
+        fn param(&self) -> crate::Backlog {
+            self.backlog
+        }
+    }
+
+    fn params_with_backlog(backlog: Option<u32>) -> TestParams {
+        TestParams {
+            addr: ListenAddr("127.0.0.1:0".parse().unwrap()),
+            keepalive: Keepalive(None),
+            user_timeout: UserTimeout(None),
+            backlog: crate::Backlog(backlog),
+        }
+    }
+
+    #[tokio::test]
+    async fn bind_with_custom_backlog() {
+        let params = params_with_backlog(Some(1024));
+        let bind = BindTcp::default();
+        let (bound_addr, mut incoming) = bind.bind(&params).expect("failed to bind");
+
+        // Verify we can connect and accept through the listener.
+        let addr = bound_addr.0 .0;
+        let connect = tokio::net::TcpStream::connect(addr);
+        let accept = incoming.next();
+        let (conn, accepted) = tokio::join!(connect, accept);
+        conn.expect("failed to connect");
+        accepted.expect("stream ended").expect("failed to accept");
+    }
+
+    #[tokio::test]
+    async fn bind_with_default_backlog() {
+        let params = params_with_backlog(None);
+        let bind = BindTcp::default();
+        let (bound_addr, mut incoming) = bind.bind(&params).expect("failed to bind");
+
+        // Verify we can connect and accept through the listener.
+        let addr = bound_addr.0 .0;
+        let connect = tokio::net::TcpStream::connect(addr);
+        let accept = incoming.next();
+        let (conn, accepted) = tokio::join!(connect, accept);
+        conn.expect("failed to connect");
+        accepted.expect("stream ended").expect("failed to accept");
     }
 }

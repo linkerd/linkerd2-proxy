@@ -2,7 +2,8 @@ use super::*;
 use linkerd_app_core::{
     svc::Param,
     transport::{
-        listen, orig_dst, Keepalive, ListenAddr, Local, OrigDstAddr, ServerAddr, UserTimeout,
+        listen, orig_dst, Backlog, Keepalive, ListenAddr, Local, OrigDstAddr, ServerAddr,
+        UserTimeout,
     },
     Result,
 };
@@ -70,7 +71,7 @@ struct MockDualOrigDst {
 
 impl<T> listen::Bind<T> for MockOrigDst
 where
-    T: Param<Keepalive> + Param<UserTimeout> + Param<ListenAddr>,
+    T: Param<Keepalive> + Param<UserTimeout> + Param<ListenAddr> + Param<Backlog>,
 {
     type Addrs = orig_dst::Addrs;
     type BoundAddrs = Local<ServerAddr>;
@@ -120,7 +121,7 @@ impl fmt::Debug for MockOrigDst {
 
 impl<T> listen::Bind<T> for MockDualOrigDst
 where
-    T: Param<Keepalive> + Param<UserTimeout> + Param<ListenAddr>,
+    T: Param<Keepalive> + Param<UserTimeout> + Param<ListenAddr> + Param<Backlog>,
 {
     type Addrs = orig_dst::Addrs;
     type BoundAddrs = (Local<ServerAddr>, Option<Local<ServerAddr>>);
