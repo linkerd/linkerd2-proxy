@@ -357,4 +357,22 @@ mod tests {
         assert!(dbg!(parse_port_range_set("69420")).is_err());
         assert!(dbg!(parse_port_range_set("1-69420")).is_err());
     }
+
+    #[test]
+    fn parse_backlog_valid() {
+        assert_eq!(parse_number::<u32>("128"), Ok(128));
+        assert_eq!(parse_number::<u32>("512"), Ok(512));
+        assert_eq!(parse_number::<u32>("1024"), Ok(1024));
+        assert_eq!(parse_number::<u32>("65535"), Ok(65535));
+        assert_eq!(parse_number::<u32>("0"), Ok(0));
+    }
+
+    #[test]
+    fn parse_backlog_invalid() {
+        assert!(parse_number::<u32>("").is_err());
+        assert!(parse_number::<u32>("abc").is_err());
+        assert!(parse_number::<u32>("-1").is_err());
+        assert!(parse_number::<u32>("12.5").is_err());
+        assert!(parse_number::<u32>("999999999999999999999999").is_err());
+    }
 }

@@ -11,7 +11,7 @@ use linkerd_meshtls::{self as meshtls, watch};
 use linkerd_proxy_transport::{
     addrs::*,
     listen::{Addrs, Bind, BindTcp},
-    ConnectTcp, Keepalive, UserTimeout,
+    ConnectTcp, Keepalive, UserTimeout, Backlog,
 };
 use linkerd_stack::{
     layer::Layer, service_fn, ExtractParam, InsertParam, NewService, Param, ServiceExt,
@@ -406,6 +406,11 @@ impl Param<Keepalive> for Server {
 impl Param<UserTimeout> for Server {
     fn param(&self) -> UserTimeout {
         UserTimeout(None)
+    }
+}
+impl Param<Backlog> for Server {
+    fn param(&self) -> Backlog {
+        Backlog::default()
     }
 }
 

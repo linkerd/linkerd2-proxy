@@ -2,7 +2,7 @@ pub use crate::exp_backoff::ExponentialBackoff;
 use crate::{
     proxy::http::{h1, h2},
     svc::{queue, ExtractParam, Param},
-    transport::{DualListenAddr, Keepalive, ListenAddr, UserTimeout},
+    transport::{DualListenAddr, Keepalive, ListenAddr, UserTimeout, Backlog},
 };
 use std::time::Duration;
 
@@ -11,6 +11,7 @@ pub struct ServerConfig {
     pub addr: DualListenAddr,
     pub keepalive: Keepalive,
     pub user_timeout: UserTimeout,
+    pub backlog: Backlog,
     pub http2: h2::ServerParams,
 }
 
@@ -82,5 +83,11 @@ impl Param<Keepalive> for ServerConfig {
 impl Param<UserTimeout> for ServerConfig {
     fn param(&self) -> UserTimeout {
         self.user_timeout
+    }
+}
+
+impl Param<Backlog> for ServerConfig {
+    fn param(&self) -> Backlog {
+        self.backlog
     }
 }
