@@ -484,7 +484,7 @@ mod util {
             http.init_response(rsp);
         }
 
-        fn end_response(&mut self, trailers: Result<Option<&http::HeaderMap>, &Error>) {
+        fn end_response(&mut self, trailers: EosRef<'_>) {
             let Self { grpc, http } = self;
             grpc.end_response(trailers);
             http.end_response(trailers);
