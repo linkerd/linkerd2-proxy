@@ -1,8 +1,0 @@
-# configmap.yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: myntranfrglobalheader
-  namespace: custom-test
-data:
-  LINKERD2_PROXY_MYNTRA_NFR_TEST_ENABLED: "true"
