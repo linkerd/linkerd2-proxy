@@ -189,8 +189,8 @@ docker *args='--output=type=docker': && _clean-cache
         --build-arg PROFILE='{{ profile }}' \
         --build-arg LINKERD2_PROXY_VENDOR='{{ LINKERD2_PROXY_VENDOR }}' \
         --build-arg LINKERD2_PROXY_VERSION='{{ LINKERD2_PROXY_VERSION }}' \
+        --build-arg LINKERD2_IMAGE='ghcr.io/linkerd/proxy:{{ if linkerd-tag == "" { _latest-edge-tag } else { linkerd-tag } }}' \
         --no-cache-filter=runtime \
-        {{ if linkerd-tag == '' { '' } else { '--build-arg=RUNTIME_IMAGE=ghcr.io/linkerd/proxy:' + linkerd-tag } }} \
         {{ if features != "" { "--build-arg PROXY_FEATURES=" + features } else { "" } }} \
         {{ if DOCKER_BUILDX_CACHE_DIR == '' { '' } else { '--cache-from=type=local,src=' + DOCKER_BUILDX_CACHE_DIR + ' --cache-to=type=local,dest=' + DOCKER_BUILDX_CACHE_DIR } }} \
         {{ args }}
@@ -242,6 +242,7 @@ action-dev-check:
 ##
 
 linkerd-tag := env_var_or_default('LINKERD_TAG', '')
+_latest-edge-tag := `curl -sL https://api.github.com/repos/linkerd/linkerd2/releases 2>/dev/null | jq -r '[.[] | select(.tag_name | startswith("edge-")) | .tag_name] | first' || echo "edge-25.11.3"`
 _controller-image := 'ghcr.io/linkerd/controller'
 _policy-image := 'ghcr.io/linkerd/controller'
 _init-image := 'ghcr.io/linkerd/proxy'
