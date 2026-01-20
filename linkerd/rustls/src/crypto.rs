@@ -55,8 +55,10 @@ pub static SUPPORTED_SIG_ALGS: &WebPkiSupportedAlgorithms = &WebPkiSupportedAlgo
     all: &[
         webpki::aws_lc_rs::ECDSA_P256_SHA256,
         webpki::aws_lc_rs::ECDSA_P256_SHA384,
+        webpki::aws_lc_rs::ECDSA_P256_SHA512,
         webpki::aws_lc_rs::ECDSA_P384_SHA256,
         webpki::aws_lc_rs::ECDSA_P384_SHA384,
+        webpki::aws_lc_rs::ECDSA_P384_SHA512,
         webpki::aws_lc_rs::ECDSA_P521_SHA256,
         webpki::aws_lc_rs::ECDSA_P521_SHA384,
         webpki::aws_lc_rs::ECDSA_P521_SHA512,
@@ -161,8 +163,10 @@ mod tests {
         let expected_algs = [
             webpki::aws_lc_rs::ECDSA_P256_SHA256,
             webpki::aws_lc_rs::ECDSA_P256_SHA384,
+            webpki::aws_lc_rs::ECDSA_P256_SHA512,
             webpki::aws_lc_rs::ECDSA_P384_SHA256,
             webpki::aws_lc_rs::ECDSA_P384_SHA384,
+            webpki::aws_lc_rs::ECDSA_P384_SHA512,
             webpki::aws_lc_rs::ECDSA_P521_SHA256,
             webpki::aws_lc_rs::ECDSA_P521_SHA384,
             webpki::aws_lc_rs::ECDSA_P521_SHA512,
