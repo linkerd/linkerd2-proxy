@@ -242,7 +242,17 @@ action-dev-check:
 ##
 
 linkerd-tag := env_var_or_default('LINKERD_TAG', '')
-_latest-edge-tag := `curl -sL https://api.github.com/repos/linkerd/linkerd2/releases 2>/dev/null | jq -r '[.[] | select(.tag_name | startswith("edge-")) | .tag_name] | first' || echo "edge-25.11.3"`
+_latest-edge-tag := if linkerd-tag != '' { linkerd-tag } else { ```
+    tag=$(curl -sL https://api.github.com/repos/linkerd/linkerd2/releases 2>/dev/null \
+        | jq -r '[.[] | select(.tag_name | startswith("edge-")) | .tag_name] | first')
+    if [ -z "$tag" ] || [ "$tag" = "null" ]; then
+        echo "ERROR: Failed to fetch latest edge tag from GitHub API." >&2
+        echo "       Set LINKERD_TAG environment variable to specify a tag manually." >&2
+        exit 1
+    fi
+    echo "$tag"
+``` }
+
 _controller-image := 'ghcr.io/linkerd/controller'
 _policy-image := 'ghcr.io/linkerd/controller'
 _init-image := 'ghcr.io/linkerd/proxy'
