@@ -23,4 +23,4 @@ asn1 = { version = "0.6", package = "simple_asn1" }
 thiserror = "2"
 
 [dev-dependencies]
-rcgen = { version = "0.14.5", default-features = false, features = ["crypto", "pem", "aws_lc_rs"] }
+rcgen = { version = "0.14.7", default-features = false, features = ["crypto", "pem", "aws_lc_rs"] }
