@@ -189,7 +189,7 @@ docker *args='--output=type=docker': && _clean-cache
         --build-arg PROFILE='{{ profile }}' \
         --build-arg LINKERD2_PROXY_VENDOR='{{ LINKERD2_PROXY_VENDOR }}' \
         --build-arg LINKERD2_PROXY_VERSION='{{ LINKERD2_PROXY_VERSION }}' \
-        --build-arg LINKERD2_IMAGE='ghcr.io/linkerd/proxy:{{ if linkerd-tag == "" { _latest-edge-tag } else { linkerd-tag } }}' \
+        --build-arg LINKERD2_IMAGE='ghcr.io/linkerd/proxy:{{ _latest-edge-tag }}' \
         --no-cache-filter=runtime \
         {{ if features != "" { "--build-arg PROXY_FEATURES=" + features } else { "" } }} \
         {{ if DOCKER_BUILDX_CACHE_DIR == '' { '' } else { '--cache-from=type=local,src=' + DOCKER_BUILDX_CACHE_DIR + ' --cache-to=type=local,dest=' + DOCKER_BUILDX_CACHE_DIR } }} \
@@ -241,8 +241,8 @@ action-dev-check:
 ## Linkerd
 ##
 
-linkerd-tag := env_var_or_default('LINKERD_TAG', '')
-_latest-edge-tag := if linkerd-tag != '' { linkerd-tag } else { ```
+_linkerd-tag := env_var_or_default('LINKERD_TAG', '')
+_latest-edge-tag := if _linkerd-tag != '' { _linkerd-tag } else { ```
     tag=$(curl -sL https://api.github.com/repos/linkerd/linkerd2/releases 2>/dev/null \
         | jq -r '[.[] | select(.tag_name | startswith("edge-")) | .tag_name] | first')
     if [ -z "$tag" ] || [ "$tag" = "null" ]; then
@@ -260,13 +260,6 @@ _init-image := 'ghcr.io/linkerd/proxy'
 _kubectl := 'just-k3d kubectl'
 _linkerd := 'linkerd --context=k3d-$(just-k3d --evaluate K3D_CLUSTER_NAME)'
 
-_tag-set:
-    #!/usr/bin/env bash
-    if [ -z '{{ linkerd-tag }}' ]; then
-        echo "linkerd-tag must be set" >&2
-        exit 1
-    fi
-
 _k3d-ready:
     @just-k3d ready
 
@@ -276,19 +269,19 @@ export K3S_DISABLE := "local-storage,traefik,servicelb,metrics-server@server:*"
 k3d-create: && _k3d-ready
     @just-k3d create
 
-k3d-load-linkerd: _tag-set _k3d-ready
+k3d-load-linkerd: _k3d-ready
     for i in \
-        '{{ _controller-image }}:{{ linkerd-tag }}' \
-        '{{ _policy-image }}:{{ linkerd-tag }}' \
-        '{{ _init-image }}:{{ linkerd-tag }}' \
+        '{{ _controller-image }}:{{ _latest-edge-tag }}' \
+        '{{ _policy-image }}:{{ _latest-edge-tag }}' \
+        '{{ _init-image }}:{{ _latest-edge-tag }}' \
     ; do \
         docker pull -q "$i" ; \
     done
     @just-k3d import \
         '{{ docker-image }}' \
-        '{{ _controller-image }}:{{ linkerd-tag }}' \
-        '{{ _policy-image }}:{{ linkerd-tag }}' \
-        '{{ _init-image }}:{{ linkerd-tag }}'
+        '{{ _controller-image }}:{{ _latest-edge-tag }}' \
+        '{{ _policy-image }}:{{ _latest-edge-tag }}' \
+        '{{ _init-image }}:{{ _latest-edge-tag }}'
 
 # Install crds on the test cluster.
 _linkerd-crds-install: _k3d-ready
@@ -300,18 +293,18 @@ _linkerd-crds-install: _k3d-ready
         --timeout={{ wait-timeout }}
 
 # Install linkerd on the test cluster using test images.
-linkerd-install *args='': _tag-set k3d-load-linkerd _linkerd-crds-install && _linkerd-ready
+linkerd-install *args='': k3d-load-linkerd _linkerd-crds-install && _linkerd-ready
     {{ _linkerd }} install \
             --set='imagePullPolicy=Never' \
             --set='controllerImage={{ _controller-image }}' \
-            --set='linkerdVersion={{ linkerd-tag }}' \
+            --set='linkerdVersion={{ _latest-edge-tag }}' \
             --set='policyController.image.name={{ _policy-image }}' \
-            --set='policyController.image.version={{ linkerd-tag }}' \
+            --set='policyController.image.version={{ _latest-edge-tag }}' \
             --set='proxy.image.name={{ _init-image }}' \
-            --set='proxy.image.version={{ linkerd-tag }}' \
+            --set='proxy.image.version={{ _latest-edge-tag }}' \
             --set='proxy.logLevel=linkerd=debug\,info' \
             --set='proxyInit.image.name={{ _init-image }}' \
-            --set='proxyInit.image.version={{ linkerd-tag }}' \
+            --set='proxyInit.image.version={{ _latest-edge-tag }}' \
             {{ args }} \
         | {{ _kubectl }} apply -f -
 
