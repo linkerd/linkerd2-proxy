@@ -32,7 +32,7 @@ linkerd-tls-test-util = { path = "../tls/test-util", optional = true }
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }
 tracing = { workspace = true }
-rcgen = { version = "0.14.5", default-features = false, features = ["crypto", "pem", "aws_lc_rs"] }
+rcgen = { version = "0.14.7", default-features = false, features = ["crypto", "pem", "aws_lc_rs"] }
 
 linkerd-conditional = { path = "../conditional" }
 linkerd-proxy-transport = { path = "../proxy/transport" }
