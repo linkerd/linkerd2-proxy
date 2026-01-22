@@ -10,5 +10,5 @@ publish = { workspace = true }
 rustls-aws-lc-fips = ["tokio-rustls/fips"]
 
 [dependencies]
-rustls-webpki = { version = "0.103.8", default-features = false, features = ["std", "aws-lc-rs"] }
+rustls-webpki = { version = "0.103.9", default-features = false, features = ["std", "aws-lc-rs"] }
 tokio-rustls = { workspace = true, features = ["aws-lc-rs"] }
