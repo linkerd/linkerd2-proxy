@@ -23,7 +23,7 @@ jobs:
     timeout-minutes: 5
     runs-on: ${{ vars.LINKERD2_PROXY_RUNNER || 'ubuntu-24.04' }}
     steps:
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
       - id: changed
         uses: tj-actions/changed-files@e0021407031f5be11a464abee9a0776171c79891
         with:
@@ -48,7 +48,7 @@ jobs:
     env:
       CXX: "/usr/bin/clang++-19"
     steps:
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
       - uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5
       - run: cargo tarpaulin --locked --workspace --exclude=linkerd2-proxy --exclude=linkerd-transport-header --exclude=spire-proto --no-run
       - run: cargo tarpaulin --locked --workspace --exclude=linkerd2-proxy --exclude=linkerd-transport-header --exclude=spire-proto --skip-clean --ignore-tests --no-fail-fast --out=Xml
