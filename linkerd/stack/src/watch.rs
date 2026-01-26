@@ -20,8 +20,8 @@ pub struct NewSpawnWatch<P, N> {
 /// A `S`-typed service which is updated dynamically by a background task.
 ///
 /// Each clone of a `SpawnWatch` service that shares the same watch owns its own
-/// clone of the inner service. As the `watch::Receiver` is updated, the
-/// background task
+/// clone of the inner service. Changes in the [`watch::Receiver`] are checked
+/// for when this service is polled for readiness.
 #[derive(Clone, Debug)]
 pub struct SpawnWatch<S> {
     rx: watch::Receiver<S>,
