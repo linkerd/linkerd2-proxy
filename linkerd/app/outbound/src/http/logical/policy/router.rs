@@ -254,6 +254,26 @@ where
     }
 }
 
+impl<T, M, F, P> svc::Param<LogicalAddr> for Router<T, M, F, P>
+where
+    T: Eq + Hash + Clone + Debug,
+{
+    fn param(&self) -> LogicalAddr {
+        LogicalAddr(self.addr.clone())
+    }
+}
+
+impl<T, M, F, P> svc::Param<distribute::Backends<Concrete<T>>> for Router<T, M, F, P>
+where
+    T: Eq + Hash + Clone + Debug,
+{
+    fn param(&self) -> distribute::Backends<Concrete<T>> {
+        self.backends.clone()
+    }
+}
+
+// === impl Http ===
+
 impl<B, T> svc::router::SelectRoute<http::Request<B>> for Http<T>
 where
     T: Eq + Hash + Clone + Debug,
@@ -273,6 +293,8 @@ where
     }
 }
 
+// === impl Grpc ===
+
 impl<T, B> svc::router::SelectRoute<http::Request<B>> for Grpc<T>
 where
     T: Eq + Hash + Clone + Debug,
@@ -289,23 +311,5 @@ where
             r#match,
             params: params.clone(),
         })
-    }
-}
-
-impl<T, M, F, P> svc::Param<LogicalAddr> for Router<T, M, F, P>
-where
-    T: Eq + Hash + Clone + Debug,
-{
-    fn param(&self) -> LogicalAddr {
-        LogicalAddr(self.addr.clone())
-    }
-}
-
-impl<T, M, F, P> svc::Param<distribute::Backends<Concrete<T>>> for Router<T, M, F, P>
-where
-    T: Eq + Hash + Clone + Debug,
-{
-    fn param(&self) -> distribute::Backends<Concrete<T>> {
-        self.backends.clone()
     }
 }
