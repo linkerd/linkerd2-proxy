@@ -32,7 +32,10 @@ pub type GrpcParams =
 /// [`Match`][http_route::Match] strategy, across [`Route<T, F, E>`][route::Route]s with
 /// an `F`-typed filter strategy and `E`-typed parameter.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Router<T: Clone + Debug + Eq + Hash, M, F, E> {
+pub(crate) struct Router<T, M, F, E>
+where
+    T: Clone + Debug + Eq + Hash,
+{
     pub(super) parent: T,
     pub(super) addr: Addr,
     pub(super) routes: Arc<[http_route::Route<M, route::Route<T, F, E>>]>,
