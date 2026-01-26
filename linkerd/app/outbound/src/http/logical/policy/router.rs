@@ -42,8 +42,15 @@ where
     pub(super) backends: distribute::Backends<Concrete<T>>,
 }
 
+/// An HTTP [`Router`].
+///
+/// This is a [`Router<T, M, F, E>`] for HTTPRoute authentication policy.
 pub(super) type Http<T> =
     Router<T, http_route::http::MatchRequest, policy::http::Filter, policy::http::RouteParams>;
+
+/// A gRPC [`Router`].
+///
+/// This is a [`Router<T, M, F, E>`] for GRPCRoute authentication policy.
 pub(super) type Grpc<T> =
     Router<T, http_route::grpc::MatchRoute, policy::grpc::Filter, policy::grpc::RouteParams>;
 
