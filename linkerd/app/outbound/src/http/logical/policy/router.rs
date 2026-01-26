@@ -26,6 +26,11 @@ pub type HttpParams =
 pub type GrpcParams =
     Params<http_route::grpc::MatchRoute, policy::grpc::Filter, policy::grpc::RouteParams>;
 
+/// A policy-based router.
+///
+/// This routes traffic to services `T`-typed targets. Traffic is routed using an `M`-typed
+/// [`Match`][http_route::Match] strategy, across [`Route<T, F, E>`][route::Route]s with
+/// an `F`-typed filter strategy and `E`-typed parameter.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Router<T: Clone + Debug + Eq + Hash, M, F, E> {
     pub(super) parent: T,
