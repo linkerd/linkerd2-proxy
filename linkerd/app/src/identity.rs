@@ -14,10 +14,6 @@ use std::{future::Future, pin::Pin, time::SystemTime};
 use tokio::sync::watch;
 use tracing::Instrument;
 
-#[derive(Clone, Debug, thiserror::Error)]
-#[error("linkerd identity requires a TLS Id and server name to be the same")]
-pub struct TlsIdAndServerNameNotMatching(pub ()); // XXX(kate): no pub
-
 #[derive(Clone, Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum Config {
