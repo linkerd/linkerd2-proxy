@@ -1,9 +1,10 @@
 use futures::prelude::*;
-use linkerd_identity as id;
 use linkerd_io as io;
 use linkerd_meshtls_verifier as verifier;
 use linkerd_stack::{NewService, Service};
-use linkerd_tls::{client::AlpnProtocols, ClientTls, NegotiatedProtocol, NegotiatedProtocolRef};
+use linkerd_tls::{
+    client::AlpnProtocols, ClientTls, NegotiatedProtocol, NegotiatedProtocolRef, ServerId,
+};
 use std::{convert::TryFrom, pin::Pin, sync::Arc, task::Context};
 use tokio::sync::watch;
 use tokio_rustls::rustls::{self, pki_types::CertificateDer, ClientConfig};
@@ -17,8 +18,7 @@ pub struct NewClient {
 /// A `Service` that initiates client-side TLS connections.
 #[derive(Clone)]
 pub struct Connect {
-    // XXX(kate): make this a ServerId?
-    server_id: id::Id,
+    server_id: ServerId,
     server_name: rustls::pki_types::ServerName<'static>,
     config: Arc<ClientConfig>,
 }
@@ -75,7 +75,7 @@ impl Connect {
                 .expect("identity must be a valid DNS name");
 
         Self {
-            server_id: client_tls.server_id.into(),
+            server_id: client_tls.server_id,
             server_name,
             config,
         }
