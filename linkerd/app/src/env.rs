@@ -434,8 +434,6 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     let dns_min_ttl = parse(strings, ENV_DNS_MIN_TTL, parse_duration);
     let dns_max_ttl = parse(strings, ENV_DNS_MAX_TTL, parse_duration);
 
-    let tls = self::identity::parse_tls_params(strings);
-
     let hostname = strings.get(ENV_HOSTNAME);
 
     let trace_collector_addr = parse_control_addr(strings, ENV_TRACE_COLLECTOR_SVC_BASE);
@@ -876,7 +874,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         })
         .unwrap_or(super::tap::Config::Disabled);
 
-    let identity = self::identity::parse_identity_config(strings, tls, &inbound, &outbound)?;
+    let identity = self::identity::parse_identity_config(strings, &inbound, &outbound)?;
 
     Ok(super::Config {
         admin,

@@ -1,14 +1,11 @@
-use crate::identity::TlsParams;
-
 use super::*;
 
 pub fn parse_identity_config<S: Strings>(
     strings: &S,
-    tls: Result<TlsParams, EnvError>,
     inbound: &inbound::Config,
     outbound: &outbound::Config,
 ) -> Result<crate::identity::Config, EnvError> {
-    let (id, server_name, trust_anchors_pem) = tls?;
+    let (id, server_name, trust_anchors_pem) = parse_tls_params(strings)?;
 
     match parse_deprecated(
         strings,
