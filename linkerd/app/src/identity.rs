@@ -4,8 +4,7 @@ pub use linkerd_app_core::identity::{client, Id};
 use linkerd_app_core::{
     control, dns,
     identity::{
-        client::linkerd::Certify, creds, watch as watch_identity, CertMetrics, Credentials,
-        DerX509, WithCertMetrics,
+        client::linkerd::Certify, creds, CertMetrics, Credentials, DerX509, WithCertMetrics,
     },
     metrics::{prom, ControlHttp as ClientMetrics},
     Result,
@@ -127,7 +126,8 @@ fn watch(
     watch::Receiver<bool>,
 )> {
     let (tx, ready) = watch::channel(false);
-    let (store, receiver) = watch_identity(tls.id, tls.server_name, &tls.trust_anchors_pem)?;
+    let (store, receiver) =
+        linkerd_app_core::identity::creds::watch(tls.id, tls.server_name, &tls.trust_anchors_pem)?;
     let cred = WithCertMetrics::new(metrics, NotifyReady { store, tx });
     Ok((cred, receiver, ready))
 }
