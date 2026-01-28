@@ -17,6 +17,7 @@ pub struct NewClient {
 /// A `Service` that initiates client-side TLS connections.
 #[derive(Clone)]
 pub struct Connect {
+    // XXX(kate): make this a ServerId?
     server_id: id::Id,
     server_name: rustls::pki_types::ServerName<'static>,
     config: Arc<ClientConfig>,

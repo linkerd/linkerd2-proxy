@@ -875,6 +875,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         })
         .unwrap_or(super::tap::Config::Disabled);
 
+    //  XXX: outline this into a helper function perhaps?
     let identity = {
         let tls = tls?;
 

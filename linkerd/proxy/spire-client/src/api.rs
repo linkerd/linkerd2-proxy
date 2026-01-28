@@ -99,6 +99,7 @@ impl TryFrom<api::X509svid> for Svid {
             }
         };
 
+        // XXX(kate): SPIFFE ID's are URI's.
         let spiffe_id = Id::parse_uri(&proto.spiffe_id)?;
 
         Ok(Svid {

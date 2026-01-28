@@ -127,6 +127,7 @@ fn watch(
     watch::Receiver<bool>,
 )> {
     let (tx, ready) = watch::channel(false);
+    // XXX: this can simply accept the tls params.
     let (store, receiver) = watch_identity(tls.id, tls.server_name, &tls.trust_anchors_pem)?;
     let cred = WithCertMetrics::new(metrics, NotifyReady { store, tx });
     Ok((cred, receiver, ready))

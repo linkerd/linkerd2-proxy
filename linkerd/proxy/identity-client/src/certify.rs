@@ -88,6 +88,7 @@ impl From<Config> for Certify {
 }
 
 impl Certify {
+    // XXX(kate): THIS is the actual identity client event loop.
     pub async fn run<C, N, S>(self, name: Name, mut credentials: C, new_client: N)
     where
         C: Credentials,

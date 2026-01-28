@@ -13,6 +13,7 @@ fn extract_ids_from_cert(cert: &[u8]) -> Result<Vec<Id>> {
         return Ok(names
             .iter()
             .filter_map(|n| {
+                // XXX(kate): this actually needs the Id enum.
                 let id = match n {
                     GeneralName::DNSName(dns) => Id::parse_dns_name(dns),
                     GeneralName::URI(uri) => Id::parse_uri(uri),
