@@ -78,7 +78,7 @@ pub fn parse_identity_config<S: Strings>(
     }
 }
 
-pub fn parse_linkerd_identity_config<S: Strings>(
+fn parse_linkerd_identity_config<S: Strings>(
     strings: &S,
 ) -> Result<(ControlAddr, crate::identity::client::linkerd::Config), EnvError> {
     let control = parse_control_addr(strings, ENV_IDENTITY_SVC_BASE);
@@ -127,7 +127,7 @@ pub fn parse_linkerd_identity_config<S: Strings>(
     }
 }
 
-pub fn parse_tls_params<S: Strings>(strings: &S) -> Result<crate::identity::TlsParams, EnvError> {
+fn parse_tls_params<S: Strings>(strings: &S) -> Result<crate::identity::TlsParams, EnvError> {
     let ta = parse(strings, ENV_IDENTITY_TRUST_ANCHORS, |s| {
         if s.is_empty() {
             return Err(ParseError::InvalidTrustAnchors);
