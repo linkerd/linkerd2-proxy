@@ -26,16 +26,31 @@ pub type HttpParams =
 pub type GrpcParams =
     Params<http_route::grpc::MatchRoute, policy::grpc::Filter, policy::grpc::RouteParams>;
 
+/// A policy-based router.
+///
+/// This routes traffic to services `T`-typed targets. Traffic is routed using an `M`-typed
+/// [`Match`][http_route::Match] strategy, across [`Route<T, F, E>`][route::Route]s with
+/// an `F`-typed filter strategy and `E`-typed parameter.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Router<T: Clone + Debug + Eq + Hash, M, F, E> {
+pub(crate) struct Router<T, M, F, E>
+where
+    T: Clone + Debug + Eq + Hash,
+{
     pub(super) parent: T,
     pub(super) addr: Addr,
     pub(super) routes: Arc<[http_route::Route<M, route::Route<T, F, E>>]>,
     pub(super) backends: distribute::Backends<Concrete<T>>,
 }
 
+/// An HTTP [`Router`].
+///
+/// This is a [`Router<T, M, F, E>`] for HTTPRoute authentication policy.
 pub(super) type Http<T> =
     Router<T, http_route::http::MatchRequest, policy::http::Filter, policy::http::RouteParams>;
+
+/// A gRPC [`Router`].
+///
+/// This is a [`Router<T, M, F, E>`] for GRPCRoute authentication policy.
 pub(super) type Grpc<T> =
     Router<T, http_route::grpc::MatchRoute, policy::grpc::Filter, policy::grpc::RouteParams>;
 
@@ -254,6 +269,26 @@ where
     }
 }
 
+impl<T, M, F, P> svc::Param<LogicalAddr> for Router<T, M, F, P>
+where
+    T: Eq + Hash + Clone + Debug,
+{
+    fn param(&self) -> LogicalAddr {
+        LogicalAddr(self.addr.clone())
+    }
+}
+
+impl<T, M, F, P> svc::Param<distribute::Backends<Concrete<T>>> for Router<T, M, F, P>
+where
+    T: Eq + Hash + Clone + Debug,
+{
+    fn param(&self) -> distribute::Backends<Concrete<T>> {
+        self.backends.clone()
+    }
+}
+
+// === impl Http ===
+
 impl<B, T> svc::router::SelectRoute<http::Request<B>> for Http<T>
 where
     T: Eq + Hash + Clone + Debug,
@@ -273,6 +308,8 @@ where
     }
 }
 
+// === impl Grpc ===
+
 impl<T, B> svc::router::SelectRoute<http::Request<B>> for Grpc<T>
 where
     T: Eq + Hash + Clone + Debug,
@@ -289,23 +326,5 @@ where
             r#match,
             params: params.clone(),
         })
-    }
-}
-
-impl<T, M, F, P> svc::Param<LogicalAddr> for Router<T, M, F, P>
-where
-    T: Eq + Hash + Clone + Debug,
-{
-    fn param(&self) -> LogicalAddr {
-        LogicalAddr(self.addr.clone())
-    }
-}
-
-impl<T, M, F, P> svc::Param<distribute::Backends<Concrete<T>>> for Router<T, M, F, P>
-where
-    T: Eq + Hash + Clone + Debug,
-{
-    fn param(&self) -> distribute::Backends<Concrete<T>> {
-        self.backends.clone()
     }
 }
