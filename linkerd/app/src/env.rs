@@ -877,7 +877,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
     //  XXX: outline this into a helper function perhaps?
     let identity = {
-        let tls = tls?;
+        let (id, server_name, trust_anchors_pem) = tls?;
 
         match parse_deprecated(
             strings,
@@ -885,14 +885,16 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             ENV_IDENTITY_SPIRE_SOCKET,
             |s| Ok(s.to_string()),
         )? {
-            Some(workload_api_addr) => match &tls.id {
+            Some(workload_api_addr) => match &id {
                 // TODO: perform stricter SPIFFE ID validation following:
                 // https://github.com/spiffe/spiffe/blob/27b59b81ba8c56885ac5d4be73b35b9b3305fd7a/standards/SPIFFE-ID.md
                 identity::Id::Uri(uri)
                     if uri.scheme().eq_ignore_ascii_case(SPIFFE_ID_URI_SCHEME) =>
                 {
                     identity::Config::Spire {
-                        tls,
+                        id,
+                        server_name,
+                        trust_anchors_pem,
                         client: spire::Config {
                             workload_api_addr: std::sync::Arc::new(workload_api_addr),
                             backoff: parse_backoff(
@@ -909,7 +911,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 }
             },
             None => {
-                match (&tls.id, &tls.server_name) {
+                match (&id, &server_name) {
                     (linkerd_app_core::identity::Id::Dns(id), sni) if id == sni => {}
                     (_id, _sni) => {
                         return Err(EnvError::TlsIdAndServerNameNotMatching);
@@ -932,7 +934,9 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
                 identity::Config::Linkerd {
                     certify,
-                    tls,
+                    id,
+                    server_name,
+                    trust_anchors_pem,
                     client: ControlConfig {
                         addr,
                         connect,
@@ -1175,12 +1179,7 @@ pub fn parse_tls_params<S: Strings>(strings: &S) -> Result<identity::TlsParams, 
 
     match (ta?, server_id?, server_name?) {
         (Some(trust_anchors_pem), Some(server_id), Some(server_name)) => {
-            let params = identity::TlsParams {
-                id: server_id,
-                server_name,
-                trust_anchors_pem,
-            };
-            Ok(params)
+            Ok((server_id, server_name, trust_anchors_pem))
         }
         (trust_anchors_pem, server_id, server_name) => {
             for (unset, name) in &[
