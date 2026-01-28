@@ -1340,6 +1340,7 @@ dependencies = [
  "tonic",
  "tower",
  "tracing",
+ "url",
 ]
 
 [[package]]

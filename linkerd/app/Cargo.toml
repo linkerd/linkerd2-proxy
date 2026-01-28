@@ -36,6 +36,7 @@ tokio-stream = { version = "0.1", features = ["time", "sync"] }
 tonic = { workspace = true, default-features = false }
 tower = { workspace = true }
 tracing = { workspace = true }
+url = "2.5.7" # XXX(kate): workspace dependency
 
 [dev-dependencies]
 tempfile = "3"
