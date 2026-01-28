@@ -213,6 +213,7 @@ where
         let mut result = Vec::new();
         let logs = &mut result;
         let fut = async move {
+            let mut buffer = Vec::new();
             while let Some(res) = body.frame().await {
                 let chunk = match res {
                     Ok(frame) => {
@@ -227,13 +228,37 @@ where
                         break;
                     }
                 };
-                let deserialized = serde_json::from_slice(&chunk[..]);
+
+                buffer.extend_from_slice(&chunk[..]);
+
+                // Process complete lines since the format is newline-delimited JSON (NDJSON)
+                while let Some(newline_pos) = buffer.iter().position(|&b| b == b'\n') {
+                    let line = buffer.drain(..=newline_pos).collect::<Vec<_>>();
+                    // Skip empty lines
+                    if line.iter().all(|&b| b.is_ascii_whitespace()) {
+                        continue;
+                    }
+                    let deserialized = serde_json::from_slice(&line[..]);
+                    tracing::info!(?deserialized);
+                    match deserialized {
+                        Ok(json) => logs.push(json),
+                        Err(error) => panic!(
+                            "parsing logs as JSON failed\n  error: {error}\n  line: {:?}",
+                            String::from_utf8_lossy(&line[..])
+                        ),
+                    }
+                }
+            }
+
+            // Handle remaining data in buffer
+            if !buffer.is_empty() && !buffer.iter().all(|&b| b.is_ascii_whitespace()) {
+                let deserialized = serde_json::from_slice(&buffer[..]);
                 tracing::info!(?deserialized);
                 match deserialized {
                     Ok(json) => logs.push(json),
                     Err(error) => panic!(
-                        "parsing logs as JSON failed\n  error: {error}\n  chunk: {:?}",
-                        String::from_utf8_lossy(&chunk[..])
+                        "parsing logs as JSON failed (incomplete final line)\nerror: {error}\nbuffer: {:?}",
+                        String::from_utf8_lossy(&buffer[..])
                     ),
                 }
             }
