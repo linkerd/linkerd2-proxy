@@ -83,14 +83,7 @@ impl Config {
                 certify,
                 tls,
             } => {
-                // TODO: move this validation into env.rs
-                let name = match (&tls.id, &tls.server_name) {
-                    (Id::Dns(id), sni) if id == sni => id.clone(),
-                    (_id, _sni) => {
-                        return Err(TlsIdAndServerNameNotMatching(()).into());
-                    }
-                };
-
+                let name = tls.server_name.clone();
                 let certify = Certify::from(certify);
                 let (store, receiver, ready) = watch(tls, metrics.cert)?;
 
