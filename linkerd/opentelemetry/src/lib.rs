@@ -15,229 +15,132 @@ use opentelemetry::{
 };
 pub use opentelemetry_proto as proto;
 use opentelemetry_proto::{
-    tonic::{
-        collector::trace::v1::{
-            trace_service_client::TraceServiceClient, ExportTraceServiceRequest,
-        },
-        trace::v1::ResourceSpans,
+    tonic::collector::trace::v1::{
+        trace_service_client::TraceServiceClient, ExportTraceServiceRequest,
     },
-    transform::{
-        common::tonic::ResourceAttributesWithSchema,
-        trace::tonic::group_spans_by_resource_and_scope,
-    },
+    transform::trace::tonic::group_spans_by_resource_and_scope,
 };
-use opentelemetry_sdk::trace::{SpanData, SpanLinks};
-pub use opentelemetry_sdk::{self as sdk};
+pub use opentelemetry_sdk as sdk;
+use opentelemetry_sdk::error::{OTelSdkError, OTelSdkResult};
+use opentelemetry_sdk::trace::{
+    BatchConfigBuilder, BatchSpanProcessor, SpanData, SpanLinks, SpanProcessor,
+};
+use opentelemetry_sdk::Resource;
 pub use opentelemetry_semantic_conventions as semconv;
-use tokio::{
-    sync::mpsc,
-    time::{self, Instant, MissedTickBehavior},
-};
-use tonic::{self as grpc, body::Body as TonicBody, client::GrpcService};
-use tracing::{debug, info, trace};
+use std::fmt::{Debug, Formatter};
+use std::time::Duration;
+use tonic::{body::Body as TonicBody, client::GrpcService};
+use tracing::{debug, info};
 
-pub async fn export_spans<T, S>(
-    client: T,
-    spans: S,
-    resource: ResourceAttributesWithSchema,
-    metrics: Registry,
-) where
-    T: GrpcService<TonicBody> + Clone,
+pub async fn export_spans<T, S>(client: T, spans: S, resource: Resource, metrics: Registry)
+where
+    T: GrpcService<TonicBody> + Clone + Send + Sync + 'static,
     T::Error: Into<Error>,
+    T::Future: Send,
     T::ResponseBody: Body<Data = tonic::codegen::Bytes> + Send + 'static,
     <T::ResponseBody as Body>::Error: Into<Error> + Send,
     S: Stream<Item = ExportSpan> + Unpin,
 {
     debug!("Span exporter running");
-    SpanExporter::new(client, spans, resource, metrics)
-        .run()
-        .await
+
+    let processor = BatchSpanProcessor::builder(SpanExporter {
+        client: TraceServiceClient::new(client),
+        resource,
+        metrics,
+    })
+    .with_batch_config(
+        BatchConfigBuilder::default()
+            .with_max_queue_size(1000)
+            .with_scheduled_delay(Duration::from_secs(5))
+            .build(),
+    )
+    .build();
+
+    SpanExportTask::new(spans, processor).run().await;
 }
 
 /// SpanExporter sends a Stream of spans to the given TraceService gRPC service.
-struct SpanExporter<T, S> {
-    client: T,
-    spans: S,
-    resource: ResourceAttributesWithSchema,
+struct SpanExporter<T> {
+    client: TraceServiceClient<T>,
+    resource: Resource,
     metrics: Registry,
 }
 
-#[derive(Debug)]
-struct SpanRxClosed;
+impl<T> Debug for SpanExporter<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SpanExporter").finish_non_exhaustive()
+    }
+}
 
-// === impl SpanExporter ===
-
-impl<T, S> SpanExporter<T, S>
+impl<T> opentelemetry_sdk::trace::SpanExporter for SpanExporter<T>
 where
-    T: GrpcService<TonicBody> + Clone,
+    T: GrpcService<TonicBody> + Clone + Send + Sync,
+    <T as GrpcService<TonicBody>>::Future: Send,
     T::Error: Into<Error>,
     T::ResponseBody: Body<Data = tonic::codegen::Bytes> + Send + 'static,
     <T::ResponseBody as Body>::Error: Into<Error> + Send,
+{
+    async fn export(&self, batch: Vec<SpanData>) -> OTelSdkResult {
+        let mut metrics = self.metrics.clone();
+        metrics.start_stream();
+        let span_count = batch.len();
+        let mut client = self.client.clone();
+
+        debug!("Exporting {span_count} spans");
+
+        let resource_spans = group_spans_by_resource_and_scope(batch, &(&self.resource).into());
+
+        match client
+            .export(ExportTraceServiceRequest { resource_spans })
+            .await
+        {
+            Ok(resp) => {
+                metrics.send(span_count as u64);
+                if let Some(partial) = resp.into_inner().partial_success {
+                    if !partial.error_message.is_empty() {
+                        debug!(
+                            %partial.error_message,
+                            rejected_spans = partial.rejected_spans,
+                            "Response partially successful",
+                        );
+                        return Err(OTelSdkError::InternalFailure(partial.error_message));
+                    }
+                }
+            }
+            Err(e) => {
+                return Err(OTelSdkError::InternalFailure(e.to_string()));
+            }
+        }
+
+        Ok(())
+    }
+}
+
+struct SpanExportTask<S> {
+    spans: S,
+    processor: BatchSpanProcessor,
+}
+
+impl<S> SpanExportTask<S>
+where
     S: Stream<Item = ExportSpan> + Unpin,
 {
-    const MAX_BATCH_SIZE: usize = 1000;
-    const BATCH_INTERVAL: time::Duration = time::Duration::from_secs(10);
-
-    fn new(client: T, spans: S, resource: ResourceAttributesWithSchema, metrics: Registry) -> Self {
-        Self {
-            client,
-            spans,
-            resource,
-            metrics,
-        }
+    fn new(spans: S, processor: BatchSpanProcessor) -> Self {
+        Self { spans, processor }
     }
 
-    async fn run(self) {
-        let Self {
-            client,
-            mut spans,
-            resource,
-            mut metrics,
-        } = self;
-
-        // Holds the batch of pending spans. Cleared as the spans are flushed.
-        // Contains no more than MAX_BATCH_SIZE spans.
-        let mut accum = Vec::new();
-
-        let mut svc = TraceServiceClient::new(client);
-        loop {
-            trace!("Establishing new TraceService::export request");
-            metrics.start_stream();
-            let (tx, mut rx) = mpsc::channel(1);
-
-            let recv_future = async {
-                while let Some(req) = rx.recv().await {
-                    match svc.export(grpc::Request::new(req)).await {
-                        Ok(rsp) => {
-                            let Some(partial_success) = rsp.into_inner().partial_success else {
-                                continue;
-                            };
-
-                            if !partial_success.error_message.is_empty() {
-                                debug!(
-                                    %partial_success.error_message,
-                                    rejected_spans = partial_success.rejected_spans,
-                                    "Response partially successful",
-                                );
-                            }
-                        }
-                        Err(error) => {
-                            debug!(%error, "Response future failed; restarting");
-                        }
-                    }
+    async fn run(mut self) {
+        while let Some(span) = self.spans.next().await {
+            let s = match convert_span(span) {
+                Ok(s) => s,
+                Err(error) => {
+                    info!(%error, "Span dropped");
+                    continue;
                 }
             };
 
-            // Drive both the response future and the export stream
-            // simultaneously.
-            tokio::select! {
-                _ = recv_future => {}
-                res = Self::export(&tx, &mut spans, &resource, &mut accum) => match res {
-                    // The export stream closed; reconnect.
-                    Ok(()) => {},
-                    // No more spans.
-                    Err(SpanRxClosed) => return,
-                },
-            }
+            self.processor.on_end(s);
         }
-    }
-
-    /// Accumulate spans and send them on the export stream.
-    ///
-    /// Returns an error when the proxy has closed the span stream.
-    async fn export(
-        tx: &mpsc::Sender<ExportTraceServiceRequest>,
-        spans: &mut S,
-        resource: &ResourceAttributesWithSchema,
-        accum: &mut Vec<ResourceSpans>,
-    ) -> Result<(), SpanRxClosed> {
-        loop {
-            // Collect spans into a batch.
-            let collect = Self::collect_batch(spans, resource, accum).await;
-
-            // If we collected spans, flush them.
-            if !accum.is_empty() {
-                // Once a batch has been accumulated, ensure that the
-                // request stream is ready to accept the batch.
-                match tx.reserve().await {
-                    Ok(tx) => {
-                        let msg = ExportTraceServiceRequest {
-                            resource_spans: std::mem::take(accum),
-                        };
-                        trace!(spans = msg.resource_spans.len(), "Sending batch");
-                        tx.send(msg);
-                    }
-                    Err(error) => {
-                        // If the channel isn't open, start a new stream
-                        // and retry sending the batch.
-                        debug!(%error, "Request stream lost; restarting");
-                        return Ok(());
-                    }
-                }
-            }
-
-            // If the span source was closed, end the task.
-            if let Err(closed) = collect {
-                debug!("Span channel lost");
-                return Err(closed);
-            }
-        }
-    }
-
-    /// Collects spans from the proxy into `accum`.
-    ///
-    /// Returns an error when the span stream has completed. An error may be
-    /// returned after accumulating spans.
-    async fn collect_batch(
-        span_stream: &mut S,
-        resource: &ResourceAttributesWithSchema,
-        accum: &mut Vec<ResourceSpans>,
-    ) -> Result<(), SpanRxClosed> {
-        let mut input_accum: Vec<SpanData> = vec![];
-
-        let mut interval =
-            time::interval_at(Instant::now() + Self::BATCH_INTERVAL, Self::BATCH_INTERVAL);
-        interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
-
-        let res = loop {
-            if input_accum.len() == Self::MAX_BATCH_SIZE {
-                trace!(capacity = Self::MAX_BATCH_SIZE, "Batch capacity reached");
-                break Ok(());
-            }
-
-            tokio::select! {
-                biased;
-
-                res = span_stream.next() => match res {
-                    Some(span) => {
-                        trace!(?span, "Adding to batch");
-                        let span = match convert_span(span) {
-                            Ok(span) => span,
-                            Err(error) => {
-                                info!(%error, "Span dropped");
-                                continue;
-                            }
-                        };
-
-                        input_accum.push(span);
-                    }
-                    None => break Err(SpanRxClosed),
-                },
-
-                // Don't hold spans indefinitely. Return if we hit an interval tick and spans have
-                // been collected.
-                _ = interval.tick() => {
-                    if !input_accum.is_empty() {
-                        trace!(spans = input_accum.len(), "Flushing spans due to interval tick");
-                        break Ok(());
-                    }
-                }
-            }
-        };
-
-        *accum = group_spans_by_resource_and_scope(input_accum, resource);
-
-        res
     }
 }
 
@@ -282,7 +185,7 @@ fn convert_span(span: ExportSpan) -> Result<SpanData, Error> {
 mod tests {
     use super::*;
     use linkerd_trace_context::{export::SpanKind, Id, Span};
-    use opentelemetry_proto::tonic::{common::v1::InstrumentationScope, resource::v1::Resource};
+    use opentelemetry_proto::tonic::common::v1::InstrumentationScope;
     use std::{collections::HashMap, sync::Arc, time::SystemTime};
     use tokio::sync::mpsc;
     use tonic::codegen::{tokio_stream::wrappers::ReceiverStream, tokio_stream::StreamExt, Bytes};
@@ -322,14 +225,25 @@ mod tests {
 
         assert_eq!(req.resource_spans.len(), 1);
         let mut resource_span = req.resource_spans.remove(0);
-        assert_eq!(
-            resource_span.resource,
-            Some(Resource {
-                attributes: vec![],
-                dropped_attributes_count: 0,
-                entity_refs: vec![],
-            })
-        );
+        let resource_span_resource = resource_span.resource.expect("must have resource");
+        assert_eq!(resource_span_resource.dropped_attributes_count, 0);
+        assert_eq!(resource_span_resource.entity_refs, vec![]);
+        resource_span_resource
+            .attributes
+            .iter()
+            .any(|attr| attr.key == "telemetry.sdk.name");
+        resource_span_resource
+            .attributes
+            .iter()
+            .any(|attr| attr.key == "telemetry.sdk.version");
+        resource_span_resource
+            .attributes
+            .iter()
+            .any(|attr| attr.key == "telemetry.sdk.language");
+        resource_span_resource
+            .attributes
+            .iter()
+            .any(|attr| attr.key == "service.name");
         assert_eq!(resource_span.schema_url, "");
         assert_eq!(resource_span.scope_spans.len(), 1);
 
@@ -392,7 +306,7 @@ mod tests {
         tokio::spawn(export_spans(
             inner,
             ReceiverStream::new(span_rx),
-            ResourceAttributesWithSchema::default(),
+            opentelemetry_sdk::Resource::builder().build(),
             metrics,
         ));
 
