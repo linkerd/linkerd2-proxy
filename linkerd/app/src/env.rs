@@ -39,6 +39,8 @@ pub enum EnvError {
     NoDestinationAddress,
     #[error("no policy service configured")]
     NoPolicyAddress,
+    #[error(transparent)]
+    TlsIdAndServerNameNotMatching(#[from] identity::TlsIdAndServerNameNotMatching),
 }
 
 #[derive(Debug, Error, Eq, PartialEq)]
