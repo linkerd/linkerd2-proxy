@@ -8,7 +8,7 @@ use linkerd_app_core::{
         http::{h1, h2},
         tap,
     },
-    transport::{DualListenAddr, Keepalive, UserTimeout},
+    transport::{DualListenAddr, Keepalive, UserTimeout, Backlog},
     ProxyRuntime,
 };
 pub use linkerd_app_test as support;
@@ -59,6 +59,7 @@ pub fn default_config() -> Config {
                 addr: DualListenAddr(([0, 0, 0, 0], 0).into(), None),
                 keepalive: Keepalive(None),
                 user_timeout: UserTimeout(None),
+                backlog: Backlog::default(),
                 http2: h2::ServerParams::default(),
             },
             connect: config::ConnectConfig {
