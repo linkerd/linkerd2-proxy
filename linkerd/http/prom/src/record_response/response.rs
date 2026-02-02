@@ -1,12 +1,11 @@
 use super::{DurationFamily, MkDurationHistogram};
 use crate::stream_label::{LabelSet, MkStreamLabel};
-use http_body::Frame;
 use linkerd_error::Error;
+use linkerd_http_body_eos::{BodyWithEosFn, EosRef};
 use linkerd_http_box::BoxBody;
 use linkerd_stack as svc;
 use prometheus_client::registry::{Registry, Unit};
 use std::{
-    pin::Pin,
     sync::Arc,
     task::{Context, Poll},
 };
@@ -22,14 +21,6 @@ pub type NewResponseDuration<L, X, N> =
 
 pub type RecordResponseDuration<L, S> =
     super::RecordResponse<L, ResponseMetrics<<L as MkStreamLabel>::DurationLabels>, S>;
-
-/// Notifies the response body when the request body is flushed.
-#[pin_project::pin_project(PinnedDrop)]
-struct RequestBody<B> {
-    #[pin]
-    inner: B,
-    flushed: Option<oneshot::Sender<time::Instant>>,
-}
 
 // === impl ResponseMetrics ===
 
@@ -84,12 +75,12 @@ where
         // the respond flushes.
         let state = if let Some(labeler) = self.labeler.mk_stream_labeler(&req) {
             let (tx, start) = oneshot::channel();
-            req = req.map(|inner| {
-                BoxBody::new(RequestBody {
-                    inner,
-                    flushed: Some(tx),
-                })
-            });
+            let on_eos = move |_: EosRef<'_>| {
+                tx.send(time::Instant::now()).ok();
+            };
+            req = req
+                .map(|inner| BodyWithEosFn::new(inner, on_eos))
+                .map(BoxBody::new);
             let ResponseMetrics { duration } = self.metric.clone();
             Some(super::ResponseState {
                 labeler,
@@ -102,43 +93,5 @@ where
 
         let inner = self.inner.call(req);
         super::ResponseFuture { state, inner }
-    }
-}
-
-// === impl ResponseBody ===
-
-impl<B> http_body::Body for RequestBody<B>
-where
-    B: http_body::Body,
-{
-    type Data = B::Data;
-    type Error = B::Error;
-
-    fn poll_frame(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Frame<Self::Data>, B::Error>>> {
-        let mut this = self.project();
-        let res = futures::ready!(this.inner.as_mut().poll_frame(cx));
-        if (*this.inner).is_end_stream() {
-            if let Some(tx) = this.flushed.take() {
-                let _ = tx.send(time::Instant::now());
-            }
-        }
-        Poll::Ready(res)
-    }
-
-    fn is_end_stream(&self) -> bool {
-        self.inner.is_end_stream()
-    }
-}
-
-#[pin_project::pinned_drop]
-impl<B> PinnedDrop for RequestBody<B> {
-    fn drop(self: Pin<&mut Self>) {
-        let this = self.project();
-        if let Some(tx) = this.flushed.take() {
-            let _ = tx.send(time::Instant::now());
-        }
     }
 }

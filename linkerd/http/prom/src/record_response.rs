@@ -1,6 +1,6 @@
 use crate::stream_label::{LabelSet, MkStreamLabel, StreamLabel};
-use http_body::Body;
 use linkerd_error::Error;
+use linkerd_http_body_eos::{BodyWithEosFn, EosRef};
 use linkerd_http_box::BoxBody;
 use linkerd_stack as svc;
 use prometheus_client::metrics::{
@@ -63,18 +63,6 @@ where
 {
     #[pin]
     inner: F,
-    state: Option<ResponseState<L>>,
-}
-
-/// Notifies the response labeler when the response body is flushed.
-#[pin_project::pin_project(PinnedDrop)]
-struct ResponseBody<L>
-where
-    L: StreamLabel,
-    L::DurationLabels: LabelSet,
-{
-    #[pin]
-    inner: BoxBody,
     state: Option<ResponseState<L>>,
 }
 
@@ -178,83 +166,23 @@ where
                     labeler.init_response(&rsp);
                 }
 
-                let (head, inner) = rsp.into_parts();
-                if inner.is_end_stream() {
-                    end_stream(&mut state, Ok(None));
-                }
-                Poll::Ready(Ok(http::Response::from_parts(
-                    head,
-                    BoxBody::new(ResponseBody { inner, state }),
-                )))
+                let on_eos = move |eos: EosRef<'_, _>| end_stream(state, eos);
+                let rsp = rsp
+                    .map(|body| BodyWithEosFn::new(body, on_eos))
+                    .map(BoxBody::new);
+
+                Poll::Ready(Ok(rsp))
             }
             Err(error) => {
-                end_stream(&mut state, Err(&error));
+                end_stream(state, EosRef::Error(&error));
                 Poll::Ready(Err(error))
             }
         }
     }
 }
 
-// === impl ResponseBody ===
-
-impl<L> http_body::Body for ResponseBody<L>
+fn end_stream<L>(mut state: Option<ResponseState<L>>, res: EosRef<'_>)
 where
-    L: StreamLabel,
-    L::DurationLabels: LabelSet,
-{
-    type Data = <BoxBody as http_body::Body>::Data;
-    type Error = Error;
-
-    fn poll_frame(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<http_body::Frame<Self::Data>, Self::Error>>> {
-        let mut this = self.project();
-
-        // Poll the inner body for the next frame.
-        let poll = this.inner.as_mut().poll_frame(cx);
-        let frame = futures::ready!(poll);
-
-        match &frame {
-            Some(Ok(frame)) => {
-                if let trls @ Some(_) = frame.trailers_ref() {
-                    end_stream(this.state, Ok(trls));
-                } else if this.inner.is_end_stream() {
-                    end_stream(this.state, Ok(None));
-                }
-            }
-            Some(Err(error)) => end_stream(this.state, Err(error)),
-            None => end_stream(this.state, Ok(None)),
-        }
-
-        Poll::Ready(frame)
-    }
-
-    fn is_end_stream(&self) -> bool {
-        // If the inner response state is still in place, the end of the stream has not been
-        // classified and recorded yet.
-        self.state.is_none()
-    }
-}
-
-#[pin_project::pinned_drop]
-impl<L> PinnedDrop for ResponseBody<L>
-where
-    L: StreamLabel,
-    L::DurationLabels: LabelSet,
-{
-    fn drop(self: Pin<&mut Self>) {
-        let this = self.project();
-        if this.state.is_some() {
-            end_stream(this.state, Err(&RequestCancelled.into()));
-        }
-    }
-}
-
-fn end_stream<L>(
-    state: &mut Option<ResponseState<L>>,
-    res: Result<Option<&http::HeaderMap>, &Error>,
-) where
     L: StreamLabel,
     L::DurationLabels: LabelSet,
 {

@@ -2,6 +2,7 @@
 use linkerd_app_core::{
     dns, errors, metrics::prom::EncodeLabelSetMut, proxy::http, Error as BoxError,
 };
+use linkerd_http_prom::stream_label::EosRef;
 use prometheus_client::encoding::*;
 
 use crate::{BackendRef, ParentRef, RouteRef};
@@ -204,8 +205,8 @@ impl EncodeLabelSet for HttpRsp {
     }
 }
 
-impl From<&linkerd_app_core::Error> for HttpRsp {
-    fn from(error: &linkerd_app_core::Error) -> Self {
+impl From<EosRef<'_>> for HttpRsp {
+    fn from(error: EosRef<'_>) -> Self {
         match Error::new_or_status(error) {
             Ok(error) => Self::error(error),
             Err(code) => http::StatusCode::from_u16(code)

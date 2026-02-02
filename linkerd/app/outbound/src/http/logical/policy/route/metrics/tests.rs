@@ -687,13 +687,29 @@ async fn http_response_body_drop_early() {
     };
 
     // The counters are not incremented yet.
-    assert_eq!(ok.get(), 0);
-    assert_eq!(err.get(), 0);
+    assert_eq!(
+        ok.get(),
+        0,
+        "ok counter is not incremented before body is dropped"
+    );
+    assert_eq!(
+        err.get(),
+        0,
+        "err counter is not incremented before body is dropped"
+    );
 
     // The body reports an error if it was not completed.
     drop(body);
-    assert_eq!(ok.get(), 0);
-    assert_eq!(err.get(), 1);
+    assert_eq!(
+        ok.get(),
+        0,
+        "ok counter is not incremented after body is dropped"
+    );
+    assert_eq!(
+        err.get(),
+        1,
+        "error counter is incremented after body is dropped"
+    );
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
