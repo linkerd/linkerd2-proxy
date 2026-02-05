@@ -42,6 +42,7 @@ fn allow(protocol: Protocol) -> AllowPolicy {
                 name: "testsrv".into(),
             }),
             local_rate_limit: Arc::new(Default::default()),
+            local_concurrency_limit: Arc::new(Default::default()),
         },
     );
     allow

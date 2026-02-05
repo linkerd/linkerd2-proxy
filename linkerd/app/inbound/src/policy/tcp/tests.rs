@@ -27,6 +27,7 @@ async fn unauthenticated_allowed() {
             name: "test".into(),
         }),
         local_rate_limit: Arc::new(Default::default()),
+        local_concurrency_limit: Arc::new(Default::default()),
     };
 
     let tls = tls::ConditionalServerTls::None(tls::NoServerTls::NoClientHello);
@@ -80,6 +81,7 @@ async fn authenticated_identity() {
             name: "test".into(),
         }),
         local_rate_limit: Arc::new(Default::default()),
+        local_concurrency_limit: Arc::new(Default::default()),
     };
 
     let tls = tls::ConditionalServerTls::Some(tls::ServerTls::Established {
@@ -147,6 +149,7 @@ async fn authenticated_suffix() {
             name: "test".into(),
         }),
         local_rate_limit: Arc::new(Default::default()),
+        local_concurrency_limit: Arc::new(Default::default()),
     };
 
     let tls = tls::ConditionalServerTls::Some(tls::ServerTls::Established {
@@ -210,6 +213,7 @@ async fn tls_unauthenticated() {
             name: "test".into(),
         }),
         local_rate_limit: Arc::new(Default::default()),
+        local_concurrency_limit: Arc::new(Default::default()),
     };
 
     let tls = tls::ConditionalServerTls::Some(tls::ServerTls::Established {

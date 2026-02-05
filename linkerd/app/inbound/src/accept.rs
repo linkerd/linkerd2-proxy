@@ -139,6 +139,7 @@ mod tests {
                     name: "testsrv".into(),
                 }),
                 local_rate_limit: Default::default(),
+                local_concurrency_limit: Default::default(),
             },
             None,
         );

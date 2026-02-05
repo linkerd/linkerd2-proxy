@@ -995,6 +995,7 @@ impl svc::Param<policy::AllowPolicy> for Target {
                     name: "testsrv".into(),
                 }),
                 local_rate_limit: Default::default(),
+                local_concurrency_limit: Default::default(),
             },
         );
         policy

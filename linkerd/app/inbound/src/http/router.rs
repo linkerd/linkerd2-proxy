@@ -252,6 +252,8 @@ impl<C> Inbound<C> {
                 .check_new_service::<policy::Permitted<T>, http::Request<http::BoxBody>>()
                 .push(svc::ArcNewService::layer())
                 .push(policy::NewHttpPolicy::layer(rt.metrics.http_authz.clone()))
+                // Box the response body after policy enforcement (handles ConcurrencyLimitedBody)
+                .push_on_service(http::BoxResponse::layer())
                 // Used by tap.
                 .push_http_insert_target::<tls::ConditionalServerTls>()
                 .push_http_insert_target::<Remote<ClientAddr>>()

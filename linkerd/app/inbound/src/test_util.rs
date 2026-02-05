@@ -45,6 +45,7 @@ pub fn default_config() -> Config {
                 name: "testsrv".into(),
             }),
             local_rate_limit: Arc::new(Default::default()),
+            local_concurrency_limit: Arc::new(Default::default()),
         }
         .into(),
         ports: Default::default(),

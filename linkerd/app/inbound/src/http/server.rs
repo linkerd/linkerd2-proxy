@@ -207,6 +207,11 @@ impl errors::HttpRescue<Error> for ServerRescue {
             return Ok(errors::SyntheticHttpResponse::rate_limited(error));
         }
 
+        if errors::is_caused_by::<linkerd_proxy_server_policy::ConcurrencyLimitError>(&*error) {
+            // Return 503 Service Unavailable when concurrency limit is exceeded
+            return Ok(errors::SyntheticHttpResponse::unavailable(error));
+        }
+
         if errors::is_caused_by::<crate::GatewayDomainInvalid>(&*error) {
             return Ok(errors::SyntheticHttpResponse::not_found(error));
         }

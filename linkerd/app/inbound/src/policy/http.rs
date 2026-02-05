@@ -4,7 +4,8 @@ use crate::{
     metrics::authz::HttpAuthzMetrics,
     policy::{AllowPolicy, HttpRoutePermit},
 };
-use futures::{future, TryFutureExt};
+use futures::future;
+use http_body::Body;
 use linkerd_app_core::{
     metrics::RouteAuthzLabels,
     svc::{self, ServiceExt},
@@ -13,7 +14,9 @@ use linkerd_app_core::{
     Conditional, Error, Result,
 };
 use linkerd_proxy_server_policy::{grpc, http, route::RouteMatch};
-use std::{sync::Arc, task};
+use pin_project::pin_project;
+use std::{pin::Pin, sync::Arc, task};
+use tokio::sync::OwnedSemaphorePermit;
 
 #[cfg(test)]
 mod tests;
@@ -98,6 +101,65 @@ pub struct GrpcRouteInjectedFailure {
 #[error("invalid server policy: {0}")]
 pub struct HttpInvalidPolicy(&'static str);
 
+/// A response body that holds a concurrency permit until fully consumed.
+/// 
+/// When this body is dropped (after full consumption or connection close),
+/// the permit is automatically released back to the semaphore.
+#[pin_project]
+pub struct ConcurrencyLimitedBody<B> {
+    #[pin]
+    inner: B,
+    /// Held until the body is dropped (fully consumed or connection closed)
+    permit: Option<OwnedSemaphorePermit>,
+}
+
+impl<B> ConcurrencyLimitedBody<B> {
+    /// Wraps a body with a concurrency permit.
+    pub fn new(inner: B, permit: OwnedSemaphorePermit) -> Self {
+        Self {
+            inner,
+            permit: Some(permit),
+        }
+    }
+
+    /// Wraps a body without a concurrency permit (unlimited).
+    pub fn unlimited(inner: B) -> Self {
+        Self {
+            inner,
+            permit: None,
+        }
+    }
+}
+
+impl<B: Body> Body for ConcurrencyLimitedBody<B> {
+    type Data = B::Data;
+    type Error = B::Error;
+
+    fn poll_frame(
+        self: Pin<&mut Self>,
+        cx: &mut task::Context<'_>,
+    ) -> task::Poll<Option<Result<http_body::Frame<Self::Data>, Self::Error>>> {
+        self.project().inner.poll_frame(cx)
+    }
+
+    fn is_end_stream(&self) -> bool {
+        self.inner.is_end_stream()
+    }
+
+    fn size_hint(&self) -> http_body::SizeHint {
+        self.inner.size_hint()
+    }
+}
+
+impl<B: Default> Default for ConcurrencyLimitedBody<B> {
+    fn default() -> Self {
+        Self {
+            inner: B::default(),
+            permit: None,
+        }
+    }
+}
+
 // === impl NewHttpPolicy ===
 
 impl<N> NewHttpPolicy<N> {
@@ -150,17 +212,18 @@ macro_rules! try_fut {
     };
 }
 
-impl<B, T, N, S> svc::Service<::http::Request<B>> for HttpPolicyService<T, N>
+impl<B, T, N, S, RspB> svc::Service<::http::Request<B>> for HttpPolicyService<T, N>
 where
     T: Clone,
     N: svc::NewService<Permitted<T>, Service = S>,
-    S: svc::Service<::http::Request<B>>,
+    S: svc::Service<::http::Request<B>, Response = ::http::Response<RspB>>,
     S::Error: Into<Error>,
+    RspB: Default,
 {
-    type Response = S::Response;
+    type Response = ::http::Response<ConcurrencyLimitedBody<RspB>>;
     type Error = Error;
     type Future = future::Either<
-        future::ErrInto<svc::stack::Oneshot<S, ::http::Request<B>>, Error>,
+        ConcurrencyLimitedResponseFuture<svc::stack::Oneshot<S, ::http::Request<B>>>,
         future::Ready<Result<Self::Response>>,
     >;
 
@@ -197,12 +260,45 @@ where
 
         try_fut!(self.check_rate_limit());
 
-        future::Either::Left(
-            self.inner
-                .new_service(permit)
-                .oneshot(req)
-                .err_into::<Error>(),
-        )
+        // Try to acquire a concurrency permit
+        let concurrency_permit = try_fut!(self.try_acquire_concurrency());
+
+        future::Either::Left(ConcurrencyLimitedResponseFuture {
+            inner: self.inner.new_service(permit).oneshot(req),
+            permit: concurrency_permit,
+        })
+    }
+}
+
+/// A future that wraps the response body with a concurrency permit.
+#[pin_project]
+pub struct ConcurrencyLimitedResponseFuture<F> {
+    #[pin]
+    inner: F,
+    permit: Option<OwnedSemaphorePermit>,
+}
+
+impl<F, RspB, E> std::future::Future for ConcurrencyLimitedResponseFuture<F>
+where
+    F: std::future::Future<Output = Result<::http::Response<RspB>, E>>,
+    E: Into<Error>,
+    RspB: Default,
+{
+    type Output = Result<::http::Response<ConcurrencyLimitedBody<RspB>>>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> task::Poll<Self::Output> {
+        let this = self.project();
+        match futures::ready!(this.inner.poll(cx)) {
+            Ok(rsp) => {
+                let (parts, body) = rsp.into_parts();
+                let body = match this.permit.take() {
+                    Some(permit) => ConcurrencyLimitedBody::new(body, permit),
+                    None => ConcurrencyLimitedBody::unlimited(body),
+                };
+                task::Poll::Ready(Ok(::http::Response::from_parts(parts, body)))
+            }
+            Err(e) => task::Poll::Ready(Err(e.into())),
+        }
     }
 }
 
@@ -341,6 +437,29 @@ impl<T, N> HttpPolicyService<T, N> {
                     self.connection.tls.as_ref().map(|t| t.labels()),
                 );
                 err.into()
+            })
+    }
+
+    /// Try to acquire a concurrency permit.
+    /// 
+    /// Returns `Ok(Some(permit))` if a permit was acquired, `Ok(None)` if no
+    /// concurrency limit is configured, or `Err` if the limit is exceeded.
+    fn try_acquire_concurrency(&self) -> Result<Option<OwnedSemaphorePermit>> {
+        self.policy
+            .borrow()
+            .local_concurrency_limit
+            .try_acquire()
+            .map(Some)
+            .or_else(|err| {
+                // If the error indicates no limit (default), return None
+                // Otherwise, propagate the error
+                if err.0 == tokio::sync::Semaphore::MAX_PERMITS {
+                    Ok(None)
+                } else {
+                    tracing::debug!(%err, "concurrency limit exceeded");
+                    // TODO: Add metrics for concurrency limit exceeded
+                    Err(err.into())
+                }
             })
     }
 }

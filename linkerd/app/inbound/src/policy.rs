@@ -94,6 +94,7 @@ impl From<DefaultPolicy> for ServerPolicy {
             DefaultPolicy::Deny => ServerPolicy {
                 protocol: Protocol::Opaque(Arc::new([])),
                 local_rate_limit: Default::default(),
+                local_concurrency_limit: Default::default(),
                 meta: Meta::new_default("deny"),
             },
         }
