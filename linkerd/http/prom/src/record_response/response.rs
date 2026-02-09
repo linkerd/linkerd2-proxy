@@ -64,6 +64,8 @@ impl<L> Clone for ResponseMetrics<L> {
     }
 }
 
+// === impl RecordResponseDuration ===
+
 impl<M, S> svc::Service<http::Request<BoxBody>> for RecordResponseDuration<M, S>
 where
     M: MkStreamLabel,
@@ -105,7 +107,7 @@ where
     }
 }
 
-// === impl ResponseBody ===
+// === impl RequestBody ===
 
 impl<B> http_body::Body for RequestBody<B>
 where

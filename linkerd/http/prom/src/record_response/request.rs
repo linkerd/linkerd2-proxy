@@ -61,6 +61,8 @@ impl<L> Clone for RequestMetrics<L> {
     }
 }
 
+// === impl RecordRequestDuration ===
+
 impl<ReqB, L, S> svc::Service<http::Request<ReqB>> for RecordRequestDuration<L, S>
 where
     L: MkStreamLabel,
