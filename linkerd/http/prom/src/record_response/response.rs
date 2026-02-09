@@ -21,7 +21,7 @@ pub type NewResponseDuration<L, X, N> =
     super::NewRecordResponse<L, X, ResponseMetrics<<L as MkStreamLabel>::DurationLabels>, N>;
 
 pub type RecordResponseDuration<L, S> =
-    super::RecordResponse<L, ResponseMetrics<<L as MkStreamLabel>::DurationLabels>, S>;
+    super::RecordDuration<L, ResponseMetrics<<L as MkStreamLabel>::DurationLabels>, S>;
 
 /// Notifies the response body when the request body is flushed.
 #[pin_project::pin_project(PinnedDrop)]

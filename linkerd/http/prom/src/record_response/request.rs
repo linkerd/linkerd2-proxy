@@ -20,7 +20,7 @@ pub type NewRequestDuration<L, X, N> =
     super::NewRecordResponse<L, X, RequestMetrics<<L as MkStreamLabel>::DurationLabels>, N>;
 
 pub type RecordRequestDuration<L, S> =
-    super::RecordResponse<L, RequestMetrics<<L as MkStreamLabel>::DurationLabels>, S>;
+    super::RecordDuration<L, RequestMetrics<<L as MkStreamLabel>::DurationLabels>, S>;
 
 // === impl RequestMetrics ===
 
