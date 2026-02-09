@@ -25,12 +25,12 @@ pub(super) fn layer<N>(
         count_reqs::NewCountRequests::layer_via(extract)
     };
 
-    let body = {
+    let response_body = {
         let extract = ExtractResponseBodyDataMetrics::new(response_body_data.clone());
         NewRecordResponseBodyData::layer_via(extract)
     };
 
-    let request = {
+    let request_body = {
         let extract = ExtractRequestBodyDataParams::new(request_body_data.clone());
         NewRecordRequestBodyData::layer_via(extract)
     };
@@ -40,7 +40,9 @@ pub(super) fn layer<N>(
         NewRecordStatusCode::layer_via(extract)
     };
 
-    svc::layer::mk(move |inner| count.layer(body.layer(request.layer(status.layer(inner)))))
+    svc::layer::mk(move |inner| {
+        count.layer(response_body.layer(request_body.layer(status.layer(inner))))
+    })
 }
 
 /// An `N`-typed service instrumented with metrics middleware.
