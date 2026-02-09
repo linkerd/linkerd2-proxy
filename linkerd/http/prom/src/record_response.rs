@@ -42,7 +42,7 @@ pub struct RequestCancelled;
 /// The `L`-typed [`MkStreamLabel`] inspects requests and emits a [`StreamLabel`], which is
 /// intended to be used to generate labels for the `M`-typed metrics.
 #[derive(Clone, Debug)]
-pub struct NewRecordResponse<L, X, M, N> {
+pub struct NewRecordDuration<L, X, M, N> {
     inner: N,
     extract: X,
     _marker: std::marker::PhantomData<fn() -> (L, M)>,
@@ -97,9 +97,9 @@ impl MetricConstructor<Histogram> for MkDurationHistogram {
     }
 }
 
-// === impl NewRecordResponse ===
+// === impl NewRecordDuration ===
 
-impl<L, X, M, N> NewRecordResponse<L, X, M, N>
+impl<L, X, M, N> NewRecordDuration<L, X, M, N>
 where
     L: MkStreamLabel,
 {
@@ -119,7 +119,7 @@ where
     }
 }
 
-impl<L, M, N> NewRecordResponse<L, (), M, N>
+impl<L, M, N> NewRecordDuration<L, (), M, N>
 where
     L: MkStreamLabel,
 {
@@ -128,7 +128,7 @@ where
     }
 }
 
-impl<T, L, X, M, N> svc::NewService<T> for NewRecordResponse<L, X, M, N>
+impl<T, L, X, M, N> svc::NewService<T> for NewRecordDuration<L, X, M, N>
 where
     L: MkStreamLabel,
     X: svc::ExtractParam<Params<L, M>, T>,

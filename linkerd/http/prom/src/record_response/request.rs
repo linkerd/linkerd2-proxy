@@ -17,7 +17,7 @@ pub struct RequestMetrics<L> {
 }
 
 pub type NewRequestDuration<L, X, N> =
-    super::NewRecordResponse<L, X, RequestMetrics<<L as MkStreamLabel>::DurationLabels>, N>;
+    super::NewRecordDuration<L, X, RequestMetrics<<L as MkStreamLabel>::DurationLabels>, N>;
 
 pub type RecordRequestDuration<L, S> =
     super::RecordDuration<L, RequestMetrics<<L as MkStreamLabel>::DurationLabels>, S>;
