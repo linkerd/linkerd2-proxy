@@ -21,6 +21,12 @@ pub struct WithLabels<L> {
 
 // === impl MkWithLabels ===
 
+impl<L> MkWithLabels<L> {
+    pub fn new(labels: L) -> Self {
+        Self { labels }
+    }
+}
+
 impl<L> MkStreamLabel for MkWithLabels<L>
 where
     L: Clone + Send + 'static,
