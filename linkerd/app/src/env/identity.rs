@@ -35,14 +35,14 @@ pub fn parse_identity_config<S: Strings>(
             }
             _ => {
                 error!("Spire support requires a SPIFFE TLS Id");
-                return Err(EnvError::InvalidEnvVar);
+                Err(EnvError::InvalidEnvVar)
             }
         },
         None => {
             match (&id, &server_name) {
                 (linkerd_app_core::identity::Id::Dns(id), sni) if id == sni => {}
                 (_id, _sni) => {
-                    return Err(EnvError::TlsIdAndServerNameNotMatching.into());
+                    return Err(EnvError::TlsIdAndServerNameNotMatching);
                 }
             };
 
