@@ -11,7 +11,7 @@
 pub(crate) mod authz;
 pub(crate) mod error;
 
-use crate::http::router::{
+use crate::http::router::metrics::{
     RequestBodyFamilies, RequestCountFamilies, ResponseBodyFamilies, ResponseDurationFamilies,
     StatusCodeFamilies,
 };
