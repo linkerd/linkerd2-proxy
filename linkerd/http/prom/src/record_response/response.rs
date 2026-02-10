@@ -18,10 +18,10 @@ pub struct ResponseMetrics<L> {
 }
 
 pub type NewResponseDuration<L, X, N> =
-    super::NewRecordResponse<L, X, ResponseMetrics<<L as MkStreamLabel>::DurationLabels>, N>;
+    super::NewRecordDuration<L, X, ResponseMetrics<<L as MkStreamLabel>::DurationLabels>, N>;
 
 pub type RecordResponseDuration<L, S> =
-    super::RecordResponse<L, ResponseMetrics<<L as MkStreamLabel>::DurationLabels>, S>;
+    super::RecordDuration<L, ResponseMetrics<<L as MkStreamLabel>::DurationLabels>, S>;
 
 /// Notifies the response body when the request body is flushed.
 #[pin_project::pin_project(PinnedDrop)]
@@ -64,6 +64,8 @@ impl<L> Clone for ResponseMetrics<L> {
     }
 }
 
+// === impl RecordResponseDuration ===
+
 impl<M, S> svc::Service<http::Request<BoxBody>> for RecordResponseDuration<M, S>
 where
     M: MkStreamLabel,
@@ -105,7 +107,7 @@ where
     }
 }
 
-// === impl ResponseBody ===
+// === impl RequestBody ===
 
 impl<B> http_body::Body for RequestBody<B>
 where

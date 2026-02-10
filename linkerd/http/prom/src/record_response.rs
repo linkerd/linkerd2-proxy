@@ -23,7 +23,7 @@ pub use self::{
     response::{NewResponseDuration, RecordResponseDuration, ResponseMetrics},
 };
 
-/// A set of parameters that can be used to construct a `RecordResponse` layer.
+/// A set of parameters that can be used to construct a [`RecordDuration`] layer.
 pub struct Params<L: MkStreamLabel, M> {
     pub labeler: L,
     pub metric: M,
@@ -35,14 +35,14 @@ pub struct RequestCancelled;
 
 /// Instruments an `N`-typed [`svc::NewService<T>`] with metrics.
 ///
-/// Builds [`RecordResponse<L, M, S>`] instances by extracting `L`- and `M`-typed [`Params<L, M>`]
+/// Builds [`RecordDuration<L, M, S>`] instances by extracting `L`- and `M`-typed [`Params<L, M>`]
 /// parameters from `T`-typed stack targets using an `X`-typed [`svc::ExtractParam<P, T>`]
 /// implementation.
 ///
 /// The `L`-typed [`MkStreamLabel`] inspects requests and emits a [`StreamLabel`], which is
 /// intended to be used to generate labels for the `M`-typed metrics.
 #[derive(Clone, Debug)]
-pub struct NewRecordResponse<L, X, M, N> {
+pub struct NewRecordDuration<L, X, M, N> {
     inner: N,
     extract: X,
     _marker: std::marker::PhantomData<fn() -> (L, M)>,
@@ -50,7 +50,7 @@ pub struct NewRecordResponse<L, X, M, N> {
 
 /// A Service that can record a request/response durations.
 #[derive(Clone, Debug)]
-pub struct RecordResponse<L, M, S> {
+pub struct RecordDuration<L, M, S> {
     inner: S,
     labeler: L,
     metric: M,
@@ -97,9 +97,9 @@ impl MetricConstructor<Histogram> for MkDurationHistogram {
     }
 }
 
-// === impl NewRecordResponse ===
+// === impl NewRecordDuration ===
 
-impl<L, X, M, N> NewRecordResponse<L, X, M, N>
+impl<L, X, M, N> NewRecordDuration<L, X, M, N>
 where
     L: MkStreamLabel,
 {
@@ -119,7 +119,7 @@ where
     }
 }
 
-impl<L, M, N> NewRecordResponse<L, (), M, N>
+impl<L, M, N> NewRecordDuration<L, (), M, N>
 where
     L: MkStreamLabel,
 {
@@ -128,24 +128,24 @@ where
     }
 }
 
-impl<T, L, X, M, N> svc::NewService<T> for NewRecordResponse<L, X, M, N>
+impl<T, L, X, M, N> svc::NewService<T> for NewRecordDuration<L, X, M, N>
 where
     L: MkStreamLabel,
     X: svc::ExtractParam<Params<L, M>, T>,
     N: svc::NewService<T>,
 {
-    type Service = RecordResponse<L, M, N::Service>;
+    type Service = RecordDuration<L, M, N::Service>;
 
     fn new_service(&self, target: T) -> Self::Service {
         let Params { labeler, metric } = self.extract.extract_param(&target);
         let inner = self.inner.new_service(target);
-        RecordResponse::new(labeler, metric, inner)
+        RecordDuration::new(labeler, metric, inner)
     }
 }
 
-// === impl RecordResponse ===
+// === impl RecordDuration ===
 
-impl<L, M, S> RecordResponse<L, M, S>
+impl<L, M, S> RecordDuration<L, M, S>
 where
     L: MkStreamLabel,
 {

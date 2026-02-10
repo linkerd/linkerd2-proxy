@@ -70,7 +70,7 @@ pub type LabelHttpRouteBackendRsp = LabelHttpRsp<labels::RouteBackend>;
 pub type LabelGrpcRouteBackendRsp = LabelGrpcRsp<labels::RouteBackend>;
 
 pub type NewRecordDuration<T, M, N> =
-    record_response::NewRecordResponse<T, ExtractRecordDurationParams<M>, M, N>;
+    record_response::NewRecordDuration<T, ExtractRecordDurationParams<M>, M, N>;
 
 #[derive(Clone, Debug)]
 pub struct ExtractRecordDurationParams<M>(pub M);

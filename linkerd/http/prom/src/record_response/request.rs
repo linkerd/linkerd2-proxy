@@ -17,10 +17,10 @@ pub struct RequestMetrics<L> {
 }
 
 pub type NewRequestDuration<L, X, N> =
-    super::NewRecordResponse<L, X, RequestMetrics<<L as MkStreamLabel>::DurationLabels>, N>;
+    super::NewRecordDuration<L, X, RequestMetrics<<L as MkStreamLabel>::DurationLabels>, N>;
 
 pub type RecordRequestDuration<L, S> =
-    super::RecordResponse<L, RequestMetrics<<L as MkStreamLabel>::DurationLabels>, S>;
+    super::RecordDuration<L, RequestMetrics<<L as MkStreamLabel>::DurationLabels>, S>;
 
 // === impl RequestMetrics ===
 
@@ -60,6 +60,8 @@ impl<L> Clone for RequestMetrics<L> {
         }
     }
 }
+
+// === impl RecordRequestDuration ===
 
 impl<ReqB, L, S> svc::Service<http::Request<ReqB>> for RecordRequestDuration<L, S>
 where
