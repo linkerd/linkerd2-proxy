@@ -69,6 +69,18 @@ impl InboundMetrics {
         }
     }
 
+    // There are two histograms for which we need to register metrics:
+    //   (1) request durations, which are measured on routes. TODO(kate): forthcoming.
+    //   (2) response durations, which are measured on route-backends.
+    //
+    // Should these change in the future, be sure to consider the outbound proxy's corresponding
+    // constants measuring request and response latency for *outgoing* traffic.
+
+    /// Histogram buckets for response latency.
+    ///
+    /// These buckets for this histogram are coarse, eliding several buckets for short response
+    /// durations to be conservative about the costs of tracking two histograms' respective time
+    /// series.
     const RESPONSE_BUCKETS: &'static [f64] = &[0.05, 0.5, 1.0, 10.0];
 }
 
