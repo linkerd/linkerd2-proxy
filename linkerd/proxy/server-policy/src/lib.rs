@@ -6,11 +6,13 @@ use std::{hash::Hash, sync::Arc, time};
 pub mod authz;
 pub mod grpc;
 pub mod http;
+pub mod local_concurrency_limit;
 pub mod local_rate_limit;
 pub mod meta;
 
 pub use self::{
     authz::{Authentication, Authorization},
+    local_concurrency_limit::{ConcurrencyLimitError, LocalConcurrencyLimit},
     local_rate_limit::{LocalRateLimit, RateLimitError},
     meta::Meta,
 };
@@ -21,6 +23,7 @@ pub struct ServerPolicy {
     pub protocol: Protocol,
     pub meta: Arc<Meta>,
     pub local_rate_limit: Arc<LocalRateLimit>,
+    pub local_concurrency_limit: Arc<LocalConcurrencyLimit>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -69,6 +72,7 @@ impl ServerPolicy {
                 tcp_authorizations: Arc::new([]),
             },
             local_rate_limit: Arc::new(LocalRateLimit::default()),
+            local_concurrency_limit: Arc::new(LocalConcurrencyLimit::default()),
         }
     }
 }
@@ -135,7 +139,7 @@ pub mod proto {
                 server_ips: _,
             } = proto;
 
-            let local_rate_limit = match protocol
+            let (local_rate_limit, local_concurrency_limit) = match protocol
                 .clone()
                 .and_then(|api::ProxyProtocol { kind }| kind)
                 .ok_or(InvalidServer::MissingProxyProtocol)?
@@ -144,17 +148,38 @@ pub mod proto {
                     timeout: _,
                     http_routes: _,
                     http_local_rate_limit,
-                }) => http_local_rate_limit.unwrap_or_default().try_into(),
+                    http_local_concurrency_limit,
+                }) => (
+                    http_local_rate_limit.unwrap_or_default().try_into()?,
+                    http_local_concurrency_limit
+                        .map(LocalConcurrencyLimit::try_from)
+                        .transpose()?
+                        .unwrap_or_default(),
+                ),
                 api::proxy_protocol::Kind::Http1(api::proxy_protocol::Http1 {
                     routes: _,
                     local_rate_limit,
-                })
-                | api::proxy_protocol::Kind::Http2(api::proxy_protocol::Http2 {
+                    local_concurrency_limit,
+                }) => (
+                    local_rate_limit.unwrap_or_default().try_into()?,
+                    local_concurrency_limit
+                        .map(LocalConcurrencyLimit::try_from)
+                        .transpose()?
+                        .unwrap_or_default(),
+                ),
+                api::proxy_protocol::Kind::Http2(api::proxy_protocol::Http2 {
                     routes: _,
                     local_rate_limit,
-                }) => local_rate_limit.unwrap_or_default().try_into(),
-                _ => Ok(Default::default()),
-            }?;
+                    local_concurrency_limit,
+                }) => (
+                    local_rate_limit.unwrap_or_default().try_into()?,
+                    local_concurrency_limit
+                        .map(LocalConcurrencyLimit::try_from)
+                        .transpose()?
+                        .unwrap_or_default(),
+                ),
+                _ => (Default::default(), Default::default()),
+            };
 
             let authorizations = {
                 // Always permit traffic from localhost.
@@ -180,6 +205,7 @@ pub mod proto {
                     http_routes,
                     timeout,
                     http_local_rate_limit: _,
+                    http_local_concurrency_limit: _,
                 }) => Protocol::Detect {
                     http: mk_routes!(http, http_routes, authorizations.clone())?,
                     timeout: timeout
@@ -191,11 +217,13 @@ pub mod proto {
                 api::proxy_protocol::Kind::Http1(api::proxy_protocol::Http1 {
                     routes,
                     local_rate_limit: _,
+                    local_concurrency_limit: _,
                 }) => Protocol::Http1(mk_routes!(http, routes, authorizations)?),
 
                 api::proxy_protocol::Kind::Http2(api::proxy_protocol::Http2 {
                     routes,
                     local_rate_limit: _,
+                    local_concurrency_limit: _,
                 }) => Protocol::Http2(mk_routes!(http, routes, authorizations)?),
 
                 api::proxy_protocol::Kind::Grpc(api::proxy_protocol::Grpc { routes }) => {
@@ -214,6 +242,7 @@ pub mod proto {
                 protocol,
                 meta,
                 local_rate_limit: Arc::new(local_rate_limit),
+                local_concurrency_limit: Arc::new(local_concurrency_limit),
             })
         }
     }

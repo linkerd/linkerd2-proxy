@@ -211,6 +211,7 @@ impl svc::Param<policy::AllowPolicy> for Target {
                     name: "testsrv".into(),
                 }),
                 local_rate_limit: Arc::new(linkerd_proxy_server_policy::LocalRateLimit::default()),
+                local_concurrency_limit: Arc::new(linkerd_proxy_server_policy::LocalConcurrencyLimit::default()),
             },
         );
         policy

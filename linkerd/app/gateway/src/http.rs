@@ -108,6 +108,8 @@ impl Gateway {
             .push(svc::ArcNewService::layer())
             // Authorize requests to the gateway.
             .push(self.inbound.authorize_http())
+            // Box the response body after policy enforcement (handles ConcurrencyLimitedBody)
+            .push_on_service(http::BoxResponse::layer())
             .arc_new_clone_http();
 
         self.inbound

@@ -130,6 +130,7 @@ async fn upgraded_request_remains_relative_form() {
                     }]))]),
                 },
                 local_rate_limit: Arc::new(Default::default()),
+                local_concurrency_limit: Arc::new(Default::default()),
             };
             let (policy, tx) = inbound::policy::AllowPolicy::for_test(self.param(), policy);
             tokio::spawn(async move {

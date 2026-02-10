@@ -89,5 +89,6 @@ fn mk(
         meta: Meta::new_default(name),
         protocol,
         local_rate_limit: Default::default(),
+        local_concurrency_limit: Default::default(),
     }
 }

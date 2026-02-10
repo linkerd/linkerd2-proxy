@@ -1457,6 +1457,7 @@ dependencies = [
  "bytes",
  "futures",
  "http",
+ "http-body",
  "http-body-util",
  "hyper",
  "hyper-util",
@@ -1478,6 +1479,7 @@ dependencies = [
  "linkerd2-proxy-api",
  "once_cell",
  "parking_lot",
+ "pin-project",
  "rangemap",
  "thiserror",
  "tokio",
@@ -2652,8 +2654,7 @@ dependencies = [
 [[package]]
 name = "linkerd2-proxy-api"
 version = "0.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba9e3b341ca4992feaf43a4d2bdbfe2081aa3e2b9a503753544ce55242af6342"
+source = "git+https://github.com/zeptonow/linkerd2-proxy-api?rev=da0d99bf8814729e774f473952e61823dc258b46#da0d99bf8814729e774f473952e61823dc258b46"
 dependencies = [
  "h2",
  "http",
