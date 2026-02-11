@@ -12,7 +12,8 @@ pub(crate) mod authz;
 pub(crate) mod error;
 
 use crate::http::router::{
-    RequestBodyFamilies, RequestCountFamilies, ResponseBodyFamilies, StatusCodeFamilies,
+    RequestBodyFamilies, RequestCountFamilies, ResponseBodyFamilies, ResponseDurationFamilies,
+    StatusCodeFamilies,
 };
 pub use linkerd_app_core::metrics::*;
 
@@ -34,6 +35,7 @@ pub struct InboundMetrics {
     pub request_count: RequestCountFamilies,
     pub request_body_data: RequestBodyFamilies,
     pub response_body_data: ResponseBodyFamilies,
+    pub response_duration: ResponseDurationFamilies,
     pub status_codes: StatusCodeFamilies,
 }
 
@@ -47,6 +49,8 @@ impl InboundMetrics {
         let request_count = RequestCountFamilies::register(reg);
         let request_body_data = RequestBodyFamilies::register(reg);
         let response_body_data = ResponseBodyFamilies::register(reg);
+        let response_duration =
+            ResponseDurationFamilies::register(reg, Self::RESPONSE_BUCKETS.iter().copied());
         let status_codes = StatusCodeFamilies::register(reg);
 
         Self {
@@ -60,9 +64,24 @@ impl InboundMetrics {
             request_count,
             request_body_data,
             response_body_data,
+            response_duration,
             status_codes,
         }
     }
+
+    // There are two histograms for which we need to register metrics:
+    //   (1) request durations, which are measured on routes. TODO(kate): forthcoming.
+    //   (2) response durations, which are measured on route-backends.
+    //
+    // Should these change in the future, be sure to consider the outbound proxy's corresponding
+    // constants measuring request and response latency for *outgoing* traffic.
+
+    /// Histogram buckets for response latency.
+    ///
+    /// These buckets for this histogram are coarse, eliding several buckets for short response
+    /// durations to be conservative about the costs of tracking two histograms' respective time
+    /// series.
+    const RESPONSE_BUCKETS: &'static [f64] = &[0.05, 0.5, 1.0, 10.0];
 }
 
 impl legacy::FmtMetrics for InboundMetrics {

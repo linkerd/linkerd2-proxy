@@ -142,18 +142,25 @@ where
     B::DurationLabels: LabelSet,
     B::StatusLabels: LabelSet,
 {
-    // There are two histograms for which we need to register metrics: request
-    // durations, measured on routes, and response durations, measured on
-    // route-backends.
+    // There are two histograms for which we need to register metrics:
+    //   (1) request durations, which are measured on routes.
+    //   (2) response durations, which are measured on route-backends.
     //
-    // Response duration is probably the more meaninful metric
-    // operationally--and it includes more backend metadata--so we opt to
-    // preserve higher fidelity for response durations (especially for lower
-    // values).
-    //
-    // We elide several buckets for request durations to be conservative about
-    // the costs of tracking these two largely overlapping histograms
+    // Should these change in the future, be sure to consider the inbound proxy's corresponding
+    // constants measuring request and response latency for *incoming* traffic.
+
+    /// Histogram buckets for request latency.
+    ///
+    /// These buckets for this histogram are coarser than those of [`Self::RESPONSE_BUCKETS`],
+    /// eliding several buckets for short request durations to be conservative about the costs of
+    /// tracking these two histograms' respective time series.
     const REQUEST_BUCKETS: &'static [f64] = &[0.05, 0.5, 1.0, 10.0];
+
+    /// Histogram buckets for response latency.
+    ///
+    /// Because response duration is the more meaningful metric operationally for the outbound
+    /// proxy, and because backend metrics includes additional metadata, we opt to preserve higher
+    /// fidelity for response durations (especially for lower values).
     const RESPONSE_BUCKETS: &'static [f64] = &[0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 10.0];
 }
 
