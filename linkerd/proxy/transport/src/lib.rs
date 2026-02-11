@@ -45,6 +45,16 @@ impl From<UserTimeout> for Option<Duration> {
     }
 }
 
+#[derive(Copy, Clone, Debug)]
+pub struct Backlog(pub u32);
+
+impl Default for Backlog {
+    fn default() -> Self {
+        // Use Rust's default backlog value (128 on most systems)
+        Backlog(128)
+    }
+}
+
 // Misc.
 
 fn set_nodelay_or_warn(socket: &TcpStream) {
