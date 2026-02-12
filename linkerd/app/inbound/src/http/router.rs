@@ -13,9 +13,7 @@ use linkerd_app_core::{
 use std::{fmt, net::SocketAddr};
 use tracing::{debug, debug_span};
 
-pub use self::metrics::*;
-
-mod metrics;
+pub mod metrics;
 
 /// Describes an HTTP client target.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
