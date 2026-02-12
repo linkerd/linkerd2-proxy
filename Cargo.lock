@@ -1258,7 +1258,7 @@ checksum = "5b89e2a641a3f74c2e7366eb050282ac4a6194b63dae5294084215c457237e47"
 dependencies = [
  "libc",
  "procfs",
- "prometheus-client",
+ "prometheus-client 0.23.1",
  "tracing",
 ]
 
@@ -1268,7 +1268,7 @@ version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "639670482534c37eb44caf6f4b72cc5da2f2c06aed39d1fb0cba940569428212"
 dependencies = [
- "prometheus-client",
+ "prometheus-client 0.23.1",
  "tokio",
  "tokio-metrics",
  "tracing",
@@ -1417,7 +1417,7 @@ dependencies = [
  "linkerd-transport-header",
  "linkerd-transport-metrics",
  "pin-project",
- "prometheus-client",
+ "prometheus-client 0.24.0",
  "semver",
  "thiserror",
  "tokio",
@@ -1562,7 +1562,7 @@ dependencies = [
  "once_cell",
  "parking_lot",
  "pin-project",
- "prometheus-client",
+ "prometheus-client 0.24.0",
  "thiserror",
  "tokio",
  "tokio-rustls",
@@ -1623,7 +1623,7 @@ dependencies = [
  "hickory-resolver",
  "linkerd-dns-name",
  "linkerd-error",
- "prometheus-client",
+ "prometheus-client 0.24.0",
  "thiserror",
  "tokio",
  "tracing",
@@ -1757,7 +1757,7 @@ dependencies = [
  "linkerd-io",
  "linkerd-stack",
  "linkerd-tracing",
- "prometheus-client",
+ "prometheus-client 0.24.0",
  "thiserror",
  "tokio",
  "tokio-test",
@@ -1823,7 +1823,7 @@ dependencies = [
  "linkerd-mock-http-body",
  "linkerd-stack",
  "pin-project",
- "prometheus-client",
+ "prometheus-client 0.24.0",
  "thiserror",
  "tokio",
  "tonic",
@@ -1932,7 +1932,7 @@ dependencies = [
  "linkerd-dns-name",
  "linkerd-error",
  "linkerd-metrics",
- "prometheus-client",
+ "prometheus-client 0.24.0",
  "thiserror",
  "tracing",
  "url",
@@ -2012,7 +2012,7 @@ dependencies = [
  "linkerd-http-box",
  "linkerd-stack",
  "parking_lot",
- "prometheus-client",
+ "prometheus-client 0.24.0",
  "quickcheck",
  "tokio",
  "tracing",
@@ -2091,7 +2091,7 @@ dependencies = [
  "linkerd-stack",
  "linkerd-tracing",
  "parking_lot",
- "prometheus-client",
+ "prometheus-client 0.24.0",
  "quickcheck",
  "rand 0.9.2",
  "tokio",
@@ -2144,7 +2144,7 @@ name = "linkerd-proxy-balance-gauge-endpoints"
 version = "0.1.0"
 dependencies = [
  "linkerd-stack",
- "prometheus-client",
+ "prometheus-client 0.24.0",
 ]
 
 [[package]]
@@ -3147,7 +3147,19 @@ dependencies = [
  "dtoa",
  "itoa",
  "parking_lot",
- "prometheus-client-derive-encode",
+ "prometheus-client-derive-encode 0.4.2",
+]
+
+[[package]]
+name = "prometheus-client"
+version = "0.24.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e4500adecd7af8e0e9f4dbce15cfee07ce913fbf6ad605cc468b83f2d531ee94"
+dependencies = [
+ "dtoa",
+ "itoa",
+ "parking_lot",
+ "prometheus-client-derive-encode 0.5.0",
 ]
 
 [[package]]
@@ -3155,6 +3167,17 @@ name = "prometheus-client-derive-encode"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "440f724eba9f6996b75d63681b0a92b06947f1457076d503a4d2e2c8f56442b8"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "prometheus-client-derive-encode"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9adf1691c04c0a5ff46ff8f262b58beb07b0dbb61f96f9f54f6cbd82106ed87f"
 dependencies = [
  "proc-macro2",
  "quote",
