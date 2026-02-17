@@ -43,7 +43,7 @@ jobs:
     runs-on: ${{ vars.LINKERD2_PROXY_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 30
     container:
-      image: docker://ghcr.io/linkerd/dev:v48-rust
+      image: docker://ghcr.io/linkerd/dev:v49-rust
       options: --security-opt seccomp=unconfined # 🤷
     env:
       CXX: "/usr/bin/clang++-19"
