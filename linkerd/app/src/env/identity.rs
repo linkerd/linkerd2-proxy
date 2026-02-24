@@ -1,4 +1,5 @@
 use super::*;
+use crate::identity::Id;
 
 pub fn parse_identity_config<S: Strings>(
     strings: &S,
@@ -127,7 +128,7 @@ fn parse_linkerd_identity_config<S: Strings>(
     }
 }
 
-fn parse_tls_params<S: Strings>(strings: &S) -> Result<crate::identity::TlsParams, EnvError> {
+fn parse_tls_params<S: Strings>(strings: &S) -> Result<(Id, dns::Name, String), EnvError> {
     let ta = parse(strings, ENV_IDENTITY_TRUST_ANCHORS, |s| {
         if s.is_empty() {
             return Err(ParseError::InvalidTrustAnchors);

@@ -31,9 +31,6 @@ pub enum Config {
     },
 }
 
-// XXX(kate): keep a temporary tuple alias in place.
-pub type TlsParams = (Id, dns::Name, String);
-
 pub struct Identity {
     receiver: creds::Receiver,
     ready: watch::Receiver<bool>,
