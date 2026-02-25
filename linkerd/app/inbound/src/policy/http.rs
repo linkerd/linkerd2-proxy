@@ -1,6 +1,6 @@
 use super::{RoutePolicy, Routes};
 use crate::{
-    http::router::RouteLabels,
+    http::router::metrics::RouteLabels,
     metrics::authz::HttpAuthzMetrics,
     policy::{AllowPolicy, HttpRoutePermit},
 };

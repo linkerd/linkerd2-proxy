@@ -39,6 +39,8 @@ pub enum EnvError {
     NoDestinationAddress,
     #[error("no policy service configured")]
     NoPolicyAddress,
+    #[error("linkerd identity requires a TLS Id and server name to be the same")]
+    TlsIdAndServerNameNotMatching,
 }
 
 #[derive(Debug, Error, Eq, PartialEq)]
@@ -906,6 +908,13 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 }
             },
             None => {
+                match (&tls.id, &tls.server_name) {
+                    (linkerd_app_core::identity::Id::Dns(id), sni) if id == sni => {}
+                    (_id, _sni) => {
+                        return Err(EnvError::TlsIdAndServerNameNotMatching);
+                    }
+                };
+
                 let (addr, certify) = parse_linkerd_identity_config(strings)?;
 
                 // If the address doesn't have a server identity, then we're on localhost.

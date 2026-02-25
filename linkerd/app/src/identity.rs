@@ -14,10 +14,6 @@ use std::{future::Future, pin::Pin, time::SystemTime};
 use tokio::sync::watch;
 use tracing::Instrument;
 
-#[derive(Debug, thiserror::Error)]
-#[error("linkerd identity requires a TLS Id and server name to be the same")]
-pub struct TlsIdAndServerNameNotMatching(());
-
 #[derive(Clone, Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum Config {
@@ -83,14 +79,7 @@ impl Config {
                 certify,
                 tls,
             } => {
-                // TODO: move this validation into env.rs
-                let name = match (&tls.id, &tls.server_name) {
-                    (Id::Dns(id), sni) if id == sni => id.clone(),
-                    (_id, _sni) => {
-                        return Err(TlsIdAndServerNameNotMatching(()).into());
-                    }
-                };
-
+                let name = tls.server_name.clone();
                 let certify = Certify::from(certify);
                 let (store, receiver, ready) = watch(tls, metrics.cert)?;
 
