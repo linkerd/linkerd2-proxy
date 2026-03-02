@@ -1,6 +1,11 @@
 use self::{
-    count_reqs::*, labels::RouteLabels, req_body::*, req_duration::*, rsp_body::*, rsp_duration::*,
-    status::*,
+    count_reqs::{ExtractRequestCount, NewCountRequests},
+    labels::RouteLabels,
+    req_body::{ExtractRequestBodyDataParams, NewRecordRequestBodyData},
+    req_duration::{ExtractRequestDurationMetrics, NewRequestDuration},
+    rsp_body::{ExtractResponseBodyDataMetrics, NewRecordResponseBodyData},
+    rsp_duration::{ExtractResponseDurationMetrics, NewResponseDuration},
+    status::{ExtractStatusCodeParams, NewRecordStatusCode},
 };
 use crate::InboundMetrics;
 use linkerd_app_core::svc;
