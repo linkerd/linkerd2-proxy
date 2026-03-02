@@ -84,7 +84,7 @@ impl InboundMetrics {
 
     /// Histogram buckets for request latency.
     ///
-    /// Because response duration is the more meaningful metric operationally for the inbound
+    /// Because request duration is the more meaningful metric operationally for the inbound
     /// proxy, we opt to preserve higher fidelity for request durations (especially for lower
     /// values).
     const REQUEST_BUCKETS: &'static [f64] = &[0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 10.0];
