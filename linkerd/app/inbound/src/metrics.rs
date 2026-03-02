@@ -91,7 +91,7 @@ impl InboundMetrics {
 
     /// Histogram buckets for response latency.
     ///
-    /// These buckets for this histogram are coarse than those of [`Self::REQUEST_BUCKETS`],
+    /// These buckets for this histogram are coarser than those of [`Self::REQUEST_BUCKETS`],
     /// eliding several buckets for short response durations to be conservative about the costs of
     /// tracking two histograms' respective time series.
     const RESPONSE_BUCKETS: &'static [f64] = &[0.05, 0.5, 1.0, 10.0];
