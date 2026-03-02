@@ -12,9 +12,11 @@ pub(crate) mod authz;
 pub(crate) mod error;
 
 use crate::http::router::metrics::{
-    RequestBodyFamilies, RequestCountFamilies, RequestDurationFamilies, ResponseBodyFamilies,
-    ResponseDurationFamilies, StatusCodeFamilies,
+    count_reqs::RequestCountFamilies, req_body::RequestBodyFamilies,
+    req_duration::RequestDurationFamilies, rsp_body::ResponseBodyFamilies,
+    rsp_duration::ResponseDurationFamilies, status::StatusCodeFamilies,
 };
+
 pub use linkerd_app_core::metrics::*;
 
 /// Holds LEGACY inbound proxy metrics.

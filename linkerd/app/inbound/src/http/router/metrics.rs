@@ -1,18 +1,17 @@
-use crate::InboundMetrics;
-use linkerd_app_core::svc;
-
-pub use self::{
+use self::{
     count_reqs::*, labels::RouteLabels, req_body::*, req_duration::*, rsp_body::*, rsp_duration::*,
     status::*,
 };
+use crate::InboundMetrics;
+use linkerd_app_core::svc;
 
-mod count_reqs;
-mod labels;
-mod req_body;
-mod req_duration;
-mod rsp_body;
-mod rsp_duration;
-mod status;
+pub mod count_reqs;
+pub mod labels;
+pub mod req_body;
+pub mod req_duration;
+pub mod rsp_body;
+pub mod rsp_duration;
+pub mod status;
 
 pub(super) fn layer<N>(
     InboundMetrics {
