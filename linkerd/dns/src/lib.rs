@@ -201,32 +201,44 @@ impl fmt::Debug for Resolver {
 // === impl ResolveError ===
 
 impl ResolveError {
-    /// Returns the amount of time that the resolver should wait before
-    /// retrying.
+    /// Returns the amount of time that the resolver should wait before retrying.
     pub fn negative_ttl(&self) -> Option<time::Duration> {
-        if let Some(hickory_resolver::proto::ProtoErrorKind::NoRecordsFound {
+        let Self {
+            a_error: ARecordError(a_error),
+            srv_error,
+        } = self;
+
+        match Self::duration_from_error(a_error) {
+            ttl @ Some(_) => return ttl,
+            None => {}
+        }
+
+        match srv_error {
+            SrvRecordError::Resolve(srv_error) => Self::duration_from_error(srv_error),
+            SrvRecordError::Invalid(_) => None,
+        }
+    }
+
+    /// Returns the negative TTL [`Duration`][time::Duration] of a [`ResolveError`].
+    ///
+    /// This function will defensively check for TTL's of 0, and filter them out.
+    fn duration_from_error(error: &hickory_resolver::ResolveError) -> Option<time::Duration> {
+        use hickory_resolver::proto::{ProtoError, ProtoErrorKind};
+
+        let Some(ProtoErrorKind::NoRecordsFound {
             negative_ttl: Some(ttl_secs),
             ..
-        }) = self
-            .a_error
-            .0
-            .proto()
-            .map(hickory_resolver::proto::ProtoError::kind)
-        {
-            return Some(time::Duration::from_secs(*ttl_secs as u64));
+        }) = error.proto().map(ProtoError::kind)
+        else {
+            return None;
+        };
+
+        if *ttl_secs == 0 {
+            tracing::warn!("received negative TTL of 0s");
+            return None;
         }
 
-        if let SrvRecordError::Resolve(error) = &self.srv_error {
-            if let Some(hickory_resolver::proto::ProtoErrorKind::NoRecordsFound {
-                negative_ttl: Some(ttl_secs),
-                ..
-            }) = error.proto().map(hickory_resolver::proto::ProtoError::kind)
-            {
-                return Some(time::Duration::from_secs(*ttl_secs as u64));
-            }
-        }
-
-        None
+        return Some(time::Duration::from_secs(*ttl_secs as u64));
     }
 }
 
