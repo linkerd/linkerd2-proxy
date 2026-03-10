@@ -222,7 +222,7 @@ impl ResolveError {
 
     /// Returns the negative TTL [`time::Duration`] of a [`hickory_resolver::ResolveError`].
     ///
-    /// This function will defensively check for TTL's of 0, and filter them out.
+    /// This function will defensively enforce a minimum negative TTL.
     fn negative_ttl_of(error: &hickory_resolver::ResolveError) -> Option<time::Duration> {
         use hickory_resolver::proto::{ProtoError, ProtoErrorKind};
 
@@ -234,12 +234,9 @@ impl ResolveError {
             return None;
         };
 
-        if *ttl_secs == 0 {
-            tracing::warn!("received negative TTL of 0s");
-            return None;
-        }
-
-        Some(time::Duration::from_secs(*ttl_secs as u64))
+        let ttl = time::Duration::from_secs(*ttl_secs as u64);
+        let ttl = minimum_ttl::with_minimum_duration(ttl);
+        Some(ttl)
     }
 }
 

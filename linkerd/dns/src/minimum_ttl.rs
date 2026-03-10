@@ -27,3 +27,17 @@ pub async fn sleep_until_expired(valid_until: Instant) {
 
     sleep_until(deadline).await;
 }
+
+/// Apply a lower-bound to the given [`Duration`].
+///
+/// NB: This enforces a lower-bound for negative TTL's to prevent DNS resolution error recovery
+/// from spinning in a hot-loop.
+pub fn with_minimum_duration(ttl: Duration) -> Duration {
+    if ttl < MINIMUM_TTL {
+        // Choose a deadline; if the expiry is too short, fall back to the minimum TTL.
+        debug!(ttl.min = ?MINIMUM_TTL, ?ttl, "Given Negative TTL too short, using a minimum TTL");
+        return MINIMUM_TTL;
+    }
+
+    ttl
+}
