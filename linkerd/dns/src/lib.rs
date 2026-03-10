@@ -208,12 +208,12 @@ impl ResolveError {
             srv_error,
         } = self;
 
-        if let ttl @ Some(_) = Self::duration_from_error(a_error) {
+        if let ttl @ Some(_) = Self::negative_ttl_of(a_error) {
             return ttl;
         }
 
         match srv_error {
-            SrvRecordError::Resolve(srv_error) => Self::duration_from_error(srv_error),
+            SrvRecordError::Resolve(srv_error) => Self::negative_ttl_of(srv_error),
             SrvRecordError::Invalid(_) => None,
         }
     }
@@ -221,7 +221,7 @@ impl ResolveError {
     /// Returns the negative TTL [`Duration`][time::Duration] of a [`ResolveError`].
     ///
     /// This function will defensively check for TTL's of 0, and filter them out.
-    fn duration_from_error(error: &hickory_resolver::ResolveError) -> Option<time::Duration> {
+    fn negative_ttl_of(error: &hickory_resolver::ResolveError) -> Option<time::Duration> {
         use hickory_resolver::proto::{ProtoError, ProtoErrorKind};
 
         let Some(ProtoErrorKind::NoRecordsFound {
