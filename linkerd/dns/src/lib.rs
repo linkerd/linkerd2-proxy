@@ -218,7 +218,7 @@ impl ResolveError {
         }
     }
 
-    /// Returns the negative TTL [`Duration`][time::Duration] of a [`ResolveError`].
+    /// Returns the negative TTL [`time::Duration`] of a [`hickory_resolver::ResolveError`].
     ///
     /// This function will defensively check for TTL's of 0, and filter them out.
     fn negative_ttl_of(error: &hickory_resolver::ResolveError) -> Option<time::Duration> {
