@@ -81,7 +81,27 @@ where
 struct ResponseState<L: StreamLabel> {
     labeler: L,
     duration: DurationFamily<L::DurationLabels>,
-    start: oneshot::Receiver<time::Instant>,
+    start: StartTime,
+}
+
+/// Start time for a duration measurement.
+///
+/// Request duration knows the start time immediately whereas response duration
+/// needs to wait until the request body is fully flushed.
+pub(crate) enum StartTime {
+    /// Start time is already known.
+    Known(Option<time::Instant>),
+    /// Start time will be sent when the request body finishes streaming.
+    Pending(oneshot::Receiver<time::Instant>),
+}
+
+impl StartTime {
+    fn recv(&mut self) -> Option<time::Instant> {
+        match self {
+            Self::Known(t) => t.take(),
+            Self::Pending(rx) => rx.try_recv().ok(),
+        }
+    }
 }
 
 type DurationFamily<L> = Family<L, Histogram, MkDurationHistogram>;
@@ -269,7 +289,7 @@ fn end_stream<L>(
 
     labeler.end_response(res);
 
-    let elapsed = if let Ok(start) = start.try_recv() {
+    let elapsed = if let Some(start) = start.recv() {
         time::Instant::now().saturating_duration_since(start)
     } else {
         time::Duration::ZERO
