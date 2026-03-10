@@ -11,6 +11,8 @@ use thiserror::Error;
 use tokio::time::{self, Instant};
 use tracing::{debug, trace};
 
+pub mod minimum_ttl;
+
 #[derive(Clone)]
 pub struct Resolver {
     dns: TokioResolver,
