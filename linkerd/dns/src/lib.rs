@@ -208,9 +208,8 @@ impl ResolveError {
             srv_error,
         } = self;
 
-        match Self::duration_from_error(a_error) {
-            ttl @ Some(_) => return ttl,
-            None => {}
+        if let ttl @ Some(_) = Self::duration_from_error(a_error) {
+            return ttl;
         }
 
         match srv_error {
@@ -238,7 +237,7 @@ impl ResolveError {
             return None;
         }
 
-        return Some(time::Duration::from_secs(*ttl_secs as u64));
+        Some(time::Duration::from_secs(*ttl_secs as u64))
     }
 }
 
