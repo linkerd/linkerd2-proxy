@@ -6,14 +6,15 @@
 use tokio::time::{sleep_until, Duration, Instant};
 use tracing::debug;
 
+/// The minimum TTL duration that will be respected.
+const MINIMUM_TTL: Duration = Duration::from_secs(5);
+
 /// Sleep for the provided [`Duration`][tokio::time::Duration].
 ///
 /// NB: This enforces a lower-bound for TTL's to prevent DNS resolution from spinning in a
 /// hot-loop.
 #[tracing::instrument(level = "debug")]
 pub async fn sleep_until_expired(valid_until: Instant) {
-    /// The minimum TTL duration that will be respected.
-    const MINIMUM_TTL: Duration = Duration::from_secs(5);
     let minimum = Instant::now() + MINIMUM_TTL;
 
     // Choose a deadline; if the expiry is too short, fall back to the minimum TTL.
