@@ -64,7 +64,8 @@ impl<T: Param<Addr>> tower::Service<T> for DnsResolve {
 }
 
 async fn resolution(dns: dns::Resolver, na: NameAddr) -> Result<UpdateStream, Error> {
-    use linkerd_dns::minimum_ttl::sleep_until_expired;
+    use linkerd_dns::minimum_ttl::with_minimum_expiry;
+    use tokio::time::sleep_until;
     use tokio_stream::wrappers::ReceiverStream;
 
     // Don't return a stream before the initial resolution completes. Then,
@@ -81,7 +82,7 @@ async fn resolution(dns: dns::Resolver, na: NameAddr) -> Result<UpdateStream, Er
                 trace!("Closed");
                 return;
             }
-            sleep_until_expired(expiry).await;
+            sleep_until(with_minimum_expiry(expiry)).await;
 
             loop {
                 match dns.resolve_addrs(na.name().as_ref(), na.port()).await {
@@ -92,7 +93,7 @@ async fn resolution(dns: dns::Resolver, na: NameAddr) -> Result<UpdateStream, Er
                             trace!("Closed");
                             return;
                         }
-                        sleep_until_expired(expiry).await;
+                        sleep_until(with_minimum_expiry(expiry)).await;
                     }
                     Err(error) => {
                         debug!(%error);

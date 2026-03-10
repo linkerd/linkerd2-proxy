@@ -3,18 +3,18 @@
 //! This module contains functions to enforce a lower-bound for TTL's (including negative TTL's
 //! used during error recovery) to prevent DNS resolution from spinning in a hot-loop.
 
-use tokio::time::{sleep_until, Duration, Instant};
+use tokio::time::{Duration, Instant};
 use tracing::debug;
 
 /// The minimum TTL duration that will be respected.
 const MINIMUM_TTL: Duration = Duration::from_secs(5);
 
-/// Sleep for the provided [`Duration`][tokio::time::Duration].
+/// Apply a lower-bound to the given [`Instant`].
 ///
 /// NB: This enforces a lower-bound for TTL's to prevent DNS resolution from spinning in a
 /// hot-loop.
 #[tracing::instrument(level = "debug")]
-pub async fn sleep_until_expired(valid_until: Instant) {
+pub fn with_minimum_expiry(valid_until: Instant) -> Instant {
     let minimum = Instant::now() + MINIMUM_TTL;
 
     // Choose a deadline; if the expiry is too short, fall back to the minimum TTL.
@@ -25,7 +25,7 @@ pub async fn sleep_until_expired(valid_until: Instant) {
         minimum
     };
 
-    sleep_until(deadline).await;
+    deadline
 }
 
 /// Apply a lower-bound to the given [`Duration`].
