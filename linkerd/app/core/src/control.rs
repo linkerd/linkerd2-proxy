@@ -322,7 +322,13 @@ mod balance {
             // If we are recovering due to a DNS resolution error, check for a negative TTL.
             if let Some(e) = crate::errors::cause_ref::<dns::ResolveError>(&*error) {
                 if let Some(ttl) = e.negative_ttl() {
-                    let interval = tokio::time::interval(ttl);
+                    let mut interval = tokio::time::interval(ttl);
+
+                    // `tokio::time::interval()`'s documentation states that the first tick
+                    // completes immediately. To respect the proscribed negative-ttl and avoid
+                    // immediately retrying, we reset the interval before returning it.
+                    interval.reset();
+
                     let stream = IntervalStream::new(interval);
                     return Ok(ResolveBackoff::NegativeTtl(stream));
                 }
