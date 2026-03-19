@@ -325,7 +325,7 @@ mod balance {
                     let mut interval = tokio::time::interval(ttl);
 
                     // `tokio::time::interval()`'s documentation states that the first tick
-                    // completes immediately. To respect the proscribed negative-ttl and avoid
+                    // completes immediately. To respect the prescribed negative-ttl and avoid
                     // immediately retrying, we reset the interval before returning it.
                     interval.reset();
 
