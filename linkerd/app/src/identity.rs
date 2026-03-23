@@ -4,8 +4,7 @@ pub use linkerd_app_core::identity::{client, Id};
 use linkerd_app_core::{
     control, dns,
     identity::{
-        client::linkerd::Certify, creds, watch as watch_identity, CertMetrics, Credentials,
-        DerX509, WithCertMetrics,
+        client::linkerd::Certify, creds, CertMetrics, Credentials, DerX509, WithCertMetrics,
     },
     metrics::{prom, ControlHttp as ClientMetrics},
     Result,
@@ -20,19 +19,16 @@ pub enum Config {
     Linkerd {
         client: control::Config,
         certify: client::linkerd::Config,
-        tls: TlsParams,
+        id: Id,
+        server_name: dns::Name,
+        trust_anchors_pem: String,
     },
     Spire {
         client: spire::Config,
-        tls: TlsParams,
+        id: Id,
+        server_name: dns::Name,
+        trust_anchors_pem: String,
     },
-}
-
-#[derive(Clone, Debug)]
-pub struct TlsParams {
-    pub id: Id,
-    pub server_name: dns::Name,
-    pub trust_anchors_pem: String,
 }
 
 pub struct Identity {
@@ -77,18 +73,20 @@ impl Config {
             Self::Linkerd {
                 client,
                 certify,
-                tls,
+                id,
+                server_name,
+                trust_anchors_pem,
             } => {
-                let name = tls.server_name.clone();
                 let certify = Certify::from(certify);
-                let (store, receiver, ready) = watch(tls, metrics.cert)?;
+                let (store, receiver, ready) =
+                    watch(id, server_name.clone(), trust_anchors_pem, metrics.cert)?;
 
                 let task = {
                     let addr = client.addr.clone();
                     let svc =
                         client.build(dns, client_metrics, metrics.client, receiver.new_client());
 
-                    Box::pin(certify.run(name, store, svc).instrument(
+                    Box::pin(certify.run(server_name, store, svc).instrument(
                         tracing::info_span!("identity", server.addr = %addr).or_current(),
                     ))
                 };
@@ -98,11 +96,17 @@ impl Config {
                     task,
                 }
             }
-            Self::Spire { client, tls } => {
+            Self::Spire {
+                client,
+                id,
+                server_name,
+                trust_anchors_pem,
+            } => {
                 let addr = client.workload_api_addr.clone();
-                let spire = spire::client::Spire::new(tls.id.clone());
+                let spire = spire::client::Spire::new(id.clone());
 
-                let (store, receiver, ready) = watch(tls, metrics.cert)?;
+                let (store, receiver, ready) =
+                    watch(id, server_name, trust_anchors_pem, metrics.cert)?;
                 let task =
                     Box::pin(spire.run(store, spire::Client::from(client)).instrument(
                         tracing::info_span!("spire", server.addr = %addr).or_current(),
@@ -119,7 +123,9 @@ impl Config {
 }
 
 fn watch(
-    tls: TlsParams,
+    id: Id,
+    server_name: dns::Name,
+    trust_anchors_pem: String,
     metrics: CertMetrics,
 ) -> Result<(
     WithCertMetrics<NotifyReady>,
@@ -127,7 +133,8 @@ fn watch(
     watch::Receiver<bool>,
 )> {
     let (tx, ready) = watch::channel(false);
-    let (store, receiver) = watch_identity(tls.id, tls.server_name, &tls.trust_anchors_pem)?;
+    let (store, receiver) =
+        linkerd_app_core::identity::creds::watch(id, server_name, &trust_anchors_pem)?;
     let cred = WithCertMetrics::new(metrics, NotifyReady { store, tx });
     Ok((cred, receiver, ready))
 }

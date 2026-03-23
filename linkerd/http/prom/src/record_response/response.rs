@@ -95,7 +95,7 @@ where
             let ResponseMetrics { duration } = self.metric.clone();
             Some(super::ResponseState {
                 labeler,
-                start,
+                start: super::StartTime::Pending(start),
                 duration,
             })
         } else {
