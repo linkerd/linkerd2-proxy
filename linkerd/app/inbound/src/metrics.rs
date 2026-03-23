@@ -12,9 +12,11 @@ pub(crate) mod authz;
 pub(crate) mod error;
 
 use crate::http::router::metrics::{
-    RequestBodyFamilies, RequestCountFamilies, ResponseBodyFamilies, ResponseDurationFamilies,
-    StatusCodeFamilies,
+    count_reqs::RequestCountFamilies, req_body::RequestBodyFamilies,
+    req_duration::RequestDurationFamilies, rsp_body::ResponseBodyFamilies,
+    rsp_duration::ResponseDurationFamilies, status::StatusCodeFamilies,
 };
+
 pub use linkerd_app_core::metrics::*;
 
 /// Holds LEGACY inbound proxy metrics.
@@ -34,6 +36,7 @@ pub struct InboundMetrics {
     pub direct: crate::direct::MetricsFamilies,
     pub request_count: RequestCountFamilies,
     pub request_body_data: RequestBodyFamilies,
+    pub request_duration: RequestDurationFamilies,
     pub response_body_data: ResponseBodyFamilies,
     pub response_duration: ResponseDurationFamilies,
     pub status_codes: StatusCodeFamilies,
@@ -48,6 +51,8 @@ impl InboundMetrics {
         );
         let request_count = RequestCountFamilies::register(reg);
         let request_body_data = RequestBodyFamilies::register(reg);
+        let request_duration =
+            RequestDurationFamilies::register(reg, Self::REQUEST_BUCKETS.iter().copied());
         let response_body_data = ResponseBodyFamilies::register(reg);
         let response_duration =
             ResponseDurationFamilies::register(reg, Self::RESPONSE_BUCKETS.iter().copied());
@@ -63,6 +68,7 @@ impl InboundMetrics {
             direct,
             request_count,
             request_body_data,
+            request_duration,
             response_body_data,
             response_duration,
             status_codes,
@@ -70,17 +76,24 @@ impl InboundMetrics {
     }
 
     // There are two histograms for which we need to register metrics:
-    //   (1) request durations, which are measured on routes. TODO(kate): forthcoming.
+    //   (1) request durations, which are measured on routes.
     //   (2) response durations, which are measured on route-backends.
     //
     // Should these change in the future, be sure to consider the outbound proxy's corresponding
     // constants measuring request and response latency for *outgoing* traffic.
 
+    /// Histogram buckets for request latency.
+    ///
+    /// Because request duration is the more meaningful metric operationally for the inbound
+    /// proxy, we opt to preserve higher fidelity for request durations (especially for lower
+    /// values).
+    const REQUEST_BUCKETS: &'static [f64] = &[0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 10.0];
+
     /// Histogram buckets for response latency.
     ///
-    /// These buckets for this histogram are coarse, eliding several buckets for short response
-    /// durations to be conservative about the costs of tracking two histograms' respective time
-    /// series.
+    /// These buckets for this histogram are coarser than those of [`Self::REQUEST_BUCKETS`],
+    /// eliding several buckets for short response durations to be conservative about the costs of
+    /// tracking two histograms' respective time series.
     const RESPONSE_BUCKETS: &'static [f64] = &[0.05, 0.5, 1.0, 10.0];
 }
 

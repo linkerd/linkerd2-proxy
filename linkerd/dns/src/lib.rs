@@ -11,6 +11,8 @@ use thiserror::Error;
 use tokio::time::{self, Instant};
 use tracing::{debug, trace};
 
+pub mod minimum_ttl;
+
 #[derive(Clone)]
 pub struct Resolver {
     dns: TokioResolver,
@@ -201,32 +203,40 @@ impl fmt::Debug for Resolver {
 // === impl ResolveError ===
 
 impl ResolveError {
-    /// Returns the amount of time that the resolver should wait before
-    /// retrying.
+    /// Returns the amount of time that the resolver should wait before retrying.
     pub fn negative_ttl(&self) -> Option<time::Duration> {
-        if let Some(hickory_resolver::proto::ProtoErrorKind::NoRecordsFound {
+        let Self {
+            a_error: ARecordError(a_error),
+            srv_error,
+        } = self;
+
+        if let ttl @ Some(_) = Self::negative_ttl_of(a_error) {
+            return ttl;
+        }
+
+        match srv_error {
+            SrvRecordError::Resolve(srv_error) => Self::negative_ttl_of(srv_error),
+            SrvRecordError::Invalid(_) => None,
+        }
+    }
+
+    /// Returns the negative TTL [`time::Duration`] of a [`hickory_resolver::ResolveError`].
+    ///
+    /// This function will defensively enforce a minimum negative TTL.
+    fn negative_ttl_of(error: &hickory_resolver::ResolveError) -> Option<time::Duration> {
+        use hickory_resolver::proto::{ProtoError, ProtoErrorKind};
+
+        let Some(ProtoErrorKind::NoRecordsFound {
             negative_ttl: Some(ttl_secs),
             ..
-        }) = self
-            .a_error
-            .0
-            .proto()
-            .map(hickory_resolver::proto::ProtoError::kind)
-        {
-            return Some(time::Duration::from_secs(*ttl_secs as u64));
-        }
+        }) = error.proto().map(ProtoError::kind)
+        else {
+            return None;
+        };
 
-        if let SrvRecordError::Resolve(error) = &self.srv_error {
-            if let Some(hickory_resolver::proto::ProtoErrorKind::NoRecordsFound {
-                negative_ttl: Some(ttl_secs),
-                ..
-            }) = error.proto().map(hickory_resolver::proto::ProtoError::kind)
-            {
-                return Some(time::Duration::from_secs(*ttl_secs as u64));
-            }
-        }
-
-        None
+        let ttl = time::Duration::from_secs(*ttl_secs as u64);
+        let ttl = minimum_ttl::with_minimum_duration(ttl);
+        Some(ttl)
     }
 }
 

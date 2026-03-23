@@ -8,7 +8,7 @@ use std::{
     sync::Arc,
     task::{Context, Poll},
 };
-use tokio::{sync::oneshot, time};
+use tokio::time;
 
 /// Metrics type that tracks completed requests.
 #[derive(Debug)]
@@ -81,8 +81,7 @@ where
 
     fn call(&mut self, req: http::Request<ReqB>) -> Self::Future {
         let state = self.labeler.mk_stream_labeler(&req).map(|labeler| {
-            let (tx, start) = oneshot::channel();
-            tx.send(time::Instant::now()).unwrap();
+            let start = super::StartTime::Known(Some(time::Instant::now()));
             let RequestMetrics { duration } = self.metric.clone();
             super::ResponseState {
                 labeler,

@@ -7,7 +7,7 @@ use futures::prelude::*;
 use linkerd_error::Error;
 use linkerd_proxy_transport::AddrPair;
 use tower::util::ServiceExt;
-use tracing::{debug, debug_span, info, instrument::Instrument, warn};
+use tracing::{debug, debug_span, instrument::Instrument, warn};
 
 /// Spawns a task that binds an `L`-typed listener with an `A`-typed connection-accepting service.
 ///
@@ -65,8 +65,8 @@ pub async fn serve<M, S, I, A>(
                                             );
                                         }
                                         Err(error) => {
-                                            info!(
-                                                error,
+                                            debug!(
+                                                %error,
                                                 client.addr = %client_addr,
                                                 server.addr = %server_addr,
                                                 "Connection closed"
