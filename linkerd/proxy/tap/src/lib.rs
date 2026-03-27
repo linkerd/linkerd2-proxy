@@ -13,7 +13,7 @@ pub use self::{accept::AcceptPermittedClients, service::NewTapHttp};
 
 /// A registry containing all the active taps that have registered with the
 /// gRPC server.
-pub type Registry = registry::Registry<grpc::Tap>;
+pub type Registry = registry::Registry;
 
 // The number of events that may be buffered for a given response.
 const PER_RESPONSE_EVENT_BUFFER_CAPACITY: usize = 400;
@@ -74,25 +74,6 @@ pub trait Inspect {
 mod iface {
     use bytes::Buf;
     use linkerd_proxy_http::HasH2Reason;
-
-    pub trait Tap: Clone {
-        type TapRequestPayload: TapPayload;
-        type TapResponse: TapResponse<TapPayload = Self::TapResponsePayload>;
-        type TapResponsePayload: TapPayload;
-
-        /// Returns `true` as l
-        fn can_tap_more(&self) -> bool;
-
-        /// Initiate a tap, if it matches.
-        ///
-        /// If the tap cannot be initialized, for instance because the tap has
-        /// completed or been canceled, then `None` is returned.
-        fn tap<B: http_body::Body, I: super::Inspect>(
-            &mut self,
-            req: &http::Request<B>,
-            inspect: &I,
-        ) -> Option<(Self::TapRequestPayload, Self::TapResponse)>;
-    }
 
     pub trait TapPayload {
         fn data<B: Buf>(&mut self, data: &B);

@@ -1,4 +1,4 @@
-use crate::iface;
+use crate::grpc::Tap;
 use futures::{Stream, StreamExt};
 use parking_lot::Mutex;
 use std::sync::Arc;
@@ -6,9 +6,9 @@ use tokio::sync::watch;
 use tracing::trace;
 
 #[derive(Debug)]
-pub struct Registry<T> {
-    inner: Arc<Mutex<Inner<T>>>,
-    taps_recv: watch::Receiver<Vec<T>>,
+pub struct Registry {
+    inner: Arc<Mutex<Inner<Tap>>>,
+    taps_recv: watch::Receiver<Vec<Tap>>,
 }
 
 #[derive(Debug)]
@@ -17,7 +17,7 @@ struct Inner<T> {
     taps_send: watch::Sender<Vec<T>>,
 }
 
-impl<T> Default for Registry<T> {
+impl Default for Registry {
     fn default() -> Self {
         let (taps_send, taps_recv) = watch::channel(vec![]);
         let inner = Inner {
@@ -31,19 +31,16 @@ impl<T> Default for Registry<T> {
     }
 }
 
-impl<T> Registry<T>
-where
-    T: iface::Tap + Clone,
-{
+impl Registry {
     pub fn new() -> Self {
         Self::default()
     }
 
-    pub fn get_taps(&self) -> Vec<T> {
+    pub fn get_taps(&self) -> Vec<Tap> {
         self.taps_recv.borrow().clone()
     }
 
-    pub fn register(&self, tap: T) {
+    pub fn register(&self, tap: Tap) {
         let mut inner = self.inner.lock();
         inner.taps.push(tap);
         let _ = inner.taps_send.send(inner.taps.clone());
@@ -60,7 +57,7 @@ where
     }
 }
 
-impl<T> Clone for Registry<T> {
+impl Clone for Registry {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),

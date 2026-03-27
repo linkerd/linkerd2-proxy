@@ -219,19 +219,15 @@ impl Shared {
 
 // === impl Tap ===
 
-impl iface::Tap for Tap {
-    type TapRequestPayload = TapRequestPayload;
-    type TapResponse = TapResponse;
-    type TapResponsePayload = TapResponsePayload;
-
-    fn can_tap_more(&self) -> bool {
+impl Tap {
+    pub(crate) fn can_tap_more(&self) -> bool {
         self.shared
             .upgrade()
             .map(|shared| shared.is_under_limit())
             .unwrap_or(false)
     }
 
-    fn tap<B, I>(
+    pub(crate) fn tap<B, I>(
         &mut self,
         req: &http::Request<B>,
         inspect: &I,
