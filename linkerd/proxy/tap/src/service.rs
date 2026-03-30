@@ -1,5 +1,5 @@
 use crate::{
-    grpc::{TapRequestPayload, TapResponsePayload},
+    grpc::TapResponsePayload,
     iface::{TapPayload, TapResponse},
     registry::Registry,
     Inspect,
@@ -72,7 +72,7 @@ where
 
 impl<S, I, A, B> tower::Service<http::Request<A>> for TapHttp<S, I>
 where
-    S: tower::Service<http::Request<Body<A, TapRequestPayload>>, Response = http::Response<B>>,
+    S: tower::Service<http::Request<A>, Response = http::Response<B>>,
     S::Error: HasH2Reason,
     S::Future: Send + 'static,
     I: Inspect,
@@ -101,12 +101,6 @@ where
                 rsp_taps.push(rsp_tap);
             }
         }
-
-        // Install the request taps into the request body.
-        let req = req.map(move |inner| Body {
-            inner,
-            taps: req_taps,
-        });
 
         let call = self.inner.call(req);
         Box::pin(async move {

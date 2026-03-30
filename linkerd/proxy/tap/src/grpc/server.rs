@@ -416,16 +416,6 @@ impl iface::TapResponse for TapResponse {
     }
 }
 
-// === impl TapRequestPayload ===
-
-impl iface::TapPayload for TapRequestPayload {
-    fn data<B: Buf>(&mut self, _: &B) {}
-
-    fn eos(self, _: Option<&http::HeaderMap>) {}
-
-    fn fail<E: HasH2Reason>(self, _: &E) {}
-}
-
 // === impl TapResponsePayload ===
 
 impl iface::TapPayload for TapResponsePayload {
