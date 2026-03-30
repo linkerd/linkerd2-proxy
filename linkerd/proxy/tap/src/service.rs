@@ -86,12 +86,10 @@ where
 
     fn call(&mut self, req: http::Request<A>) -> Self::Future {
         // Record the request and obtain request-body and response taps.
-        let mut req_taps = Vec::new();
         let mut rsp_taps = Vec::new();
 
         for mut t in self.registry.get_taps() {
-            if let Some((req_tap, rsp_tap)) = t.tap(&req, &self.inspect) {
-                req_taps.push(req_tap);
+            if let Some(rsp_tap) = t.tap(&req, &self.inspect) {
                 rsp_taps.push(rsp_tap);
             }
         }

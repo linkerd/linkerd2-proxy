@@ -63,9 +63,6 @@ pub struct TapResponse {
 }
 
 #[derive(Debug)]
-pub struct TapRequestPayload {}
-
-#[derive(Debug)]
 pub struct TapResponsePayload {
     base_event: api::TapEvent,
     request_init_at: Instant,
@@ -226,11 +223,7 @@ impl Tap {
             .unwrap_or(false)
     }
 
-    pub(crate) fn tap<B, I>(
-        &mut self,
-        req: &http::Request<B>,
-        inspect: &I,
-    ) -> Option<(TapRequestPayload, TapResponse)>
+    pub(crate) fn tap<B, I>(&mut self, req: &http::Request<B>, inspect: &I) -> Option<TapResponse>
     where
         B: Body,
         I: Inspect,
@@ -326,14 +319,12 @@ impl Tap {
 
         let tap = TapTx { id, tx: events_tx };
 
-        let req = TapRequestPayload {};
-        let rsp = TapResponse {
+        Some(TapResponse {
             tap,
             base_event,
             request_init_at,
             extract_headers,
-        };
-        Some((req, rsp))
+        })
     }
 }
 
