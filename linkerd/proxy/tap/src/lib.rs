@@ -9,11 +9,7 @@ mod grpc;
 mod registry;
 mod service;
 
-pub use self::{accept::AcceptPermittedClients, service::NewTapHttp};
-
-/// A registry containing all the active taps that have registered with the
-/// gRPC server.
-pub type Registry = registry::Registry;
+pub use self::{accept::AcceptPermittedClients, registry::Registry, service::NewTapHttp};
 
 // The number of events that may be buffered for a given response.
 const PER_RESPONSE_EVENT_BUFFER_CAPACITY: usize = 400;

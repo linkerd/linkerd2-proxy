@@ -5,6 +5,8 @@ use std::sync::Arc;
 use tokio::sync::watch;
 use tracing::trace;
 
+/// A registry containing all the active taps that have registered with the
+/// gRPC server.
 #[derive(Debug)]
 pub struct Registry {
     inner: Arc<Mutex<Inner<Tap>>>,
