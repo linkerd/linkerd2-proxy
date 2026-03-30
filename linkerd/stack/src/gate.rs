@@ -120,6 +120,10 @@ impl Rx {
 
 impl Tx {
     /// Returns when all associated `Rx` clones are dropped.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
     pub async fn lost(&self) {
         self.0.closed().await
     }
