@@ -1,9 +1,4 @@
-use crate::{
-    grpc::TapResponsePayload,
-    iface::{TapPayload, TapResponse},
-    registry::Registry,
-    Inspect,
-};
+use crate::{grpc::TapResponsePayload, iface::TapPayload, registry::Registry, Inspect};
 use futures::ready;
 use linkerd_proxy_http::HasH2Reason;
 use linkerd_stack::{layer, NewService};

@@ -340,10 +340,8 @@ impl Tap {
 
 // === impl TapResponse ===
 
-impl iface::TapResponse for TapResponse {
-    type TapPayload = TapResponsePayload;
-
-    fn tap<B: Body>(self, rsp: &http::Response<B>) -> TapResponsePayload {
+impl TapResponse {
+    pub(crate) fn tap<B: Body>(self, rsp: &http::Response<B>) -> TapResponsePayload {
         let response_init_at = Instant::now();
 
         let headers = if self.extract_headers {
@@ -391,7 +389,7 @@ impl iface::TapResponse for TapResponse {
         }
     }
 
-    fn fail<E: HasH2Reason>(self, err: &E) {
+    pub(crate) fn fail<E: HasH2Reason>(self, err: &E) {
         let response_end_at = Instant::now();
         let reason = err.h2_reason();
         let since_request_init = response_end_at.saturating_duration_since(self.request_init_at);

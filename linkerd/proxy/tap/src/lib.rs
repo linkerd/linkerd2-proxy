@@ -82,14 +82,4 @@ mod iface {
 
         fn fail<E: HasH2Reason>(self, error: &E);
     }
-
-    pub trait TapResponse {
-        type TapPayload: TapPayload;
-
-        /// Record a response and obtain a handle to tap its body.
-        fn tap<B: http_body::Body>(self, rsp: &http::Response<B>) -> Self::TapPayload;
-
-        /// Record a service failure.
-        fn fail<E: HasH2Reason>(self, error: &E);
-    }
 }
