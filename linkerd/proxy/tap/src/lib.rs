@@ -61,25 +61,3 @@ pub trait Inspect {
             })
     }
 }
-
-/// The internal interface used between Registry, Layer, and grpc.
-///
-/// These interfaces are provided to decouple the service implementation from any
-/// Protobuf or gRPC concerns, hopefully to make this module more testable and
-/// easier to change.
-///
-/// This module is necessary to seal the traits, which must be public
-/// for Registry/Layer/grpc, but need not be implemented outside of the `tap`
-/// module.
-mod iface {
-    use bytes::Buf;
-    use linkerd_proxy_http::HasH2Reason;
-
-    pub trait TapPayload {
-        fn data<B: Buf>(&mut self, data: &B);
-
-        fn eos(self, headers: Option<&http::HeaderMap>);
-
-        fn fail<E: HasH2Reason>(self, error: &E);
-    }
-}

@@ -1,6 +1,5 @@
 use super::match_::Match;
-use crate::{iface, Inspect, Registry};
-use bytes::Buf;
+use crate::{Inspect, Registry};
 use futures::ready;
 use futures::stream::Stream;
 use http_body::Body;
@@ -416,12 +415,8 @@ impl TapResponse {
 
 // === impl TapResponsePayload ===
 
-impl iface::TapPayload for TapResponsePayload {
-    fn data<B: Buf>(&mut self, data: &B) {
-        self.response_bytes += data.remaining();
-    }
-
-    fn eos(self, trls: Option<&http::HeaderMap>) {
+impl TapResponsePayload {
+    pub(crate) fn eos(self, trls: Option<&http::HeaderMap>) {
         let status = match trls {
             None => self.grpc_status,
             Some(t) => t
@@ -433,15 +428,13 @@ impl iface::TapPayload for TapResponsePayload {
         self.send(status.map(api::eos::End::GrpcStatusCode), trls);
     }
 
-    fn fail<E: HasH2Reason>(self, e: &E) {
+    pub(crate) fn fail<E: HasH2Reason>(self, e: &E) {
         let end = e
             .h2_reason()
             .map(|r| api::eos::End::ResetErrorCode(r.into()));
         self.send(end, None);
     }
-}
 
-impl TapResponsePayload {
     fn send(self, end: Option<api::eos::End>, trls: Option<&http::HeaderMap>) {
         let response_end_at = Instant::now();
         let trailers = if self.extract_headers {

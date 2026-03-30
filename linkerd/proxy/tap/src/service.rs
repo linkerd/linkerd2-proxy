@@ -1,4 +1,4 @@
-use crate::{grpc::TapResponsePayload, iface::TapPayload, registry::Registry, Inspect};
+use crate::{grpc::TapResponsePayload, registry::Registry, Inspect};
 use futures::ready;
 use linkerd_proxy_http::HasH2Reason;
 use linkerd_stack::{layer, NewService};
@@ -25,15 +25,14 @@ pub struct TapHttp<S, I> {
 // A `Body` instrumented with taps.
 #[pin_project(PinnedDrop, project = BodyProj)]
 #[derive(Debug)]
-pub struct Body<B, T>
+pub struct Body<B>
 where
     B: linkerd_proxy_http::Body,
     B::Error: HasH2Reason,
-    T: TapPayload,
 {
     #[pin]
     inner: B,
-    taps: Vec<T>,
+    taps: Vec<TapResponsePayload>,
 }
 
 // === NewTapHttp ===
@@ -76,7 +75,7 @@ where
     B: linkerd_proxy_http::Body,
     B::Error: HasH2Reason,
 {
-    type Response = http::Response<Body<B, TapResponsePayload>>;
+    type Response = http::Response<Body<B>>;
     type Error = S::Error;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, S::Error>> + Send + 'static>>;
 
@@ -118,15 +117,14 @@ where
     }
 }
 
-// === Body ===
+// === impl Body ===
 
-impl<B, T> Body<B, T>
+impl<B> Body<B>
 where
     B: linkerd_proxy_http::Body,
     B::Error: HasH2Reason,
-    T: TapPayload,
 {
-    fn new(inner: B, mut taps: Vec<T>) -> Self {
+    fn new(inner: B, mut taps: Vec<TapResponsePayload>) -> Self {
         // If the body is already finished, record the end of the stream.
         if inner.is_end_stream() {
             taps.drain(..).for_each(|t| t.eos(None));
@@ -136,12 +134,10 @@ where
     }
 }
 
-// `T` need not implement Default.
-impl<B, T> Default for Body<B, T>
+impl<B> Default for Body<B>
 where
     B: linkerd_proxy_http::Body + Default,
     B::Error: HasH2Reason,
-    T: TapPayload,
 {
     fn default() -> Self {
         Self {
@@ -151,11 +147,10 @@ where
     }
 }
 
-impl<B, T> linkerd_proxy_http::Body for Body<B, T>
+impl<B> linkerd_proxy_http::Body for Body<B>
 where
     B: linkerd_proxy_http::Body,
     B::Error: HasH2Reason,
-    T: TapPayload + Send + 'static,
 {
     type Data = B::Data;
     type Error = B::Error;
@@ -207,11 +202,10 @@ where
 }
 
 #[pinned_drop]
-impl<B, T> PinnedDrop for Body<B, T>
+impl<B> PinnedDrop for Body<B>
 where
     B: linkerd_proxy_http::Body,
     B::Error: HasH2Reason,
-    T: TapPayload,
 {
     fn drop(self: Pin<&mut Self>) {
         let BodyProj { inner: _, taps } = self.project();
