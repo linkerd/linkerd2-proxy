@@ -9,14 +9,14 @@ use tracing::trace;
 /// gRPC server.
 #[derive(Debug)]
 pub struct Registry {
-    inner: Arc<Mutex<Inner<Tap>>>,
+    inner: Arc<Mutex<Inner>>,
     taps_recv: watch::Receiver<Vec<Tap>>,
 }
 
 #[derive(Debug)]
-struct Inner<T> {
-    taps: Vec<T>,
-    taps_send: watch::Sender<Vec<T>>,
+struct Inner {
+    taps: Vec<Tap>,
+    taps_send: watch::Sender<Vec<Tap>>,
 }
 
 impl Default for Registry {
