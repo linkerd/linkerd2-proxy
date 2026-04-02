@@ -76,8 +76,11 @@ impl ConsecutiveFailures {
             loop {
                 tokio::select! {
                     _ = backoff.next() => break,
-                    // Ignore responses while the breaker is shut.
-                    _ = self.rsps.recv() => continue,
+                    // Ignore responses while the breaker is shut, but
+                    // terminate if the channel is closed. recv() on a
+                    // closed channel returns None immediately, which would
+                    // otherwise busy-spin this loop.
+                    rsp = self.rsps.recv() => { rsp.ok_or(())?; },
                     _ = self.gate.lost() => return Err(()),
                 }
             }
@@ -207,5 +210,43 @@ mod tests {
         send(Ok(http::StatusCode::OK));
         assert_pending!(task.poll());
         assert!(params.gate.is_open());
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn closed_state_terminates_on_channel_close() {
+        let _trace = linkerd_tracing::test::trace_init();
+
+        let (params, gate, rsps) = gate::Params::channel(1);
+        let send = |res: Result<http::StatusCode, http::StatusCode>| {
+            params
+                .responses
+                .try_send(classify::Class::Http(res))
+                .unwrap()
+        };
+
+        let backoff = ExponentialBackoff::try_new(
+            time::Duration::from_secs(1),
+            time::Duration::from_secs(100),
+            0.0,
+        )
+        .expect("backoff params are valid");
+
+        // max_failures=1: a single failure trips the breaker into closed state.
+        let breaker = ConsecutiveFailures::new(1, backoff, gate, rsps);
+        let mut task = task::spawn(breaker.run());
+
+        assert_pending!(task.poll());
+        assert!(params.gate.is_open());
+
+        // Trip the breaker into the closed state.
+        send(Err(http::StatusCode::INTERNAL_SERVER_ERROR));
+        assert_pending!(task.poll());
+        assert!(params.gate.is_shut(), "should be in closed state");
+
+        // Drop the response sender while in the closed state drain loop.
+        // The breaker must terminate rather than busy-spinning on None from
+        // the closed channel.
+        drop(params.responses);
+        assert!(task.poll().is_ready());
     }
 }
