@@ -108,7 +108,12 @@ impl ConsecutiveFailures {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::time;
+    use linkerd_app_core::{
+        proxy::http::{self, classify::BroadcastClassification, BoxBody},
+        svc::{self, ServiceExt},
+        Error,
+    };
+    use tokio::{task::yield_now, time};
     use tokio_test::{assert_pending, task};
 
     #[tokio::test(flavor = "current_thread", start_paused = true)]
@@ -248,5 +253,76 @@ mod tests {
         // the closed channel.
         drop(params.responses);
         assert!(task.poll().is_ready());
+    }
+
+    /// This test uses `tokio::spawn` (real task) instead of
+    /// `tokio_test::task::spawn` because the Gate + BroadcastClassification
+    /// service stack requires an actual task context for `oneshot()` to drive
+    /// response classification through the mpsc channel.
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn closed_state_terminates_when_service_drops_but_gate_rx_survives() {
+        let _trace = linkerd_tracing::test::trace_init();
+
+        let (params, gate, rsps) = gate::Params::channel(1);
+        // Keep an extra gate receiver alive to model a future stack change that
+        // retains gate state after the endpoint service itself is dropped.
+        let leaked_gate = params.gate.clone();
+
+        let backoff = ExponentialBackoff::try_new(
+            time::Duration::from_secs(1),
+            time::Duration::from_secs(100),
+            0.0,
+        )
+        .expect("backoff params are valid");
+
+        let breaker = ConsecutiveFailures::new(1, backoff, gate, rsps);
+        let breaker = tokio::spawn(breaker.run());
+
+        let svc = svc::Gate::new(
+            params.gate,
+            BroadcastClassification::<classify::Response, _>::new(
+                params.responses,
+                svc::mk(|_: http::Request<BoxBody>| async move {
+                    Ok::<_, Error>(
+                        http::Response::builder()
+                            .status(http::StatusCode::INTERNAL_SERVER_ERROR)
+                            .body(BoxBody::default())
+                            .unwrap(),
+                    )
+                }),
+            ),
+        );
+
+        let req = http::Request::builder()
+            .extension(classify::Response::default())
+            .body(BoxBody::default())
+            .unwrap();
+        let rsp = svc.oneshot(req).await.expect("service must succeed");
+        drop(rsp);
+
+        for _ in 0..16 {
+            if leaked_gate.is_shut() {
+                break;
+            }
+            yield_now().await;
+        }
+        assert!(
+            leaked_gate.is_shut(),
+            "breaker should enter the closed state"
+        );
+
+        for _ in 0..16 {
+            if breaker.is_finished() {
+                break;
+            }
+            yield_now().await;
+        }
+
+        assert!(
+            breaker.is_finished(),
+            "breaker should terminate when the response channel closes, \
+             even if a gate::Rx clone survives"
+        );
+        breaker.await.expect("breaker task must not panic");
     }
 }
