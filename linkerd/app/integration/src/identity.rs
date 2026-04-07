@@ -41,13 +41,13 @@ struct Certificates {
 }
 
 impl Certificates {
-    pub fn load<P>(p: P) -> Result<Certificates, io::Error>
+    pub fn load<P>(p: P) -> Result<Certificates, crate::Error>
     where
         P: AsRef<Path>,
     {
-        let f = fs::File::open(p)?;
-        let mut r = io::BufReader::new(f);
-        let mut certs = rustls_pemfile::certs(&mut r);
+        use rustls_pki_types::{pem::PemObject as _, CertificateDer};
+
+        let mut certs = CertificateDer::pem_file_iter(p)?;
         let leaf = certs
             .next()
             .expect("no leaf cert in pemfile")
@@ -98,9 +98,10 @@ impl Identity {
         certs: &Certificates,
         key: rustls::pki_types::PrivateKeyDer<'static>,
     ) -> (Arc<rustls::ClientConfig>, Arc<rustls::ServerConfig>) {
-        use std::io::Cursor;
+        use rustls_pki_types::{pem::PemObject as _, CertificateDer};
+
         let mut roots = rustls::RootCertStore::empty();
-        let trust_anchors = rustls_pemfile::certs(&mut Cursor::new(trust_anchors))
+        let trust_anchors = CertificateDer::pem_slice_iter(trust_anchors.as_bytes())
             .collect::<Result<Vec<_>, _>>()
             .expect("error parsing pemfile");
         let (added, skipped) = roots.add_parsable_certificates(trust_anchors);
