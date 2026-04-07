@@ -94,14 +94,14 @@ impl Identity {
     }
 
     fn configs(
-        trust_anchors: &str,
+        trust_anchors: impl AsRef<[u8]>,
         certs: &Certificates,
         key: rustls::pki_types::PrivateKeyDer<'static>,
     ) -> (Arc<rustls::ClientConfig>, Arc<rustls::ServerConfig>) {
         use rustls_pki_types::{pem::PemObject as _, CertificateDer};
 
         let mut roots = rustls::RootCertStore::empty();
-        let trust_anchors = CertificateDer::pem_slice_iter(trust_anchors.as_bytes())
+        let trust_anchors = CertificateDer::pem_slice_iter(trust_anchors.as_ref())
             .collect::<Result<Vec<_>, _>>()
             .expect("error parsing pemfile");
         let (added, skipped) = roots.add_parsable_certificates(trust_anchors);

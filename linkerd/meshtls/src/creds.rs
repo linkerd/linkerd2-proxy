@@ -20,12 +20,12 @@ pub struct InvalidTrustRoots(());
 pub fn watch(
     local_id: id::Id,
     server_name: dns::Name,
-    roots_pem: &str,
+    roots_pem: impl AsRef<[u8]>,
 ) -> Result<(Store, Receiver)> {
     let mut roots = rustls::RootCertStore::empty();
 
     let certs =
-        match CertificateDer::pem_slice_iter(roots_pem.as_bytes()).collect::<Result<Vec<_>, _>>() {
+        match CertificateDer::pem_slice_iter(roots_pem.as_ref()).collect::<Result<Vec<_>, _>>() {
             Err(error) => {
                 warn!(%error, "invalid trust anchors file");
                 return Err(error.into());
