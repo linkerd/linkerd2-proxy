@@ -1,6 +1,5 @@
 use super::match_::Match;
-use crate::{iface, Inspect, Registry};
-use bytes::Buf;
+use crate::{Inspect, Registry};
 use futures::ready;
 use futures::stream::Stream;
 use http_body::Body;
@@ -62,9 +61,6 @@ pub struct TapResponse {
     extract_headers: bool,
     tap: TapTx,
 }
-
-#[derive(Debug)]
-pub struct TapRequestPayload {}
 
 #[derive(Debug)]
 pub struct TapResponsePayload {
@@ -219,23 +215,15 @@ impl Shared {
 
 // === impl Tap ===
 
-impl iface::Tap for Tap {
-    type TapRequestPayload = TapRequestPayload;
-    type TapResponse = TapResponse;
-    type TapResponsePayload = TapResponsePayload;
-
-    fn can_tap_more(&self) -> bool {
+impl Tap {
+    pub(crate) fn can_tap_more(&self) -> bool {
         self.shared
             .upgrade()
             .map(|shared| shared.is_under_limit())
             .unwrap_or(false)
     }
 
-    fn tap<B, I>(
-        &mut self,
-        req: &http::Request<B>,
-        inspect: &I,
-    ) -> Option<(TapRequestPayload, TapResponse)>
+    pub(crate) fn tap<B, I>(&mut self, req: &http::Request<B>, inspect: &I) -> Option<TapResponse>
     where
         B: Body,
         I: Inspect,
@@ -331,23 +319,19 @@ impl iface::Tap for Tap {
 
         let tap = TapTx { id, tx: events_tx };
 
-        let req = TapRequestPayload {};
-        let rsp = TapResponse {
+        Some(TapResponse {
             tap,
             base_event,
             request_init_at,
             extract_headers,
-        };
-        Some((req, rsp))
+        })
     }
 }
 
 // === impl TapResponse ===
 
-impl iface::TapResponse for TapResponse {
-    type TapPayload = TapResponsePayload;
-
-    fn tap<B: Body>(self, rsp: &http::Response<B>) -> TapResponsePayload {
+impl TapResponse {
+    pub(crate) fn tap<B: Body>(self, rsp: &http::Response<B>) -> TapResponsePayload {
         let response_init_at = Instant::now();
 
         let headers = if self.extract_headers {
@@ -395,7 +379,7 @@ impl iface::TapResponse for TapResponse {
         }
     }
 
-    fn fail<E: HasH2Reason>(self, err: &E) {
+    pub(crate) fn fail<E: HasH2Reason>(self, err: &E) {
         let response_end_at = Instant::now();
         let reason = err.h2_reason();
         let since_request_init = response_end_at.saturating_duration_since(self.request_init_at);
@@ -420,24 +404,10 @@ impl iface::TapResponse for TapResponse {
     }
 }
 
-// === impl TapRequestPayload ===
-
-impl iface::TapPayload for TapRequestPayload {
-    fn data<B: Buf>(&mut self, _: &B) {}
-
-    fn eos(self, _: Option<&http::HeaderMap>) {}
-
-    fn fail<E: HasH2Reason>(self, _: &E) {}
-}
-
 // === impl TapResponsePayload ===
 
-impl iface::TapPayload for TapResponsePayload {
-    fn data<B: Buf>(&mut self, data: &B) {
-        self.response_bytes += data.remaining();
-    }
-
-    fn eos(self, trls: Option<&http::HeaderMap>) {
+impl TapResponsePayload {
+    pub(crate) fn eos(self, trls: Option<&http::HeaderMap>) {
         let status = match trls {
             None => self.grpc_status,
             Some(t) => t
@@ -449,15 +419,13 @@ impl iface::TapPayload for TapResponsePayload {
         self.send(status.map(api::eos::End::GrpcStatusCode), trls);
     }
 
-    fn fail<E: HasH2Reason>(self, e: &E) {
+    pub(crate) fn fail<E: HasH2Reason>(self, e: &E) {
         let end = e
             .h2_reason()
             .map(|r| api::eos::End::ResetErrorCode(r.into()));
         self.send(end, None);
     }
-}
 
-impl TapResponsePayload {
     fn send(self, end: Option<api::eos::End>, trls: Option<&http::HeaderMap>) {
         let response_end_at = Instant::now();
         let trailers = if self.extract_headers {

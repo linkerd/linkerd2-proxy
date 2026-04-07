@@ -1,6 +1,4 @@
-use super::iface::{Tap, TapPayload, TapResponse};
-use super::registry::Registry;
-use super::Inspect;
+use crate::{grpc::TapResponsePayload, registry::Registry, Inspect};
 use futures::ready;
 use linkerd_proxy_http::HasH2Reason;
 use linkerd_stack::{layer, NewService};
@@ -11,37 +9,36 @@ use std::task::{Context, Poll};
 
 /// Makes wrapped Services to record taps.
 #[derive(Clone, Debug)]
-pub struct NewTapHttp<N, T> {
+pub struct NewTapHttp<N> {
     inner: N,
-    registry: Registry<T>,
+    registry: Registry,
 }
 
 /// A middleware that records HTTP taps.
 #[derive(Clone, Debug)]
-pub struct TapHttp<S, I, T> {
+pub struct TapHttp<S, I> {
     inner: S,
     inspect: I,
-    registry: Registry<T>,
+    registry: Registry,
 }
 
 // A `Body` instrumented with taps.
 #[pin_project(PinnedDrop, project = BodyProj)]
 #[derive(Debug)]
-pub struct Body<B, T>
+pub struct Body<B>
 where
     B: linkerd_proxy_http::Body,
     B::Error: HasH2Reason,
-    T: TapPayload,
 {
     #[pin]
     inner: B,
-    taps: Vec<T>,
+    taps: Vec<TapResponsePayload>,
 }
 
 // === NewTapHttp ===
 
-impl<N, T> NewTapHttp<N, T> {
-    pub fn layer(registry: Registry<T>) -> impl layer::Layer<N, Service = Self> + Clone {
+impl<N> NewTapHttp<N> {
+    pub fn layer(registry: Registry) -> impl layer::Layer<N, Service = Self> + Clone {
         layer::mk(move |inner| Self {
             inner,
             registry: registry.clone(),
@@ -49,13 +46,12 @@ impl<N, T> NewTapHttp<N, T> {
     }
 }
 
-impl<N, I, T> NewService<I> for NewTapHttp<N, T>
+impl<N, I> NewService<I> for NewTapHttp<N>
 where
     N: NewService<I>,
     I: Inspect + Clone,
-    T: Clone,
 {
-    type Service = TapHttp<N::Service, I, T>;
+    type Service = TapHttp<N::Service, I>;
 
     fn new_service(&self, target: I) -> Self::Service {
         TapHttp {
@@ -68,22 +64,18 @@ where
 
 // === Service ===
 
-impl<S, I, T, A, B> tower::Service<http::Request<A>> for TapHttp<S, I, T>
+impl<S, I, A, B> tower::Service<http::Request<A>> for TapHttp<S, I>
 where
-    S: tower::Service<http::Request<Body<A, T::TapRequestPayload>>, Response = http::Response<B>>,
+    S: tower::Service<http::Request<A>, Response = http::Response<B>>,
     S::Error: HasH2Reason,
     S::Future: Send + 'static,
     I: Inspect,
-    T: Tap,
-    T::TapResponse: Send + 'static,
-    T::TapRequestPayload: Send + 'static,
-    T::TapResponsePayload: Send + 'static,
     A: linkerd_proxy_http::Body,
     A::Error: HasH2Reason,
     B: linkerd_proxy_http::Body,
     B::Error: HasH2Reason,
 {
-    type Response = http::Response<Body<B, T::TapResponsePayload>>;
+    type Response = http::Response<Body<B>>;
     type Error = S::Error;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, S::Error>> + Send + 'static>>;
 
@@ -94,21 +86,13 @@ where
 
     fn call(&mut self, req: http::Request<A>) -> Self::Future {
         // Record the request and obtain request-body and response taps.
-        let mut req_taps = Vec::new();
         let mut rsp_taps = Vec::new();
 
         for mut t in self.registry.get_taps() {
-            if let Some((req_tap, rsp_tap)) = t.tap(&req, &self.inspect) {
-                req_taps.push(req_tap);
+            if let Some(rsp_tap) = t.tap(&req, &self.inspect) {
                 rsp_taps.push(rsp_tap);
             }
         }
-
-        // Install the request taps into the request body.
-        let req = req.map(move |inner| Body {
-            inner,
-            taps: req_taps,
-        });
 
         let call = self.inner.call(req);
         Box::pin(async move {
@@ -131,15 +115,14 @@ where
     }
 }
 
-// === Body ===
+// === impl Body ===
 
-impl<B, T> Body<B, T>
+impl<B> Body<B>
 where
     B: linkerd_proxy_http::Body,
     B::Error: HasH2Reason,
-    T: TapPayload,
 {
-    fn new(inner: B, mut taps: Vec<T>) -> Self {
+    fn new(inner: B, mut taps: Vec<TapResponsePayload>) -> Self {
         // If the body is already finished, record the end of the stream.
         if inner.is_end_stream() {
             taps.drain(..).for_each(|t| t.eos(None));
@@ -149,12 +132,10 @@ where
     }
 }
 
-// `T` need not implement Default.
-impl<B, T> Default for Body<B, T>
+impl<B> Default for Body<B>
 where
     B: linkerd_proxy_http::Body + Default,
     B::Error: HasH2Reason,
-    T: TapPayload,
 {
     fn default() -> Self {
         Self {
@@ -164,11 +145,10 @@ where
     }
 }
 
-impl<B, T> linkerd_proxy_http::Body for Body<B, T>
+impl<B> linkerd_proxy_http::Body for Body<B>
 where
     B: linkerd_proxy_http::Body,
     B::Error: HasH2Reason,
-    T: TapPayload + Send + 'static,
 {
     type Data = B::Data;
     type Error = B::Error;
@@ -220,11 +200,10 @@ where
 }
 
 #[pinned_drop]
-impl<B, T> PinnedDrop for Body<B, T>
+impl<B> PinnedDrop for Body<B>
 where
     B: linkerd_proxy_http::Body,
     B::Error: HasH2Reason,
-    T: TapPayload,
 {
     fn drop(self: Pin<&mut Self>) {
         let BodyProj { inner: _, taps } = self.project();
