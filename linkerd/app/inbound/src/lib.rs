@@ -83,10 +83,6 @@ pub struct GatewayAddr(pub NameAddr);
 // error metrics can be recorded properly).
 
 #[derive(Debug, Error)]
-#[error("no identity provided")]
-pub struct GatewayIdentityRequired;
-
-#[derive(Debug, Error)]
 #[error("bad gateway domain")]
 pub struct GatewayDomainInvalid;
 

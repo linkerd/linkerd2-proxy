@@ -125,16 +125,6 @@ impl SyntheticHttpResponse {
         }
     }
 
-    pub fn unauthenticated(msg: impl ToString) -> Self {
-        Self {
-            http_status: http::StatusCode::FORBIDDEN,
-            grpc_status: tonic::Code::Unauthenticated,
-            close_connection: false,
-            message: Cow::Owned(msg.to_string()),
-            location: None,
-        }
-    }
-
     pub fn permission_denied(msg: impl ToString) -> Self {
         Self {
             http_status: http::StatusCode::FORBIDDEN,

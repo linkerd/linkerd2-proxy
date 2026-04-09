@@ -210,9 +210,6 @@ impl errors::HttpRescue<Error> for ServerRescue {
         if errors::is_caused_by::<crate::GatewayDomainInvalid>(&*error) {
             return Ok(errors::SyntheticHttpResponse::not_found(error));
         }
-        if errors::is_caused_by::<crate::GatewayIdentityRequired>(&*error) {
-            return Ok(errors::SyntheticHttpResponse::unauthenticated(error));
-        }
         if errors::is_caused_by::<crate::GatewayLoop>(&*error) {
             return Ok(errors::SyntheticHttpResponse::loop_detected(error));
         }

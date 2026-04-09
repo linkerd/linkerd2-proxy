@@ -4,7 +4,7 @@ mod tcp;
 pub(crate) use self::{http::HttpErrorMetrics, tcp::TcpErrorMetrics};
 use crate::{
     policy::{HttpRouteNotFound, HttpRouteUnauthorized, ServerUnauthorized},
-    GatewayDomainInvalid, GatewayIdentityRequired, GatewayLoop,
+    GatewayDomainInvalid, GatewayLoop,
 };
 use linkerd_app_core::{
     errors::{FailFastError, LoadShedError},
@@ -19,7 +19,6 @@ enum ErrorKind {
     FailFast,
     LoadShed,
     GatewayDomainInvalid,
-    GatewayIdentityRequired,
     GatewayLoop,
     Io,
     TlsDetectTimeout,
@@ -46,8 +45,6 @@ impl ErrorKind {
             Some(ErrorKind::TlsDetectTimeout)
         } else if err.is::<GatewayDomainInvalid>() {
             Some(ErrorKind::GatewayDomainInvalid)
-        } else if err.is::<GatewayIdentityRequired>() {
-            Some(ErrorKind::GatewayIdentityRequired)
         } else if err.is::<GatewayLoop>() {
             Some(ErrorKind::GatewayLoop)
         } else if err.is::<LoadShedError>() {
@@ -69,7 +66,6 @@ impl FmtLabels for ErrorKind {
                 ErrorKind::LoadShed => "loadshed",
                 ErrorKind::FailFast => "failfast",
                 ErrorKind::TlsDetectTimeout => "tls detection timeout",
-                ErrorKind::GatewayIdentityRequired => "gateway identity required",
                 ErrorKind::GatewayLoop => "gateway loop",
                 ErrorKind::GatewayDomainInvalid => "gateway domain invalid",
                 ErrorKind::Io => "i/o",
