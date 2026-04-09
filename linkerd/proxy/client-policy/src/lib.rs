@@ -564,7 +564,7 @@ pub mod proto {
                         ($($name:ident),+) => {
                             $(
                                 if $name.is_empty() {
-                                    return Err(InvalidMeta(concat!(stringify!($name, "must not be empty"))));
+                                    return Err(InvalidMeta(concat!(stringify!($name), " must not be empty")));
                                 }
                             )+
                         }
