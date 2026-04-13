@@ -12,8 +12,8 @@ test-util = ["linkerd-tls-test-util"]
 
 [dependencies]
 futures = { version = "0.3", default-features = false }
-rustls-pemfile = "2.2"
-rustls-webpki = { version = "0.103.11", default-features = false, features = ["std", "aws-lc-rs"] }
+rustls-pki-types = { workspace = true, features = ["alloc"] }
+rustls-webpki = { workspace = true, features = ["std", "aws-lc-rs"] }
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt", "sync"] }
 tokio-rustls = { workspace = true, features = ["aws-lc-rs"] }

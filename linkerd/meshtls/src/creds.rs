@@ -6,10 +6,11 @@ pub use self::{receiver::Receiver, store::Store};
 use linkerd_dns_name as dns;
 use linkerd_error::Result;
 use linkerd_identity as id;
+use rustls_pki_types::{pem::PemObject as _, CertificateDer};
 use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::watch;
-use tokio_rustls::rustls::{self};
+use tokio_rustls::rustls;
 use tracing::warn;
 
 #[derive(Debug, Error)]
@@ -19,22 +20,22 @@ pub struct InvalidTrustRoots(());
 pub fn watch(
     local_id: id::Id,
     server_name: dns::Name,
-    roots_pem: &str,
+    roots_pem: impl AsRef<[u8]>,
 ) -> Result<(Store, Receiver)> {
     let mut roots = rustls::RootCertStore::empty();
-    let certs = match rustls_pemfile::certs(&mut std::io::Cursor::new(roots_pem))
-        .collect::<Result<Vec<_>, _>>()
-    {
-        Err(error) => {
-            warn!(%error, "invalid trust anchors file");
-            return Err(error.into());
-        }
-        Ok(certs) if certs.is_empty() => {
-            warn!("no valid certs in trust anchors file");
-            return Err("no trust roots in PEM file".into());
-        }
-        Ok(certs) => certs,
-    };
+
+    let certs =
+        match CertificateDer::pem_slice_iter(roots_pem.as_ref()).collect::<Result<Vec<_>, _>>() {
+            Err(error) => {
+                warn!(%error, "invalid trust anchors file");
+                return Err(error.into());
+            }
+            Ok(certs) if certs.is_empty() => {
+                warn!("no valid certs in trust anchors file");
+                return Err("no trust roots in PEM file".into());
+            }
+            Ok(certs) => certs,
+        };
 
     let (added, skipped) = roots.add_parsable_certificates(certs);
     if skipped != 0 {

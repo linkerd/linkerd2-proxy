@@ -110,6 +110,8 @@ prometheus-client = { version = "0.23" }
 prost = { version = "0.14" }
 prost-build = { version = "0.14", default-features = false }
 prost-types = { version = "0.14" }
+rustls-pki-types = { version = "1.14" }
+rustls-webpki = { version = "0.103.11", default-features = false }
 tokio-rustls = { version = "0.26", default-features = false, features = [
     "logging",
 ] }
