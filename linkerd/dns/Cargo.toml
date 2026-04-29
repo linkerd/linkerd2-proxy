@@ -7,7 +7,7 @@ edition = { workspace = true }
 publish = { workspace = true }
 
 [dependencies]
-hickory-resolver = "0.25.2"
+hickory-resolver = "0.26.0"
 linkerd-dns-name = { path = "./name" }
 prometheus-client = { workspace = true }
 thiserror = "2"
