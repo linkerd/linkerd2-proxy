@@ -15,6 +15,6 @@ jobs:
     runs-on: ${{ vars.LINKERD2_PROXY_RUNNER || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
-      - uses: DavidAnson/markdownlint-cli2-action@6b51ade7a9e4a75a7ad929842dd298a3804ebe8b
+      - uses: DavidAnson/markdownlint-cli2-action@ded1f9488f68a970bc66ea5619e13e9b52e601cd
         with:
             globs: "**/*.md"
