@@ -106,6 +106,7 @@ drain = { version = "0.2", default-features = false }
 h2 = { version = "0.4" }
 http = { version = "1" }
 http-body = { version = "1" }
+httpdate = { version = "1.0" }
 hyper = { version = "1", default-features = false }
 prometheus-client = { version = "0.23" }
 prost = { version = "0.14" }

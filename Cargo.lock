@@ -1758,6 +1758,7 @@ dependencies = [
  "futures",
  "http",
  "http-body",
+ "httpdate",
  "linkerd-error",
  "linkerd-http-box",
  "linkerd-stack",
