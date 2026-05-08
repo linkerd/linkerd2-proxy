@@ -127,6 +127,18 @@ async fn mk_rsp(status: StatusCode, body: impl ToString) -> Result<Response> {
         .unwrap())
 }
 
+async fn mk_rsp_with_retry_after(
+    status: StatusCode,
+    retry_after_secs: u64,
+    body: impl ToString,
+) -> Result<Response> {
+    Ok(http::Response::builder()
+        .status(status)
+        .header(http::header::RETRY_AFTER, retry_after_secs.to_string())
+        .body(http::BoxBody::new(body.to_string()))
+        .unwrap())
+}
+
 async fn mk_grpc_rsp(code: tonic::Code) -> Result<Response> {
     Ok(http::Response::builder()
         .version(::http::Version::HTTP_2)

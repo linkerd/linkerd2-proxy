@@ -143,6 +143,10 @@ where
                         move |target: &Self| breaker::Params {
                             accrual: target.parent.param(),
                             channel_capacity,
+                            retry_after_store: breaker::RetryAfterStore::new(),
+                            grpc_retry_pushback_store: breaker::GrpcRetryPushbackStore::new(),
+                            max_duration:
+                                linkerd_proxy_client_policy::DEFAULT_RETRY_AFTER_MAX_DURATION,
                         }
                     }),
                 )

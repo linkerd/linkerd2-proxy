@@ -7,9 +7,12 @@ use tracing::{trace_span, Instrument};
 mod consecutive_failures;
 pub mod retry_after;
 mod unified;
+pub mod wrap_classify;
 
 use self::consecutive_failures::ConsecutiveFailures;
+pub use self::retry_after::{GrpcRetryPushbackStore, RetryAfterStore};
 use self::unified::{UnifiedBreaker, UnifiedBreakerConfig};
+pub use self::wrap_classify::{HasFailureAccrual, NewRetryAfterGateSet, RetryAfterGateParams};
 
 /// Reason why the circuit breaker tripped.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -24,10 +27,21 @@ pub enum TripReason {
 const DEFAULT_SUCCESS_RATE_DECAY: Duration = Duration::from_secs(10);
 
 /// Params configuring a circuit breaker stack.
+///
+/// Retry-After stores move hints from response classification to the
+/// circuit breaker backoff logic. A new pair is built for each endpoint and
+/// shared between that endpoint's classifier and its [`UnifiedBreaker`], so a
+/// hint seen on one endpoint never extends the backoff of another.
 #[derive(Clone, Debug)]
 pub(crate) struct Params {
     pub(crate) accrual: Option<FailureAccrual>,
     pub(crate) channel_capacity: usize,
+    /// Shared store for HTTP Retry-After hints.
+    pub(crate) retry_after_store: RetryAfterStore,
+    /// Shared store for gRPC retry pushback hints.
+    pub(crate) grpc_retry_pushback_store: GrpcRetryPushbackStore,
+    /// Maximum Retry-After duration the proxy will honor (clamping cap).
+    pub(crate) max_duration: Duration,
 }
 
 impl<T> svc::ExtractParam<gate::Params<classify::Class>, T> for Params {
