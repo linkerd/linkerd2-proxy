@@ -35,7 +35,7 @@ pub enum Routes {
     Endpoint(Remote<ServerAddr>, Arc<Metadata>),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug)]
 pub struct Concrete<T> {
     target: concrete::Dispatch,
     authority: Option<http::uri::Authority>,
@@ -43,6 +43,32 @@ pub struct Concrete<T> {
     parent_ref: ParentRef,
     backend_ref: BackendRef,
     failure_accrual: policy::FailureAccrual,
+}
+
+impl<T: PartialEq> PartialEq for Concrete<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.target == other.target
+            && self.authority == other.authority
+            && self.parent == other.parent
+            && self.parent_ref == other.parent_ref
+            && self.backend_ref == other.backend_ref
+        // failure_accrual intentionally excluded (does not
+        // determine identity)
+    }
+}
+
+impl<T: Eq> Eq for Concrete<T> {}
+
+impl<T: Hash> Hash for Concrete<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.target.hash(state);
+        self.authority.hash(state);
+        self.parent.hash(state);
+        self.parent_ref.hash(state);
+        self.backend_ref.hash(state);
+        // failure_accrual intentionally excluded (SuccessRateConfig
+        // contains f64 which does not impl Hash).
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
