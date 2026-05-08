@@ -19,6 +19,7 @@ pub struct Params<M, F, E> {
     pub routes: Arc<[http_route::Route<M, policy::RoutePolicy<F, E>>]>,
     pub backends: Arc<[policy::Backend]>,
     pub failure_accrual: Option<policy::FailureAccrual>,
+    pub retry_after: Option<policy::RetryAfterConfig>,
 }
 
 pub type HttpParams =
@@ -143,6 +144,7 @@ where
             routes,
             backends,
             failure_accrual,
+            retry_after,
         } = rts;
 
         let mk_concrete = {
@@ -163,6 +165,7 @@ where
                     backend_ref,
                     parent_ref: parent_ref.clone(),
                     failure_accrual: failure_accrual.clone(),
+                    retry_after,
                 }
             }
         };

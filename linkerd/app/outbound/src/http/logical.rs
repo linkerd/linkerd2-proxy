@@ -43,6 +43,7 @@ pub struct Concrete<T> {
     parent_ref: ParentRef,
     backend_ref: BackendRef,
     failure_accrual: Option<policy::FailureAccrual>,
+    retry_after: Option<policy::RetryAfterConfig>,
 }
 
 impl<T: PartialEq> PartialEq for Concrete<T> {
@@ -52,8 +53,10 @@ impl<T: PartialEq> PartialEq for Concrete<T> {
             && self.parent == other.parent
             && self.parent_ref == other.parent_ref
             && self.backend_ref == other.backend_ref
-        // failure_accrual intentionally excluded (does not
-        // determine identity)
+        // failure_accrual and retry_after are left out on purpose.
+        // They configure the breaker but do not determine backend
+        // identity, and the backend cache is rebuilt whenever a policy
+        // update changes them, so they need not take part in the key.
     }
 }
 
@@ -66,8 +69,9 @@ impl<T: Hash> Hash for Concrete<T> {
         self.parent.hash(state);
         self.parent_ref.hash(state);
         self.backend_ref.hash(state);
-        // failure_accrual intentionally excluded (SuccessRateConfig
-        // contains f64 which does not impl Hash).
+        // failure_accrual and retry_after are left out on purpose,
+        // matching the equality impl. They do not determine identity,
+        // and SuccessRateConfig contains an f64 that does not impl Hash.
     }
 }
 
@@ -181,6 +185,7 @@ where
                                     authority: None,
                                     parent,
                                     failure_accrual: None,
+                                    retry_after: None,
                                 })
                             }
                             Self::Profile(profile) => {
@@ -283,6 +288,12 @@ impl<T> svc::Param<Option<policy::FailureAccrual>> for Concrete<T> {
     }
 }
 
+impl<T> svc::Param<Option<policy::RetryAfterConfig>> for Concrete<T> {
+    fn param(&self) -> Option<policy::RetryAfterConfig> {
+        self.retry_after
+    }
+}
+
 // === impl CanonicalDstHeader ===
 
 impl From<CanonicalDstHeader> for http::HeaderPair {
@@ -291,5 +302,110 @@ impl From<CanonicalDstHeader> for http::HeaderPair {
             http::HeaderName::from_static(CANONICAL_DST_HEADER),
             http::HeaderValue::from_str(&dst.to_string()).expect("addr must be a valid header"),
         )
+    }
+}
+
+#[cfg(test)]
+mod identity_tests {
+    use super::*;
+    use crate::http::concrete;
+    use linkerd_app_core::{exp_backoff::ExponentialBackoff, NameAddr};
+    use linkerd_proxy_client_policy::Meta;
+    use std::{
+        collections::hash_map::DefaultHasher,
+        hash::{Hash, Hasher},
+        time::Duration,
+    };
+
+    fn hash_of<T: Hash>(value: &T) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        value.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    // Builds a `Concrete<()>` whose five identity fields are fixed, leaving
+    // the breaker configuration to the caller. The identity fields decide
+    // which backend the cache key selects.
+    fn base(
+        failure_accrual: Option<policy::FailureAccrual>,
+        retry_after: Option<policy::RetryAfterConfig>,
+    ) -> Concrete<()> {
+        let addr: NameAddr = "example.com:1234".parse().unwrap();
+        let meta = Meta::new_default("test");
+        Concrete {
+            target: concrete::Dispatch::Balance(addr.clone(), super::profile::DEFAULT_EWMA),
+            authority: Some(addr.as_http_authority()),
+            parent: (),
+            parent_ref: ParentRef(meta.clone()),
+            backend_ref: BackendRef(meta),
+            failure_accrual,
+            retry_after,
+        }
+    }
+
+    fn some_accrual() -> policy::FailureAccrual {
+        policy::FailureAccrual {
+            consecutive: policy::ConsecutiveFailures {
+                max_failures: 3,
+                backoff: ExponentialBackoff::new_unchecked(
+                    Duration::from_secs(1),
+                    Duration::from_secs(60),
+                    0.0,
+                ),
+            },
+            success_rate: None,
+        }
+    }
+
+    // The concrete target keeps breaker configuration out of its cache key on
+    // purpose, so two concretes that differ only in `failure_accrual` must
+    // compare equal and hash equal. Otherwise a config-only change would rebuild
+    // the backend cache.
+    #[test]
+    fn failure_accrual_does_not_affect_identity() {
+        let without = base(None, None);
+        let with = base(Some(some_accrual()), None);
+
+        assert_eq!(without, with);
+        assert_eq!(hash_of(&without), hash_of(&with));
+    }
+
+    // `retry_after` is also kept out of the cache key, so toggling it
+    // must not change a concrete's identity.
+    #[test]
+    fn retry_after_does_not_affect_identity() {
+        let without = base(None, None);
+        let with = base(
+            None,
+            Some(policy::RetryAfterConfig {
+                max_duration: Duration::from_secs(30),
+            }),
+        );
+
+        assert_eq!(without, with);
+        assert_eq!(hash_of(&without), hash_of(&with));
+    }
+
+    // Both breaker fields are kept out together. A concrete that holds full
+    // breaker configuration can be swapped with one that holds none.
+    #[test]
+    fn breaker_config_does_not_affect_identity() {
+        let without = base(None, None);
+        let with = base(
+            Some(some_accrual()),
+            Some(policy::RetryAfterConfig {
+                max_duration: Duration::from_secs(30),
+            }),
+        );
+
+        assert_eq!(without, with);
+        assert_eq!(hash_of(&without), hash_of(&with));
+
+        // Check that an identity field still tells concretes apart, so
+        // equality is not true for an empty reason.
+        let other_addr: NameAddr = "other.example.com:1234".parse().unwrap();
+        let mut different = base(None, None);
+        different.target = concrete::Dispatch::Balance(other_addr, super::profile::DEFAULT_EWMA);
+        assert_ne!(without, different);
     }
 }

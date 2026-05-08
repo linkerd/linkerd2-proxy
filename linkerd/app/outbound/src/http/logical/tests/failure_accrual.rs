@@ -57,6 +57,7 @@ async fn consecutive_failures_accrue() {
                 },
                 success_rate: None,
             }),
+            retry_after: None,
         })));
     let target = Target {
         num: 1,
@@ -222,6 +223,7 @@ async fn balancer_doesnt_select_tripped_breakers() {
                 },
                 success_rate: None,
             }),
+            retry_after: None,
         })));
     let target = Target {
         num: 1,
@@ -322,6 +324,7 @@ async fn retry_after_hint_does_not_bleed_across_endpoints() {
                 },
                 success_rate: None,
             }),
+            retry_after: None,
         })));
     let target = Target {
         num: 1,

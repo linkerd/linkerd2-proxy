@@ -34,6 +34,7 @@ async fn routes() {
             backends: Arc::new([backend.clone()]),
             routes: Arc::new([default_route(backend)]),
             failure_accrual: None,
+            retry_after: None,
         })));
     let target = Target {
         num: 1,

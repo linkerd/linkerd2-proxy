@@ -231,28 +231,39 @@ impl HttpSidecar {
         // protocol changes but remains HTTP-ish, we propagate those
         // changes. If the protocol flips to an opaque protocol, we ignore
         // the protocol update.
-        let (routes, failure_accrual) = match policy.protocol {
+        let (routes, failure_accrual, retry_after) = match policy.protocol {
             policy::Protocol::Detect {
                 ref http1,
                 ref http2,
                 ..
             } => match version {
-                http::Variant::Http1 => (http1.routes.clone(), http1.failure_accrual.clone()),
-                http::Variant::H2 => (http2.routes.clone(), http2.failure_accrual.clone()),
+                http::Variant::Http1 => (
+                    http1.routes.clone(),
+                    http1.failure_accrual.clone(),
+                    http1.retry_after,
+                ),
+                http::Variant::H2 => (
+                    http2.routes.clone(),
+                    http2.failure_accrual.clone(),
+                    http2.retry_after,
+                ),
             },
             policy::Protocol::Http1(policy::http::Http1 {
                 ref routes,
                 ref failure_accrual,
+                retry_after,
                 ..
-            }) => (routes.clone(), failure_accrual.clone()),
+            }) => (routes.clone(), failure_accrual.clone(), retry_after),
             policy::Protocol::Http2(policy::http::Http2 {
                 ref routes,
                 ref failure_accrual,
+                retry_after,
                 ..
-            }) => (routes.clone(), failure_accrual.clone()),
+            }) => (routes.clone(), failure_accrual.clone(), retry_after),
             policy::Protocol::Grpc(policy::grpc::Grpc {
                 ref routes,
                 ref failure_accrual,
+                retry_after,
                 ..
             }) => {
                 return Some(http::Routes::Policy(http::policy::Params::Grpc(
@@ -262,6 +273,7 @@ impl HttpSidecar {
                         backends: policy.backends.clone(),
                         routes: routes.clone(),
                         failure_accrual: failure_accrual.clone(),
+                        retry_after,
                     },
                 )))
             }
@@ -280,6 +292,7 @@ impl HttpSidecar {
                 routes,
                 backends: policy.backends.clone(),
                 failure_accrual,
+                retry_after,
             },
         )))
     }

@@ -5,7 +5,6 @@ use crate::{
     stack_labels, BackendRef, ParentRef,
 };
 use linkerd_app_core::{
-    classify,
     config::{ConnectConfig, QueueConfig},
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
@@ -15,7 +14,9 @@ use linkerd_app_core::{
     transport::addrs::*,
     Error, NameAddr,
 };
-use linkerd_proxy_client_policy::FailureAccrual;
+use linkerd_proxy_client_policy::{
+    FailureAccrual, RetryAfterConfig, DEFAULT_RETRY_AFTER_MAX_DURATION,
+};
 use std::{fmt::Debug, net::SocketAddr};
 use tracing::info_span;
 
@@ -71,12 +72,25 @@ impl<T: svc::Param<BackendRef>> svc::Param<BackendRef> for Balance<T> {
     }
 }
 
+impl<T: svc::Param<Option<FailureAccrual>>> breaker::HasFailureAccrual for Balance<T> {
+    fn failure_accrual(&self) -> Option<FailureAccrual> {
+        self.parent.param()
+    }
+}
+
+impl<T: svc::Param<Option<RetryAfterConfig>>> svc::Param<Option<RetryAfterConfig>> for Balance<T> {
+    fn param(&self) -> Option<RetryAfterConfig> {
+        self.parent.param()
+    }
+}
+
 impl<T> Balance<T>
 where
     // Parent target.
     T: svc::Param<ParentRef>,
     T: svc::Param<BackendRef>,
     T: svc::Param<Option<FailureAccrual>>,
+    T: svc::Param<Option<RetryAfterConfig>>,
     T: Clone + Debug + Send + Sync + 'static,
 {
     pub(super) fn layer<N, NSvc, R>(
@@ -137,19 +151,12 @@ where
                 })
                 .push_on_service(svc::MapErr::layer_boxed())
                 .lift_new_with_target()
-                .push(
-                    http::NewClassifyGateSet::<classify::Response, _, _, _>::layer_via({
-                        let channel_capacity = http_queue.capacity;
-                        move |target: &Self| breaker::Params {
-                            accrual: target.parent.param(),
-                            channel_capacity,
-                            retry_after_store: breaker::RetryAfterStore::new(),
-                            grpc_retry_pushback_store: breaker::GrpcRetryPushbackStore::new(),
-                            max_duration:
-                                linkerd_proxy_client_policy::DEFAULT_RETRY_AFTER_MAX_DURATION,
-                        }
-                    }),
-                )
+                .push(breaker::NewRetryAfterGateSet::layer(
+                    breaker::RetryAfterGateParams::new(
+                        http_queue.capacity,
+                        DEFAULT_RETRY_AFTER_MAX_DURATION,
+                    ),
+                ))
                 .push_on_service(svc::OnServiceLayer::new(
                     stack_metrics.layer(stack_labels("http", "endpoint")),
                 ))

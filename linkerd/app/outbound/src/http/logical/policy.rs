@@ -11,7 +11,9 @@ pub use self::{
     route::{errors, GrpcRouteMetrics, HttpRouteMetrics},
     router::{GrpcParams, HttpParams},
 };
-pub use linkerd_proxy_client_policy::{ClientPolicy, ConsecutiveFailures, FailureAccrual};
+pub use linkerd_proxy_client_policy::{
+    ClientPolicy, ConsecutiveFailures, FailureAccrual, RetryAfterConfig,
+};
 
 /// HTTP or gRPC policy route parameters.
 #[derive(Clone, Debug, PartialEq)]

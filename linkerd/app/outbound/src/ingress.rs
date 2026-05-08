@@ -542,9 +542,17 @@ fn policy_routes(
             ref http2,
             ..
         } => {
-            let (routes, failure_accrual) = match version {
-                http::Variant::Http1 => (http1.routes.clone(), http1.failure_accrual.clone()),
-                http::Variant::H2 => (http2.routes.clone(), http2.failure_accrual.clone()),
+            let (routes, failure_accrual, retry_after) = match version {
+                http::Variant::Http1 => (
+                    http1.routes.clone(),
+                    http1.failure_accrual.clone(),
+                    http1.retry_after,
+                ),
+                http::Variant::H2 => (
+                    http2.routes.clone(),
+                    http2.failure_accrual.clone(),
+                    http2.retry_after,
+                ),
             };
             Some(http::Routes::Policy(http::policy::Params::Http(
                 http::policy::HttpParams {
@@ -553,6 +561,7 @@ fn policy_routes(
                     backends: policy.backends.clone(),
                     routes,
                     failure_accrual,
+                    retry_after,
                 },
             )))
         }
@@ -562,6 +571,7 @@ fn policy_routes(
         policy::Protocol::Http1(policy::http::Http1 {
             ref routes,
             ref failure_accrual,
+            retry_after,
             ..
         }) => Some(http::Routes::Policy(http::policy::Params::Http(
             http::policy::HttpParams {
@@ -570,11 +580,13 @@ fn policy_routes(
                 backends: policy.backends.clone(),
                 routes: routes.clone(),
                 failure_accrual: failure_accrual.clone(),
+                retry_after,
             },
         ))),
         policy::Protocol::Http2(policy::http::Http2 {
             ref routes,
             ref failure_accrual,
+            retry_after,
             ..
         }) => Some(http::Routes::Policy(http::policy::Params::Http(
             http::policy::HttpParams {
@@ -583,11 +595,13 @@ fn policy_routes(
                 backends: policy.backends.clone(),
                 routes: routes.clone(),
                 failure_accrual: failure_accrual.clone(),
+                retry_after,
             },
         ))),
         policy::Protocol::Grpc(policy::grpc::Grpc {
             ref routes,
             ref failure_accrual,
+            retry_after,
             ..
         }) => Some(http::Routes::Policy(http::policy::Params::Grpc(
             http::policy::GrpcParams {
@@ -596,6 +610,7 @@ fn policy_routes(
                 backends: policy.backends.clone(),
                 routes: routes.clone(),
                 failure_accrual: failure_accrual.clone(),
+                retry_after,
             },
         ))),
         _ => None,

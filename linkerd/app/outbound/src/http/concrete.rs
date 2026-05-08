@@ -20,7 +20,7 @@ use linkerd_app_core::{
     transport::{self, addrs::*},
     Error, Infallible, NameAddr, Result,
 };
-use linkerd_proxy_client_policy::FailureAccrual;
+use linkerd_proxy_client_policy::{FailureAccrual, RetryAfterConfig};
 use std::{fmt::Debug, net::SocketAddr, sync::Arc};
 use tracing::info_span;
 
@@ -77,6 +77,7 @@ impl<N> Outbound<N> {
         T: svc::Param<BackendRef>,
         T: svc::Param<Dispatch>,
         T: svc::Param<Option<FailureAccrual>>,
+        T: svc::Param<Option<RetryAfterConfig>>,
         T: Clone + Debug + Send + Sync + 'static,
         // Endpoint resolution.
         R: Resolve<ConcreteAddr, Error = Error, Endpoint = Metadata>,

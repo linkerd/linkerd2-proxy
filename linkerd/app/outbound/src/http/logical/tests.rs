@@ -265,6 +265,7 @@ fn mock_http(params: client_policy::http::RouteParams) -> (svc::BoxCloneHttp, Ha
         backends: Arc::new([backend]),
         routes: Arc::new([route]),
         failure_accrual: None,
+        retry_after: None,
     }))
 }
 
@@ -278,6 +279,7 @@ fn mock_grpc(params: client_policy::grpc::RouteParams) -> (svc::BoxCloneHttp, Ha
         backends: Arc::new([backend]),
         routes: Arc::new([route]),
         failure_accrual: None,
+        retry_after: None,
     }))
 }
 
