@@ -36,10 +36,21 @@ pub struct ResponseBody<C: ClassifyEos, B> {
     state: Option<State<C, C::Class>>,
 }
 
-#[derive(Debug)]
+/// State for tracking a response classification.
 struct State<C, T> {
+    /// The classifier for this response.
     classify: C,
+    /// Channel to send classification results.
     tx: mpsc::Sender<T>,
+}
+
+impl<C: Debug, T> Debug for State<C, T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("State")
+            .field("classify", &self.classify)
+            .field("tx", &self.tx)
+            .finish()
+    }
 }
 
 // === impl BroadcastClassification ===
@@ -125,7 +136,9 @@ where
             Err(e) => {
                 if let Some(State { classify, tx }) = this.state.take() {
                     let class = classify.error(&e);
-                    let _ = tx.try_send(class);
+                    if tx.try_send(class).is_err() {
+                        tracing::debug!("Classification dropped due to channel backpressure");
+                    }
                 }
                 Poll::Ready(Err(e))
             }
@@ -152,7 +165,9 @@ where
             None => {
                 // Classify the stream if it has reached a `None`.
                 if let Some(State { classify, tx }) = this.state.take() {
-                    let _ = tx.try_send(classify.eos(None));
+                    if tx.try_send(classify.eos(None)).is_err() {
+                        tracing::debug!("Classification dropped due to channel backpressure");
+                    }
                 }
                 Poll::Ready(None)
             }
@@ -160,7 +175,9 @@ where
                 // Classify the stream if this is a trailers frame.
                 if let trls @ Some(_) = data.trailers_ref() {
                     if let Some(State { classify, tx }) = this.state.take() {
-                        let _ = tx.try_send(classify.eos(trls));
+                        if tx.try_send(classify.eos(trls)).is_err() {
+                            tracing::debug!("Classification dropped due to channel backpressure");
+                        }
                     }
                 }
                 Poll::Ready(Some(Ok(data)))
@@ -168,7 +185,9 @@ where
             Some(Err(e)) => {
                 // Classify the stream if an error has been encountered.
                 if let Some(State { classify, tx }) = this.state.take() {
-                    let _ = tx.try_send(classify.error(&e));
+                    if tx.try_send(classify.error(&e)).is_err() {
+                        tracing::debug!("Classification dropped due to channel backpressure");
+                    }
                 }
                 Poll::Ready(Some(Err(e)))
             }
@@ -192,7 +211,9 @@ impl<C: ClassifyEos, B> PinnedDrop for ResponseBody<C, B> {
         tracing::debug!("dropping ResponseBody");
         if let Some(State { classify, tx }) = self.project().state.take() {
             tracing::debug!("sending EOS to classify");
-            let _ = tx.try_send(classify.eos(None));
+            if tx.try_send(classify.eos(None)).is_err() {
+                tracing::debug!("Classification dropped due to channel backpressure");
+            }
         }
     }
 }
