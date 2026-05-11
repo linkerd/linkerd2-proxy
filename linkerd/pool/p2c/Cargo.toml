@@ -10,7 +10,7 @@ publish = { workspace = true }
 ahash = "0.8"
 futures = { version = "0.3", default-features = false }
 prometheus-client = { workspace = true }
-rand = { version = "0.9", features = ["small_rng"] }
+rand = { workspace = true, features = ["small_rng", "thread_rng"] }
 tracing = { workspace = true }
 
 linkerd-error = { path = "../../error" }

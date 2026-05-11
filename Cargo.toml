@@ -135,3 +135,8 @@ features = ["tokio", "tracing"]
 
 [workspace.dependencies.linkerd2-proxy-api]
 version = "0.18.0"
+
+[workspace.dependencies.rand]
+version = "0.9"
+default-features = false
+features = ["std", "std_rng", "os_rng"]

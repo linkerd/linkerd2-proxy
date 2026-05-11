@@ -16,7 +16,7 @@ http = { workspace = true }
 linkerd-error = { path = "../error" }
 linkerd-stack = { path = "../stack" }
 opentelemetry-semantic-conventions = { version = "0.31", default-features = false, features = ["semconv_experimental"] }
-rand = "0.9"
+rand = { workspace = true, features = ["thread_rng"] }
 thiserror = "2"
 tower = { workspace = true, default-features = false, features = ["util"] }
 tracing = { workspace = true }
