@@ -110,7 +110,6 @@ prometheus-client = { version = "0.23" }
 prost = { version = "0.14" }
 prost-build = { version = "0.14", default-features = false }
 prost-types = { version = "0.14" }
-rand = { version = "0.9", default-features = false }
 rustls-pki-types = { version = "1.14" }
 rustls-webpki = { version = "0.103.13", default-features = false }
 tokio-rustls = { version = "0.26", default-features = false, features = [
@@ -136,3 +135,8 @@ features = ["tokio", "tracing"]
 
 [workspace.dependencies.linkerd2-proxy-api]
 version = "0.18.0"
+
+[workspace.dependencies.rand]
+version = "0.9"
+default-features = false
+features = ["std", "std_rng", "os_rng"]
