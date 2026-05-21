@@ -22,6 +22,7 @@ members = [
     "linkerd/error",
     "linkerd/errno",
     "linkerd/error-respond",
+    "linkerd/ewma",
     "linkerd/exp-backoff",
     "linkerd/http/access-log",
     "linkerd/http/body-eos",

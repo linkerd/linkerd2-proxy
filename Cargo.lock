@@ -1688,6 +1688,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd-ewma"
+version = "0.1.0"
+dependencies = [
+ "tokio",
+]
+
+[[package]]
 name = "linkerd-exp-backoff"
 version = "0.1.0"
 dependencies = [
