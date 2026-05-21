@@ -595,3 +595,988 @@ impl<F, Rsp> PinnedDrop for LoadBiaserFuture<F, Rsp> {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::convert::Infallible;
+    use tokio::time;
+
+    impl<S> LoadBiaser<S> {
+        pub fn get_rtt(&self) -> f64 {
+            self.shared.metrics.read().rtt.get()
+        }
+
+        pub fn get_penalty(&self) -> f64 {
+            self.shared.metrics.read().penalty.get()
+        }
+
+        pub fn get_pending(&self) -> u32 {
+            self.shared.pending.load(Ordering::Acquire)
+        }
+
+        pub fn inject_penalty(&self, penalty_secs: f64) {
+            self.shared
+                .metrics
+                .write()
+                .penalty
+                .add_peak(penalty_secs, Instant::now());
+        }
+
+        pub fn inject_rtt(&self, rtt_secs: f64) {
+            self.shared
+                .metrics
+                .write()
+                .rtt
+                .add_peak(rtt_secs, Instant::now());
+        }
+    }
+
+    // Mock service for testing returning a specific HTTP status.
+    #[derive(Clone)]
+    struct MockService {
+        status: http::StatusCode,
+    }
+
+    impl MockService {
+        fn new(status: http::StatusCode) -> Self {
+            Self { status }
+        }
+    }
+
+    impl Service<()> for MockService {
+        type Response = http::Response<&'static str>;
+        type Error = Infallible;
+        type Future = futures::future::Ready<Result<Self::Response, Self::Error>>;
+
+        fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn call(&mut self, _: ()) -> Self::Future {
+            let resp = http::Response::builder()
+                .status(self.status)
+                .body("test")
+                .unwrap();
+            futures::future::ready(Ok(resp))
+        }
+    }
+
+    // Mock service that always returns an error.
+    #[derive(Clone)]
+    struct ErrorService;
+
+    impl Service<()> for ErrorService {
+        type Response = http::Response<&'static str>;
+        type Error = &'static str;
+        type Future = futures::future::Ready<Result<Self::Response, Self::Error>>;
+
+        fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn call(&mut self, _: ()) -> Self::Future {
+            futures::future::ready(Err("connection refused"))
+        }
+    }
+
+    fn test_config() -> LoadBiaserConfig {
+        LoadBiaserConfig {
+            default_rtt: Duration::from_millis(100), // 0.1s default
+            rtt_decay: Duration::from_secs(10),
+            penalty_secs: 5.0,
+            penalty_decay: Duration::from_secs(10),
+            enabled: true,
+            max_duration: DEFAULT_RETRY_AFTER_MAX_DURATION,
+        }
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_load_uses_default_rtt_initially() {
+        let inner = MockService::new(http::StatusCode::OK);
+        let biaser = LoadBiaser::new(inner, test_config());
+
+        // Initial load should be default_rtt * (pending + 1) = 0.1 * 1 = 0.1
+        let load = biaser.load();
+        assert!(
+            (load - 0.1).abs() < 0.001,
+            "initial load should be ~0.1 (default RTT): {}",
+            load
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_pending_increases_load() {
+        let inner = MockService::new(http::StatusCode::OK);
+        let biaser = LoadBiaser::new(inner, test_config());
+
+        // Inject a known RTT
+        time::sleep(Duration::from_millis(1)).await;
+        biaser.inject_rtt(0.05); // 50ms
+
+        // RTT * (0 + 1) = 0.05
+        let load_idle = biaser.load();
+
+        // Start a request (not awaited yet)
+        // Increment pending to simulate in-flight requests
+        biaser.shared.pending.fetch_add(1, Ordering::AcqRel);
+
+        // RTT * (1 + 1) = 0.05 * 2 = 0.1
+        let load_one_pending = biaser.load();
+
+        // Increment again
+        biaser.shared.pending.fetch_add(1, Ordering::AcqRel);
+
+        // RTT * (2 + 1) = 0.05 * 3 = 0.15
+        let load_two_pending = biaser.load();
+
+        assert!(
+            load_one_pending > load_idle,
+            "load should increase with pending: {} > {}",
+            load_one_pending,
+            load_idle
+        );
+        assert!(
+            load_two_pending > load_one_pending,
+            "load should increase more: {} > {}",
+            load_two_pending,
+            load_one_pending
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_rtt_tracked_after_request() {
+        let inner = MockService::new(http::StatusCode::OK);
+        let mut biaser = LoadBiaser::new(inner, test_config());
+
+        // Advance time so EWMA accepts updates
+        time::sleep(Duration::from_millis(1)).await;
+
+        // RTT should start at default_rtt (0.1s) before any requests
+        let initial_rtt = biaser.get_rtt();
+        assert!(
+            (initial_rtt - 0.1).abs() < 0.01,
+            "RTT should start at default_rtt (0.1s), got: {initial_rtt}"
+        );
+
+        // Make a request (will record RTT)
+        let _ = biaser.call(()).await;
+
+        // RTT should now reflect the actual request latency
+        let rtt = biaser.get_rtt();
+        assert!(
+            rtt < initial_rtt,
+            "RTT should decrease after a fast request"
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_429_injects_penalty() {
+        let inner = MockService::new(http::StatusCode::TOO_MANY_REQUESTS);
+        let mut biaser = LoadBiaser::new(inner, test_config());
+
+        time::sleep(Duration::from_millis(1)).await;
+
+        // Penalty should be infinite (none) before we get requests.
+        assert!(biaser.get_penalty().is_infinite());
+
+        // Make a request that returns 429.
+        let _ = biaser.call(()).await;
+
+        // A penalty should be injected (5 seconds) after seeing a 429
+        let penalty = biaser.get_penalty();
+        assert!(
+            (penalty - 5.0).abs() < 0.1,
+            "penalty should be ~5s after 429: {}",
+            penalty
+        );
+
+        // Load should be at least the penalty.
+        let load = biaser.load();
+        assert!(load >= 4.9, "load should be high after 429: {}", load);
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_200_does_not_inject_penalty() {
+        let inner = MockService::new(http::StatusCode::OK);
+        let mut biaser = LoadBiaser::new(inner, test_config());
+
+        time::sleep(Duration::from_millis(1)).await;
+
+        // Make a request that returns 200.
+        let _ = biaser.call(()).await;
+
+        // Penalty should still be infinite (none).
+        assert!(
+            biaser.get_penalty().is_infinite(),
+            "penalty should not be injected for 200"
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_penalty_decays_over_time() {
+        let inner = MockService::new(http::StatusCode::TOO_MANY_REQUESTS);
+        // Use a custom config with default_rtt=1ms (0.001s) so load() tracks penalty directly.
+        // inject_rtt(0.001) would be a no-op here: add_peak() only replaces when the new
+        // value exceeds the decayed current value, so 0.001 < 0.1 (test_config default)
+        // would fail the peak check and fall through to add() which no-ops at ts==self.timestamp.
+        let config = LoadBiaserConfig {
+            default_rtt: Duration::from_millis(1),
+            ..test_config()
+        };
+        let mut biaser = LoadBiaser::new(inner, config);
+
+        time::sleep(Duration::from_millis(1)).await;
+
+        // Trigger penalty via 429 response
+        let _ = biaser.call(()).await;
+
+        // After call completes, pending is back to 0 (LoadBiaserFuture::poll decrements
+        // before returning Poll::Ready), so load = max(rtt * 1, penalty).
+        assert_eq!(
+            biaser.get_pending(),
+            0,
+            "pending should be 0 after call completes"
+        );
+
+        // load() calls get_at(now) which projects the decayed penalty.
+        // Immediately after injection: penalty ~5.0, rtt ~0.001, so load ~5.0
+        let load_before = biaser.load();
+        assert!(
+            load_before > 4.0,
+            "load before decay should be dominated by the injected 429 penalty: {}",
+            load_before
+        );
+
+        // Advance time by one decay period (10s).
+        // Penalty decays: 5.0 * e^(-10/10) ~ 1.839
+        time::sleep(Duration::from_secs(10)).await;
+
+        // load() projects the decayed penalty at the new timestamp.
+        // No EWMA mutation needed since this is pure projection.
+        let load_after = biaser.load();
+        assert!(
+            load_after > 1.0,
+            "load after one decay period should still be dominated by decayed penalty: {}",
+            load_after
+        );
+        assert!(
+            load_after < 2.5,
+            "load after one decay period should reflect substantial decay (5.0 * e^-1 ~ 1.839): {}",
+            load_after
+        );
+        assert!(
+            load_after < load_before,
+            "penalty should decay over time as observed through load(): {} < {}",
+            load_after,
+            load_before
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_load_is_max_of_rtt_based_and_penalty() {
+        let inner = MockService::new(http::StatusCode::OK);
+        let biaser = LoadBiaser::new(inner, test_config());
+
+        time::sleep(Duration::from_millis(1)).await;
+
+        // Inject a high RTT (10 seconds)
+        biaser.inject_rtt(10.0);
+
+        // Inject a lower penalty (1 second)
+        biaser.inject_penalty(1.0);
+
+        // Load should be RTT-based since it's higher: 10 * 1 = 10
+        let load = biaser.load();
+        assert!(
+            (load - 10.0).abs() < 0.1,
+            "load should be RTT-based when higher: {}",
+            load
+        );
+
+        // Now inject a very high penalty
+        biaser.inject_penalty(20.0);
+
+        // Load should be penalty since it's higher
+        let load = biaser.load();
+        assert!(
+            (load - 20.0).abs() < 0.1,
+            "load should be penalty when higher: {}",
+            load
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_clone_shares_state() {
+        let inner = MockService::new(http::StatusCode::TOO_MANY_REQUESTS);
+        let mut biaser1 = LoadBiaser::new(inner.clone(), test_config());
+        let biaser2 = biaser1.clone();
+
+        time::sleep(Duration::from_millis(1)).await;
+
+        // Trigger penalty on biaser1
+        let _ = biaser1.call(()).await;
+
+        // biaser2 should see the same penalty (shared state)
+        assert_eq!(biaser1.get_penalty(), biaser2.get_penalty());
+        assert_eq!(biaser1.load(), biaser2.load());
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_pending_decremented_on_completion() {
+        let inner = MockService::new(http::StatusCode::OK);
+        let mut biaser = LoadBiaser::new(inner, test_config());
+
+        assert_eq!(biaser.get_pending(), 0, "pending should start at 0");
+
+        // Start a request, pending increments
+        let fut = biaser.call(());
+        assert_eq!(
+            biaser.get_pending(),
+            1,
+            "pending should be 1 during request"
+        );
+
+        // Complete the request, pending decrements
+        let _ = fut.await;
+        assert_eq!(
+            biaser.get_pending(),
+            0,
+            "pending should be 0 after completion"
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_rtt_not_updated_on_error() {
+        let inner = ErrorService;
+        let mut biaser = LoadBiaser::new(inner, test_config());
+
+        time::sleep(Duration::from_millis(1)).await;
+
+        // RTT should start at default_rtt before any requests
+        let initial_rtt = biaser.get_rtt();
+        assert!(
+            (initial_rtt - 0.1).abs() < 0.01,
+            "RTT should start at default_rtt (0.1s), got: {initial_rtt}"
+        );
+
+        // Make a request that returns an error
+        let _ = biaser.call(()).await;
+
+        // RTT should remain at default_rtt because error responses don't
+        // update RTT. This prevents P2C from routing more traffic to broken
+        // endpoints that fail fast (appearing "fast" to the load metric).
+        let rtt_after_error = biaser.get_rtt();
+        assert!(
+            (rtt_after_error - initial_rtt).abs() < 0.01,
+            "RTT should not change on error responses: {rtt_after_error} vs {initial_rtt}"
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_pending_decremented_on_cancellation() {
+        use tokio::sync::oneshot;
+
+        // Build a service whose response future blocks on a oneshot receiver.
+        // This lets us drop the future mid-flight to test PinnedDrop.
+        struct DelayedService {
+            rx: Option<oneshot::Receiver<http::Response<&'static str>>>,
+        }
+
+        impl Service<()> for DelayedService {
+            type Response = http::Response<&'static str>;
+            type Error = Infallible;
+            type Future = DelayedFuture;
+
+            fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+                Poll::Ready(Ok(()))
+            }
+
+            fn call(&mut self, _: ()) -> Self::Future {
+                DelayedFuture {
+                    rx: self.rx.take().expect("called more than once"),
+                }
+            }
+        }
+
+        struct DelayedFuture {
+            rx: oneshot::Receiver<http::Response<&'static str>>,
+        }
+
+        impl std::future::Future for DelayedFuture {
+            type Output = Result<http::Response<&'static str>, Infallible>;
+
+            fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+                match Pin::new(&mut self.rx).poll(cx) {
+                    Poll::Ready(Ok(resp)) => Poll::Ready(Ok(resp)),
+                    Poll::Ready(Err(_)) => {
+                        // Sender dropped. Return a default response
+                        let resp = http::Response::builder()
+                            .status(http::StatusCode::OK)
+                            .body("cancelled")
+                            .unwrap();
+
+                        Poll::Ready(Ok(resp))
+                    }
+                    Poll::Pending => Poll::Pending,
+                }
+            }
+        }
+
+        let (tx, rx) = oneshot::channel();
+        let inner = DelayedService { rx: Some(rx) };
+        let mut biaser = LoadBiaser::new(inner, test_config());
+
+        assert_eq!(biaser.get_pending(), 0);
+
+        // Initiate the request, pending increments in Service::call()
+        let fut = biaser.call(());
+        assert_eq!(biaser.get_pending(), 1);
+
+        // Drop the future without completing it. The oneshot receiver
+        // never receives a value, so the inner future is still pending.
+        // PinnedDrop must decrement the pending count.
+        drop(fut);
+
+        assert_eq!(
+            biaser.get_pending(),
+            0,
+            "PinnedDrop should decrement pending on cancellation"
+        );
+
+        // tx is unused. Dropping it here is fine, it just closes the channel.
+        drop(tx);
+    }
+
+    #[test]
+    fn default_max_duration_matches_client_policy() {
+        // Enforces the invariant at LoadBiaserConfig::default():
+        // max_duration must match the local DEFAULT_RETRY_AFTER_MAX_DURATION constant.
+        // Production code reads the constant directly via EwmaConfig::to_load_biaser_config;
+        // this assertion keeps the test-only default() in sync.
+        assert_eq!(
+            LoadBiaserConfig::default().max_duration,
+            DEFAULT_RETRY_AFTER_MAX_DURATION,
+            "LoadBiaserConfig::default().max_duration must match \
+             DEFAULT_RETRY_AFTER_MAX_DURATION (300s)"
+        );
+    }
+
+    // Mock service returning an HTTP error with a Retry-After header.
+    // Parameterized by status code to avoid duplicating 429 and 503 variants.
+    #[derive(Clone)]
+    struct RetryAfterService {
+        status: http::StatusCode,
+        retry_after_secs: u64,
+    }
+
+    impl Service<()> for RetryAfterService {
+        type Response = http::Response<&'static str>;
+        type Error = Infallible;
+        type Future = futures::future::Ready<Result<Self::Response, Self::Error>>;
+
+        fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn call(&mut self, _: ()) -> Self::Future {
+            let resp = http::Response::builder()
+                .status(self.status)
+                .header(http::header::RETRY_AFTER, self.retry_after_secs.to_string())
+                .body("retry-after response")
+                .unwrap();
+
+            futures::future::ready(Ok(resp))
+        }
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_429_with_retry_after_uses_adaptive_penalty() {
+        let inner = RetryAfterService {
+            status: http::StatusCode::TOO_MANY_REQUESTS,
+            retry_after_secs: 30,
+        };
+        let mut biaser = LoadBiaser::new(inner, test_config());
+
+        time::sleep(Duration::from_millis(1)).await;
+
+        // Make a request that returns 429 with Retry-After: 30
+        let _ = biaser.call(()).await;
+
+        // Amplified: penalty_secs * FACTOR * exp(RA/decay) = 5.0 * 0.5 * e^3
+        let expected = 5.0_f64 * RETRY_AFTER_PENALTY_FACTOR * (30.0_f64 / 10.0_f64).exp();
+        let penalty = biaser.get_penalty();
+
+        assert!(
+            (penalty - expected).abs() < 1.0,
+            "penalty should be ~{expected:.1} (amplified), got: {}",
+            penalty
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_429_with_retry_after_clamped_to_max() {
+        let inner = RetryAfterService {
+            status: http::StatusCode::TOO_MANY_REQUESTS,
+            retry_after_secs: 600,
+        };
+        let config = LoadBiaserConfig {
+            max_duration: DEFAULT_RETRY_AFTER_MAX_DURATION,
+            ..test_config()
+        };
+        let mut biaser = LoadBiaser::new(inner, config);
+
+        time::sleep(Duration::from_millis(1)).await;
+
+        // Make a request that returns 429 with Retry-After: 600, clamped to 300s
+        let _ = biaser.call(()).await;
+
+        // Amplified: penalty_secs * FACTOR * exp(clamped_RA/decay) = 5.0 * 0.5 * e^30
+        // exceeds the 1e12 penalty clamp, so the actual penalty is clamped.
+        let unclamped = 5.0_f64 * RETRY_AFTER_PENALTY_FACTOR * (300.0_f64 / 10.0_f64).exp();
+        let expected = unclamped.min(1e12);
+        let penalty = biaser.get_penalty();
+
+        assert!(
+            (penalty - expected).abs() / expected < 0.01,
+            "penalty should be ~{expected:.0} (amplified, clamped RA=300), got: {}",
+            penalty
+        );
+    }
+
+    #[test]
+    fn test_rate_limit_hint_parses_retry_after() {
+        let mut resp = http::Response::builder()
+            .status(http::StatusCode::TOO_MANY_REQUESTS)
+            .header(http::header::RETRY_AFTER, "45")
+            .body("rate limited")
+            .unwrap();
+        let max = Duration::from_secs(60);
+
+        resp.attach_parsed_rate_limit_hint(max);
+
+        assert_eq!(resp.rate_limit_hint(max), Some(Duration::from_secs(45)));
+    }
+
+    #[test]
+    fn test_rate_limit_hint_none_for_200() {
+        let mut resp = http::Response::builder()
+            .status(http::StatusCode::OK)
+            .header(http::header::RETRY_AFTER, "45")
+            .body("ok")
+            .unwrap();
+        let max = Duration::from_secs(60);
+
+        resp.attach_parsed_rate_limit_hint(max);
+
+        assert_eq!(resp.rate_limit_hint(max), None);
+    }
+
+    #[test]
+    fn test_rate_limit_hint_none_without_header() {
+        let mut resp = http::Response::builder()
+            .status(http::StatusCode::TOO_MANY_REQUESTS)
+            .body("rate limited")
+            .unwrap();
+        let max = Duration::from_secs(60);
+
+        resp.attach_parsed_rate_limit_hint(max);
+
+        assert_eq!(resp.rate_limit_hint(max), None);
+    }
+
+    #[test]
+    fn test_rate_limit_hint_on_read_without_attach() {
+        let resp = http::Response::builder()
+            .status(http::StatusCode::TOO_MANY_REQUESTS)
+            .header(http::header::RETRY_AFTER, "45")
+            .body("rate limited")
+            .unwrap();
+
+        // No attach call, test on-read fallback
+        assert_eq!(
+            resp.rate_limit_hint(Duration::from_secs(60)),
+            Some(Duration::from_secs(45))
+        );
+    }
+
+    #[test]
+    fn test_rate_limit_hint_on_read_caps_at_max() {
+        let resp = http::Response::builder()
+            .status(http::StatusCode::TOO_MANY_REQUESTS)
+            .header(http::header::RETRY_AFTER, "300")
+            .body("rate limited")
+            .unwrap();
+
+        // On-read parse caps at caller's max
+        assert_eq!(
+            resp.rate_limit_hint(Duration::from_secs(60)),
+            Some(Duration::from_secs(60))
+        );
+    }
+
+    // Test multiple caps
+
+    const SMALL_CAP: Duration = Duration::from_secs(60);
+    const DEFAULT_CAP: Duration = DEFAULT_RETRY_AFTER_MAX_DURATION;
+    const LARGE_CAP: Duration = Duration::from_secs(1800);
+
+    // Constructs a 429 response whose `Retry-After` header uses the integer
+    // seconds form (delay-seconds per RFC 7231).
+    fn build_http_retry_after_response(retry_after_secs: u64) -> http::Response<&'static str> {
+        http::Response::builder()
+            .status(http::StatusCode::TOO_MANY_REQUESTS)
+            .header(http::header::RETRY_AFTER, retry_after_secs.to_string())
+            .body("rate limited")
+            .unwrap()
+    }
+
+    // Constructs a 200 OK trailers-only gRPC error response using
+    // `grpc-status: 8` (RESOURCE_EXHAUSTED) and `grpc-retry-pushback-ms: <ms>`.
+    fn build_grpc_pushback_response(pushback_ms: u64) -> http::Response<&'static str> {
+        http::Response::builder()
+            .status(http::StatusCode::OK)
+            .header("grpc-status", "8")
+            .header("grpc-retry-pushback-ms", pushback_ms.to_string())
+            .body("grpc error")
+            .unwrap()
+    }
+
+    // Verifies the cached-path `.min(max)` clamp in `rate_limit_hint()` clamps HTTP
+    // Retry-After hints to the caller-supplied cap consistently across cap
+    // magnitudes (60s / 300s / 1800s) and directions (below-cap / over-cap).
+    #[test]
+    fn test_rate_limit_hint_multi_cap_http() {
+        struct Row {
+            cap: Duration,
+            header_value: u64, // Retry-After in integer seconds
+        }
+
+        let rows = [
+            Row {
+                cap: SMALL_CAP,
+                header_value: 30,
+            }, // below
+            Row {
+                cap: SMALL_CAP,
+                header_value: 120,
+            }, // over
+            Row {
+                cap: DEFAULT_CAP,
+                header_value: 120,
+            }, // below
+            Row {
+                cap: DEFAULT_CAP,
+                header_value: 600,
+            }, // over
+            Row {
+                cap: LARGE_CAP,
+                header_value: 900,
+            }, // below
+            Row {
+                cap: LARGE_CAP,
+                header_value: 3600,
+            }, // over
+        ];
+
+        for Row { cap, header_value } in rows {
+            let mut resp = build_http_retry_after_response(header_value);
+            resp.attach_parsed_rate_limit_hint(Duration::MAX);
+
+            // Remove the source header after attach
+            resp.headers_mut().remove(http::header::RETRY_AFTER);
+            let parsed = Duration::from_secs(header_value);
+            let expected = parsed.min(cap);
+
+            assert_eq!(
+                resp.rate_limit_hint(cap),
+                Some(expected),
+                "cap={cap:?}, header={header_value}s, expected={expected:?}",
+            );
+        }
+    }
+
+    // Verifies the cached-path `.min(max)` clamp in `rate_limit_hint()` clamps gRPC
+    // retry-pushback-ms hints to the caller-supplied cap consistently across
+    // cap magnitudes (60s / 300s / 1800s) and directions (below-cap / over-cap).
+    #[test]
+    fn test_rate_limit_hint_multi_cap_grpc() {
+        struct Row {
+            cap: Duration,
+            header_value: u64, // grpc-retry-pushback in milliseconds
+        }
+
+        let rows = [
+            Row {
+                cap: SMALL_CAP,
+                header_value: 30_000,
+            }, // below (30s)
+            Row {
+                cap: SMALL_CAP,
+                header_value: 120_000,
+            }, // over  (120s)
+            Row {
+                cap: DEFAULT_CAP,
+                header_value: 120_000,
+            }, // below (120s)
+            Row {
+                cap: DEFAULT_CAP,
+                header_value: 600_000,
+            }, // over  (600s)
+            Row {
+                cap: LARGE_CAP,
+                header_value: 900_000,
+            }, // below (900s)
+            Row {
+                cap: LARGE_CAP,
+                header_value: 3_600_000,
+            }, // over  (3600s)
+        ];
+
+        for Row { cap, header_value } in rows {
+            let mut resp = build_grpc_pushback_response(header_value);
+            resp.attach_parsed_rate_limit_hint(Duration::MAX);
+
+            // Remove the source header after attach
+            resp.headers_mut().remove("grpc-retry-pushback-ms");
+            let parsed = Duration::from_millis(header_value);
+            let expected = parsed.min(cap);
+
+            assert_eq!(
+                resp.rate_limit_hint(cap),
+                Some(expected),
+                "cap={cap:?}, header={header_value}ms, expected={expected:?}",
+            );
+        }
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_503_injects_full_penalty() {
+        let inner = MockService::new(http::StatusCode::SERVICE_UNAVAILABLE);
+        let mut biaser = LoadBiaser::new(inner, test_config());
+
+        time::sleep(Duration::from_millis(1)).await;
+
+        let _ = biaser.call(()).await;
+        let penalty = biaser.get_penalty();
+
+        // test_config has penalty_secs = 5.0
+        assert!(
+            (penalty - 5.0).abs() < 0.1,
+            "503 should inject full penalty (~5.0s), got: {penalty}"
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_503_with_retry_after_uses_adaptive_penalty() {
+        let inner = RetryAfterService {
+            status: http::StatusCode::SERVICE_UNAVAILABLE,
+            retry_after_secs: 30,
+        };
+        let mut biaser = LoadBiaser::new(inner, test_config());
+
+        time::sleep(Duration::from_millis(1)).await;
+
+        // Make a request that returns 503 with Retry-After: 30
+        let _ = biaser.call(()).await;
+
+        // Same amplification formula as 429:
+        // penalty_secs * FACTOR * exp(RA/decay) = 5.0 * 0.5 * e^3
+        let expected = 5.0_f64 * RETRY_AFTER_PENALTY_FACTOR * (30.0_f64 / 10.0_f64).exp();
+        let penalty = biaser.get_penalty();
+        assert!(
+            (penalty - expected).abs() < 1.0,
+            "503+RA penalty should be ~{expected:.1} (amplified), got: {penalty}"
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_503_with_retry_after_clamped_to_max() {
+        let inner = RetryAfterService {
+            status: http::StatusCode::SERVICE_UNAVAILABLE,
+            retry_after_secs: 600,
+        };
+        let config = LoadBiaserConfig {
+            max_duration: DEFAULT_RETRY_AFTER_MAX_DURATION,
+            ..test_config()
+        };
+        let mut biaser = LoadBiaser::new(inner, config);
+
+        time::sleep(Duration::from_millis(1)).await;
+
+        // Make a request that returns 503 with Retry-After: 600, clamped to 300s
+        let _ = biaser.call(()).await;
+
+        // Amplified with clamped RA:
+        // penalty_secs * FACTOR * exp(clamped_RA/decay) = 5.0 * 0.5 * e^30
+        // exceeds the 1e12 penalty clamp, so the actual penalty is clamped.
+        let unclamped = 5.0_f64 * RETRY_AFTER_PENALTY_FACTOR * (300.0_f64 / 10.0_f64).exp();
+        let expected = unclamped.min(1e12);
+        let penalty = biaser.get_penalty();
+        assert!(
+            (penalty - expected).abs() / expected < 0.01,
+            "503+RA penalty should be ~{expected:.0} (amplified, clamped RA=300), got: {penalty}"
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_429_and_503_retry_after_produce_identical_penalty() {
+        // 429 path: RetryAfterService returns TOO_MANY_REQUESTS with Retry-After: 30
+        let inner_429 = RetryAfterService {
+            status: http::StatusCode::TOO_MANY_REQUESTS,
+            retry_after_secs: 30,
+        };
+        let mut biaser_429 = LoadBiaser::new(inner_429, test_config());
+
+        // 503 path: RetryAfterService returns SERVICE_UNAVAILABLE with Retry-After: 30
+        let inner_503 = RetryAfterService {
+            status: http::StatusCode::SERVICE_UNAVAILABLE,
+            retry_after_secs: 30,
+        };
+        let mut biaser_503 = LoadBiaser::new(inner_503, test_config());
+
+        // Bootstrap EWMA timestamps
+        time::sleep(Duration::from_millis(1)).await;
+        let _ = biaser_429.call(()).await;
+
+        time::sleep(Duration::from_millis(1)).await;
+        let _ = biaser_503.call(()).await;
+
+        let load_429 = biaser_429.load();
+        let load_503 = biaser_503.load();
+
+        assert!(
+            (load_429 - load_503).abs() / load_429.max(1e-9) < 0.05,
+            "429+RA and 503+RA should produce similar load; 429={load_429}, 503={load_503}"
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_500_injects_penalty() {
+        let inner = MockService::new(http::StatusCode::INTERNAL_SERVER_ERROR);
+        let mut biaser = LoadBiaser::new(inner, test_config());
+
+        time::sleep(Duration::from_millis(1)).await;
+
+        let _ = biaser.call(()).await;
+        let penalty = biaser.get_penalty();
+
+        // test_config has penalty_secs = 5.0
+        assert!(
+            (penalty - 5.0).abs() < 0.1,
+            "500 should inject full penalty (~5.0s), got: {penalty}"
+        );
+    }
+
+    // Mock service that returns HTTP 200 with a `grpc-status` header,
+    // simulating a gRPC trailers-only error response.
+    #[derive(Clone)]
+    struct GrpcErrorService {
+        grpc_status: u16,
+    }
+
+    impl Service<()> for GrpcErrorService {
+        type Response = http::Response<&'static str>;
+        type Error = Infallible;
+        type Future = futures::future::Ready<Result<Self::Response, Self::Error>>;
+
+        fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn call(&mut self, _: ()) -> Self::Future {
+            let resp = http::Response::builder()
+                .status(http::StatusCode::OK)
+                .header("grpc-status", self.grpc_status.to_string())
+                .body("grpc error")
+                .unwrap();
+
+            futures::future::ready(Ok(resp))
+        }
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_grpc_resource_exhausted_injects_penalty() {
+        let inner = GrpcErrorService { grpc_status: 8 }; // RESOURCE_EXHAUSTED
+        let mut biaser = LoadBiaser::new(inner, test_config());
+
+        time::sleep(Duration::from_millis(1)).await;
+
+        let _ = biaser.call(()).await;
+        // gRPC RESOURCE_EXHAUSTED maps to FailureHint::RateLimited,
+        // which injects the full penalty_secs (5.0).
+        let penalty = biaser.get_penalty();
+
+        assert!(
+            (penalty - 5.0).abs() < 0.1,
+            "gRPC RESOURCE_EXHAUSTED should inject full penalty (~5s), got: {penalty}"
+        );
+    }
+
+    async fn assert_disabled_no_penalty<S>(mut biaser: LoadBiaser<S>, label: &str)
+    where
+        S: Service<(), Response = http::Response<&'static str>, Error = Infallible>,
+    {
+        time::sleep(Duration::from_millis(1)).await;
+        let _ = biaser.call(()).await;
+        assert!(
+            biaser.get_penalty().is_infinite(),
+            "penalty should not be injected when disabled for {label}: {}",
+            biaser.get_penalty()
+        );
+    }
+
+    fn disabled_config() -> LoadBiaserConfig {
+        LoadBiaserConfig {
+            enabled: false,
+            ..test_config()
+        }
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_429_disabled_no_penalty() {
+        let inner = MockService::new(http::StatusCode::TOO_MANY_REQUESTS);
+        assert_disabled_no_penalty(LoadBiaser::new(inner, disabled_config()), "429").await;
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_503_disabled_no_penalty() {
+        let inner = MockService::new(http::StatusCode::SERVICE_UNAVAILABLE);
+        assert_disabled_no_penalty(LoadBiaser::new(inner, disabled_config()), "503").await;
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_500_disabled_no_penalty() {
+        let inner = MockService::new(http::StatusCode::INTERNAL_SERVER_ERROR);
+        assert_disabled_no_penalty(LoadBiaser::new(inner, disabled_config()), "500").await;
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_grpc_resource_exhausted_disabled_no_penalty() {
+        let inner = GrpcErrorService { grpc_status: 8 };
+        assert_disabled_no_penalty(
+            LoadBiaser::new(inner, disabled_config()),
+            "gRPC RESOURCE_EXHAUSTED (status 8)",
+        )
+        .await;
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_grpc_unavailable_disabled_no_penalty() {
+        let inner = GrpcErrorService { grpc_status: 14 };
+        assert_disabled_no_penalty(
+            LoadBiaser::new(inner, disabled_config()),
+            "gRPC UNAVAILABLE (status 14)",
+        )
+        .await;
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_grpc_internal_disabled_no_penalty() {
+        let inner = GrpcErrorService { grpc_status: 13 };
+        assert_disabled_no_penalty(
+            LoadBiaser::new(inner, disabled_config()),
+            "gRPC INTERNAL (status 13)",
+        )
+        .await;
+    }
+}
