@@ -1988,6 +1988,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd-load-biaser"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "http",
+ "linkerd-ewma",
+ "linkerd-http-classify",
+ "linkerd-stack",
+ "parking_lot",
+ "pin-project",
+ "tokio",
+ "tokio-test",
+ "tower",
+ "tower-service",
+ "tracing",
+]
+
+[[package]]
 name = "linkerd-meshtls"
 version = "0.1.0"
 dependencies = [

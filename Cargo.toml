@@ -43,6 +43,7 @@ members = [
     "linkerd/identity",
     "linkerd/idle-cache",
     "linkerd/io",
+    "linkerd/load-biaser",
     "linkerd/meshtls",
     "linkerd/meshtls/verifier",
     "linkerd/metrics",

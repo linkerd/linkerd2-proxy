@@ -1,0 +1,29 @@
+[package]
+name = "linkerd-load-biaser"
+version = { workspace = true }
+authors = { workspace = true }
+license = { workspace = true }
+edition = { workspace = true }
+publish = { workspace = true }
+
+[features]
+default = []
+tokio-test = ["dep:tokio-test"]
+
+[dependencies]
+linkerd-ewma = { path = "../ewma" }
+futures = { version = "0.3", default-features = false }
+http = { workspace = true }
+linkerd-http-classify = { path = "../http/classify" }
+linkerd-stack = { path = "../stack" }
+parking_lot = "0.12"
+pin-project = "1"
+tokio = { version = "1", features = ["io-util", "net", "time"] }
+tokio-test = { version = "0.4", optional = true }
+tower = { workspace = true, features = ["load"] }
+tower-service = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt", "time"] }
+tokio-test = "0.4"
