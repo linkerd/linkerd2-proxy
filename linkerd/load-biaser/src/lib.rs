@@ -123,14 +123,22 @@ pub trait ResponseFailureHint {
     }
 }
 
+fn is_grpc(headers: &http::HeaderMap) -> bool {
+    headers
+        .get(http::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|ct| ct.starts_with("application/grpc"))
+}
+
 /// HTTP responses classify failures by status code and parse Retry-After hints.
 ///
-/// For gRPC responses (which arrive as HTTP 200 with `grpc-status` in headers
-/// for trailers-only/unary errors), the `grpc-status` header is checked when
-/// the HTTP status is 200:
+/// For gRPC trailers-only responses (HTTP 200 with `content-type: application/grpc`
+/// and `grpc-status` in headers), the `grpc-status` header is inspected:
 /// - gRPC status 8 (RESOURCE_EXHAUSTED) -> `RateLimited`
 /// - gRPC status 14 (UNAVAILABLE) -> `ServiceUnavailable`
 /// - Other non-zero gRPC status codes -> `InternalError`
+///
+/// Non-gRPC HTTP 200 responses are not inspected for `grpc-status`.
 impl<B> ResponseFailureHint for http::Response<B> {
     fn failure_hint(&self) -> Option<FailureHint> {
         let status = self.status();
@@ -140,8 +148,12 @@ impl<B> ResponseFailureHint for http::Response<B> {
             Some(FailureHint::ServiceUnavailable)
         } else if status.is_server_error() {
             Some(FailureHint::InternalError)
-        } else if status == http::StatusCode::OK {
+        } else if status == http::StatusCode::OK && is_grpc(self.headers()) {
             // gRPC trailers-only responses: grpc-status appears in headers.
+            // We inspect grpc-status when content-type confirms this is a gRPC
+            // response so that we avoid misclassifying non-gRPC HTTP 200
+            // responses that somehow happen to include a grpc-status header.
+            //
             // Note: for streaming gRPC, grpc-status is in trailers (not headers)
             // and will not be detected here. The circuit breaker handles streaming
             // gRPC failures via GrpcRetryPushbackClassifyEos.
@@ -172,7 +184,7 @@ impl<B> ResponseFailureHint for http::Response<B> {
             return;
         }
         // Try gRPC retry-pushback-ms (for trailers-only responses)
-        if self.status() == http::StatusCode::OK {
+        if self.status() == http::StatusCode::OK && is_grpc(self.headers()) {
             if let Some(d) = linkerd_http_classify::retry_after::parse_grpc_retry_pushback(
                 self.headers(),
                 Duration::MAX,
@@ -196,7 +208,7 @@ impl<B> ResponseFailureHint for http::Response<B> {
             return Some(d);
         }
         // Try gRPC pushback
-        if self.status() == http::StatusCode::OK {
+        if self.status() == http::StatusCode::OK && is_grpc(self.headers()) {
             if let Some(d) =
                 linkerd_http_classify::retry_after::parse_grpc_retry_pushback(self.headers(), max)
             {
@@ -1247,6 +1259,7 @@ mod tests {
     fn build_grpc_pushback_response(pushback_ms: u64) -> http::Response<&'static str> {
         http::Response::builder()
             .status(http::StatusCode::OK)
+            .header(http::header::CONTENT_TYPE, "application/grpc")
             .header("grpc-status", "8")
             .header("grpc-retry-pushback-ms", pushback_ms.to_string())
             .body("grpc error")
@@ -1498,6 +1511,7 @@ mod tests {
         fn call(&mut self, _: ()) -> Self::Future {
             let resp = http::Response::builder()
                 .status(http::StatusCode::OK)
+                .header(http::header::CONTENT_TYPE, "application/grpc")
                 .header("grpc-status", self.grpc_status.to_string())
                 .body("grpc error")
                 .unwrap();
