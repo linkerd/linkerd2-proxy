@@ -70,6 +70,11 @@ impl Ewma {
         self.value
     }
 
+    /// Returns the timestamp of the most recent update.
+    pub fn last_update(&self) -> time::Instant {
+        self.timestamp
+    }
+
     /// Returns the decayed value projected to the given time, without modifying stored state.
     ///
     /// Instead of returning the raw stored value, this applies exponential decay based
