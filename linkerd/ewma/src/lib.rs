@@ -485,4 +485,63 @@ mod tests {
         // Should trigger a debug_assert
         let _ = ewma.get_at(now);
     }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_last_update_tracks_construction() {
+        let now = Instant::now();
+        let ewma = Ewma::new(Duration::from_secs(10), now);
+        assert_eq!(ewma.last_update(), now);
+
+        let ewma = Ewma::new_with_value(Duration::from_secs(10), now, 1.0);
+        assert_eq!(ewma.last_update(), now);
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_last_update_advances_on_add() {
+        let now = Instant::now();
+        let mut ewma = Ewma::new(Duration::from_secs(10), now);
+
+        let t1 = now + Duration::from_secs(1);
+        ewma.add(1.0, t1);
+        assert_eq!(ewma.last_update(), t1);
+
+        let t2 = now + Duration::from_secs(5);
+        ewma.add(0.5, t2);
+        assert_eq!(ewma.last_update(), t2);
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_last_update_advances_on_reset() {
+        let now = Instant::now();
+        let mut ewma = Ewma::new(Duration::from_secs(10), now);
+
+        ewma.add(1.0, now + Duration::from_secs(1));
+        let reset_at = now + Duration::from_secs(5);
+        ewma.reset(1.0, reset_at);
+        assert_eq!(ewma.last_update(), reset_at);
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_last_update_unchanged_by_read() {
+        let now = Instant::now();
+        let mut ewma = Ewma::new(Duration::from_secs(10), now);
+
+        let t1 = now + Duration::from_secs(1);
+        ewma.add(1.0, t1);
+        let _ = ewma.get_at(now + Duration::from_secs(10));
+        assert_eq!(ewma.last_update(), t1);
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_last_update_unchanged_by_stale_add() {
+        let now = Instant::now();
+        let mut ewma = Ewma::new(Duration::from_secs(10), now);
+
+        let t1 = now + Duration::from_secs(5);
+        ewma.add(1.0, t1);
+
+        // Stale timestamp (before last update) is silently dropped.
+        ewma.add(0.0, now + Duration::from_secs(2));
+        assert_eq!(ewma.last_update(), t1);
+    }
 }
