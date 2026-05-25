@@ -136,7 +136,9 @@ fn is_grpc(headers: &http::HeaderMap) -> bool {
 /// and `grpc-status` in headers), the `grpc-status` header is inspected:
 /// - gRPC status 8 (RESOURCE_EXHAUSTED) -> `RateLimited`
 /// - gRPC status 14 (UNAVAILABLE) -> `ServiceUnavailable`
-/// - Other non-zero gRPC status codes -> `InternalError`
+/// - gRPC status 2 (UNKNOWN), 4 (DEADLINE_EXCEEDED), 13 (INTERNAL),
+///   15 (DATA_LOSS) -> `InternalError`
+/// - Others (client errors, ie. CANCELLED, NOT_FOUND, etc) -> ignored
 ///
 /// Non-gRPC HTTP 200 responses are not inspected for `grpc-status`.
 impl<B> ResponseFailureHint for http::Response<B> {
@@ -165,7 +167,8 @@ impl<B> ResponseFailureHint for http::Response<B> {
                     0 => None,                                   // OK
                     8 => Some(FailureHint::RateLimited),         // RESOURCE_EXHAUSTED
                     14 => Some(FailureHint::ServiceUnavailable), // UNAVAILABLE
-                    _ => Some(FailureHint::InternalError),       // Other non-zero
+                    2 | 4 | 13 | 15 => Some(FailureHint::InternalError),
+                    _ => None, // Client errors (CANCELLED, INVALID_ARGUMENT, etc.)
                 })
         } else {
             None
