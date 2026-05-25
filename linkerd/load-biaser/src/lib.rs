@@ -900,6 +900,44 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_sequential_failures_maintain_penalty() {
+        let inner = MockService::new(http::StatusCode::TOO_MANY_REQUESTS);
+        let config = LoadBiaserConfig {
+            default_rtt: Duration::from_millis(1),
+            ..test_config()
+        };
+        let mut biaser = LoadBiaser::new(inner, config);
+
+        time::sleep(Duration::from_millis(1)).await;
+
+        let _ = biaser.call(()).await;
+        let penalty_after_first = biaser.get_penalty();
+        assert!(
+            (penalty_after_first - 5.0).abs() < 0.1,
+            "first 429 should inject ~5s penalty, got: {penalty_after_first}"
+        );
+
+        // Second 429 arrives 1s later. The penalty has decayed slightly but
+        // add_peak replaces the decayed value with the fresh penalty.
+        time::sleep(Duration::from_secs(1)).await;
+        let _ = biaser.call(()).await;
+        let penalty_after_second = biaser.get_penalty();
+        assert!(
+            (penalty_after_second - 5.0).abs() < 0.1,
+            "second 429 should maintain penalty at ~5s, got: {penalty_after_second}"
+        );
+
+        // Third 429 after another second. Still at ~5s.
+        time::sleep(Duration::from_secs(1)).await;
+        let _ = biaser.call(()).await;
+        let penalty_after_third = biaser.get_penalty();
+        assert!(
+            (penalty_after_third - 5.0).abs() < 0.1,
+            "third 429 should maintain penalty at ~5s, got: {penalty_after_third}"
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
     async fn test_load_is_max_of_rtt_based_and_penalty() {
         let inner = MockService::new(http::StatusCode::OK);
         let biaser = LoadBiaser::new(inner, test_config());
