@@ -236,7 +236,7 @@ mod tests {
     #[test]
     fn parse_grpc_pushback_positive() {
         let mut headers = HeaderMap::new();
-        headers.insert("grpc-retry-pushback-ms", HeaderValue::from_static("5000"));
+        headers.insert(GRPC_RETRY_PUSHBACK_MS, HeaderValue::from_static("5000"));
 
         let result = parse_grpc_retry_pushback(&headers, MAX_GRPC);
         assert_eq!(result, Some(Duration::from_millis(5000)));
@@ -245,7 +245,7 @@ mod tests {
     #[test]
     fn parse_grpc_pushback_zero() {
         let mut headers = HeaderMap::new();
-        headers.insert("grpc-retry-pushback-ms", HeaderValue::from_static("0"));
+        headers.insert(GRPC_RETRY_PUSHBACK_MS, HeaderValue::from_static("0"));
 
         let result = parse_grpc_retry_pushback(&headers, MAX_GRPC);
         assert_eq!(result, Some(Duration::ZERO));
@@ -254,7 +254,7 @@ mod tests {
     #[test]
     fn parse_grpc_pushback_negative() {
         let mut headers = HeaderMap::new();
-        headers.insert("grpc-retry-pushback-ms", HeaderValue::from_static("-1"));
+        headers.insert(GRPC_RETRY_PUSHBACK_MS, HeaderValue::from_static("-1"));
 
         let result = parse_grpc_retry_pushback(&headers, MAX_GRPC);
         assert_eq!(result, None);
@@ -263,7 +263,7 @@ mod tests {
     #[test]
     fn parse_grpc_pushback_caps_at_max() {
         let mut headers = HeaderMap::new();
-        headers.insert("grpc-retry-pushback-ms", HeaderValue::from_static("999999"));
+        headers.insert(GRPC_RETRY_PUSHBACK_MS, HeaderValue::from_static("999999"));
 
         let result = parse_grpc_retry_pushback(&headers, MAX_GRPC);
         assert_eq!(result, Some(MAX_GRPC));
@@ -312,7 +312,7 @@ mod tests {
     #[test]
     fn grpc_pushback_whitespace() {
         let mut headers = HeaderMap::new();
-        headers.insert("grpc-retry-pushback-ms", " 5000 ".parse().unwrap());
+        headers.insert(GRPC_RETRY_PUSHBACK_MS, " 5000 ".parse().unwrap());
 
         let result = parse_grpc_retry_pushback(&headers, MAX);
         assert_eq!(result, Some(Duration::from_millis(5000)));
