@@ -364,6 +364,7 @@ pub struct LoadBiaserFuture<F, Rsp> {
 
 impl<S> LoadBiaser<S> {
     /// Creates a new `LoadBiaser` wrapping the given service.
+    #[must_use]
     pub fn new(inner: S, mut config: LoadBiaserConfig) -> Self {
         if config.penalty_secs.is_nan() || config.penalty_secs < 0.0 {
             tracing::warn!(
