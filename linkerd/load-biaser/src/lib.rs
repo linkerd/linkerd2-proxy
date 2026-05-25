@@ -80,7 +80,7 @@ pub struct CachedRateLimitHint(pub Duration);
 ///
 /// The trait splits rate limit hint access into two methods to avoid
 /// requiring `&mut self` on the read path:
-/// - `attach_parsed_rate_limit_hint(&mut self, max)`: parse and cache (needs `&mut`)
+/// - `attach_parsed_rate_limit_hint(&mut self)`: parse and cache (needs `&mut`)
 /// - `rate_limit_hint(&self, max)`: read cached value or parse on-read (only needs `&self`)
 ///
 /// # Stack ordering and caching
@@ -97,10 +97,9 @@ pub trait ResponseFailureHint {
 
     /// Parse and cache the raw (uncapped) rate limit hint from this response.
     ///
-    /// The `_max` parameter is accepted for API symmetry with `rate_limit_hint(max)`
-    /// but is intentionally unused. The raw uncapped value is cached so that each
-    /// consumer can apply their own cap via `rate_limit_hint(max)`.
-    fn attach_parsed_rate_limit_hint(&mut self, _max: Duration) {}
+    /// The raw uncapped value is cached so that each consumer can apply their
+    /// own cap via `rate_limit_hint(max)`.
+    fn attach_parsed_rate_limit_hint(&mut self) {}
 
     /// Returns the rate limit hint if available.
     ///
@@ -149,7 +148,7 @@ impl<B> ResponseFailureHint for http::Response<B> {
         }
     }
 
-    fn attach_parsed_rate_limit_hint(&mut self, _max: Duration) {
+    fn attach_parsed_rate_limit_hint(&mut self) {
         // Store the uncapped value. Each consumer applies their own cap via
         // rate_limit_hint(max).
         if let Some(d) = linkerd_http_classify::retry_after::parse_retry_after(
@@ -527,7 +526,7 @@ where
         // biasing is enabled).
         if shared.enabled {
             if let Ok(ref mut resp) = result {
-                resp.attach_parsed_rate_limit_hint(shared.max_duration);
+                resp.attach_parsed_rate_limit_hint();
             }
         }
 
@@ -1152,7 +1151,7 @@ mod tests {
             .unwrap();
         let max = Duration::from_secs(60);
 
-        resp.attach_parsed_rate_limit_hint(max);
+        resp.attach_parsed_rate_limit_hint();
 
         assert_eq!(resp.rate_limit_hint(max), Some(Duration::from_secs(45)));
     }
@@ -1166,7 +1165,7 @@ mod tests {
             .unwrap();
         let max = Duration::from_secs(60);
 
-        resp.attach_parsed_rate_limit_hint(max);
+        resp.attach_parsed_rate_limit_hint();
 
         assert_eq!(resp.rate_limit_hint(max), None);
     }
@@ -1179,7 +1178,7 @@ mod tests {
             .unwrap();
         let max = Duration::from_secs(60);
 
-        resp.attach_parsed_rate_limit_hint(max);
+        resp.attach_parsed_rate_limit_hint();
 
         assert_eq!(resp.rate_limit_hint(max), None);
     }
@@ -1280,7 +1279,7 @@ mod tests {
 
         for Row { cap, header_value } in rows {
             let mut resp = build_http_retry_after_response(header_value);
-            resp.attach_parsed_rate_limit_hint(Duration::MAX);
+            resp.attach_parsed_rate_limit_hint();
 
             // Remove the source header after attach
             resp.headers_mut().remove(http::header::RETRY_AFTER);
@@ -1334,7 +1333,7 @@ mod tests {
 
         for Row { cap, header_value } in rows {
             let mut resp = build_grpc_pushback_response(header_value);
-            resp.attach_parsed_rate_limit_hint(Duration::MAX);
+            resp.attach_parsed_rate_limit_hint();
 
             // Remove the source header after attach
             resp.headers_mut().remove("grpc-retry-pushback-ms");
