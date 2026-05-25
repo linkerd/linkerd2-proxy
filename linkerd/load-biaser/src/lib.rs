@@ -1495,6 +1495,20 @@ mod tests {
         );
     }
 
+    #[test]
+    fn failure_hint_non_grpc_200_with_grpc_status_header() {
+        let resp = http::Response::builder()
+            .status(http::StatusCode::OK)
+            .header("grpc-status", "14")
+            .body("")
+            .unwrap();
+        assert_eq!(
+            resp.failure_hint(),
+            None,
+            "non-gRPC HTTP 200 with grpc-status header should not be classified"
+        );
+    }
+
     // Mock service that returns HTTP 200 with a `grpc-status` header,
     // simulating a gRPC trailers-only error response.
     #[derive(Clone)]
@@ -1523,22 +1537,60 @@ mod tests {
         }
     }
 
-    #[tokio::test(flavor = "current_thread", start_paused = true)]
-    async fn test_grpc_resource_exhausted_injects_penalty() {
-        let inner = GrpcErrorService { grpc_status: 8 }; // RESOURCE_EXHAUSTED
+    async fn assert_grpc_injects_penalty(grpc_status: u16, label: &str) {
+        let inner = GrpcErrorService { grpc_status };
         let mut biaser = LoadBiaser::new(inner, test_config());
 
         time::sleep(Duration::from_millis(1)).await;
-
         let _ = biaser.call(()).await;
-        // gRPC RESOURCE_EXHAUSTED maps to FailureHint::RateLimited,
-        // which injects the full penalty_secs (5.0).
         let penalty = biaser.get_penalty();
 
         assert!(
             (penalty - 5.0).abs() < 0.1,
-            "gRPC RESOURCE_EXHAUSTED should inject full penalty (~5s), got: {penalty}"
+            "gRPC {label} (status {grpc_status}) should inject full penalty (~5s), got: {penalty}"
         );
+    }
+
+    async fn assert_grpc_no_penalty(grpc_status: u16, label: &str) {
+        let inner = GrpcErrorService { grpc_status };
+        let mut biaser = LoadBiaser::new(inner, test_config());
+
+        time::sleep(Duration::from_millis(1)).await;
+        let _ = biaser.call(()).await;
+
+        assert!(
+            biaser.get_penalty().is_infinite(),
+            "gRPC {label} (status {grpc_status}) should not inject penalty"
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_grpc_server_errors_inject_penalty() {
+        assert_grpc_injects_penalty(8, "RESOURCE_EXHAUSTED").await;
+        assert_grpc_injects_penalty(14, "UNAVAILABLE").await;
+        assert_grpc_injects_penalty(13, "INTERNAL").await;
+        assert_grpc_injects_penalty(2, "UNKNOWN").await;
+        assert_grpc_injects_penalty(4, "DEADLINE_EXCEEDED").await;
+        assert_grpc_injects_penalty(15, "DATA_LOSS").await;
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_grpc_client_errors_no_penalty() {
+        assert_grpc_no_penalty(1, "CANCELLED").await;
+        assert_grpc_no_penalty(3, "INVALID_ARGUMENT").await;
+        assert_grpc_no_penalty(5, "NOT_FOUND").await;
+        assert_grpc_no_penalty(6, "ALREADY_EXISTS").await;
+        assert_grpc_no_penalty(7, "PERMISSION_DENIED").await;
+        assert_grpc_no_penalty(9, "FAILED_PRECONDITION").await;
+        assert_grpc_no_penalty(10, "ABORTED").await;
+        assert_grpc_no_penalty(11, "OUT_OF_RANGE").await;
+        assert_grpc_no_penalty(12, "UNIMPLEMENTED").await;
+        assert_grpc_no_penalty(16, "UNAUTHENTICATED").await;
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_grpc_ok_no_penalty() {
+        assert_grpc_no_penalty(0, "OK").await;
     }
 
     async fn assert_disabled_no_penalty<S>(mut biaser: LoadBiaser<S>, label: &str)
