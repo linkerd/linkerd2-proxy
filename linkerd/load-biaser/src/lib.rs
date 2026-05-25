@@ -70,7 +70,19 @@ pub enum FailureHint {
 /// via `rate_limit_hint(max)`, so different callers (e.g. load biaser vs
 /// circuit breaker) can use different maximums from the same cached value.
 #[derive(Clone, Copy, Debug)]
-pub struct CachedRateLimitHint(pub Duration);
+pub struct CachedRateLimitHint(Duration);
+
+impl CachedRateLimitHint {
+    /// Wraps a parsed, uncapped rate limit duration for caching.
+    pub fn new(d: Duration) -> Self {
+        Self(d)
+    }
+
+    /// Returns the cached duration, capped at `max`.
+    pub fn duration_capped(&self, max: Duration) -> Duration {
+        self.0.min(max)
+    }
+}
 
 /// Trait for extracting failure hints from responses.
 ///
@@ -156,7 +168,7 @@ impl<B> ResponseFailureHint for http::Response<B> {
             self.headers(),
             Duration::MAX,
         ) {
-            self.extensions_mut().insert(CachedRateLimitHint(d));
+            self.extensions_mut().insert(CachedRateLimitHint::new(d));
             return;
         }
         // Try gRPC retry-pushback-ms (for trailers-only responses)
@@ -165,7 +177,7 @@ impl<B> ResponseFailureHint for http::Response<B> {
                 self.headers(),
                 Duration::MAX,
             ) {
-                self.extensions_mut().insert(CachedRateLimitHint(d));
+                self.extensions_mut().insert(CachedRateLimitHint::new(d));
             }
         }
     }
@@ -173,7 +185,7 @@ impl<B> ResponseFailureHint for http::Response<B> {
     fn rate_limit_hint(&self, max: Duration) -> Option<Duration> {
         // Check cache first (from previous attach call), apply caller's cap
         if let Some(cached) = self.extensions().get::<CachedRateLimitHint>() {
-            return Some(cached.0.min(max));
+            return Some(cached.duration_capped(max));
         }
         // Parse on-read as fallback (header present but attach wasn't called)
         if let Some(d) = linkerd_http_classify::retry_after::parse_retry_after(
