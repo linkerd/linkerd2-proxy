@@ -354,7 +354,7 @@ mod tests {
         let probe_near = now + Duration::from_secs(1);
         let probe_far = now + Duration::from_secs(100);
 
-        // A new Ewma without addding values should project INFINITY
+        // A new Ewma without adding values should project INFINITY
         // at every timestamp.
         let ewma = Ewma::new(decay, now);
         assert_eq!(ewma.get_at(probe_same), f64::INFINITY);
