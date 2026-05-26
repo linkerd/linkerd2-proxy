@@ -11,11 +11,8 @@ default = []
 tokio-test = ["dep:tokio-test"]
 
 [dependencies]
-linkerd-ewma = { path = "../ewma" }
 futures = { version = "0.3", default-features = false }
 http = { workspace = true }
-linkerd-http-classify = { path = "../http/classify" }
-linkerd-stack = { path = "../stack" }
 parking_lot = "0.12"
 pin-project = "1"
 tokio = { version = "1", features = ["io-util", "net", "time"] }
@@ -23,6 +20,10 @@ tokio-test = { version = "0.4", optional = true }
 tower = { workspace = true, features = ["load"] }
 tower-service = { workspace = true }
 tracing = { workspace = true }
+
+linkerd-ewma = { path = "../ewma" }
+linkerd-http-classify = { path = "../http/classify" }
+linkerd-stack = { path = "../stack" }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt", "time"] }
