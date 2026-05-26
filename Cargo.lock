@@ -931,12 +931,6 @@ dependencies = [
 
 [[package]]
 name = "heck"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "95505c38b4572b2d910cecb0281560f54b440a19336cbbcb27bf6ce6adc6f5a8"
-
-[[package]]
-name = "heck"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
@@ -1785,7 +1779,7 @@ dependencies = [
  "ahash",
  "linkerd-stack",
  "parking_lot",
- "rand 0.9.3",
+ "rand 0.10.1",
  "tokio-test",
  "tower-test",
  "tracing",
@@ -1853,7 +1847,7 @@ dependencies = [
  "futures",
  "pin-project",
  "quickcheck",
- "rand 0.9.3",
+ "rand 0.10.1",
  "thiserror",
  "tokio",
 ]
@@ -2045,7 +2039,7 @@ version = "0.1.0"
 dependencies = [
  "http",
  "linkerd2-proxy-api",
- "rand 0.9.3",
+ "rand 0.10.1",
  "regex",
  "thiserror",
  "tracing",
@@ -2268,7 +2262,7 @@ dependencies = [
  "parking_lot",
  "prometheus-client",
  "quickcheck",
- "rand 0.9.3",
+ "rand 0.10.1",
  "tokio",
  "tokio-test",
  "tower",
@@ -2750,7 +2744,7 @@ dependencies = [
  "linkerd-stack",
  "linkerd-tracing",
  "opentelemetry-semantic-conventions",
- "rand 0.9.3",
+ "rand 0.10.1",
  "thiserror",
  "tokio",
  "tower",
@@ -3388,7 +3382,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "22505a5c94da8e3b7c2996394d1c933236c4d743e81a410bcca4e6989fc066a4"
 dependencies = [
  "bytes",
- "heck 0.4.1",
+ "heck",
  "itertools",
  "log",
  "multimap",
@@ -3408,7 +3402,7 @@ version = "0.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ac6c3320f9abac597dcbc668774ef006702672474aad53c6d596b62e487b40b1"
 dependencies = [
- "heck 0.4.1",
+ "heck",
  "itertools",
  "log",
  "multimap",
@@ -4818,7 +4812,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ea61de684c3ea68cb082b7a88508a8b27fcc8b797d738bfc99a82facf1d752dc"
 dependencies = [
  "anyhow",
- "heck 0.5.0",
+ "heck",
  "wit-parser",
 ]
 
@@ -4838,7 +4832,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b7c566e0f4b284dd6561c786d9cb0142da491f46a9fbed79ea69cdad5db17f21"
 dependencies = [
  "anyhow",
- "heck 0.5.0",
+ "heck",
  "indexmap",
  "prettyplease",
  "syn",
