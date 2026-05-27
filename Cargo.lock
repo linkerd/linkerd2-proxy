@@ -1194,9 +1194,9 @@ checksum = "92ecc6618181def0457392ccd0ee51198e065e016d1d527a7ac1b6dc7c1f09d2"
 
 [[package]]
 name = "jiff"
-version = "0.2.25"
+version = "0.2.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6835eea34fb6321b9b3aa7b685c2b433948c09447e389dc017fdf687d5d11e65"
+checksum = "392c70591e8749fe235ddaf513e6f58b26bce3dcc16524cecc8936f75afa161e"
 dependencies = [
  "jiff-static",
  "jiff-tzdb-platform",
@@ -1204,14 +1204,14 @@ dependencies = [
  "portable-atomic",
  "portable-atomic-util",
  "serde_core",
- "windows-sys 0.61.1",
+ "windows-link",
 ]
 
 [[package]]
 name = "jiff-static"
-version = "0.2.25"
+version = "0.2.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c22e04db9c58f5136eb1757f3d5c49a7b187f49e52185228cbd2f5acdfcc08c"
+checksum = "47b605b0c050d845fc355bb11eb3f9a8deddc218ea60c76e61aa1f2adfb2c96a"
 dependencies = [
  "proc-macro2",
  "quote",
