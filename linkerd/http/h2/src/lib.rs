@@ -22,6 +22,7 @@ pub struct ClientParams {
     pub max_concurrent_reset_streams: Option<usize>,
     pub max_frame_size: Option<u32>,
     pub max_send_buf_size: Option<usize>,
+    pub max_header_list_size: Option<u32>,
 }
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
@@ -58,6 +59,9 @@ impl ClientParams {
                 .or(self.max_concurrent_reset_streams),
             max_frame_size: overrides.max_frame_size.or(self.max_frame_size),
             max_send_buf_size: overrides.max_send_buf_size.or(self.max_send_buf_size),
+            max_header_list_size: overrides
+                .max_header_list_size
+                .or(self.max_header_list_size),
         }
     }
 }
