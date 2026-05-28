@@ -41,6 +41,9 @@ pub mod retry_after;
 mod unified;
 pub mod wrap_classify;
 
+#[cfg(test)]
+mod integration_tests;
+
 pub use self::retry_after::{GrpcRetryPushbackStore, RetryAfterStore};
 use self::unified::{UnifiedBreaker, UnifiedBreakerConfig};
 pub use self::wrap_classify::{HasFailureAccrual, NewRetryAfterGateSet, RetryAfterGateParams};
