@@ -328,6 +328,57 @@ async fn retry_after_hint_extends_backoff_integration() {
     );
 }
 
+// Check that a gRPC pushback hint recorded in the store extends the breaker's
+// backoff duration.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn grpc_pushback_hint_extends_backoff_integration() {
+    let _trace = linkerd_tracing::test::trace_init();
+
+    let (params, gate_tx, rsps) = gate::Params::channel(8);
+    let grpc_store = GrpcRetryPushbackStore::new();
+
+    let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
+        grpc_retry_pushback_store: grpc_store.clone(),
+        ..default_test_config(gate_tx, rsps)
+    });
+    let mut task = task::spawn(breaker.run());
+
+    assert_pending!(task.poll());
+
+    // Record a 5s gRPC pushback hint before the trip. The hint must be
+    // present in the store when the breaker enters closed state and calls
+    // take_combined_hint() on its first backoff iteration.
+    grpc_store.record(Duration::from_secs(5));
+
+    // Trip via 3 consecutive 5xx
+    for _ in 0..3 {
+        send_err(&params, http::StatusCode::BAD_GATEWAY);
+        time::advance(Duration::from_millis(100)).await;
+        assert_pending!(task.poll());
+    }
+    assert!(params.gate.is_shut(), "breaker should trip after 3x 5xx");
+
+    // Advance 4s (hint minus 1s). The normal 1s exponential backoff would
+    // have expired, but the 5s gRPC pushback hint keeps the gate shut. This is
+    // the important check. Without the hint, probation would arrive at
+    // ~1s.
+    time::sleep(Duration::from_secs(4)).await;
+    assert_pending!(task.poll());
+    assert!(
+        params.gate.is_shut(),
+        "gate should remain shut at 4s (gRPC hint is 5s, backoff is 1s)",
+    );
+
+    // Advance past the 5s hint boundary. The hint elapses and probation begins.
+    time::sleep(Duration::from_secs(1)).await;
+    assert_pending!(task.poll());
+
+    assert!(
+        params.gate.is_limited(),
+        "gate should enter probation after the gRPC hint duration expires",
+    );
+}
+
 // When both stores hold hints longer than the configured maximum, the breaker
 // clamps each hint to that maximum before taking the larger of the two. With
 // both hints above the cap, the backoff floor is the cap itself, so the gate
