@@ -1,11 +1,27 @@
 use linkerd_app_core::{classify, proxy::http::classify::gate, svc};
 use linkerd_proxy_client_policy::FailureAccrual;
+
+use tokio::time::Duration;
 use tracing::{trace_span, Instrument};
 
 mod consecutive_failures;
 pub mod retry_after;
+mod unified;
 
 use self::consecutive_failures::ConsecutiveFailures;
+use self::unified::{UnifiedBreaker, UnifiedBreakerConfig};
+
+/// Reason why the circuit breaker tripped.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TripReason {
+    /// Tripped due to N consecutive 5xx failures.
+    ConsecutiveFailures,
+    /// Tripped due to EWMA success rate dropping below threshold.
+    LowSuccessRate,
+}
+
+/// Default EWMA decay window (used when success_rate is configured but has no explicit decay).
+const DEFAULT_SUCCESS_RATE_DECAY: Duration = Duration::from_secs(10);
 
 /// Params configuring a circuit breaker stack.
 #[derive(Clone, Debug)]
