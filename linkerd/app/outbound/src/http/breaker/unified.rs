@@ -1227,6 +1227,77 @@ mod tests {
         );
     }
 
+    // Verify that `closed()` creates a new backoff stream each time the breaker
+    // trips, so backoff escalation is not kept across trip-recover-trip cycles.
+    // After recovery the next trip should start at the base backoff (1s), not an
+    // escalated value (2s).
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn backoff_resets_to_base_on_retrip() {
+        let _trace = linkerd_tracing::test::trace_init();
+
+        let (mut params, gate_tx, rsps) = gate::Params::channel(1);
+
+        let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
+            max_failures: 2,
+            ..default_test_config(gate_tx, rsps)
+        });
+        let mut task = task::spawn(breaker.run());
+
+        assert_pending!(task.poll());
+        assert!(params.gate.is_open());
+
+        // Trip #1
+        for _ in 0..2 {
+            send_err(&params, http::StatusCode::BAD_GATEWAY);
+            time::advance(time::Duration::from_millis(100)).await;
+            assert_pending!(task.poll());
+        }
+        assert!(params.gate.is_shut(), "Should trip after 2 consecutive 5xx");
+
+        // Wait for first backoff (base = 1s) and enter probation
+        time::sleep(time::Duration::from_secs(1)).await;
+        assert_pending!(task.poll());
+
+        match params.gate.state() {
+            gate::State::Limited(sem) => {
+                assert_eq!(sem.available_permits(), 1);
+                params.gate.opened_for_test().await.unwrap().forget();
+            }
+            _ => panic!("Expected Limited state after first backoff"),
+        }
+
+        // Probe succeeds, breaker reopens
+        send_ok(&params, http::StatusCode::OK);
+        time::advance(time::Duration::from_millis(100)).await;
+        assert_pending!(task.poll());
+        assert!(
+            params.gate.is_open(),
+            "Should reopen after successful probe"
+        );
+
+        // Trip #2
+        for _ in 0..2 {
+            send_err(&params, http::StatusCode::BAD_GATEWAY);
+            time::advance(time::Duration::from_millis(100)).await;
+            assert_pending!(task.poll());
+        }
+        assert!(
+            params.gate.is_shut(),
+            "Should trip again after 2 consecutive 5xx"
+        );
+
+        // Advance 1s + small buffer. If the backoff had escalated to 2s (iteration 1),
+        // the gate would still be shut here. With a new stream the base is 1s.
+        time::sleep(time::Duration::from_millis(1050)).await;
+        assert_pending!(task.poll());
+
+        assert!(
+            params.gate.is_limited(),
+            "Second trip should use base backoff (1s), not escalated (2s); \
+             closed() creates a new backoff stream each time"
+        );
+    }
+
     // A closed response channel must end the breaker task even while it is
     // parked in the backoff wait. recv() on a closed channel yields None right
     // away, so the drain step has to treat None as teardown rather than looping
