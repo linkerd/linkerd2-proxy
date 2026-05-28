@@ -35,6 +35,8 @@ tower = { workspace = true, features = ["util"] }
 tracing = { workspace = true }
 
 linkerd-app-core = { path = "../core" }
+linkerd-ewma = { path = "../../ewma" }
+linkerd-load-biaser = { path = "../../load-biaser" }
 linkerd-app-test = { path = "../test", optional = true }
 linkerd-distribute = { path = "../../distribute" }
 linkerd-http-classify = { path = "../../http/classify" }

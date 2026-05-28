@@ -202,7 +202,7 @@ impl classify::ClassifyEos for Eos {
     }
 }
 
-fn grpc_code(hdrs: &http::HeaderMap) -> Option<grpc::Code> {
+pub fn grpc_code(hdrs: &http::HeaderMap) -> Option<grpc::Code> {
     hdrs.get("grpc-status")
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.parse::<u16>().ok())
