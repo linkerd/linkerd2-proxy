@@ -1341,6 +1341,125 @@ mod tests {
         }
     }
 
+    // After a long idle period (many multiples of the decay window), cold-start
+    // protection re-engages so that one post-idle sample cannot trip the circuit.
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn idle_reengages_cold_start_with_success() {
+        let _trace = linkerd_tracing::test::trace_init();
+
+        let (params, gate_tx, rsps) = gate::Params::channel(1);
+
+        let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
+            max_failures: 100,
+            threshold: 0.5,
+            min_requests: 3,
+            decay: time::Duration::from_secs(10),
+            ..default_test_config(gate_tx, rsps)
+        });
+        let mut task = task::spawn(breaker.run());
+
+        assert_pending!(task.poll());
+        time::advance(time::Duration::from_millis(1)).await;
+
+        for _ in 0..3 {
+            send_ok(&params, http::StatusCode::OK);
+            time::advance(time::Duration::from_secs(1)).await;
+            assert_pending!(task.poll());
+        }
+
+        send_err(&params, http::StatusCode::BAD_GATEWAY);
+        time::advance(time::Duration::from_secs(1)).await;
+        assert_pending!(task.poll());
+        assert!(
+            params.gate.is_open(),
+            "One failure among successes should not trip (EWMA still above 0.5)"
+        );
+
+        // Long idle: 200s = 20x the decay window, well above the 3x
+        // cold-start re-engagement threshold.
+        time::advance(time::Duration::from_secs(200)).await;
+
+        // Cold-start re-engaged: request_count reset to 0. A post-idle
+        // success brings it to 1, well below min_requests=3.
+        send_ok(&params, http::StatusCode::OK);
+        time::advance(time::Duration::from_millis(10)).await;
+        assert_pending!(task.poll());
+        assert!(
+            params.gate.is_open(),
+            "Post-idle success: cold-start active (1 < min_requests) and EWMA near 1.0"
+        );
+
+        send_err(&params, http::StatusCode::BAD_GATEWAY);
+        time::advance(time::Duration::from_millis(10)).await;
+        assert_pending!(task.poll());
+        assert!(
+            params.gate.is_open(),
+            "Post-idle failure: cold-start still active (2 < min_requests)"
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn idle_reengages_cold_start_with_failure() {
+        let _trace = linkerd_tracing::test::trace_init();
+
+        let (params, gate_tx, rsps) = gate::Params::channel(1);
+
+        let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
+            max_failures: 100,
+            threshold: 0.5,
+            min_requests: 3,
+            decay: time::Duration::from_secs(10),
+            ..default_test_config(gate_tx, rsps)
+        });
+        let mut task = task::spawn(breaker.run());
+
+        assert_pending!(task.poll());
+        time::advance(time::Duration::from_millis(1)).await;
+
+        for _ in 0..3 {
+            send_ok(&params, http::StatusCode::OK);
+            time::advance(time::Duration::from_secs(1)).await;
+            assert_pending!(task.poll());
+        }
+        send_err(&params, http::StatusCode::BAD_GATEWAY);
+        time::advance(time::Duration::from_secs(1)).await;
+        assert_pending!(task.poll());
+        assert!(
+            params.gate.is_open(),
+            "One failure among successes should not trip (EWMA still above 0.5)"
+        );
+
+        // Long idle: 200s = 20x the decay window
+        time::advance(time::Duration::from_secs(200)).await;
+
+        // Cold-start re-engaged: request_count reset to 0. Failures after
+        // idle cannot trip until min_requests new observations accumulate.
+        send_err(&params, http::StatusCode::BAD_GATEWAY);
+        time::advance(time::Duration::from_millis(10)).await;
+        assert_pending!(task.poll());
+        assert!(
+            params.gate.is_open(),
+            "Post-idle failure 1/3: cold-start active (1 < min_requests)"
+        );
+
+        send_err(&params, http::StatusCode::BAD_GATEWAY);
+        time::advance(time::Duration::from_millis(10)).await;
+        assert_pending!(task.poll());
+        assert!(
+            params.gate.is_open(),
+            "Post-idle failure 2/3: cold-start active (2 < min_requests)"
+        );
+
+        // Third failure reaches min_requests=3 with EWMA near 0.0
+        send_err(&params, http::StatusCode::BAD_GATEWAY);
+        time::advance(time::Duration::from_millis(10)).await;
+        assert_pending!(task.poll());
+        assert!(
+            params.gate.is_shut(),
+            "Post-idle failure 3/3: cold-start satisfied, EWMA near 0.0 < threshold 0.5"
+        );
+    }
+
     // A closed response channel must end the breaker task even while it is
     // parked in the backoff wait. recv() on a closed channel yields None right
     // away, so the drain step has to treat None as teardown rather than looping
