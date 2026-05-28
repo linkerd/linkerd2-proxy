@@ -1298,6 +1298,49 @@ mod tests {
         );
     }
 
+    // When both consecutive failures (max_failures=0) and success rate
+    // (threshold=0.0, min_requests=usize::MAX) are disabled, no combination of
+    // errors can trip the circuit.
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn both_policies_disabled_never_trips() {
+        let _trace = linkerd_tracing::test::trace_init();
+
+        let (params, gate_tx, rsps) = gate::Params::channel(1);
+
+        let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
+            max_failures: 0,
+            threshold: 0.0,
+            min_requests: usize::MAX,
+            ..default_test_config(gate_tx, rsps)
+        });
+        let mut task = task::spawn(breaker.run());
+
+        assert_pending!(task.poll());
+
+        // Advance 1ms past t=0 so EWMA accepts samples
+        time::advance(time::Duration::from_millis(1)).await;
+
+        for _ in 0..10 {
+            send_err(&params, http::StatusCode::BAD_GATEWAY);
+            time::advance(time::Duration::from_secs(1)).await;
+            assert_pending!(task.poll());
+            assert!(
+                params.gate.is_open(),
+                "Breaker must stay open when both policies are disabled (tripped via 5xx)"
+            );
+        }
+
+        for _ in 0..10 {
+            send_ok(&params, http::StatusCode::TOO_MANY_REQUESTS);
+            time::advance(time::Duration::from_secs(1)).await;
+            assert_pending!(task.poll());
+            assert!(
+                params.gate.is_open(),
+                "Breaker must stay open when both policies are disabled (tripped via 429)"
+            );
+        }
+    }
+
     // A closed response channel must end the breaker task even while it is
     // parked in the backoff wait. recv() on a closed channel yields None right
     // away, so the drain step has to treat None as teardown rather than looping
