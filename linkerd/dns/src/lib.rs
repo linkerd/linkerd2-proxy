@@ -41,14 +41,14 @@ struct InvalidSrv(rdata::SRV);
 
 #[derive(Debug, Error)]
 #[error("failed to resolve A record: {0}")]
-struct ARecordError(#[from] hickory_resolver::ResolveError);
+struct ARecordError(#[from] hickory_resolver::net::NetError);
 
 #[derive(Debug, Error)]
 enum SrvRecordError {
     #[error("{0}")]
     Invalid(#[from] InvalidSrv),
     #[error("failed to resolve SRV record: {0}")]
-    Resolve(#[from] hickory_resolver::ResolveError),
+    Resolve(#[from] hickory_resolver::net::NetError),
 }
 
 #[derive(Debug, Error)]
@@ -67,32 +67,30 @@ impl Resolver {
     ///
     /// Either a new `Resolver` or an error if the system configuration
     /// could not be parsed.
-    ///
-    /// TODO: This should be infallible like it is in the `domain` crate.
-    pub fn from_system_config_with<C: ConfigureResolver>(c: &C) -> std::io::Result<Self> {
+    pub fn from_system_config_with<C: ConfigureResolver>(
+        c: &C,
+    ) -> Result<Self, hickory_resolver::net::NetError> {
         let (config, mut opts) = system_conf::read_system_conf()?;
         c.configure_resolver(&mut opts);
         trace!("DNS config: {:?}", &config);
         trace!("DNS opts: {:?}", &opts);
-        Ok(Self::new(config, opts))
+        Self::new(config, opts)
     }
 
-    pub fn new(config: ResolverConfig, mut opts: ResolverOpts) -> Self {
+    pub fn new(
+        config: ResolverConfig,
+        mut opts: ResolverOpts,
+    ) -> Result<Self, hickory_resolver::net::NetError> {
         // Disable Hickory-resolver's caching.
         opts.cache_size = 0;
         // This function is synchronous, but needs to be called within the Tokio
         // 0.2 runtime context, since it gets a handle.
-        let provider = hickory_resolver::name_server::TokioConnectionProvider::default();
-        let mut builder = hickory_resolver::Resolver::builder_with_config(config, provider);
-        *builder.options_mut() = opts;
-        let dns = builder.build();
-        /* TODO(kate): this can be used if/when hickory-dns/hickory-dns#2877 is released.
+        let provider = hickory_resolver::net::runtime::TokioRuntimeProvider::default();
         let dns = hickory_resolver::Resolver::builder_with_config(config, provider)
             .with_options(opts)
-            .build();
-        */
+            .build()?;
 
-        Resolver { dns, metrics: None }
+        Ok(Resolver { dns, metrics: None })
     }
 
     /// Installs a counter tracking the number of A/AAAA records resolved.
@@ -150,6 +148,7 @@ impl Resolver {
         Ok((ips, valid_until))
     }
 
+    #[allow(unused, unreachable_code, reason = "XXX(kate)")]
     async fn resolve_srv(
         &self,
         name: NameRef<'_>,
@@ -157,11 +156,18 @@ impl Resolver {
         debug!(%name, "Resolving a SRV record");
         let srv = self.dns.srv_lookup(name.as_str()).await?;
 
-        let valid_until = Instant::from_std(srv.as_lookup().valid_until());
+        let valid_until = Instant::from_std(srv.valid_until());
         let addrs = srv
-            .into_iter()
+            .answers()
+            .iter()
+            .map(|record| &record.data)
+            .filter_map(|rdata| match rdata {
+                hickory_resolver::proto::rr::RData::SRV(srv) => Some(srv),
+                _ => None,
+            })
             .map(Self::srv_to_socket_addr)
             .collect::<Result<_, InvalidSrv>>()?;
+
         debug!(ttl = ?valid_until - Instant::now(), ?addrs);
 
         Ok((addrs, valid_until))
@@ -174,19 +180,19 @@ impl Resolver {
     // instead of dots/colons. We can alternatively do another lookup
     // on the pod's DNS but it seems unnecessary since the pod's
     // ip is in the target of the SRV record.
-    fn srv_to_socket_addr(srv: rdata::SRV) -> Result<net::SocketAddr, InvalidSrv> {
-        if let Some(first_label) = srv.target().iter().next() {
+    fn srv_to_socket_addr(srv: &rdata::SRV) -> Result<net::SocketAddr, InvalidSrv> {
+        if let Some(first_label) = srv.target.iter().next() {
             if let Ok(utf8) = std::str::from_utf8(first_label) {
                 let mut res = utf8.replace('-', ".").parse::<std::net::IpAddr>();
                 if res.is_err() {
                     res = utf8.replace('-', ":").parse::<std::net::IpAddr>();
                 }
                 if let Ok(ip) = res {
-                    return Ok(net::SocketAddr::new(ip, srv.port()));
+                    return Ok(net::SocketAddr::new(ip, srv.port));
                 }
             }
         }
-        Err(InvalidSrv(srv))
+        Err(InvalidSrv(srv.clone()))
     }
 }
 
@@ -223,13 +229,13 @@ impl ResolveError {
     /// Returns the negative TTL [`time::Duration`] of a [`hickory_resolver::ResolveError`].
     ///
     /// This function will defensively enforce a minimum negative TTL.
-    fn negative_ttl_of(error: &hickory_resolver::ResolveError) -> Option<time::Duration> {
-        use hickory_resolver::proto::{ProtoError, ProtoErrorKind};
+    fn negative_ttl_of(error: &hickory_resolver::net::NetError) -> Option<time::Duration> {
+        use hickory_resolver::net::{DnsError, NetError, NoRecords};
 
-        let Some(ProtoErrorKind::NoRecordsFound {
+        let NetError::Dns(DnsError::NoRecordsFound(NoRecords {
             negative_ttl: Some(ttl_secs),
             ..
-        }) = error.proto().map(ProtoError::kind)
+        })) = error
         else {
             return None;
         };
@@ -373,7 +379,7 @@ mod tests {
         let name = "foobar.linkerd-dst-headless.linkerd.svc.cluster.local.";
         let target = domain::Name::from_str(name).unwrap();
         let srv = rdata::SRV::new(1, 1, 8086, target);
-        assert!(Resolver::srv_to_socket_addr(srv).is_err());
+        assert!(Resolver::srv_to_socket_addr(&srv).is_err());
     }
 
     #[test]
@@ -399,7 +405,7 @@ mod tests {
         ] {
             let target = domain::Name::from_str(case.input).unwrap();
             let srv = rdata::SRV::new(1, 1, 8086, target);
-            let socket = Resolver::srv_to_socket_addr(srv).unwrap();
+            let socket = Resolver::srv_to_socket_addr(&srv).unwrap();
             assert_eq!(socket.ip(), net::IpAddr::from_str(case.output).unwrap());
         }
     }
@@ -407,7 +413,7 @@ mod tests {
     #[test]
     fn srv_record_reports_cause_correctly() {
         let srv = "foobar.linkerd-dst-headless.linkerd.svc.cluster.local."
-            .parse::<hickory_resolver::Name>()
+            .parse::<domain::Name>()
             .map(|name| rdata::SRV::new(1, 1, 8086, name))
             .expect("a valid domain name");
 
