@@ -137,6 +137,36 @@ pub enum FailureAccrual {
     },
 }
 
+/// Success-rate-based circuit breaking configuration.
+///
+/// The circuit trips when the EWMA success rate drops below `threshold`
+/// after at least `min_requests` have been observed. `decay` controls
+/// the EWMA window.
+///
+/// `Eq` and `Hash` cannot be derived because `threshold` is `f64` and
+/// IEEE 754 defines `NaN != NaN`, which is `!Eq` (and `!Hash`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SuccessRateConfig {
+    pub threshold: f64,
+    pub decay: time::Duration,
+    pub min_requests: u32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct LoadBiasConfig {
+    pub enabled: bool,
+    pub penalty: time::Duration,
+    pub penalty_decay: time::Duration,
+}
+
+/// Default maximum Retry-After duration when no configuration is provided.
+pub const DEFAULT_RETRY_AFTER_MAX_DURATION: time::Duration = time::Duration::from_secs(300);
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct RetryAfterConfig {
+    pub max_duration: time::Duration,
+}
+
 // === impl ClientPolicy ===
 
 impl ClientPolicy {
@@ -423,6 +453,8 @@ pub mod proto {
         Backoff(#[from] InvalidBackoff),
         #[error("missing {0}")]
         Missing(&'static str),
+        #[error("invalid value: {0}")]
+        InvalidValue(&'static str),
     }
 
     #[derive(Debug, thiserror::Error)]
@@ -763,7 +795,39 @@ pub mod proto {
             .map(time::Duration::try_from)
             .transpose()?
             .ok_or(InvalidBackoff::Missing("max_backoff"))?;
+        // `jitter_ratio` is defined as `float` in the proto API. Use f64 here
+        // to match `linkerd_exp_backoff::ExponentialBackoff::jitter: f64`.
         linkerd_exp_backoff::ExponentialBackoff::try_new(min, max, jitter_ratio as f64)
             .map_err(Into::into)
+    }
+
+    pub(crate) fn try_load_bias_config(
+        proto: outbound::LoadBiasConfig,
+    ) -> Result<LoadBiasConfig, prost_types::DurationError> {
+        Ok(LoadBiasConfig {
+            enabled: proto.enabled,
+            penalty: proto
+                .penalty
+                .map(time::Duration::try_from)
+                .transpose()?
+                .unwrap_or(time::Duration::from_secs(5)),
+            penalty_decay: proto
+                .penalty_decay
+                .map(time::Duration::try_from)
+                .transpose()?
+                .unwrap_or(time::Duration::from_secs(10)),
+        })
+    }
+
+    pub(crate) fn try_retry_after_config(
+        proto: outbound::RetryAfterConfig,
+    ) -> Result<RetryAfterConfig, prost_types::DurationError> {
+        Ok(RetryAfterConfig {
+            max_duration: proto
+                .max_duration
+                .map(time::Duration::try_from)
+                .transpose()?
+                .unwrap_or(DEFAULT_RETRY_AFTER_MAX_DURATION),
+        })
     }
 }
