@@ -86,10 +86,14 @@ impl ClientPolicies {
             http1: http::Http1 {
                 routes: http_routes.clone(),
                 failure_accrual: Default::default(),
+                load_bias: None,
+                retry_after: None,
             },
             http2: http::Http2 {
                 routes: http_routes,
                 failure_accrual: Default::default(),
+                load_bias: None,
+                retry_after: None,
             },
             opaque: opaq::Opaque {
                 routes: Some(opaq::Route {

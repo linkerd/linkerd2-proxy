@@ -562,6 +562,7 @@ fn policy_routes(
         policy::Protocol::Http1(policy::http::Http1 {
             ref routes,
             failure_accrual,
+            ..
         }) => Some(http::Routes::Policy(http::policy::Params::Http(
             http::policy::HttpParams {
                 addr,
@@ -574,6 +575,7 @@ fn policy_routes(
         policy::Protocol::Http2(policy::http::Http2 {
             ref routes,
             failure_accrual,
+            ..
         }) => Some(http::Routes::Policy(http::policy::Params::Http(
             http::policy::HttpParams {
                 addr,
@@ -586,6 +588,7 @@ fn policy_routes(
         policy::Protocol::Grpc(policy::grpc::Grpc {
             ref routes,
             failure_accrual,
+            ..
         }) => Some(http::Routes::Policy(http::policy::Params::Grpc(
             http::policy::GrpcParams {
                 addr,

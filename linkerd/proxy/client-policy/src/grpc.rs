@@ -1,4 +1,4 @@
-use crate::FailureAccrual;
+use crate::{FailureAccrual, LoadBiasConfig, RetryAfterConfig};
 use linkerd_exp_backoff::ExponentialBackoff;
 use linkerd_http_route::{grpc, http};
 use std::{sync::Arc, time};
@@ -25,6 +25,8 @@ pub struct Grpc {
     /// Configures how endpoints accrue observed failures.
     // TODO(ver) Move this to backends and scope to endpoints.
     pub failure_accrual: FailureAccrual,
+    pub load_bias: Option<LoadBiasConfig>,
+    pub retry_after: Option<RetryAfterConfig>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -66,6 +68,8 @@ impl Default for Grpc {
         Self {
             routes: Arc::new([]),
             failure_accrual: Default::default(),
+            load_bias: None,
+            retry_after: None,
         }
     }
 }
@@ -152,6 +156,9 @@ pub mod proto {
 
         #[error("{0}")]
         Timeout(#[from] crate::http::proto::InvalidTimeouts),
+
+        #[error("invalid duration for {0}: {1}")]
+        InvalidDuration(&'static str, #[source] prost_types::DurationError),
     }
 
     #[derive(Debug, thiserror::Error)]
@@ -197,6 +204,16 @@ pub mod proto {
             Ok(Self {
                 routes,
                 failure_accrual: proto.failure_accrual.try_into()?,
+                load_bias: proto
+                    .load_bias
+                    .map(crate::proto::try_load_bias_config)
+                    .transpose()
+                    .map_err(|e| InvalidGrpcRoute::InvalidDuration("load_bias", e))?,
+                retry_after: proto
+                    .retry_after
+                    .map(crate::proto::try_retry_after_config)
+                    .transpose()
+                    .map_err(|e| InvalidGrpcRoute::InvalidDuration("retry_after", e))?,
             })
         }
 

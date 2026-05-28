@@ -202,10 +202,14 @@ impl ClientPolicy {
                 http1: http::Http1 {
                     routes: HTTP_ROUTES.clone(),
                     failure_accrual: Default::default(),
+                    load_bias: None,
+                    retry_after: None,
                 },
                 http2: http::Http2 {
                     routes: HTTP_ROUTES.clone(),
                     failure_accrual: Default::default(),
+                    load_bias: None,
+                    retry_after: None,
                 },
 
                 opaque: opaq::Opaque {
@@ -242,10 +246,14 @@ impl ClientPolicy {
                 http1: http::Http1 {
                     routes: NO_HTTP_ROUTES.clone(),
                     failure_accrual: Default::default(),
+                    load_bias: None,
+                    retry_after: None,
                 },
                 http2: http::Http2 {
                     routes: NO_HTTP_ROUTES.clone(),
                     failure_accrual: Default::default(),
+                    load_bias: None,
+                    retry_after: None,
                 },
                 opaque: opaq::Opaque { routes: None },
             },
