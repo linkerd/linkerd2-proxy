@@ -11,17 +11,17 @@ pub use self::{
     route::{errors, GrpcRouteMetrics, HttpRouteMetrics},
     router::{GrpcParams, HttpParams},
 };
-pub use linkerd_proxy_client_policy::{ClientPolicy, FailureAccrual};
+pub use linkerd_proxy_client_policy::{ClientPolicy, ConsecutiveFailures, FailureAccrual};
 
 /// HTTP or gRPC policy route parameters.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Params {
     Http(router::HttpParams),
     Grpc(router::GrpcParams),
 }
 
 /// A stack module configured by `Params` and some `T`-typed parent target.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(super) enum Policy<T: Clone + Debug + Eq + Hash> {
     Http(router::Http<T>),
     Grpc(router::Grpc<T>),

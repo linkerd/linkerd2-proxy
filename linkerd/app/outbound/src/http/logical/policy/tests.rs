@@ -120,7 +120,7 @@ async fn header_based_route() {
         backends: std::iter::once(default_backend.clone())
             .chain(Some(special_backend.clone()))
             .collect(),
-        failure_accrual: Default::default(),
+        failure_accrual: None,
     });
 
     let metrics = HttpRouteMetrics::default();
@@ -231,7 +231,7 @@ async fn http_filter_request_headers() {
                 }],
             }]),
             backends: std::iter::once(backend).collect(),
-            failure_accrual: Default::default(),
+            failure_accrual: None,
         }
     });
 

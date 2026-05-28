@@ -18,23 +18,23 @@ pub struct RouteParams {
 }
 
 // TODO: keepalive settings, etc.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Http1 {
     pub routes: Arc<[Route]>,
 
     /// Configures how endpoints accrue observed failures.
-    pub failure_accrual: FailureAccrual,
+    pub failure_accrual: Option<FailureAccrual>,
     pub load_bias: Option<LoadBiasConfig>,
     pub retry_after: Option<RetryAfterConfig>,
 }
 
 // TODO: window sizes, etc
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Http2 {
     pub routes: Arc<[Route]>,
 
     /// Configures how endpoints accrue observed failures.
-    pub failure_accrual: FailureAccrual,
+    pub failure_accrual: Option<FailureAccrual>,
     pub load_bias: Option<LoadBiasConfig>,
     pub retry_after: Option<RetryAfterConfig>,
 }
@@ -88,7 +88,7 @@ impl Default for Http1 {
     fn default() -> Self {
         Self {
             routes: Arc::new([]),
-            failure_accrual: Default::default(),
+            failure_accrual: None,
             load_bias: None,
             retry_after: None,
         }
@@ -101,7 +101,7 @@ impl Default for Http2 {
     fn default() -> Self {
         Self {
             routes: Arc::new([]),
-            failure_accrual: Default::default(),
+            failure_accrual: None,
             load_bias: None,
             retry_after: None,
         }
@@ -240,7 +240,10 @@ pub mod proto {
                 .collect::<Result<Arc<[_]>, _>>()?;
             Ok(Self {
                 routes,
-                failure_accrual: proto.failure_accrual.try_into()?,
+                failure_accrual: proto
+                    .failure_accrual
+                    .map(FailureAccrual::try_from)
+                    .transpose()?,
                 load_bias: proto
                     .load_bias
                     .map(crate::proto::try_load_bias_config)
@@ -267,7 +270,10 @@ pub mod proto {
                 .collect::<Result<Arc<[_]>, _>>()?;
             Ok(Self {
                 routes,
-                failure_accrual: proto.failure_accrual.try_into()?,
+                failure_accrual: proto
+                    .failure_accrual
+                    .map(FailureAccrual::try_from)
+                    .transpose()?,
                 load_bias: proto
                     .load_bias
                     .map(crate::proto::try_load_bias_config)

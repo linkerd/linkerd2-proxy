@@ -12,13 +12,13 @@ use linkerd_http_route as http_route;
 use linkerd_proxy_client_policy as policy;
 use std::{fmt::Debug, hash::Hash, sync::Arc};
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Params<M, F, E> {
     pub addr: Addr,
     pub meta: ParentRef,
     pub routes: Arc<[http_route::Route<M, policy::RoutePolicy<F, E>>]>,
     pub backends: Arc<[policy::Backend]>,
-    pub failure_accrual: policy::FailureAccrual,
+    pub failure_accrual: Option<policy::FailureAccrual>,
 }
 
 pub type HttpParams =
@@ -162,7 +162,7 @@ where
                     parent: parent.clone(),
                     backend_ref,
                     parent_ref: parent_ref.clone(),
-                    failure_accrual,
+                    failure_accrual: failure_accrual.clone(),
                 }
             }
         };

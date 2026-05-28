@@ -12,7 +12,7 @@ pub mod tls;
 pub use linkerd_http_route as route;
 pub use linkerd_proxy_api_resolve::Metadata as EndpointMetadata;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ClientPolicy {
     pub parent: Arc<Meta>,
     pub protocol: Protocol,
@@ -25,7 +25,8 @@ pub struct ClientPolicyOverrides {
 }
 
 // TODO additional server configs (e.g. concurrency limits, window sizes, etc)
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
+#[allow(clippy::large_enum_variant)]
 pub enum Protocol {
     Detect {
         timeout: time::Duration,
@@ -122,19 +123,29 @@ pub struct PeakEwma {
     pub default_rtt: time::Duration,
 }
 
+/// Failure-accrual circuit breaking configuration for an endpoint.
+///
+/// When present the proxy tracks endpoint health and trips the breaker
+/// based on the configured modes. `consecutive` is always present,
+/// `success_rate` is present only when explicitly configured via an
+/// annotation.
+///
+/// `Eq` and `Hash` cannot be derived because `SuccessRateConfig`
+/// contains an `f64` threshold field.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FailureAccrual {
+    pub consecutive: ConsecutiveFailures,
+    pub success_rate: Option<SuccessRateConfig>,
+}
+
+/// Consecutive-failure tracking parameters.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum FailureAccrual {
-    /// Endpoints do not become unavailable due to observed failures.
-    None,
-    /// Endpoints are marked as unavailable when `max_failures` consecutive
-    /// failures are observed.
-    ConsecutiveFailures {
-        /// The number of consecutive failures after which an endpoint becomes
-        /// unavailable.
-        max_failures: usize,
-        /// Backoff for probing the endpoint when it is in a failed state.
-        backoff: linkerd_exp_backoff::ExponentialBackoff,
-    },
+pub struct ConsecutiveFailures {
+    /// The number of consecutive failures after which an endpoint becomes
+    /// unavailable.
+    pub max_failures: usize,
+    /// Backoff for probing the endpoint when it is in a failed state.
+    pub backoff: linkerd_exp_backoff::ExponentialBackoff,
 }
 
 /// Success-rate-based circuit breaking configuration.
@@ -152,6 +163,12 @@ pub struct SuccessRateConfig {
     pub min_requests: u32,
 }
 
+/// Load-biasing configuration for rate-aware load balancing.
+///
+/// When `enabled`, the balancer adds `penalty` to the load estimate of a
+/// rate-limited endpoint so the power-of-two-choices selection prefers
+/// other endpoints. `penalty_decay` is the window over which that penalty
+/// fades.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct LoadBiasConfig {
     pub enabled: bool,
@@ -162,6 +179,11 @@ pub struct LoadBiasConfig {
 /// Default maximum Retry-After duration when no configuration is provided.
 pub const DEFAULT_RETRY_AFTER_MAX_DURATION: time::Duration = time::Duration::from_secs(300);
 
+/// Configuration for honoring rate-limit hints.
+///
+/// `max_duration` caps the delay the proxy will take from a Retry-After
+/// header or a gRPC pushback trailer. Longer hints are clamped to this
+/// value. When absent, [`DEFAULT_RETRY_AFTER_MAX_DURATION`] applies.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct RetryAfterConfig {
     pub max_duration: time::Duration,
@@ -201,13 +223,13 @@ impl ClientPolicy {
                 timeout,
                 http1: http::Http1 {
                     routes: HTTP_ROUTES.clone(),
-                    failure_accrual: Default::default(),
+                    failure_accrual: None,
                     load_bias: None,
                     retry_after: None,
                 },
                 http2: http::Http2 {
                     routes: HTTP_ROUTES.clone(),
-                    failure_accrual: Default::default(),
+                    failure_accrual: None,
                     load_bias: None,
                     retry_after: None,
                 },
@@ -245,13 +267,13 @@ impl ClientPolicy {
                 timeout,
                 http1: http::Http1 {
                     routes: NO_HTTP_ROUTES.clone(),
-                    failure_accrual: Default::default(),
+                    failure_accrual: None,
                     load_bias: None,
                     retry_after: None,
                 },
                 http2: http::Http2 {
                     routes: NO_HTTP_ROUTES.clone(),
-                    failure_accrual: Default::default(),
+                    failure_accrual: None,
                     load_bias: None,
                     retry_after: None,
                 },
@@ -350,12 +372,6 @@ impl fmt::Display for Meta {
 }
 
 // === impl FailureAccrual ===
-
-impl Default for FailureAccrual {
-    fn default() -> Self {
-        Self::None
-    }
-}
 
 #[cfg(feature = "proto")]
 pub mod proto {
@@ -760,31 +776,78 @@ pub mod proto {
         }
     }
 
+    /// Lower bound on the success-rate decay window.
+    ///
+    /// A decay shorter than this is below the moving average's usable
+    /// resolution and would be silently clamped later, leaving the breaker
+    /// tracking a window the operator did not ask for. The value matches the
+    /// moving average's own floor (`linkerd_ewma::MIN_DECAY`), kept here as a
+    /// literal to avoid a dependency on another crate for one constant.
+    const MIN_SUCCESS_RATE_DECAY: time::Duration = time::Duration::from_millis(1);
+
+    /// Upper bound on the success-rate cold-start request floor.
+    ///
+    /// A floor above this counts as misconfiguration. Cold-start would never
+    /// end, so the policy could never trip. The ceiling is a safety limit, not
+    /// a protocol constraint, and may be raised if a workload genuinely needs a
+    /// larger warm-up sample.
+    const MAX_SUCCESS_RATE_MIN_REQUESTS: u32 = 1_000_000;
+
     impl TryFrom<outbound::FailureAccrual> for FailureAccrual {
         type Error = InvalidFailureAccrual;
         fn try_from(accrual: outbound::FailureAccrual) -> Result<Self, Self::Error> {
-            use outbound::failure_accrual::ConsecutiveFailures;
-            let ConsecutiveFailures {
+            use outbound::failure_accrual::ConsecutiveFailures as ProtoConsecutiveFailures;
+            let ProtoConsecutiveFailures {
                 max_failures,
                 backoff,
             } = accrual
                 .consecutive_failures
                 .ok_or(InvalidFailureAccrual::Missing("consecutive_failures"))?;
-            Ok(FailureAccrual::ConsecutiveFailures {
-                max_failures: max_failures as usize,
-                backoff: backoff.map(try_backoff).transpose()?.ok_or(
-                    InvalidFailureAccrual::Missing("consecutive failures backoff"),
-                )?,
+            let backoff =
+                backoff
+                    .map(try_backoff)
+                    .transpose()?
+                    .ok_or(InvalidFailureAccrual::Missing(
+                        "consecutive failures backoff",
+                    ))?;
+            let success_rate = accrual
+                .success_rate
+                .map(|sr| -> Result<SuccessRateConfig, InvalidFailureAccrual> {
+                    if !(0.0..=1.0).contains(&sr.threshold) {
+                        return Err(InvalidFailureAccrual::InvalidValue(
+                            "success rate threshold must be between 0.0 and 1.0",
+                        ));
+                    }
+                    let decay = sr
+                        .decay
+                        .map(time::Duration::try_from)
+                        .transpose()
+                        .map_err(|e| InvalidFailureAccrual::Backoff(InvalidBackoff::Duration(e)))?
+                        .unwrap_or(time::Duration::from_secs(10));
+                    if decay < MIN_SUCCESS_RATE_DECAY {
+                        return Err(InvalidFailureAccrual::InvalidValue(
+                            "success rate decay is below the moving-average minimum",
+                        ));
+                    }
+                    if sr.min_requests > MAX_SUCCESS_RATE_MIN_REQUESTS {
+                        return Err(InvalidFailureAccrual::InvalidValue(
+                            "success rate min_requests exceeds the supported maximum",
+                        ));
+                    }
+                    Ok(SuccessRateConfig {
+                        threshold: sr.threshold,
+                        decay,
+                        min_requests: sr.min_requests,
+                    })
+                })
+                .transpose()?;
+            Ok(FailureAccrual {
+                consecutive: ConsecutiveFailures {
+                    max_failures: max_failures as usize,
+                    backoff,
+                },
+                success_rate,
             })
-        }
-    }
-
-    impl TryFrom<Option<outbound::FailureAccrual>> for FailureAccrual {
-        type Error = InvalidFailureAccrual;
-        fn try_from(accrual: Option<outbound::FailureAccrual>) -> Result<Self, Self::Error> {
-            accrual
-                .map(Self::try_from)
-                .unwrap_or(Ok(FailureAccrual::None))
         }
     }
 
@@ -844,6 +907,7 @@ pub mod proto {
 mod tests {
     use super::*;
     use linkerd2_proxy_api::outbound;
+    use proto::InvalidFailureAccrual;
 
     #[test]
     fn default_retry_after_max_duration_is_300_seconds() {
@@ -1005,13 +1069,6 @@ mod tests {
     }
 
     #[test]
-    fn failure_accrual_try_from_returns_none_for_option_none() {
-        let result = FailureAccrual::try_from(None);
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), FailureAccrual::None);
-    }
-
-    #[test]
     fn failure_accrual_try_from_parses_valid_consecutive_failures() {
         let accrual = outbound::FailureAccrual {
             consecutive_failures: Some(outbound::failure_accrual::ConsecutiveFailures {
@@ -1031,15 +1088,8 @@ mod tests {
             success_rate: None,
         };
         let result = FailureAccrual::try_from(accrual).unwrap();
-        match result {
-            FailureAccrual::ConsecutiveFailures {
-                max_failures,
-                backoff: _,
-            } => {
-                assert_eq!(max_failures, 5);
-            }
-            other => panic!("expected ConsecutiveFailures, got {:?}", other),
-        }
+        assert_eq!(result.consecutive.max_failures, 5);
+        assert_eq!(result.success_rate, None);
     }
 
     #[test]
@@ -1057,4 +1107,64 @@ mod tests {
             "missing backoff in consecutive_failures must be an error"
         );
     }
+
+    fn valid_consecutive_failures() -> outbound::failure_accrual::ConsecutiveFailures {
+        outbound::failure_accrual::ConsecutiveFailures {
+            max_failures: 5,
+            backoff: Some(outbound::ExponentialBackoff {
+                min_backoff: Some(prost_types::Duration {
+                    seconds: 1,
+                    nanos: 0,
+                }),
+                max_backoff: Some(prost_types::Duration {
+                    seconds: 60,
+                    nanos: 0,
+                }),
+                jitter_ratio: 0.5,
+            }),
+        }
+    }
+
+    #[test]
+    fn failure_accrual_try_from_rejects_subminimum_decay() {
+        let accrual = outbound::FailureAccrual {
+            consecutive_failures: Some(valid_consecutive_failures()),
+            success_rate: Some(outbound::failure_accrual::SuccessRate {
+                threshold: 0.9,
+                // 500us sits below the moving average's usable minimum of 1ms.
+                decay: Some(prost_types::Duration {
+                    seconds: 0,
+                    nanos: 500_000,
+                }),
+                min_requests: 100,
+            }),
+        };
+        let result = FailureAccrual::try_from(accrual);
+        assert!(
+            matches!(result, Err(InvalidFailureAccrual::InvalidValue(_))),
+            "a decay below the moving-average minimum must be rejected, got: {result:?}"
+        );
+    }
+
+    #[test]
+    fn failure_accrual_try_from_rejects_excessive_min_requests() {
+        let accrual = outbound::FailureAccrual {
+            consecutive_failures: Some(valid_consecutive_failures()),
+            success_rate: Some(outbound::failure_accrual::SuccessRate {
+                threshold: 0.9,
+                decay: Some(prost_types::Duration {
+                    seconds: 10,
+                    nanos: 0,
+                }),
+                // A floor this high means cold-start never ends.
+                min_requests: 2_000_000,
+            }),
+        };
+        let result = FailureAccrual::try_from(accrual);
+        assert!(
+            matches!(result, Err(InvalidFailureAccrual::InvalidValue(_))),
+            "a min_requests above the safety ceiling must be rejected, got: {result:?}"
+        );
+    }
+
 }

@@ -18,13 +18,13 @@ pub struct RouteParams {
 }
 
 // TODO HTTP2 settings
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Grpc {
     pub routes: Arc<[Route]>,
 
     /// Configures how endpoints accrue observed failures.
     // TODO(ver) Move this to backends and scope to endpoints.
-    pub failure_accrual: FailureAccrual,
+    pub failure_accrual: Option<FailureAccrual>,
     pub load_bias: Option<LoadBiasConfig>,
     pub retry_after: Option<RetryAfterConfig>,
 }
@@ -67,7 +67,7 @@ impl Default for Grpc {
     fn default() -> Self {
         Self {
             routes: Arc::new([]),
-            failure_accrual: Default::default(),
+            failure_accrual: None,
             load_bias: None,
             retry_after: None,
         }
@@ -203,7 +203,10 @@ pub mod proto {
                 .collect::<Result<Arc<[_]>, _>>()?;
             Ok(Self {
                 routes,
-                failure_accrual: proto.failure_accrual.try_into()?,
+                failure_accrual: proto
+                    .failure_accrual
+                    .map(FailureAccrual::try_from)
+                    .transpose()?,
                 load_bias: proto
                     .load_bias
                     .map(crate::proto::try_load_bias_config)

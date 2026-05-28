@@ -33,7 +33,7 @@ async fn routes() {
             meta: ParentRef(client_policy::Meta::new_default("parent")),
             backends: Arc::new([backend.clone()]),
             routes: Arc::new([default_route(backend)]),
-            failure_accrual: client_policy::FailureAccrual::None,
+            failure_accrual: None,
         })));
     let target = Target {
         num: 1,

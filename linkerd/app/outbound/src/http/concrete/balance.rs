@@ -76,7 +76,7 @@ where
     // Parent target.
     T: svc::Param<ParentRef>,
     T: svc::Param<BackendRef>,
-    T: svc::Param<FailureAccrual>,
+    T: svc::Param<Option<FailureAccrual>>,
     T: Clone + Debug + Send + Sync + 'static,
 {
     pub(super) fn layer<N, NSvc, R>(

@@ -237,22 +237,22 @@ impl HttpSidecar {
                 ref http2,
                 ..
             } => match version {
-                http::Variant::Http1 => (http1.routes.clone(), http1.failure_accrual),
-                http::Variant::H2 => (http2.routes.clone(), http2.failure_accrual),
+                http::Variant::Http1 => (http1.routes.clone(), http1.failure_accrual.clone()),
+                http::Variant::H2 => (http2.routes.clone(), http2.failure_accrual.clone()),
             },
             policy::Protocol::Http1(policy::http::Http1 {
                 ref routes,
-                failure_accrual,
+                ref failure_accrual,
                 ..
-            }) => (routes.clone(), failure_accrual),
+            }) => (routes.clone(), failure_accrual.clone()),
             policy::Protocol::Http2(policy::http::Http2 {
                 ref routes,
-                failure_accrual,
+                ref failure_accrual,
                 ..
-            }) => (routes.clone(), failure_accrual),
+            }) => (routes.clone(), failure_accrual.clone()),
             policy::Protocol::Grpc(policy::grpc::Grpc {
                 ref routes,
-                failure_accrual,
+                ref failure_accrual,
                 ..
             }) => {
                 return Some(http::Routes::Policy(http::policy::Params::Grpc(
@@ -261,7 +261,7 @@ impl HttpSidecar {
                         meta: parent_ref,
                         backends: policy.backends.clone(),
                         routes: routes.clone(),
-                        failure_accrual,
+                        failure_accrual: failure_accrual.clone(),
                     },
                 )))
             }

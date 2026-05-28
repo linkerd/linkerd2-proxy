@@ -7,9 +7,9 @@ mod consecutive_failures;
 use self::consecutive_failures::ConsecutiveFailures;
 
 /// Params configuring a circuit breaker stack.
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct Params {
-    pub(crate) accrual: FailureAccrual,
+    pub(crate) accrual: Option<FailureAccrual>,
     pub(crate) channel_capacity: usize,
 }
 
@@ -20,16 +20,15 @@ impl<T> svc::ExtractParam<gate::Params<classify::Class>, T> for Params {
         let (prms, gate, rsps) = gate::Params::channel(self.channel_capacity);
 
         match self.accrual {
-            FailureAccrual::None => {
+            None => {
                 // No failure accrual for this target; construct a gate
                 // that will never close.
                 tracing::trace!("No failure accrual policy enabled.");
                 prms
             }
-            FailureAccrual::ConsecutiveFailures {
-                max_failures,
-                backoff,
-            } => {
+            Some(ref accrual) => {
+                let max_failures = accrual.consecutive.max_failures;
+                let backoff = accrual.consecutive.backoff;
                 tracing::trace!(
                     max_failures,
                     backoff = ?backoff,

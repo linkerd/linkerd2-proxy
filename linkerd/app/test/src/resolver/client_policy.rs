@@ -85,13 +85,13 @@ impl ClientPolicies {
             timeout: Duration::from_secs(10),
             http1: http::Http1 {
                 routes: http_routes.clone(),
-                failure_accrual: Default::default(),
+                failure_accrual: None,
                 load_bias: None,
                 retry_after: None,
             },
             http2: http::Http2 {
                 routes: http_routes,
-                failure_accrual: Default::default(),
+                failure_accrual: None,
                 load_bias: None,
                 retry_after: None,
             },
