@@ -205,6 +205,7 @@ pub fn backend(dst: impl ToString) -> outbound::Backend {
                 default_rtt: Some(Duration::from_millis(30).try_into().unwrap()),
                 decay: Some(Duration::from_secs(10).try_into().unwrap()),
             })),
+            ejection: None,
         })),
     }
 }

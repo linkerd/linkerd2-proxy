@@ -655,7 +655,9 @@ pub mod proto {
             };
 
             let dispatcher = match backend.kind {
-                Some(backend::Kind::Balancer(BalanceP2c { discovery, load })) => {
+                Some(backend::Kind::Balancer(BalanceP2c {
+                    discovery, load, ..
+                })) => {
                     let discovery = discovery
                         .ok_or(InvalidBackend::Missing("balancer discovery"))?
                         .try_into()?;
@@ -721,19 +723,19 @@ pub mod proto {
     impl TryFrom<outbound::FailureAccrual> for FailureAccrual {
         type Error = InvalidFailureAccrual;
         fn try_from(accrual: outbound::FailureAccrual) -> Result<Self, Self::Error> {
-            use outbound::failure_accrual::{self, ConsecutiveFailures};
-            let kind = accrual.kind.ok_or(InvalidFailureAccrual::Missing("kind"))?;
-            match kind {
-                failure_accrual::Kind::ConsecutiveFailures(ConsecutiveFailures {
-                    max_failures,
-                    backoff,
-                }) => Ok(FailureAccrual::ConsecutiveFailures {
-                    max_failures: max_failures as usize,
-                    backoff: backoff.map(try_backoff).transpose()?.ok_or(
-                        InvalidFailureAccrual::Missing("consecutive failures backoff"),
-                    )?,
-                }),
-            }
+            use outbound::failure_accrual::ConsecutiveFailures;
+            let ConsecutiveFailures {
+                max_failures,
+                backoff,
+            } = accrual
+                .consecutive_failures
+                .ok_or(InvalidFailureAccrual::Missing("consecutive_failures"))?;
+            Ok(FailureAccrual::ConsecutiveFailures {
+                max_failures: max_failures as usize,
+                backoff: backoff.map(try_backoff).transpose()?.ok_or(
+                    InvalidFailureAccrual::Missing("consecutive failures backoff"),
+                )?,
+            })
         }
     }
 
