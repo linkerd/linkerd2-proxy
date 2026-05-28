@@ -379,6 +379,65 @@ async fn grpc_pushback_hint_extends_backoff_integration() {
     );
 }
 
+// Check that when both HTTP Retry-After and gRPC pushback hints are
+// present, the breaker uses the maximum of the two durations for backoff
+// extension. With http=3s and grpc=7s, the gate stays shut until 7s.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn combined_http_and_grpc_hints_max_wins_integration() {
+    let _trace = linkerd_tracing::test::trace_init();
+
+    let (params, gate_tx, rsps) = gate::Params::channel(8);
+    let ra_store = RetryAfterStore::new();
+    let grpc_store = GrpcRetryPushbackStore::new();
+
+    let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
+        retry_after_store: ra_store.clone(),
+        grpc_retry_pushback_store: grpc_store.clone(),
+        ..default_test_config(gate_tx, rsps)
+    });
+    let mut task = task::spawn(breaker.run());
+
+    assert_pending!(task.poll());
+
+    // Record both hints before the trip. take_combined_hint() returns
+    // max(http, grpc) = max(3s, 7s) = 7s.
+    ra_store.record(Duration::from_secs(3));
+    grpc_store.record(Duration::from_secs(7));
+
+    // Trip via 3 consecutive 5xx
+    for _ in 0..3 {
+        send_err(&params, http::StatusCode::BAD_GATEWAY);
+        time::advance(Duration::from_millis(100)).await;
+        assert_pending!(task.poll());
+    }
+    assert!(params.gate.is_shut(), "breaker should trip after 3x 5xx");
+
+    // At 3s the HTTP hint has expired, but the gRPC 7s hint keeps the gate
+    // shut because take_combined_hint returned max(3s, 7s) = 7s.
+    time::sleep(Duration::from_secs(3)).await;
+    assert_pending!(task.poll());
+    assert!(
+        params.gate.is_shut(),
+        "gate should remain shut at 3s (gRPC hint is 7s)",
+    );
+
+    // At 6s total we're still within the 7s gRPC hint window
+    time::sleep(Duration::from_secs(3)).await;
+    assert_pending!(task.poll());
+    assert!(
+        params.gate.is_shut(),
+        "gate should remain shut at 6s (gRPC hint is 7s)",
+    );
+
+    // At 7s total the gRPC hint expires and the gate enters probation
+    time::sleep(Duration::from_secs(1)).await;
+    assert_pending!(task.poll());
+    assert!(
+        params.gate.is_limited(),
+        "gate should enter probation after max(3s, 7s) = 7s hint expires",
+    );
+}
+
 // When both stores hold hints longer than the configured maximum, the breaker
 // clamps each hint to that maximum before taking the larger of the two. With
 // both hints above the cap, the backoff floor is the cap itself, so the gate
