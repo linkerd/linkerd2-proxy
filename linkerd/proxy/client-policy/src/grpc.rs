@@ -417,3 +417,133 @@ pub mod proto {
         }
     }
 }
+
+#[cfg(all(test, feature = "proto"))]
+mod tests {
+    use super::*;
+    use crate::{LoadBiasConfig, RetryAfterConfig};
+
+    #[test]
+    fn grpc_default_has_none_load_bias_and_retry_after() {
+        let g = Grpc::default();
+        assert_eq!(
+            g.load_bias, None,
+            "Grpc::default() must produce None for load_bias"
+        );
+        assert_eq!(
+            g.retry_after, None,
+            "Grpc::default() must produce None for retry_after"
+        );
+    }
+
+    #[test]
+    fn grpc_try_from_parses_load_bias_and_retry_after_from_proto() {
+        use linkerd2_proxy_api::outbound;
+
+        let proto = outbound::proxy_protocol::Grpc {
+            routes: vec![],
+            failure_accrual: None,
+            load_bias: Some(outbound::LoadBiasConfig {
+                enabled: true,
+                penalty: Some(prost_types::Duration {
+                    seconds: 4,
+                    nanos: 0,
+                }),
+                penalty_decay: Some(prost_types::Duration {
+                    seconds: 9,
+                    nanos: 0,
+                }),
+            }),
+            retry_after: Some(outbound::RetryAfterConfig {
+                max_duration: Some(prost_types::Duration {
+                    seconds: 90,
+                    nanos: 0,
+                }),
+            }),
+        };
+
+        let overrides = crate::ClientPolicyOverrides {
+            export_hostname_labels: false,
+        };
+        let result = Grpc::try_from(overrides, proto).unwrap();
+
+        assert_eq!(
+            result.load_bias,
+            Some(LoadBiasConfig {
+                enabled: true,
+                penalty: std::time::Duration::from_secs(4),
+                penalty_decay: std::time::Duration::from_secs(9),
+            })
+        );
+        assert_eq!(
+            result.retry_after,
+            Some(RetryAfterConfig {
+                max_duration: std::time::Duration::from_secs(90),
+            })
+        );
+    }
+
+    #[test]
+    fn grpc_try_from_rejects_invalid_load_bias_duration() {
+        use linkerd2_proxy_api::outbound;
+
+        let proto = outbound::proxy_protocol::Grpc {
+            routes: vec![],
+            failure_accrual: None,
+            load_bias: Some(outbound::LoadBiasConfig {
+                enabled: true,
+                penalty: Some(prost_types::Duration {
+                    seconds: -1,
+                    nanos: 0,
+                }),
+                penalty_decay: None,
+            }),
+            retry_after: None,
+        };
+
+        let overrides = crate::ClientPolicyOverrides {
+            export_hostname_labels: false,
+        };
+        let result = Grpc::try_from(overrides, proto);
+        assert!(
+            result.is_err(),
+            "invalid load_bias duration must produce an error"
+        );
+        let msg = format!("{}", result.unwrap_err());
+        assert!(
+            msg.contains("load_bias"),
+            "error should mention 'load_bias', got: {msg}"
+        );
+    }
+
+    #[test]
+    fn grpc_try_from_rejects_invalid_retry_after_duration() {
+        use linkerd2_proxy_api::outbound;
+
+        let proto = outbound::proxy_protocol::Grpc {
+            routes: vec![],
+            failure_accrual: None,
+            load_bias: None,
+            retry_after: Some(outbound::RetryAfterConfig {
+                max_duration: Some(prost_types::Duration {
+                    seconds: -1,
+                    nanos: 0,
+                }),
+            }),
+        };
+
+        let overrides = crate::ClientPolicyOverrides {
+            export_hostname_labels: false,
+        };
+        let result = Grpc::try_from(overrides, proto);
+        assert!(
+            result.is_err(),
+            "invalid retry_after duration must produce an error"
+        );
+        let msg = format!("{}", result.unwrap_err());
+        assert!(
+            msg.contains("retry_after"),
+            "error should mention 'retry_after', got: {msg}"
+        );
+    }
+}

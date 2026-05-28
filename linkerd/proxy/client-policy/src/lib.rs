@@ -839,3 +839,222 @@ pub mod proto {
         })
     }
 }
+
+#[cfg(all(test, feature = "proto"))]
+mod tests {
+    use super::*;
+    use linkerd2_proxy_api::outbound;
+
+    #[test]
+    fn default_retry_after_max_duration_is_300_seconds() {
+        assert_eq!(
+            DEFAULT_RETRY_AFTER_MAX_DURATION,
+            time::Duration::from_secs(300),
+        );
+    }
+
+    #[test]
+    fn try_load_bias_config_parses_valid_input_with_all_fields() {
+        let proto = outbound::LoadBiasConfig {
+            enabled: true,
+            penalty: Some(prost_types::Duration {
+                seconds: 7,
+                nanos: 0,
+            }),
+            penalty_decay: Some(prost_types::Duration {
+                seconds: 15,
+                nanos: 0,
+            }),
+        };
+        let result = proto::try_load_bias_config(proto).unwrap();
+        assert_eq!(
+            result,
+            LoadBiasConfig {
+                enabled: true,
+                penalty: time::Duration::from_secs(7),
+                penalty_decay: time::Duration::from_secs(15),
+            }
+        );
+    }
+
+    #[test]
+    fn try_load_bias_config_uses_default_5s_penalty_when_missing() {
+        let proto = outbound::LoadBiasConfig {
+            enabled: true,
+            penalty: None,
+            penalty_decay: Some(prost_types::Duration {
+                seconds: 20,
+                nanos: 0,
+            }),
+        };
+        let result = proto::try_load_bias_config(proto).unwrap();
+        assert_eq!(result.penalty, time::Duration::from_secs(5));
+    }
+
+    #[test]
+    fn try_load_bias_config_uses_default_10s_decay_when_missing() {
+        let proto = outbound::LoadBiasConfig {
+            enabled: false,
+            penalty: Some(prost_types::Duration {
+                seconds: 3,
+                nanos: 0,
+            }),
+            penalty_decay: None,
+        };
+        let result = proto::try_load_bias_config(proto).unwrap();
+        assert_eq!(result.penalty_decay, time::Duration::from_secs(10));
+    }
+
+    #[test]
+    fn try_load_bias_config_uses_both_defaults_when_all_durations_missing() {
+        let proto = outbound::LoadBiasConfig {
+            enabled: true,
+            penalty: None,
+            penalty_decay: None,
+        };
+        let result = proto::try_load_bias_config(proto).unwrap();
+        assert_eq!(result.penalty, time::Duration::from_secs(5));
+        assert_eq!(result.penalty_decay, time::Duration::from_secs(10));
+    }
+
+    #[test]
+    fn try_load_bias_config_rejects_invalid_penalty_duration() {
+        let proto = outbound::LoadBiasConfig {
+            enabled: true,
+            penalty: Some(prost_types::Duration {
+                seconds: -1,
+                nanos: 0,
+            }),
+            penalty_decay: None,
+        };
+        let result = proto::try_load_bias_config(proto);
+        assert!(result.is_err(), "negative penalty must be rejected");
+    }
+
+    #[test]
+    fn try_load_bias_config_rejects_invalid_penalty_decay_duration() {
+        let proto = outbound::LoadBiasConfig {
+            enabled: true,
+            penalty: None,
+            penalty_decay: Some(prost_types::Duration {
+                seconds: -5,
+                nanos: 0,
+            }),
+        };
+        let result = proto::try_load_bias_config(proto);
+        assert!(result.is_err(), "negative penalty_decay must be rejected");
+    }
+
+    #[test]
+    fn try_retry_after_config_parses_valid_input() {
+        let proto = outbound::RetryAfterConfig {
+            max_duration: Some(prost_types::Duration {
+                seconds: 120,
+                nanos: 0,
+            }),
+        };
+        let result = proto::try_retry_after_config(proto).unwrap();
+        assert_eq!(
+            result,
+            RetryAfterConfig {
+                max_duration: time::Duration::from_secs(120),
+            }
+        );
+    }
+
+    #[test]
+    fn try_retry_after_config_defaults_to_300s_when_max_duration_missing() {
+        let proto = outbound::RetryAfterConfig { max_duration: None };
+        let result = proto::try_retry_after_config(proto).unwrap();
+        assert_eq!(
+            result.max_duration,
+            time::Duration::from_secs(300),
+            "missing max_duration should default to DEFAULT_RETRY_AFTER_MAX_DURATION (300s)"
+        );
+    }
+
+    #[test]
+    fn try_retry_after_config_rejects_invalid_duration() {
+        let proto = outbound::RetryAfterConfig {
+            max_duration: Some(prost_types::Duration {
+                seconds: -1,
+                nanos: 0,
+            }),
+        };
+        let result = proto::try_retry_after_config(proto);
+        assert!(result.is_err(), "negative max_duration must be rejected");
+    }
+
+    #[test]
+    fn failure_accrual_try_from_returns_error_when_consecutive_failures_missing() {
+        let accrual = outbound::FailureAccrual {
+            consecutive_failures: None,
+            success_rate: None,
+        };
+        let result = FailureAccrual::try_from(accrual);
+        assert!(
+            result.is_err(),
+            "missing consecutive_failures must return an error"
+        );
+        let err = result.unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("consecutive_failures"),
+            "error message should mention 'consecutive_failures', got: {msg}"
+        );
+    }
+
+    #[test]
+    fn failure_accrual_try_from_returns_none_for_option_none() {
+        let result = FailureAccrual::try_from(None);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), FailureAccrual::None);
+    }
+
+    #[test]
+    fn failure_accrual_try_from_parses_valid_consecutive_failures() {
+        let accrual = outbound::FailureAccrual {
+            consecutive_failures: Some(outbound::failure_accrual::ConsecutiveFailures {
+                max_failures: 5,
+                backoff: Some(outbound::ExponentialBackoff {
+                    min_backoff: Some(prost_types::Duration {
+                        seconds: 1,
+                        nanos: 0,
+                    }),
+                    max_backoff: Some(prost_types::Duration {
+                        seconds: 60,
+                        nanos: 0,
+                    }),
+                    jitter_ratio: 0.5,
+                }),
+            }),
+            success_rate: None,
+        };
+        let result = FailureAccrual::try_from(accrual).unwrap();
+        match result {
+            FailureAccrual::ConsecutiveFailures {
+                max_failures,
+                backoff: _,
+            } => {
+                assert_eq!(max_failures, 5);
+            }
+            other => panic!("expected ConsecutiveFailures, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn failure_accrual_try_from_errors_when_backoff_missing() {
+        let accrual = outbound::FailureAccrual {
+            consecutive_failures: Some(outbound::failure_accrual::ConsecutiveFailures {
+                max_failures: 3,
+                backoff: None,
+            }),
+            success_rate: None,
+        };
+        let result = FailureAccrual::try_from(accrual);
+        assert!(
+            result.is_err(),
+            "missing backoff in consecutive_failures must be an error"
+        );
+    }
+}

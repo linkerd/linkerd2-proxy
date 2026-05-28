@@ -510,3 +510,292 @@ pub mod proto {
         }
     }
 }
+
+#[cfg(all(test, feature = "proto"))]
+mod tests {
+    use super::*;
+    use crate::{LoadBiasConfig, RetryAfterConfig};
+
+    #[test]
+    fn http1_default_has_none_load_bias_and_retry_after() {
+        let h1 = Http1::default();
+        assert_eq!(
+            h1.load_bias, None,
+            "Http1::default() must produce None for load_bias"
+        );
+        assert_eq!(
+            h1.retry_after, None,
+            "Http1::default() must produce None for retry_after"
+        );
+    }
+
+    #[test]
+    fn http2_default_has_none_load_bias_and_retry_after() {
+        let h2 = Http2::default();
+        assert_eq!(
+            h2.load_bias, None,
+            "Http2::default() must produce None for load_bias"
+        );
+        assert_eq!(
+            h2.retry_after, None,
+            "Http2::default() must produce None for retry_after"
+        );
+    }
+
+    #[test]
+    fn http1_try_from_parses_load_bias_and_retry_after_from_proto() {
+        use linkerd2_proxy_api::outbound;
+
+        let proto = outbound::proxy_protocol::Http1 {
+            routes: vec![],
+            failure_accrual: None,
+            load_bias: Some(outbound::LoadBiasConfig {
+                enabled: true,
+                penalty: Some(prost_types::Duration {
+                    seconds: 3,
+                    nanos: 0,
+                }),
+                penalty_decay: Some(prost_types::Duration {
+                    seconds: 8,
+                    nanos: 0,
+                }),
+            }),
+            retry_after: Some(outbound::RetryAfterConfig {
+                max_duration: Some(prost_types::Duration {
+                    seconds: 60,
+                    nanos: 0,
+                }),
+            }),
+        };
+
+        let overrides = crate::ClientPolicyOverrides {
+            export_hostname_labels: false,
+        };
+        let result = Http1::try_from(overrides, proto).unwrap();
+
+        assert_eq!(
+            result.load_bias,
+            Some(LoadBiasConfig {
+                enabled: true,
+                penalty: std::time::Duration::from_secs(3),
+                penalty_decay: std::time::Duration::from_secs(8),
+            })
+        );
+        assert_eq!(
+            result.retry_after,
+            Some(RetryAfterConfig {
+                max_duration: std::time::Duration::from_secs(60),
+            })
+        );
+    }
+
+    #[test]
+    fn http2_try_from_parses_load_bias_and_retry_after_from_proto() {
+        use linkerd2_proxy_api::outbound;
+
+        let proto = outbound::proxy_protocol::Http2 {
+            routes: vec![],
+            failure_accrual: None,
+            load_bias: Some(outbound::LoadBiasConfig {
+                enabled: false,
+                penalty: Some(prost_types::Duration {
+                    seconds: 2,
+                    nanos: 0,
+                }),
+                penalty_decay: Some(prost_types::Duration {
+                    seconds: 12,
+                    nanos: 0,
+                }),
+            }),
+            retry_after: Some(outbound::RetryAfterConfig {
+                max_duration: Some(prost_types::Duration {
+                    seconds: 45,
+                    nanos: 0,
+                }),
+            }),
+        };
+
+        let overrides = crate::ClientPolicyOverrides {
+            export_hostname_labels: false,
+        };
+        let result = Http2::try_from(overrides, proto).unwrap();
+
+        assert_eq!(
+            result.load_bias,
+            Some(LoadBiasConfig {
+                enabled: false,
+                penalty: std::time::Duration::from_secs(2),
+                penalty_decay: std::time::Duration::from_secs(12),
+            })
+        );
+        assert_eq!(
+            result.retry_after,
+            Some(RetryAfterConfig {
+                max_duration: std::time::Duration::from_secs(45),
+            })
+        );
+    }
+
+    #[test]
+    fn http1_try_from_produces_none_when_load_bias_and_retry_after_absent() {
+        use linkerd2_proxy_api::outbound;
+
+        let proto = outbound::proxy_protocol::Http1 {
+            routes: vec![],
+            failure_accrual: None,
+            load_bias: None,
+            retry_after: None,
+        };
+
+        let overrides = crate::ClientPolicyOverrides {
+            export_hostname_labels: false,
+        };
+        let result = Http1::try_from(overrides, proto).unwrap();
+
+        assert_eq!(result.load_bias, None);
+        assert_eq!(result.retry_after, None);
+    }
+
+    #[test]
+    fn http1_try_from_rejects_invalid_load_bias_duration() {
+        use linkerd2_proxy_api::outbound;
+
+        let proto = outbound::proxy_protocol::Http1 {
+            routes: vec![],
+            failure_accrual: None,
+            load_bias: Some(outbound::LoadBiasConfig {
+                enabled: true,
+                penalty: Some(prost_types::Duration {
+                    seconds: -1,
+                    nanos: 0,
+                }),
+                penalty_decay: None,
+            }),
+            retry_after: None,
+        };
+
+        let overrides = crate::ClientPolicyOverrides {
+            export_hostname_labels: false,
+        };
+        let result = Http1::try_from(overrides, proto);
+        assert!(
+            result.is_err(),
+            "invalid load_bias duration must produce an error"
+        );
+        let msg = format!("{}", result.unwrap_err());
+        assert!(
+            msg.contains("load_bias"),
+            "error should mention 'load_bias', got: {msg}"
+        );
+    }
+
+    #[test]
+    fn http1_try_from_rejects_invalid_retry_after_duration() {
+        use linkerd2_proxy_api::outbound;
+
+        let proto = outbound::proxy_protocol::Http1 {
+            routes: vec![],
+            failure_accrual: None,
+            load_bias: None,
+            retry_after: Some(outbound::RetryAfterConfig {
+                max_duration: Some(prost_types::Duration {
+                    seconds: -10,
+                    nanos: 0,
+                }),
+            }),
+        };
+
+        let overrides = crate::ClientPolicyOverrides {
+            export_hostname_labels: false,
+        };
+        let result = Http1::try_from(overrides, proto);
+        assert!(
+            result.is_err(),
+            "invalid retry_after duration must produce an error"
+        );
+        let msg = format!("{}", result.unwrap_err());
+        assert!(
+            msg.contains("retry_after"),
+            "error should mention 'retry_after', got: {msg}"
+        );
+    }
+
+    #[test]
+    fn http2_try_from_rejects_invalid_load_bias_duration() {
+        use linkerd2_proxy_api::outbound;
+
+        let proto = outbound::proxy_protocol::Http2 {
+            routes: vec![],
+            failure_accrual: None,
+            load_bias: Some(outbound::LoadBiasConfig {
+                enabled: true,
+                penalty: None,
+                penalty_decay: Some(prost_types::Duration {
+                    seconds: -1,
+                    nanos: 0,
+                }),
+            }),
+            retry_after: None,
+        };
+
+        let overrides = crate::ClientPolicyOverrides {
+            export_hostname_labels: false,
+        };
+        let result = Http2::try_from(overrides, proto);
+        assert!(
+            result.is_err(),
+            "invalid load_bias penalty_decay duration must produce an error"
+        );
+    }
+
+    #[test]
+    fn http2_try_from_produces_none_when_load_bias_and_retry_after_absent() {
+        use linkerd2_proxy_api::outbound;
+
+        let proto = outbound::proxy_protocol::Http2 {
+            routes: vec![],
+            failure_accrual: None,
+            load_bias: None,
+            retry_after: None,
+        };
+
+        let overrides = crate::ClientPolicyOverrides {
+            export_hostname_labels: false,
+        };
+        let result = Http2::try_from(overrides, proto).unwrap();
+
+        assert_eq!(result.load_bias, None);
+        assert_eq!(result.retry_after, None);
+    }
+
+    #[test]
+    fn http2_try_from_rejects_invalid_retry_after_duration() {
+        use linkerd2_proxy_api::outbound;
+
+        let proto = outbound::proxy_protocol::Http2 {
+            routes: vec![],
+            failure_accrual: None,
+            load_bias: None,
+            retry_after: Some(outbound::RetryAfterConfig {
+                max_duration: Some(prost_types::Duration {
+                    seconds: -10,
+                    nanos: 0,
+                }),
+            }),
+        };
+
+        let overrides = crate::ClientPolicyOverrides {
+            export_hostname_labels: false,
+        };
+        let result = Http2::try_from(overrides, proto);
+        assert!(
+            result.is_err(),
+            "invalid retry_after duration must produce an error"
+        );
+        let msg = format!("{}", result.unwrap_err());
+        assert!(
+            msg.contains("retry_after"),
+            "error should mention 'retry_after', got: {msg}"
+        );
+    }
+}
