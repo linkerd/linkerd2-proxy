@@ -1167,4 +1167,140 @@ mod tests {
         );
     }
 
+    #[test]
+    fn failure_accrual_try_from_parses_success_rate() {
+        let accrual = outbound::FailureAccrual {
+            consecutive_failures: Some(valid_consecutive_failures()),
+            success_rate: Some(outbound::failure_accrual::SuccessRate {
+                threshold: 0.5,
+                decay: Some(prost_types::Duration {
+                    seconds: 10,
+                    nanos: 0,
+                }),
+                min_requests: 20,
+            }),
+        };
+        let result = FailureAccrual::try_from(accrual).unwrap();
+        let sr = result
+            .success_rate
+            .expect("a configured success rate must survive conversion");
+        assert_eq!(sr.threshold, 0.5);
+        assert_eq!(sr.decay, time::Duration::from_secs(10));
+        assert_eq!(sr.min_requests, 20);
+    }
+
+    #[test]
+    fn failure_accrual_try_from_defaults_success_rate_decay_when_absent() {
+        let accrual = outbound::FailureAccrual {
+            consecutive_failures: Some(valid_consecutive_failures()),
+            success_rate: Some(outbound::failure_accrual::SuccessRate {
+                threshold: 0.5,
+                // An unset decay falls back to the conversion's 10s default.
+                decay: None,
+                min_requests: 20,
+            }),
+        };
+        let result = FailureAccrual::try_from(accrual).unwrap();
+        let sr = result.success_rate.expect("success rate must be present");
+        assert_eq!(sr.decay, time::Duration::from_secs(10));
+    }
+
+    #[test]
+    fn failure_accrual_try_from_rejects_threshold_above_one() {
+        let accrual = outbound::FailureAccrual {
+            consecutive_failures: Some(valid_consecutive_failures()),
+            success_rate: Some(outbound::failure_accrual::SuccessRate {
+                threshold: 1.5,
+                decay: None,
+                min_requests: 20,
+            }),
+        };
+        let result = FailureAccrual::try_from(accrual);
+        assert!(
+            matches!(result, Err(InvalidFailureAccrual::InvalidValue(_))),
+            "a threshold above 1.0 must be rejected, got: {result:?}"
+        );
+    }
+
+    #[test]
+    fn failure_accrual_try_from_rejects_threshold_below_zero() {
+        let accrual = outbound::FailureAccrual {
+            consecutive_failures: Some(valid_consecutive_failures()),
+            success_rate: Some(outbound::failure_accrual::SuccessRate {
+                threshold: -0.1,
+                decay: None,
+                min_requests: 20,
+            }),
+        };
+        let result = FailureAccrual::try_from(accrual);
+        assert!(
+            matches!(result, Err(InvalidFailureAccrual::InvalidValue(_))),
+            "a threshold below 0.0 must be rejected, got: {result:?}"
+        );
+    }
+
+    #[test]
+    fn failure_accrual_try_from_rejects_nan_threshold() {
+        let accrual = outbound::FailureAccrual {
+            consecutive_failures: Some(valid_consecutive_failures()),
+            success_rate: Some(outbound::failure_accrual::SuccessRate {
+                threshold: f64::NAN,
+                decay: None,
+                min_requests: 20,
+            }),
+        };
+        let result = FailureAccrual::try_from(accrual);
+        // NaN compares false against both range bounds, so it falls outside
+        // the accepted interval and is rejected.
+        assert!(
+            matches!(result, Err(InvalidFailureAccrual::InvalidValue(_))),
+            "a NaN threshold must be rejected, got: {result:?}"
+        );
+    }
+
+    #[test]
+    fn failure_accrual_try_from_rejects_negative_success_rate_decay() {
+        let accrual = outbound::FailureAccrual {
+            consecutive_failures: Some(valid_consecutive_failures()),
+            success_rate: Some(outbound::failure_accrual::SuccessRate {
+                threshold: 0.9,
+                decay: Some(prost_types::Duration {
+                    seconds: -1,
+                    nanos: 0,
+                }),
+                min_requests: 20,
+            }),
+        };
+        let result = FailureAccrual::try_from(accrual);
+        // A negative prost duration fails the `time::Duration` conversion. It
+        // surfaces as a backoff duration error, not a value error.
+        assert!(
+            matches!(
+                result,
+                Err(InvalidFailureAccrual::Backoff(
+                    proto::InvalidBackoff::Duration(_)
+                ))
+            ),
+            "a negative decay must surface a duration error, got: {result:?}"
+        );
+    }
+
+    #[test]
+    fn failure_accrual_try_from_accepts_one_millisecond_decay_boundary() {
+        let accrual = outbound::FailureAccrual {
+            consecutive_failures: Some(valid_consecutive_failures()),
+            success_rate: Some(outbound::failure_accrual::SuccessRate {
+                threshold: 0.9,
+                // Exactly the 1ms floor. The lower bound is inclusive.
+                decay: Some(prost_types::Duration {
+                    seconds: 0,
+                    nanos: 1_000_000,
+                }),
+                min_requests: 20,
+            }),
+        };
+        let result = FailureAccrual::try_from(accrual).unwrap();
+        let sr = result.success_rate.expect("success rate must be present");
+        assert_eq!(sr.decay, time::Duration::from_millis(1));
+    }
 }
