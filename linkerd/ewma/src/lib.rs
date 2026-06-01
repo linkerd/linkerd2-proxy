@@ -70,11 +70,6 @@ impl Ewma {
         self.value
     }
 
-    /// Returns the timestamp of the most recent update.
-    pub fn last_update(&self) -> time::Instant {
-        self.timestamp
-    }
-
     /// Returns the decayed value projected to the given time, without modifying stored state.
     ///
     /// Instead of returning the raw stored value, this applies exponential decay based
@@ -147,6 +142,13 @@ impl Ewma {
 mod tests {
     use super::*;
     use tokio::time::{Duration, Instant};
+
+    impl Ewma {
+        /// Returns the timestamp of the most recent update.
+        pub fn last_update(&self) -> time::Instant {
+            self.timestamp
+        }
+    }
 
     // Literal value for exp(-1.0), since it's not const
     const EXP_NEG1: f64 = 0.36787944117144233;
