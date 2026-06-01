@@ -90,10 +90,6 @@ impl Ewma {
         self.value * (-elapsed.as_secs_f64() / self.decay).exp()
     }
 
-    /// Updates the weighted moving average with a new value and timestamp.
-    ///
-    /// Precondition: `value` must not be NaN. Passing NaN poisons the EWMA
-    /// irreversibly (all subsequent reads return NaN).
     fn add(&mut self, value: f64, ts: time::Instant) {
         debug_assert!(!value.is_nan(), "EWMA input value must not be NaN");
         if ts <= self.timestamp {
@@ -114,13 +110,18 @@ impl Ewma {
         self.timestamp = ts;
     }
 
-    /// Updates the EWMA with a peak value, replacing the current value if the
-    /// new value exceeds the decayed projection.
+    /// Updates the weighted moving average with a new value and timestamp.
+    ///
+    /// The current value will be replaced if the new value exceeds the decayed
+    /// projection.
     ///
     /// When replacement occurs, the stored timestamp is set to `ts`, which
     /// may be earlier than the previously stored timestamp. This resets the
     /// decay reference point, so subsequent projections via `get_at()` measure
     /// elapsed time from `ts`.
+    ///
+    /// Precondition: `value` must not be NaN. Passing NaN poisons the EWMA
+    /// irreversibly (all subsequent reads return NaN).
     pub fn add_peak(&mut self, value: f64, ts: time::Instant) {
         debug_assert!(!value.is_nan(), "EWMA peak value must not be NaN");
         if self.value.is_infinite() || self.get_at(ts) < value {
