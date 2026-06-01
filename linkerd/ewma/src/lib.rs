@@ -94,7 +94,7 @@ impl Ewma {
     ///
     /// Precondition: `value` must not be NaN. Passing NaN poisons the EWMA
     /// irreversibly (all subsequent reads return NaN).
-    pub fn add(&mut self, value: f64, ts: time::Instant) {
+    fn add(&mut self, value: f64, ts: time::Instant) {
         debug_assert!(!value.is_nan(), "EWMA input value must not be NaN");
         if ts <= self.timestamp {
             return;
@@ -162,7 +162,7 @@ mod tests {
     async fn test_add() {
         let now = Instant::now();
         let mut ewma = Ewma::new(Duration::from_secs(10), now);
-        ewma.add(1.0, now + Duration::from_secs(1));
+        ewma.add_peak(1.0, now + Duration::from_secs(1));
         assert_eq!(ewma.get(), 1.0);
     }
 
@@ -190,9 +190,9 @@ mod tests {
     async fn test_decay() {
         let now = Instant::now();
         let mut ewma = Ewma::new(Duration::from_secs(10), now);
-        ewma.add(1.0, now + Duration::from_secs(1));
+        ewma.add_peak(1.0, now + Duration::from_secs(1));
         assert_eq!(ewma.get(), 1.0);
-        ewma.add(0.0, now + Duration::from_secs(11));
+        ewma.add_peak(0.0, now + Duration::from_secs(11));
         assert_eq!(ewma.get(), EXP_NEG1);
     }
 
@@ -206,7 +206,7 @@ mod tests {
         // Verify this behaves like a normal EWMA after initialization
         let mut ewma = Ewma::new_with_value(Duration::from_secs(10), now, 1.0);
 
-        ewma.add(0.0, now + Duration::from_secs(10));
+        ewma.add_peak(0.0, now + Duration::from_secs(10));
         // After one decay period value decays towards zero.
         assert_eq!(ewma.get(), EXP_NEG1);
     }
@@ -252,8 +252,8 @@ mod tests {
         // After adding a value, get_at should produce finite, identical results
         let mut zero = Ewma::new(Duration::ZERO, now);
         let mut min = Ewma::new(Duration::from_millis(1), now);
-        zero.add(5.0, now + Duration::from_secs(1));
-        min.add(5.0, now + Duration::from_secs(1));
+        zero.add_peak(5.0, now + Duration::from_secs(1));
+        min.add_peak(5.0, now + Duration::from_secs(1));
 
         let projected_zero = zero.get_at(now + Duration::from_secs(2));
         let projected_min = min.get_at(now + Duration::from_secs(2));
@@ -293,8 +293,8 @@ mod tests {
         let now = Instant::now();
         let mut ewma = Ewma::new(Duration::ZERO, now);
 
-        ewma.add(5.0, now + Duration::from_secs(1));
-        ewma.add(0.5, now + Duration::from_secs(2));
+        ewma.add_peak(5.0, now + Duration::from_secs(1));
+        ewma.add_peak(0.5, now + Duration::from_secs(2));
 
         let val = ewma.get();
         assert!(
@@ -313,7 +313,7 @@ mod tests {
         let mut ewma = Ewma::new(Duration::from_secs(10), now);
 
         // Set state
-        ewma.add(0.5, now + Duration::from_secs(1));
+        ewma.add_peak(0.5, now + Duration::from_secs(1));
         assert_eq!(ewma.get(), 0.5);
 
         // Reset to a new value
@@ -321,7 +321,7 @@ mod tests {
         assert_eq!(ewma.get(), 1.0);
 
         // Verify EWMA continues working after reset.
-        ewma.add(0.0, now + Duration::from_secs(12));
+        ewma.add_peak(0.0, now + Duration::from_secs(12));
         assert_eq!(ewma.get(), EXP_NEG1);
     }
 
@@ -333,7 +333,7 @@ mod tests {
         let read_at = add_at;
 
         let mut ewma = Ewma::new(decay, now);
-        ewma.add(0.5, add_at);
+        ewma.add_peak(0.5, add_at);
 
         assert_eq!(ewma.get_at(read_at), 0.5);
     }
@@ -346,7 +346,7 @@ mod tests {
         let read_at = now + Duration::from_millis(500);
 
         let mut ewma = Ewma::new(decay, now);
-        ewma.add(0.5, add_at);
+        ewma.add_peak(0.5, add_at);
 
         assert_eq!(ewma.get_at(read_at), 0.5);
     }
@@ -375,7 +375,7 @@ mod tests {
         let read_at = now + Duration::from_secs(11);
 
         let mut ewma = Ewma::new(decay, now);
-        ewma.add(1.0, add_at);
+        ewma.add_peak(1.0, add_at);
 
         // Verify that get_at applies value * exp(-elapsed/decay) correctly
         // without changing internal state.
@@ -390,7 +390,7 @@ mod tests {
         let read_at = now + Duration::from_secs(3600);
 
         let mut ewma = Ewma::new(decay, now);
-        ewma.add(1.0, add_at);
+        ewma.add_peak(1.0, add_at);
 
         let result = ewma.get_at(read_at);
         assert!(
@@ -411,7 +411,7 @@ mod tests {
         let read_at = now + Duration::from_secs(6);
 
         let mut ewma = Ewma::new(decay, now);
-        ewma.add(1.0, first_add_at);
+        ewma.add_peak(1.0, first_add_at);
 
         // Take internal state before the read
         let value_before = ewma.value;
@@ -440,7 +440,7 @@ mod tests {
         // Use a large value here to make sure we detect any issues with
         // reset not working properly, since we'd likely see a wildly
         // different value in the assert below.
-        ewma.add(100.0, first_add_at);
+        ewma.add_peak(100.0, first_add_at);
 
         // Reset replaces both value and timestamp
         ewma.reset(EWMA_VAL, reset_at);
@@ -463,11 +463,11 @@ mod tests {
         let second_add_at = now + Duration::from_secs(11);
 
         let mut ewma = Ewma::new(decay, now);
-        ewma.add(1.0, first_add_at);
+        ewma.add_peak(1.0, first_add_at);
 
         assert_eq!(ewma.get_at(read_at), EXP_NEG0_5);
 
-        ewma.add(0.0, second_add_at);
+        ewma.add_peak(0.0, second_add_at);
 
         // Final state after the second add must be exp(-1.0),
         // ensuring get_at() doesn't change the internal state.
@@ -502,11 +502,11 @@ mod tests {
         let mut ewma = Ewma::new(Duration::from_secs(10), now);
 
         let t1 = now + Duration::from_secs(1);
-        ewma.add(1.0, t1);
+        ewma.add_peak(1.0, t1);
         assert_eq!(ewma.last_update(), t1);
 
         let t2 = now + Duration::from_secs(5);
-        ewma.add(0.5, t2);
+        ewma.add_peak(0.5, t2);
         assert_eq!(ewma.last_update(), t2);
     }
 
@@ -515,7 +515,7 @@ mod tests {
         let now = Instant::now();
         let mut ewma = Ewma::new(Duration::from_secs(10), now);
 
-        ewma.add(1.0, now + Duration::from_secs(1));
+        ewma.add_peak(1.0, now + Duration::from_secs(1));
         let reset_at = now + Duration::from_secs(5);
         ewma.reset(1.0, reset_at);
         assert_eq!(ewma.last_update(), reset_at);
@@ -527,7 +527,7 @@ mod tests {
         let mut ewma = Ewma::new(Duration::from_secs(10), now);
 
         let t1 = now + Duration::from_secs(1);
-        ewma.add(1.0, t1);
+        ewma.add_peak(1.0, t1);
         let _ = ewma.get_at(now + Duration::from_secs(10));
         assert_eq!(ewma.last_update(), t1);
     }
@@ -538,10 +538,10 @@ mod tests {
         let mut ewma = Ewma::new(Duration::from_secs(10), now);
 
         let t1 = now + Duration::from_secs(5);
-        ewma.add(1.0, t1);
+        ewma.add_peak(1.0, t1);
 
         // Stale timestamp (before last update) is silently dropped.
-        ewma.add(0.0, now + Duration::from_secs(2));
+        ewma.add_peak(0.0, now + Duration::from_secs(2));
         assert_eq!(ewma.last_update(), t1);
     }
 }
