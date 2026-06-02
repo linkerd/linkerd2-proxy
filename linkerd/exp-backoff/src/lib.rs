@@ -106,6 +106,7 @@ impl ExponentialBackoff {
         if self.jitter == 0.0 {
             time::Duration::default()
         } else {
+            use rand::RngExt;
             let jitter_factor = rng.random::<f64>();
             debug_assert!(
                 jitter_factor > 0.0,
