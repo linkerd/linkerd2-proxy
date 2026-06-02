@@ -148,7 +148,6 @@ impl Resolver {
         Ok((ips, valid_until))
     }
 
-    #[allow(unused, unreachable_code, reason = "XXX(kate)")]
     async fn resolve_srv(
         &self,
         name: NameRef<'_>,
@@ -226,7 +225,7 @@ impl ResolveError {
         }
     }
 
-    /// Returns the negative TTL [`time::Duration`] of a [`hickory_resolver::ResolveError`].
+    /// Returns the negative TTL [`time::Duration`] of a [`hickory_resolver::net::NetError`].
     ///
     /// This function will defensively enforce a minimum negative TTL.
     fn negative_ttl_of(error: &hickory_resolver::net::NetError) -> Option<time::Duration> {
