@@ -264,7 +264,7 @@ impl ResponseFailureHint for tokio_test::io::Mock {}
 const RETRY_AFTER_PENALTY_FACTOR: f64 = 0.5;
 
 /// Configuration for LoadBiaser behavior.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct LoadBiaserConfig {
     /// Default RTT to use when no measurements are available
     pub default_rtt: Duration,
@@ -274,7 +274,7 @@ pub struct LoadBiaserConfig {
     pub rtt_decay: Duration,
 
     /// The penalty value to inject on failure responses (429, 503, 5xx) in seconds
-    pub penalty_secs: f64,
+    pub penalty_secs: u16,
 
     /// Decay duration for the penalty EWMA.
     /// Controls how quickly the penalty decays after a failure response
@@ -294,7 +294,7 @@ impl Default for LoadBiaserConfig {
             default_rtt: Duration::from_secs(1),
             rtt_decay: Duration::from_secs(10),
             // 5 second penalty on failure responses (429, 503, 5xx)
-            penalty_secs: 5.0,
+            penalty_secs: 5,
             // 10 second decay for penalty - mostly gone after ~30 seconds
             penalty_decay: Duration::from_secs(10),
             enabled: false,
@@ -316,7 +316,7 @@ struct SharedState {
     /// Count of in-flight requests (up on call, down on response)
     pending: AtomicU32,
     /// Penalty value to inject on failure responses (in seconds)
-    penalty_secs: f64,
+    penalty_secs: u16,
     /// Whether penalty injection is enabled
     enabled: bool,
     /// Maximum Retry-After duration to honor (clamped)
@@ -380,14 +380,7 @@ pub struct LoadBiaserFuture<F, Rsp> {
 impl<S> LoadBiaser<S> {
     /// Creates a new `LoadBiaser` wrapping the given service.
     #[must_use]
-    pub fn new(inner: S, mut config: LoadBiaserConfig) -> Self {
-        if config.penalty_secs.is_nan() || config.penalty_secs < 0.0 {
-            tracing::warn!(
-                penalty_secs = config.penalty_secs,
-                "penalty_secs is NaN or negative, clamping to 0.0"
-            );
-            config.penalty_secs = 0.0;
-        }
+    pub fn new(inner: S, config: LoadBiaserConfig) -> Self {
         if config.penalty_decay < MIN_DECAY {
             tracing::warn!(
                 penalty_decay = ?config.penalty_decay,
@@ -569,7 +562,7 @@ where
 
                 if shared.enabled {
                     if let Some(hint) = resp.failure_hint() {
-                        let base_penalty = shared.penalty_secs;
+                        let base_penalty: f64 = shared.penalty_secs.into();
 
                         // For rate-limited and service-unavailable responses, amplify
                         // the penalty using the Retry-After hint so it remains meaningful
@@ -710,7 +703,7 @@ mod tests {
         LoadBiaserConfig {
             default_rtt: Duration::from_millis(100), // 0.1s default
             rtt_decay: Duration::from_secs(10),
-            penalty_secs: 5.0,
+            penalty_secs: 5,
             penalty_decay: Duration::from_secs(10),
             enabled: true,
             max_duration: DEFAULT_RETRY_AFTER_MAX_DURATION,
