@@ -45,7 +45,10 @@ deny = [
     # aws-lc-rs should be used instead.
     { name = "ring" }
 ]
-skip = []
+skip = [
+    { name = "getrandom", version = "0.2.17" },
+    { name = "cpufeatures", version = "0.2.17" }
+]
 skip-tree = [
     # rand v0.10 is still propagating through the ecosystem
     #
