@@ -39,10 +39,7 @@ use std::{
     future::Future,
     marker::PhantomData,
     pin::Pin,
-    sync::{
-        atomic::{AtomicU32, Ordering},
-        Arc,
-    },
+    sync::Arc,
     task::{Context, Poll},
     time::Duration,
 };
@@ -313,8 +310,6 @@ impl Default for LoadBiaserConfig {
 struct SharedState {
     /// RTT and penalty EWMAs; read-locked in load(), write-locked in poll()
     metrics: RwLock<LoadMetrics>,
-    /// Count of in-flight requests (up on call, down on response)
-    pending: AtomicU32,
     /// Penalty value to inject on failure responses (in seconds)
     penalty_secs: f64,
     /// Whether penalty injection is enabled
@@ -371,8 +366,6 @@ pub struct LoadBiaserFuture<F, Rsp> {
     start: Instant,
     /// Shared endpoint state (metrics, pending counter, penalty config)
     shared: Arc<SharedState>,
-    /// Whether we've already decremented pending
-    completed: bool,
     /// Marker for the response type (`ResponseFailureHint` bound)
     _response: PhantomData<fn() -> Rsp>,
 }
@@ -412,7 +405,6 @@ impl<S> LoadBiaser<S> {
                 rtt: Ewma::new_with_value(config.rtt_decay, now, config.default_rtt.as_secs_f64()),
                 penalty: Ewma::new(config.penalty_decay, now),
             }),
-            pending: AtomicU32::new(0),
             penalty_secs: config.penalty_secs,
             enabled: config.enabled,
             max_duration: config.max_duration,
@@ -445,7 +437,9 @@ impl<S> Load for LoadBiaser<S> {
     type Metric = f64;
 
     fn load(&self) -> Self::Metric {
-        let pending = self.shared.pending.load(Ordering::Acquire);
+        let pending: u32 = Arc::strong_count(&self.shared)
+            .try_into()
+            .unwrap_or(u32::MAX);
         let now = Instant::now();
 
         let (rtt, penalty_val) = {
@@ -490,14 +484,10 @@ where
     }
 
     fn call(&mut self, req: Req) -> Self::Future {
-        let prev = self.shared.pending.fetch_add(1, Ordering::AcqRel);
-        debug_assert!(prev < u32::MAX, "pending counter overflow");
-
         LoadBiaserFuture {
             inner: self.inner.call(req),
             start: Instant::now(),
             shared: self.shared.clone(),
-            completed: false,
             _response: PhantomData,
         }
     }
@@ -603,9 +593,6 @@ where
             }
         }
 
-        shared.pending.fetch_sub(1, Ordering::Release);
-        *this.completed = true;
-
         Poll::Ready(result)
     }
 }
@@ -613,12 +600,7 @@ where
 #[pin_project::pinned_drop]
 impl<F, Rsp> PinnedDrop for LoadBiaserFuture<F, Rsp> {
     fn drop(self: Pin<&mut Self>) {
-        let this = self.project();
-        // Only decrement if we haven't already done so in poll().
-        // Avoids leaking the pending count upon cancellation.
-        if !*this.completed {
-            this.shared.pending.fetch_sub(1, Ordering::Release);
-        }
+        // TODO: this PinnedDrop is no longer needed.
     }
 }
 
@@ -637,8 +619,8 @@ mod tests {
             self.shared.metrics.read().penalty.get()
         }
 
-        pub fn get_pending(&self) -> u32 {
-            self.shared.pending.load(Ordering::Acquire)
+        pub fn get_pending(&self) -> usize {
+            Arc::strong_count(&self.shared)
         }
 
         pub fn inject_penalty(&self, penalty_secs: f64) {
@@ -745,13 +727,13 @@ mod tests {
 
         // Start a request (not awaited yet)
         // Increment pending to simulate in-flight requests
-        biaser.shared.pending.fetch_add(1, Ordering::AcqRel);
+        let one_pending = biaser.clone();
 
         // RTT * (1 + 1) = 0.05 * 2 = 0.1
         let load_one_pending = biaser.load();
 
         // Increment again
-        biaser.shared.pending.fetch_add(1, Ordering::AcqRel);
+        let two_pending = biaser.clone();
 
         // RTT * (2 + 1) = 0.05 * 3 = 0.15
         let load_two_pending = biaser.load();
