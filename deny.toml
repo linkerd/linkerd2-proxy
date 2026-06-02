@@ -47,8 +47,10 @@ deny = [
 ]
 skip = []
 skip-tree = [
-    # rand v0.9 is still propagating through the ecosystem
-    { name = "rand", version = "0.8" },
+    # rand v0.10 is still propagating through the ecosystem
+    #
+    # see https://github.com/open-telemetry/opentelemetry-rust/pull/3536.
+    { name = "rand", version = "0.9" },
     # `pprof` uses a number of old dependencies. for now, we skip its subtree.
     { name = "pprof" },
     # zerocopy v0.8 is still propagating through the ecosystem
