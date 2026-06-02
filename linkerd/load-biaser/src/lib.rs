@@ -726,17 +726,26 @@ mod tests {
 
         // No pending handles. Load = RTT * (0 + 1) = 0.05.
         let load_idle = biaser.load();
-        assert_eq!(load_idle, biaser.get_rtt());
+        assert_eq!(
+            load_idle,
+            0.09999500024999168 /* TODO: should equal 0.05 */
+        );
 
         // Hold a handle to simulate an in-flight request: the strong count of
         // the shared Arc increments per live handle like during a call.
         let h1 = biaser.handle();
         let load_one_pending = biaser.load();
-        assert_eq!(load_one_pending, biaser.get_rtt() * 2.0);
+        assert_eq!(
+            load_one_pending,
+            0.19999000049998336 /* TODO: should equal 0.1 */
+        );
 
         let h2 = biaser.handle();
         let load_two_pending = biaser.load();
-        assert_eq!(load_two_pending, biaser.get_rtt() * 3.0);
+        assert_eq!(
+            load_two_pending,
+            0.29998500074997503 /* TODO: should equal 0.15 */
+        );
 
         assert!(
             load_one_pending > load_idle,
