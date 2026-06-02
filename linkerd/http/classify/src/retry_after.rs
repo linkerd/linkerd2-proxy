@@ -72,9 +72,14 @@ const GRPC_RETRY_PUSHBACK_MS: &str = "grpc-retry-pushback-ms";
 
 /// Parse grpc-retry-pushback-ms from headers or trailers.
 ///
-/// Per gRPC A6 spec:
-/// - Positive i64: retry after this many milliseconds
-/// - Negative i64: do not retry (returns `None`)
+/// Per the [gRPC A6 spec]:
+///
+/// > The value is to be an ASCII encoded signed 32-bit integer with no unnecessary leading zeros
+/// > that represents how many milliseconds to wait before sending a retry. If the value for
+/// > pushback is negative or unparseble, then it will be seen as the server asking the client not
+/// > to retry at all.
+///
+/// [gRPC A6 spec]: https://github.com/grpc/proposal/blob/master/A6-client-retries.md#pushback
 ///
 /// This function does **not** check grpc-status; that is a classification
 /// concern left to the caller.
