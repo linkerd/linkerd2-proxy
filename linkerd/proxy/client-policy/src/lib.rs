@@ -103,6 +103,7 @@ pub enum BackendDispatcher {
     Forward(SocketAddr, Arc<EndpointMetadata>),
     BalanceP2c(Load, EndpointDiscovery),
     Fail { message: Arc<str> },
+    // TODO(kate): add a `PenaltyPeakEwma` variant here.
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -135,6 +136,7 @@ pub enum FailureAccrual {
         /// Backoff for probing the endpoint when it is in a failed state.
         backoff: linkerd_exp_backoff::ExponentialBackoff,
     },
+    // TODO(kate): add a `Unified` variant here.
 }
 
 // === impl ClientPolicy ===
@@ -394,6 +396,9 @@ pub mod proto {
 
         #[error("invalid backend metadata: {0}")]
         Meta(#[from] InvalidMeta),
+
+        #[error("penalty peak ewma mode is not yet supported")]
+        PenaltyPeakEwmaUnsupported,
     }
 
     #[derive(Debug, thiserror::Error)]
@@ -423,6 +428,8 @@ pub mod proto {
         Backoff(#[from] InvalidBackoff),
         #[error("missing {0}")]
         Missing(&'static str),
+        #[error("unified failure accrual is not yet supported")]
+        UnifiedUnsupported,
     }
 
     #[derive(Debug, thiserror::Error)]
@@ -667,6 +674,10 @@ pub mod proto {
                             default_rtt: duration("peak EWMA default RTT", default_rtt)?,
                             decay: duration("peak EWMA decay", decay)?,
                         }),
+                        balance_p2c::Load::PenaltyPeakEwma(_) => {
+                            // TODO(kate): marshal `PenaltyPeakEwma` here.
+                            return Err(InvalidBackend::PenaltyPeakEwmaUnsupported);
+                        }
                     };
                     BackendDispatcher::BalanceP2c(load, discovery)
                 }
@@ -733,6 +744,8 @@ pub mod proto {
                         InvalidFailureAccrual::Missing("consecutive failures backoff"),
                     )?,
                 }),
+                // TODO(kate): marshal `Unified` here.
+                failure_accrual::Kind::Unified(_) => Err(InvalidFailureAccrual::UnifiedUnsupported),
             }
         }
     }
@@ -751,6 +764,7 @@ pub mod proto {
             min_backoff,
             max_backoff,
             jitter_ratio,
+            respect_retry_after_hint: _, // TODO(kate): use respect_retry_after_hint
         }: outbound::ExponentialBackoff,
     ) -> Result<linkerd_exp_backoff::ExponentialBackoff, InvalidBackoff> {
         let min = min_backoff
