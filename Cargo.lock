@@ -900,7 +900,7 @@ dependencies = [
  "idna",
  "ipnet",
  "once_cell",
- "rand 0.9.3",
+ "rand 0.9.4",
  "ring",
  "thiserror",
  "tinyvec",
@@ -922,7 +922,7 @@ dependencies = [
  "moka",
  "once_cell",
  "parking_lot",
- "rand 0.9.3",
+ "rand 0.9.4",
  "resolv-conf",
  "smallvec",
  "thiserror",
@@ -1626,7 +1626,7 @@ dependencies = [
  "ahash",
  "linkerd-stack",
  "parking_lot",
- "rand 0.9.3",
+ "rand 0.9.4",
  "tokio-test",
  "tower-test",
  "tracing",
@@ -1694,7 +1694,7 @@ dependencies = [
  "futures",
  "pin-project",
  "quickcheck",
- "rand 0.9.3",
+ "rand 0.9.4",
  "thiserror",
  "tokio",
 ]
@@ -1886,7 +1886,7 @@ version = "0.1.0"
 dependencies = [
  "http",
  "linkerd2-proxy-api",
- "rand 0.9.3",
+ "rand 0.9.4",
  "regex",
  "thiserror",
  "tracing",
@@ -2109,7 +2109,7 @@ dependencies = [
  "parking_lot",
  "prometheus-client",
  "quickcheck",
- "rand 0.9.3",
+ "rand 0.9.4",
  "tokio",
  "tokio-test",
  "tower",
@@ -2591,7 +2591,7 @@ dependencies = [
  "linkerd-stack",
  "linkerd-tracing",
  "opentelemetry-semantic-conventions",
- "rand 0.9.3",
+ "rand 0.9.4",
  "thiserror",
  "tokio",
  "tower",
@@ -2963,7 +2963,7 @@ dependencies = [
  "futures-util",
  "opentelemetry",
  "percent-encoding",
- "rand 0.9.3",
+ "rand 0.9.4",
  "thiserror",
 ]
 
@@ -3178,7 +3178,7 @@ checksum = "bee689443a2bd0a16ab0348b52ee43e3b2d1b1f931c8aa5c9f8de4c86fbe8c40"
 dependencies = [
  "bitflags 2.9.4",
  "num-traits",
- "rand 0.9.3",
+ "rand 0.9.4",
  "rand_chacha",
  "rand_xorshift",
  "regex-syntax",
@@ -3319,9 +3319,9 @@ dependencies = [
 
 [[package]]
 name = "rand"
-version = "0.9.3"
+version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7ec095654a25171c2124e9e3393a930bddbffdc939556c914957a4c3e0a87166"
+checksum = "44c5af06bb1b7d3216d91932aed5265164bf384dc89cd6ba05cf59a35f5f76ea"
 dependencies = [
  "rand_chacha",
  "rand_core 0.9.0",
