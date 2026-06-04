@@ -80,6 +80,8 @@ impl<K: SpanSink> SpanSink for Option<K> {
 
 impl Id {
     fn new_span_id<R: Rng>(rng: &mut R) -> Self {
+        use rand::RngExt;
+
         let mut bytes = vec![0; SPAN_ID_LEN];
         rng.fill(bytes.as_mut_slice());
         Self(bytes)

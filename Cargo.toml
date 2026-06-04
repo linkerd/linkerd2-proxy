@@ -137,6 +137,6 @@ features = ["tokio", "tracing"]
 version = "0.20.0"
 
 [workspace.dependencies.rand]
-version = "0.9"
+version = "0.10"
 default-features = false
-features = ["std", "std_rng", "os_rng"]
+features = ["std", "std_rng", "sys_rng"]

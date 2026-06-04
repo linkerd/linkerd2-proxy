@@ -11,7 +11,7 @@ use linkerd_error::Error;
 use linkerd_metrics::prom;
 use linkerd_pool::Pool;
 use linkerd_stack::{NewService, Service};
-use rand::{rngs::SmallRng, Rng, SeedableRng};
+use rand::{rngs::SmallRng, SeedableRng};
 use std::{
     collections::hash_map::Entry,
     net::SocketAddr,
@@ -117,6 +117,8 @@ where
 }
 
 fn gen_pair(rng: &mut SmallRng, len: usize) -> (usize, usize) {
+    use rand::RngExt;
+
     debug_assert!(len >= 2, "must have at least two endpoints");
     // Get two distinct random indexes (in a random order) and
     // compare the loads of the service at each index.
