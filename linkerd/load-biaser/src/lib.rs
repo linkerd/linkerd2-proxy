@@ -48,6 +48,12 @@ pub const DEFAULT_RETRY_AFTER_MAX_DURATION: Duration = Duration::from_secs(300);
 /// Default base failure penalty, in whole milliseconds.
 const DEFAULT_PENALTY_MS: u32 = 5_000;
 
+/// Default RTT seed used before any measurement is recorded.
+const DEFAULT_RTT: Duration = Duration::from_secs(1);
+
+/// Default decay window for the RTT EWMA.
+const DEFAULT_RTT_DECAY: Duration = Duration::from_secs(10);
+
 /// Classification of response failures for load biasing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FailureHint {
@@ -253,9 +259,8 @@ pub struct LoadBiaserConfig {
 impl Default for LoadBiaserConfig {
     fn default() -> Self {
         Self {
-            default_rtt: Duration::from_secs(1),
-            rtt_decay: Duration::from_secs(10),
-            // 5 second penalty on failure responses (429, 503, 5xx)
+            default_rtt: DEFAULT_RTT,
+            rtt_decay: DEFAULT_RTT_DECAY,
             penalty_ms: DEFAULT_PENALTY_MS,
             max_duration: DEFAULT_RETRY_AFTER_MAX_DURATION,
         }
