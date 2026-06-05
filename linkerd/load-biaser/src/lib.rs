@@ -45,6 +45,9 @@ use tower_service::Service;
 /// Default maximum duration for Retry-After hints.
 pub const DEFAULT_RETRY_AFTER_MAX_DURATION: Duration = Duration::from_secs(300);
 
+/// Default base failure penalty, in whole milliseconds.
+const DEFAULT_PENALTY_MS: u32 = 5_000;
+
 /// Classification of response failures for load biasing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FailureHint {
@@ -230,7 +233,7 @@ impl ResponseFailureHint for tokio::io::DuplexStream {}
 impl ResponseFailureHint for tokio_test::io::Mock {}
 
 /// Configuration for LoadBiaser behavior.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct LoadBiaserConfig {
     /// Default RTT to use when no measurements are available
     pub default_rtt: Duration,
@@ -240,8 +243,8 @@ pub struct LoadBiaserConfig {
     pub rtt_decay: Duration,
 
     /// The base penalty to inject on failure responses (429, 503, 5xx)
-    /// in seconds,  when the server sends no backoff hint.
-    pub penalty_secs: f64,
+    /// in milliseconds, when the server sends no backoff hint.
+    pub penalty_ms: u32,
 
     /// Maximum Retry-After duration to honor. Clamped to this value.
     pub max_duration: Duration,
@@ -253,7 +256,7 @@ impl Default for LoadBiaserConfig {
             default_rtt: Duration::from_secs(1),
             rtt_decay: Duration::from_secs(10),
             // 5 second penalty on failure responses (429, 503, 5xx)
-            penalty_secs: 5.0,
+            penalty_ms: DEFAULT_PENALTY_MS,
             max_duration: DEFAULT_RETRY_AFTER_MAX_DURATION,
         }
     }
@@ -271,7 +274,7 @@ struct SharedState {
     rtt: RwLock<Ewma>,
     /// Penalty value to inject on failure responses (in seconds) when no
     /// hint is present.
-    penalty_secs: f64,
+    penalty_ms: u32,
     /// Maximum Retry-After duration to honor (clamped)
     max_duration: Duration,
 }
@@ -288,7 +291,7 @@ impl SharedState {
         };
 
         // A hint, if present, is honored verbatim (capped).
-        from_hint.unwrap_or(self.penalty_secs)
+        from_hint.unwrap_or_else(|| Duration::from_millis(u64::from(self.penalty_ms)).as_secs_f64())
     }
 }
 
@@ -396,7 +399,7 @@ impl<S, C> LoadBiaser<S, C> {
                 now,
                 config.default_rtt.as_secs_f64(),
             )),
-            penalty_secs: config.penalty_secs,
+            penalty_ms: config.penalty_ms,
             max_duration: config.max_duration,
         });
         Self {
@@ -428,14 +431,7 @@ impl<S> LoadBiaser<S, PendingUntilFirstData> {
     }
 }
 
-fn sanitize(mut config: LoadBiaserConfig) -> LoadBiaserConfig {
-    if config.penalty_secs.is_nan() || config.penalty_secs < 0.0 {
-        tracing::warn!(
-            penalty_secs = config.penalty_secs,
-            "penalty_secs is NaN or negative, clamping to 0.0"
-        );
-        config.penalty_secs = 0.0;
-    }
+fn sanitize(config: LoadBiaserConfig) -> LoadBiaserConfig {
     if config.rtt_decay < MIN_DECAY {
         tracing::warn!(
             rtt_decay = ?config.rtt_decay,
@@ -669,7 +665,7 @@ mod tests {
         LoadBiaserConfig {
             default_rtt: Duration::from_millis(100), // 0.1s default
             rtt_decay: Duration::from_secs(10),
-            penalty_secs: 5.0,
+            penalty_ms: 5000,
             max_duration: DEFAULT_RETRY_AFTER_MAX_DURATION,
         }
     }
@@ -1361,7 +1357,7 @@ mod tests {
         let _ = biaser.call(()).await;
         let rtt = biaser.get_rtt();
 
-        // test_config has penalty_secs = 5.0
+        // test_config has penalty_ms = 5000
         assert!(
             (rtt - 5.0).abs() < 0.1,
             "503 should record the base penalized effective RTT (~5.0s), got: {rtt}"
@@ -1431,7 +1427,7 @@ mod tests {
         let _ = biaser.call(()).await;
         let rtt = biaser.get_rtt();
 
-        // test_config has penalty_secs = 5.0
+        // test_config has penalty_ms = 5000
         assert!(
             (rtt - 5.0).abs() < 0.1,
             "500 should record the base penalized effective RTT (~5.0s), got: {rtt}"
