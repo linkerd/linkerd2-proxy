@@ -1,9 +1,11 @@
 //! Exponentially weighted moving average (EWMA) with time-based decay.
 //!
-//! A standalone EWMA implementation that supports non-mutating time-projected
-//! reads via [`Ewma::get_at`] and dual-metric tracking (RTT + penalty) under a
-//! single lock. Tower's internal `RttEstimate` is private, mutates on read, and
-//! cannot support the penalty dimension that failure-aware load balancing needs.
+//! A standalone EWMA that supports non-mutating, time-projected reads via
+//! [`Ewma::get_at`] and records externally supplied peak values via
+//! [`Ewma::add_peak`]. Tower's internal `RttEstimate` is private, mutates on
+//! read, and samples only elapsed request time, so it cannot provide the
+//! read-only load projection or the injected failure penalties that
+//! failure-aware load balancing needs.
 
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
