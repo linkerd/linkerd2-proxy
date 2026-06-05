@@ -10,9 +10,10 @@
 
 use tokio::time;
 
-/// Minimum decay duration to prevent division-by-zero in EWMA computations.
-/// Chosen as the smallest Duration that is strictly positive without overriding
-/// validated configs from the control plane (CP should reject decay=0).
+/// Smallest decay duration the estimator will use.
+///
+/// The constructors clamp any supplied decay up to this value, which avoids
+/// a division by zero when computing `elapsed / decay`.
 pub const MIN_DECAY: time::Duration = time::Duration::from_millis(1);
 
 /// An exponentially-weighted moving average.
@@ -70,11 +71,6 @@ impl Ewma {
         self.value
     }
 
-    /// Returns the timestamp of the most recent update.
-    pub fn last_update(&self) -> time::Instant {
-        self.timestamp
-    }
-
     /// Returns the decayed value projected to the given time, without modifying stored state.
     ///
     /// Instead of returning the raw stored value, this applies exponential decay based
@@ -130,17 +126,6 @@ impl Ewma {
         }
         self.add(value, ts)
     }
-
-    /// Computes 1/elapsed since the last update and feeds it through `add()`.
-    pub fn add_rate(&mut self, ts: time::Instant) {
-        if ts <= self.timestamp {
-            return;
-        }
-        let elapsed = ts.saturating_duration_since(self.timestamp);
-        if !elapsed.is_zero() {
-            self.add(1.0 / elapsed.as_secs_f64(), ts);
-        }
-    }
 }
 
 #[cfg(test)]
@@ -164,16 +149,6 @@ mod tests {
         let mut ewma = Ewma::new(Duration::from_secs(10), now);
         ewma.add(1.0, now + Duration::from_secs(1));
         assert_eq!(ewma.get(), 1.0);
-    }
-
-    #[tokio::test(flavor = "current_thread", start_paused = true)]
-    async fn test_add_rate() {
-        let now = Instant::now();
-        let mut ewma = Ewma::new(Duration::from_secs(10), now);
-        ewma.add_rate(now + Duration::from_secs(1));
-        assert_eq!(ewma.get(), 1.0);
-        ewma.add_rate(now + Duration::from_secs(3));
-        assert_eq!(ewma.get(), 0.9093653765389909);
     }
 
     #[tokio::test(flavor = "current_thread", start_paused = true)]
@@ -484,64 +459,5 @@ mod tests {
 
         // Should trigger a debug_assert
         let _ = ewma.get_at(now);
-    }
-
-    #[tokio::test(flavor = "current_thread", start_paused = true)]
-    async fn test_last_update_tracks_construction() {
-        let now = Instant::now();
-        let ewma = Ewma::new(Duration::from_secs(10), now);
-        assert_eq!(ewma.last_update(), now);
-
-        let ewma = Ewma::new_with_value(Duration::from_secs(10), now, 1.0);
-        assert_eq!(ewma.last_update(), now);
-    }
-
-    #[tokio::test(flavor = "current_thread", start_paused = true)]
-    async fn test_last_update_advances_on_add() {
-        let now = Instant::now();
-        let mut ewma = Ewma::new(Duration::from_secs(10), now);
-
-        let t1 = now + Duration::from_secs(1);
-        ewma.add(1.0, t1);
-        assert_eq!(ewma.last_update(), t1);
-
-        let t2 = now + Duration::from_secs(5);
-        ewma.add(0.5, t2);
-        assert_eq!(ewma.last_update(), t2);
-    }
-
-    #[tokio::test(flavor = "current_thread", start_paused = true)]
-    async fn test_last_update_advances_on_reset() {
-        let now = Instant::now();
-        let mut ewma = Ewma::new(Duration::from_secs(10), now);
-
-        ewma.add(1.0, now + Duration::from_secs(1));
-        let reset_at = now + Duration::from_secs(5);
-        ewma.reset(1.0, reset_at);
-        assert_eq!(ewma.last_update(), reset_at);
-    }
-
-    #[tokio::test(flavor = "current_thread", start_paused = true)]
-    async fn test_last_update_unchanged_by_read() {
-        let now = Instant::now();
-        let mut ewma = Ewma::new(Duration::from_secs(10), now);
-
-        let t1 = now + Duration::from_secs(1);
-        ewma.add(1.0, t1);
-        let _ = ewma.get_at(now + Duration::from_secs(10));
-        assert_eq!(ewma.last_update(), t1);
-    }
-
-    #[tokio::test(flavor = "current_thread", start_paused = true)]
-    async fn test_last_update_unchanged_by_stale_add() {
-        let now = Instant::now();
-        let mut ewma = Ewma::new(Duration::from_secs(10), now);
-
-        let t1 = now + Duration::from_secs(5);
-        ewma.add(1.0, t1);
-
-        // Stale timestamp (before last update) is silently dropped.
-        ewma.add(0.0, now + Duration::from_secs(2));
-        assert_eq!(ewma.last_update(), t1);
     }
 }

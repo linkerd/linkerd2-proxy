@@ -86,7 +86,7 @@ const GRPC_RETRY_PUSHBACK_MS: &str = "grpc-retry-pushback-ms";
 ///
 /// Returns `None` for:
 /// - Missing header/trailer
-/// - Negative values (interpreted as "do not retry")
+/// - Negative values (meaning "do not retry", we can't honor that)
 /// - Invalid formats
 ///
 /// The returned duration is capped at `max` to prevent abuse.
@@ -103,7 +103,10 @@ pub fn parse_grpc_retry_pushback(headers: &HeaderMap, max: Duration) -> Option<D
         }
     };
 
-    // Negative values mean "do not retry".
+    // A negative pushback means "do not retry". However in this context
+    // we can't honor it, since users are either steering traffic away from
+    // an endpoint, or computing a backoff time giving it room to recover.
+    // We ignore the hint, as it's not really actionable.
     if ms < 0 {
         tracing::debug!(ms, "Ignoring negative grpc-retry-pushback-ms");
         return None;
