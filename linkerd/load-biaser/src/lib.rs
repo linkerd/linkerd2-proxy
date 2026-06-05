@@ -168,6 +168,7 @@ impl<B> ResponseFailureHint for http::Response<B> {
                     0 => None,                                   // OK
                     8 => Some(FailureHint::RateLimited),         // RESOURCE_EXHAUSTED
                     14 => Some(FailureHint::ServiceUnavailable), // UNAVAILABLE
+                    // UNKNOWN, DEADLINE_EXCEEDED, INTERNAL, DATA_LOSS
                     2 | 4 | 13 | 15 => Some(FailureHint::InternalError),
                     _ => None, // Client errors (CANCELLED, INVALID_ARGUMENT, etc.)
                 })
