@@ -6,26 +6,20 @@
 //! `linkerd_ewma::Ewma` and returns `f64` metrics directly, enabling
 //! integration with P2C load balancing.
 //!
-//! This can wrap any service (`Load` trait not required) and it tracks RTT via
-//! EWMA, which is updated when responses complete, and pending requests for load
-//! calculation.
+//! The load metric is `rtt * (pending + 1)`, exactly PeakEwma. The difference
+//! is what counts as an observation. A success records its measured RTT. A
+//! failure records a *computed*, penalized RTT instead: when present, it'll be
+//! the server's Retry-After or grpc-retry-pushback hint (capped at
+//! `max_duration`), otherwise a base penalty.
 //!
-//! When a failure response is detected, a penalty is applied and the EWMA jumps
-//! to a high value. The load is calculated as `max(rtt * (pending + 1), penalty)`
-//! (so at least RTT with no pending requests).
+//! Responses are classified through the [`ResponseFailureHint`] trait, which
+//! are only relevant for HTTP, as other transports have no hint.
 //!
-//! Both RTT and penalty decay over time via the EWMA.
-//!
-//! For this type to work responses must implement the `ResponseFailureHint`
-//! trait, which classifies responses into failure categories (rate-limited,
-//! service unavailable, internal error). For non-HTTP responses the default
-//! implementation returns no failure hint, so only RTT tracking occurs.
-//!
-//! For gRPC, `failure_hint()` detects `RESOURCE_EXHAUSTED` (code 8) and
-//! `UNAVAILABLE` (code 14) from the `grpc-status` header in trailers-only
-//! (unary) responses. Streaming gRPC puts `grpc-status` in trailers which
-//! are not visible at response-head time; the circuit breaker handles
-//! streaming gRPC failures via `GrpcRetryPushbackClassifyEos`.
+//! In-flight requests are counted the way Tower's PeakEwma counts them, using
+//! a [`Handle`] holding a clone of the shared state, and the strong count of
+//! that `Arc` (minus the service's own reference) is the pending count. The
+//! handle records a measurement when it drops, so a cancelled request still
+//! contributes its elapsed time.
 
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
@@ -39,15 +33,12 @@ use std::{
     future::Future,
     marker::PhantomData,
     pin::Pin,
-    sync::{
-        atomic::{AtomicU32, Ordering},
-        Arc,
-    },
+    sync::Arc,
     task::{Context, Poll},
     time::Duration,
 };
 use tokio::time::Instant;
-use tower::load::Load;
+use tower::load::{CompleteOnResponse, Load, TrackCompletion};
 use tower_service::Service;
 
 /// Default maximum duration for Retry-After hints.
@@ -237,32 +228,6 @@ impl ResponseFailureHint for tokio::io::DuplexStream {}
 #[cfg(feature = "tokio-test")]
 impl ResponseFailureHint for tokio_test::io::Mock {}
 
-/// Amplification factor for Retry-After penalties.
-///
-/// When a 429 or 503 response includes a Retry-After header, the load biaser injects
-/// an amplified penalty so it remains meaningful through the server's requested
-/// avoidance window. The injected value is:
-///
-///   `penalty_secs * RETRY_AFTER_PENALTY_FACTOR * exp(retry_after / penalty_decay)`
-///
-/// which decays via EWMA to `penalty_secs * RETRY_AFTER_PENALTY_FACTOR` at
-/// exactly `t = retry_after`. The factor controls how aggressively the endpoint
-/// is avoided near the Retry-After deadline:
-///
-/// At 1.0 the endpoint is fully avoided (~0% traffic) through the window and 46s
-/// beyond -- too aggressive for early-recovery discovery. At 0.1, traffic leaks
-/// well before the deadline. We use 0.5: the penalty at deadline is penalty_secs/2
-/// (roughly 50x healthy load in a 5-endpoint pool), which lets occasional probes
-/// through in the second half while still exceeding a plain failure penalty for
-/// RA >= ~7s. For pools with 100+ endpoints the factor barely matters because P2C
-/// random pair selection already makes the penalized endpoint unlikely to be drawn.
-///
-/// Sending occasional probe traffic during the window is valuable: the endpoint
-/// may recover early, or a fresh 429 or 503 with a different RA provides updated
-/// information. The circuit breaker (when enabled) provides a strict backoff
-/// window, ie. `max(backoff, retry_after)`.
-const RETRY_AFTER_PENALTY_FACTOR: f64 = 0.5;
-
 /// Configuration for LoadBiaser behavior.
 #[derive(Clone, Debug)]
 pub struct LoadBiaserConfig {
@@ -273,16 +238,9 @@ pub struct LoadBiaserConfig {
     /// Controls how quickly RTT estimates adapt to changing latency
     pub rtt_decay: Duration,
 
-    /// The penalty value to inject on failure responses (429, 503, 5xx) in seconds
+    /// The base penalty to inject on failure responses (429, 503, 5xx)
+    /// in seconds,  when the server sends no backoff hint.
     pub penalty_secs: f64,
-
-    /// Decay duration for the penalty EWMA.
-    /// Controls how quickly the penalty decays after a failure response
-    pub penalty_decay: Duration,
-
-    /// Whether load biasing penalties are enabled. When false, only RTT tracking
-    /// is active (PeakEwma equivalent).
-    pub enabled: bool,
 
     /// Maximum Retry-After duration to honor. Clamped to this value.
     pub max_duration: Duration,
@@ -295,9 +253,6 @@ impl Default for LoadBiaserConfig {
             rtt_decay: Duration::from_secs(10),
             // 5 second penalty on failure responses (429, 503, 5xx)
             penalty_secs: 5.0,
-            // 10 second decay for penalty - mostly gone after ~30 seconds
-            penalty_decay: Duration::from_secs(10),
-            enabled: false,
             max_duration: DEFAULT_RETRY_AFTER_MAX_DURATION,
         }
     }
@@ -305,123 +260,148 @@ impl Default for LoadBiaserConfig {
 
 /// Shared per-endpoint state behind a single `Arc`.
 ///
-/// Combines the EWMA trackers (under a mutex for atomic RTT+penalty reads),
-/// the in-flight request counter, and the immutable config fields that every
-/// response future needs. One allocation per endpoint instead of two, and
-/// futures carry a single `Arc` clone instead of copying config fields.
+/// Holds the RTT EWMA and the immutable config fields every response future
+/// needs. The strong count of the `Arc` wrapping this state is also used as
+/// the in-flight request count: each [`Handle`] clones it, so subtracting the
+/// service's own reference gives the pending count.
 #[derive(Debug)]
 struct SharedState {
-    /// RTT and penalty EWMAs; read-locked in load(), write-locked in poll()
-    metrics: RwLock<LoadMetrics>,
-    /// Count of in-flight requests (up on call, down on response)
-    pending: AtomicU32,
-    /// Penalty value to inject on failure responses (in seconds)
+    /// RwLocked RTT EWMA. Read in load(), written when measuring.
+    rtt: RwLock<Ewma>,
+    /// Penalty value to inject on failure responses (in seconds) when no
+    /// hint is present.
     penalty_secs: f64,
-    /// Whether penalty injection is enabled
-    enabled: bool,
     /// Maximum Retry-After duration to honor (clamped)
     max_duration: Duration,
-    /// Decay duration for the penalty EWMA (used to amplify Retry-After penalties)
-    penalty_decay: Duration,
 }
 
-#[derive(Debug)]
-struct LoadMetrics {
-    /// EWMA RTT tracking, updated on each response
-    rtt: Ewma,
-    /// EWMA penalty tracking, updated on failure responses (429, 503, 5xx)
-    penalty: Ewma,
+impl SharedState {
+    /// Translates a classified failure into an effective RTT measurement,
+    /// taking into account Retry-After/grpc-retry-pushback hints.
+    fn effective_rtt<R: ResponseFailureHint>(&self, hint: FailureHint, resp: &R) -> f64 {
+        let from_hint = match hint {
+            FailureHint::RateLimited | FailureHint::ServiceUnavailable => resp
+                .rate_limit_hint(self.max_duration)
+                .map(|d| d.as_secs_f64()),
+            FailureHint::InternalError => None,
+        };
+
+        // A hint, if present, is honored verbatim (capped).
+        from_hint.unwrap_or(self.penalty_secs)
+    }
 }
 
-/// A service wrapper that tracks RTT and biases load metrics based on failure responses.
+/// A service wrapper that tracks RTT and biases load metrics on failure responses.
 ///
 /// `LoadBiaser` provides load metrics for P2C load balancing by tracking request latency
 /// (RTT) via EWMA, in-flight requests, and by injecting penalties when failure responses
-/// (429, 503, 5xx) are detected.
+/// (429, 503, 5xx) are detected. The load metric is `rtt * (pending + 1)`, identical
+/// to Tower's PeakEwma.
 ///
-/// The `load()` method returns `max(rtt * (pending + 1), penalty)`, causing P2C to
-/// prefer endpoints with lower latency and fewer in-flight requests, while avoiding
-/// rate-limited endpoints.
+/// Successes record their measured RTT, and failures record a computed RTT where a
+/// penalty has been injected.
+///
+/// The completion type `C` controls when a successful request's RTT is
+/// measured, mirroring PeakEwma. The default drops the handle when the response
+/// future resolves. `hyper_balance::PendingUntilFirstData` defers it to the
+/// first response body frame, matching the proxy's HTTP balancer.
 #[derive(Debug)]
-pub struct LoadBiaser<S> {
+pub struct LoadBiaser<S, C = CompleteOnResponse> {
     inner: S,
-    /// Per-endpoint metrics, pending counter, and penalty config
+    /// Per-endpoint RTT state and failure config.
     shared: Arc<SharedState>,
-    config: LoadBiaserConfig,
+    completion: C,
 }
 
 /// A `NewService` implementation that creates `LoadBiaser` wrappers.
 #[derive(Debug)]
-pub struct NewLoadBiaser<N, Req> {
+pub struct NewLoadBiaser<N, Req, C = CompleteOnResponse> {
     inner: N,
+    completion: C,
     config: LoadBiaserConfig,
     _marker: PhantomData<fn(Req)>,
 }
 
-/// Response future that tracks RTT and checks for failure responses.
+/// Tracks one in-flight request and records a measurement when it drops.
 ///
-/// When the inner future completes we store the RTT based on elapsed time since the
-/// request started, decrement the pending counter, and if the response indicates a
-/// failure (using the `ResponseFailureHint` trait) we inject a penalty.
-#[pin_project(PinnedDrop)]
-pub struct LoadBiaserFuture<F, Rsp> {
+/// It clones the shared `Arc`, so while it lives the endpoint's strong count
+/// is incremented by one. On drop it records the elapsed time as an RTT
+/// measurement, so a cancelled request still measures latency.
+/// A failure disables the handle first, because it needs to record its own
+/// penalty-injected measurement.
+#[derive(Debug)]
+pub struct Handle {
+    shared: Arc<SharedState>,
+    sent_at: Instant,
+    enabled: bool,
+}
+
+impl Handle {
+    /// Records the measured elapsed time, then prevents the drop from recording
+    /// again.
+    fn record_elapsed(&mut self, now: Instant) {
+        if self.enabled {
+            let elapsed = now.saturating_duration_since(self.sent_at).as_secs_f64();
+            self.shared.rtt.write().add_peak(elapsed, now);
+            self.enabled = false;
+        }
+    }
+
+    /// Records a computed effective RTT and disables the handle so its drop does
+    /// not also record the measurement of the failure.
+    fn record_effective_rtt(&mut self, value: f64, now: Instant) {
+        self.shared.rtt.write().add_peak(value, now);
+        self.enabled = false;
+    }
+}
+
+impl Drop for Handle {
+    fn drop(&mut self) {
+        // Ensure we take a measurement if the request was cancelled (enabled
+        // should be true).
+        self.record_elapsed(Instant::now());
+    }
+}
+
+/// Response future that records a measurement and checks for failure responses.
+///
+/// On resolution a failure injects a computed RTT and disables the handle.
+/// A success leaves the handle for the completion tracker, which decides when
+/// to record the measurement.
+#[pin_project]
+pub struct LoadBiaserFuture<F, Rsp, C> {
     #[pin]
     inner: F,
-    /// Request start instant for RTT calculation
-    start: Instant,
-    /// Shared endpoint state (metrics, pending counter, penalty config)
-    shared: Arc<SharedState>,
-    /// Whether we've already decremented pending
-    completed: bool,
+    /// Handle whose drop records the RTT measurement.
+    handle: Option<Handle>,
+    completion: C,
     /// Marker for the response type (`ResponseFailureHint` bound)
     _response: PhantomData<fn() -> Rsp>,
 }
 
-impl<S> LoadBiaser<S> {
-    /// Creates a new `LoadBiaser` wrapping the given service.
+impl<S, C> LoadBiaser<S, C> {
+    /// Creates a new `LoadBiaser` with an explicit completion tracker.
     #[must_use]
-    pub fn new(inner: S, mut config: LoadBiaserConfig) -> Self {
-        if config.penalty_secs.is_nan() || config.penalty_secs < 0.0 {
-            tracing::warn!(
-                penalty_secs = config.penalty_secs,
-                "penalty_secs is NaN or negative, clamping to 0.0"
-            );
-            config.penalty_secs = 0.0;
-        }
-        if config.penalty_decay < MIN_DECAY {
-            tracing::warn!(
-                penalty_decay = ?config.penalty_decay,
-                min = ?MIN_DECAY,
-                "penalty_decay below minimum, will be clamped by EWMA constructor"
-            );
-        }
-        if config.rtt_decay < MIN_DECAY {
-            tracing::warn!(
-                rtt_decay = ?config.rtt_decay,
-                min = ?MIN_DECAY,
-                "rtt_decay below minimum, will be clamped by EWMA constructor"
-            );
-        }
+    pub fn with_completion(inner: S, completion: C, config: LoadBiaserConfig) -> Self {
+        let config = sanitize(config);
         let now = Instant::now();
         let shared = Arc::new(SharedState {
-            metrics: RwLock::new(LoadMetrics {
-                // Initialize RTT with default_rtt (not INFINITY) so that fresh
-                // endpoints have comparable load to unmeasured ones. This matches
-                // Tower's PeakEwma behavior and prevents P2C from permanently
-                // preferring endpoints whose first request happened to be fast.
-                rtt: Ewma::new_with_value(config.rtt_decay, now, config.default_rtt.as_secs_f64()),
-                penalty: Ewma::new(config.penalty_decay, now),
-            }),
-            pending: AtomicU32::new(0),
+            // Initialize RTT with default_rtt (not INFINITY) so that fresh
+            // endpoints have comparable load to unmeasured ones. This matches
+            // Tower's PeakEwma behavior and prevents P2C from permanently
+            // preferring endpoints whose first request happened to be fast.
+            rtt: RwLock::new(Ewma::new_with_value(
+                config.rtt_decay,
+                now,
+                config.default_rtt.as_secs_f64(),
+            )),
             penalty_secs: config.penalty_secs,
-            enabled: config.enabled,
             max_duration: config.max_duration,
-            penalty_decay: config.penalty_decay,
         });
         Self {
             inner,
             shared,
-            config,
+            completion,
         }
     }
 
@@ -429,45 +409,59 @@ impl<S> LoadBiaser<S> {
     pub fn get_ref(&self) -> &S {
         &self.inner
     }
-}
 
-impl<S: Clone> Clone for LoadBiaser<S> {
-    fn clone(&self) -> Self {
-        Self {
-            inner: self.inner.clone(),
+    fn handle(&self) -> Handle {
+        Handle {
             shared: self.shared.clone(),
-            config: self.config.clone(),
+            sent_at: Instant::now(),
+            enabled: true,
         }
     }
 }
 
-impl<S> Load for LoadBiaser<S> {
+impl<S> LoadBiaser<S, CompleteOnResponse> {
+    /// Creates a new `LoadBiaser` recording RTT when the response resolves.
+    #[must_use]
+    pub fn new(inner: S, config: LoadBiaserConfig) -> Self {
+        Self::with_completion(inner, CompleteOnResponse::default(), config)
+    }
+}
+
+fn sanitize(mut config: LoadBiaserConfig) -> LoadBiaserConfig {
+    if config.penalty_secs.is_nan() || config.penalty_secs < 0.0 {
+        tracing::warn!(
+            penalty_secs = config.penalty_secs,
+            "penalty_secs is NaN or negative, clamping to 0.0"
+        );
+        config.penalty_secs = 0.0;
+    }
+    if config.rtt_decay < MIN_DECAY {
+        tracing::warn!(
+            rtt_decay = ?config.rtt_decay,
+            min = ?MIN_DECAY,
+            "rtt_decay below minimum, will be clamped by EWMA constructor"
+        );
+    }
+    config
+}
+
+impl<S, C> Load for LoadBiaser<S, C> {
     type Metric = f64;
 
     fn load(&self) -> Self::Metric {
-        let pending = self.shared.pending.load(Ordering::Acquire);
+        // Pending is the strong count of the Arc minus the service's own ref.
+        let pending = (Arc::strong_count(&self.shared) as u32).saturating_sub(1);
         let now = Instant::now();
 
-        let (rtt, penalty_val) = {
-            let metrics = self.shared.metrics.read();
-            (metrics.rtt.get_at(now), metrics.penalty.get_at(now))
-        };
+        let rtt = self.shared.rtt.read().get_at(now);
 
-        let penalty = if penalty_val.is_infinite() {
-            0.0
-        } else {
-            penalty_val
-        };
-
-        // Load = RTT * (pending + 1), minimum will be `penalty`
-        // The +1 ensures idle endpoints have some load based on RTT
-        let base = rtt * f64::from(pending.saturating_add(1));
-        let load = f64::max(base, penalty);
+        // Load = RTT * (pending + 1). The +1 keeps an idle endpoint's cost tied
+        // to its RTT so a slow-but-quiet endpoint is not treated as free.
+        let load = rtt * f64::from(pending.saturating_add(1));
 
         tracing::trace!(
             rtt_secs = rtt,
             pending = pending,
-            penalty_secs = penalty,
             load = load,
             "LoadBiaser::load"
         );
@@ -476,148 +470,114 @@ impl<S> Load for LoadBiaser<S> {
     }
 }
 
-impl<S, Req> Service<Req> for LoadBiaser<S>
+impl<S, C, Req> Service<Req> for LoadBiaser<S, C>
 where
     S: Service<Req>,
     S::Response: ResponseFailureHint,
+    C: TrackCompletion<Handle, S::Response> + Clone,
 {
-    type Response = S::Response;
+    type Response = C::Output;
     type Error = S::Error;
-    type Future = LoadBiaserFuture<S::Future, S::Response>;
+    type Future = LoadBiaserFuture<S::Future, S::Response, C>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.inner.poll_ready(cx)
     }
 
     fn call(&mut self, req: Req) -> Self::Future {
-        let prev = self.shared.pending.fetch_add(1, Ordering::AcqRel);
-        debug_assert!(prev < u32::MAX, "pending counter overflow");
-
         LoadBiaserFuture {
             inner: self.inner.call(req),
-            start: Instant::now(),
-            shared: self.shared.clone(),
-            completed: false,
+            handle: Some(self.handle()),
+            completion: self.completion.clone(),
             _response: PhantomData,
         }
     }
 }
 
-impl<N, Req> NewLoadBiaser<N, Req> {
-    /// Creates a new `NewLoadBiaser` with the given configuration.
-    pub fn new(config: LoadBiaserConfig, inner: N) -> Self {
+impl<N, Req, C> NewLoadBiaser<N, Req, C> {
+    /// Creates a `NewLoadBiaser` with an explicit completion tracker.
+    pub fn with_completion(config: LoadBiaserConfig, completion: C, inner: N) -> Self {
         Self {
             inner,
+            completion,
             config,
             _marker: PhantomData,
         }
     }
 }
 
-impl<N: Clone, Req> Clone for NewLoadBiaser<N, Req> {
+impl<N, Req> NewLoadBiaser<N, Req, CompleteOnResponse> {
+    /// Creates a new `NewLoadBiaser` with the given configuration.
+    pub fn new(config: LoadBiaserConfig, inner: N) -> Self {
+        Self::with_completion(config, CompleteOnResponse::default(), inner)
+    }
+}
+
+impl<N: Clone, Req, C: Clone> Clone for NewLoadBiaser<N, Req, C> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
+            completion: self.completion.clone(),
             config: self.config.clone(),
             _marker: PhantomData,
         }
     }
 }
 
-impl<T, N, S, Req> NewService<T> for NewLoadBiaser<N, Req>
+impl<T, N, S, Req, C> NewService<T> for NewLoadBiaser<N, Req, C>
 where
     N: NewService<T, Service = S>,
+    C: Clone,
 {
-    type Service = LoadBiaser<S>;
+    type Service = LoadBiaser<S, C>;
 
-    fn new_service(&self, target: T) -> LoadBiaser<S> {
-        LoadBiaser::new(self.inner.new_service(target), self.config.clone())
+    fn new_service(&self, target: T) -> LoadBiaser<S, C> {
+        LoadBiaser::with_completion(
+            self.inner.new_service(target),
+            self.completion.clone(),
+            self.config.clone(),
+        )
     }
 }
 
-impl<F, Rsp, E> Future for LoadBiaserFuture<F, Rsp>
+impl<F, Rsp, E, C> Future for LoadBiaserFuture<F, Rsp, C>
 where
     F: Future<Output = Result<Rsp, E>>,
     Rsp: ResponseFailureHint,
+    C: TrackCompletion<Handle, Rsp>,
 {
-    type Output = F::Output;
+    type Output = Result<C::Output, E>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
-        let mut result = ready!(this.inner.poll(cx));
-        let shared = &**this.shared;
-
+        let result = ready!(this.inner.poll(cx));
         let now = Instant::now();
-        let elapsed = now.saturating_duration_since(*this.start).as_secs_f64();
+        let mut handle = this.handle.take().expect("polled after completion");
 
-        // Parse rate limit hint while we have &mut access to the response (when load
-        // biasing is enabled).
-        if shared.enabled {
-            if let Ok(ref mut resp) = result {
-                resp.attach_parsed_rate_limit_hint();
-            }
-        }
-
-        {
-            let mut metrics = shared.metrics.write();
-            if let Ok(ref resp) = result {
-                // Update RTT on all HTTP responses (including 429, 503, 5xx).
-                // Only transport-level errors (connection refused, resets) skip
-                // this update, because broken endpoints fail fast and would bias
-                // P2C toward sending more traffic to the broken endpoint.
-                metrics.rtt.add_peak(elapsed, now);
-
-                if shared.enabled {
-                    if let Some(hint) = resp.failure_hint() {
-                        let base_penalty = shared.penalty_secs;
-
-                        // For rate-limited and service-unavailable responses, amplify
-                        // the penalty using the Retry-After hint so it remains meaningful
-                        // through the server's requested avoidance window.
-                        let penalty_val = match hint {
-                            FailureHint::RateLimited | FailureHint::ServiceUnavailable => {
-                                match resp.rate_limit_hint(shared.max_duration) {
-                                    Some(ra) if ra.as_secs_f64() > 0.0 => {
-                                        let decay_secs =
-                                            shared.penalty_decay.max(MIN_DECAY).as_secs_f64();
-                                        let amplified = base_penalty
-                                            * RETRY_AFTER_PENALTY_FACTOR
-                                            * (ra.as_secs_f64() / decay_secs).exp();
-                                        amplified.min(1e12)
-                                    }
-                                    _ => base_penalty,
-                                }
-                            }
-                            FailureHint::InternalError => base_penalty,
-                        };
-
-                        tracing::debug!(
-                            penalty_secs = penalty_val,
-                            rtt_secs = elapsed,
-                            ?hint,
-                            "Detected failure response - injecting load penalty"
-                        );
-                        metrics.penalty.add_peak(penalty_val, now);
-                    }
+        match result {
+            Ok(mut resp) => {
+                if let Some(hint) = resp.failure_hint() {
+                    // Cache the uncapped hint while we hold &mut, then record the
+                    // failure as a penalized effective RTT.
+                    resp.attach_parsed_rate_limit_hint();
+                    let value = handle.shared.effective_rtt(hint, &resp);
+                    tracing::debug!(rtt_secs = value, ?hint, "Failure recorded as effective RTT");
+                    handle.record_effective_rtt(value, now);
                 }
+
+                // The completion tracker will drop the handle now or at first body
+                // frame, and that drop will record the measured RTT.
+                let output = this.completion.track_completion(handle, resp);
+
+                Poll::Ready(Ok(output))
             }
-        }
+            Err(e) => {
+                // A transport error (connection refused, reset) or cancellation with
+                // no response to classify. Record its elapsed time.
+                drop(handle);
 
-        shared.pending.fetch_sub(1, Ordering::Release);
-        *this.completed = true;
-
-        Poll::Ready(result)
-    }
-}
-
-#[pin_project::pinned_drop]
-impl<F, Rsp> PinnedDrop for LoadBiaserFuture<F, Rsp> {
-    fn drop(self: Pin<&mut Self>) {
-        let this = self.project();
-        // Only decrement if we haven't already done so in poll().
-        // Avoids leaking the pending count upon cancellation.
-        if !*this.completed {
-            this.shared.pending.fetch_sub(1, Ordering::Release);
+                Poll::Ready(Err(e))
+            }
         }
     }
 }
@@ -628,33 +588,25 @@ mod tests {
     use std::convert::Infallible;
     use tokio::time;
 
-    impl<S> LoadBiaser<S> {
+    impl<S, C> LoadBiaser<S, C> {
         pub fn get_rtt(&self) -> f64 {
-            self.shared.metrics.read().rtt.get()
-        }
-
-        pub fn get_penalty(&self) -> f64 {
-            self.shared.metrics.read().penalty.get()
+            self.shared.rtt.read().get()
         }
 
         pub fn get_pending(&self) -> u32 {
-            self.shared.pending.load(Ordering::Acquire)
-        }
-
-        pub fn inject_penalty(&self, penalty_secs: f64) {
-            self.shared
-                .metrics
-                .write()
-                .penalty
-                .add_peak(penalty_secs, Instant::now());
+            (Arc::strong_count(&self.shared) as u32).saturating_sub(1)
         }
 
         pub fn inject_rtt(&self, rtt_secs: f64) {
-            self.shared
-                .metrics
-                .write()
-                .rtt
-                .add_peak(rtt_secs, Instant::now());
+            self.shared.rtt.write().add_peak(rtt_secs, Instant::now());
+        }
+    }
+
+    impl Handle {
+        /// Disable a handle so dropping it records nothing. Lets a test hold a
+        /// handle just to raise the pending count.
+        fn disable(mut self) {
+            self.enabled = false;
         }
     }
 
@@ -688,31 +640,11 @@ mod tests {
         }
     }
 
-    // Mock service that always returns an error.
-    #[derive(Clone)]
-    struct ErrorService;
-
-    impl Service<()> for ErrorService {
-        type Response = http::Response<&'static str>;
-        type Error = &'static str;
-        type Future = futures::future::Ready<Result<Self::Response, Self::Error>>;
-
-        fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-            Poll::Ready(Ok(()))
-        }
-
-        fn call(&mut self, _: ()) -> Self::Future {
-            futures::future::ready(Err("connection refused"))
-        }
-    }
-
     fn test_config() -> LoadBiaserConfig {
         LoadBiaserConfig {
             default_rtt: Duration::from_millis(100), // 0.1s default
             rtt_decay: Duration::from_secs(10),
             penalty_secs: 5.0,
-            penalty_decay: Duration::from_secs(10),
-            enabled: true,
             max_duration: DEFAULT_RETRY_AFTER_MAX_DURATION,
         }
     }
@@ -743,17 +675,12 @@ mod tests {
         // RTT * (0 + 1) = 0.05
         let load_idle = biaser.load();
 
-        // Start a request (not awaited yet)
-        // Increment pending to simulate in-flight requests
-        biaser.shared.pending.fetch_add(1, Ordering::AcqRel);
-
-        // RTT * (1 + 1) = 0.05 * 2 = 0.1
+        // Hold a handle to simulate an in-flight request: the strong count of
+        // the shared Arc increments per live handle like during a call.
+        let h1 = biaser.handle();
         let load_one_pending = biaser.load();
 
-        // Increment again
-        biaser.shared.pending.fetch_add(1, Ordering::AcqRel);
-
-        // RTT * (2 + 1) = 0.05 * 3 = 0.15
+        let h2 = biaser.handle();
         let load_two_pending = biaser.load();
 
         assert!(
@@ -768,6 +695,9 @@ mod tests {
             load_two_pending,
             load_one_pending
         );
+
+        h1.disable();
+        h2.disable();
     }
 
     #[tokio::test(flavor = "current_thread", start_paused = true)]
@@ -797,24 +727,92 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_fast_failure_more_expensive_than_healthy() {
+        // A fast 503 should be more expensive than a fast 200
+        let mut failing = LoadBiaser::new(
+            MockService::new(http::StatusCode::SERVICE_UNAVAILABLE),
+            test_config(),
+        );
+        let mut healthy = LoadBiaser::new(MockService::new(http::StatusCode::OK), test_config());
+
+        time::sleep(Duration::from_millis(1)).await;
+
+        let _ = failing.call(()).await;
+        let _ = healthy.call(()).await;
+
+        let load_failing = failing.load();
+        let load_healthy = healthy.load();
+
+        assert!(
+            load_failing > load_healthy,
+            "fast failure should read higher load than healthy: {load_failing} > {load_healthy}"
+        );
+        // The failure records the base penalty (5s)
+        assert!(
+            load_failing > 4.0,
+            "503 should record the base effective RTT (~5s): {load_failing}"
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_retry_after_hint_load_grows_monotonically() {
+        let hints = [0u64, 1, 5, 30, 120, 300];
+        let mut prev = f64::NEG_INFINITY;
+
+        for secs in hints {
+            let inner = RetryAfterService {
+                status: http::StatusCode::TOO_MANY_REQUESTS,
+                retry_after_secs: secs,
+            };
+            let mut biaser = LoadBiaser::new(inner, test_config());
+
+            time::sleep(Duration::from_millis(1)).await;
+
+            let _ = biaser.call(()).await;
+            let load = biaser.load();
+            assert!(
+                load >= prev,
+                "load must be monotonic in Retry-After: hint={secs}s gave {load}, previous {prev}"
+            );
+            prev = load;
+        }
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_faster_healthy_is_cheaper_than_slower_healthy() {
+        let mut fast = LoadBiaser::new(MockService::new(http::StatusCode::OK), test_config());
+        let slow = LoadBiaser::new(MockService::new(http::StatusCode::OK), test_config());
+
+        time::sleep(Duration::from_millis(1)).await;
+
+        let _ = fast.call(()).await;
+
+        fast.inject_rtt(0.01);
+        slow.inject_rtt(2.0);
+
+        assert!(
+            fast.load() < slow.load(),
+            "lower RTT must rank cheaper: fast={} slow={}",
+            fast.load(),
+            slow.load()
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
     async fn test_429_injects_penalty() {
         let inner = MockService::new(http::StatusCode::TOO_MANY_REQUESTS);
         let mut biaser = LoadBiaser::new(inner, test_config());
 
         time::sleep(Duration::from_millis(1)).await;
 
-        // Penalty should be infinite (none) before we get requests.
-        assert!(biaser.get_penalty().is_infinite());
-
-        // Make a request that returns 429.
+        // Make a request that returns 429 (no hint)
         let _ = biaser.call(()).await;
 
-        // A penalty should be injected (5 seconds) after seeing a 429
-        let penalty = biaser.get_penalty();
+        // The 429 records the penalty (5s)
+        let rtt = biaser.get_rtt();
         assert!(
-            (penalty - 5.0).abs() < 0.1,
-            "penalty should be ~5s after 429: {}",
-            penalty
+            (rtt - 5.0).abs() < 0.1,
+            "429 without a hint should record ~5s RTT: {rtt}"
         );
 
         // Load should be at least the penalty.
@@ -832,20 +830,15 @@ mod tests {
         // Make a request that returns 200.
         let _ = biaser.call(()).await;
 
-        // Penalty should still be infinite (none).
-        assert!(
-            biaser.get_penalty().is_infinite(),
-            "penalty should not be injected for 200"
-        );
+        // A success records only its measured (near-zero) RTT, well below
+        // the 5s penalty base.
+        let rtt = biaser.get_rtt();
+        assert!(rtt < 1.0, "200 should record a low RTT, got: {rtt}");
     }
 
     #[tokio::test(flavor = "current_thread", start_paused = true)]
     async fn test_penalty_decays_over_time() {
         let inner = MockService::new(http::StatusCode::TOO_MANY_REQUESTS);
-        // Use a custom config with default_rtt=1ms (0.001s) so load() tracks penalty directly.
-        // inject_rtt(0.001) would be a no-op here: add_peak() only replaces when the new
-        // value exceeds the decayed current value, so 0.001 < 0.1 (test_config default)
-        // would fail the peak check and fall through to add() which no-ops at ts==self.timestamp.
         let config = LoadBiaserConfig {
             default_rtt: Duration::from_millis(1),
             ..test_config()
@@ -854,53 +847,44 @@ mod tests {
 
         time::sleep(Duration::from_millis(1)).await;
 
-        // Trigger penalty via 429 response
+        // Trigger penalty via 429 response.
         let _ = biaser.call(()).await;
 
-        // After call completes, pending is back to 0 (LoadBiaserFuture::poll decrements
-        // before returning Poll::Ready), so load = max(rtt * 1, penalty).
+        // After call completes, pending is back to 0
         assert_eq!(
             biaser.get_pending(),
             0,
             "pending should be 0 after call completes"
         );
 
-        // load() calls get_at(now) which projects the decayed penalty.
-        // Immediately after injection: penalty ~5.0, rtt ~0.001, so load ~5.0
+        // Immediately after: effective RTT ~5.0, so load ~5.0.
         let load_before = biaser.load();
         assert!(
             load_before > 4.0,
-            "load before decay should be dominated by the injected 429 penalty: {}",
+            "load before decay should reflect the 429 penalized RTT: {}",
             load_before
         );
 
         // Advance time by one decay period (10s).
-        // Penalty decays: 5.0 * e^(-10/10) ~ 1.839
+        // Penalty RTT decays: 5.0 * e^(-10/10) ~ 1.839
         time::sleep(Duration::from_secs(10)).await;
 
-        // load() projects the decayed penalty at the new timestamp.
-        // No EWMA mutation needed since this is pure projection.
         let load_after = biaser.load();
         assert!(
-            load_after > 1.0,
-            "load after one decay period should still be dominated by decayed penalty: {}",
-            load_after
-        );
-        assert!(
-            load_after < 2.5,
-            "load after one decay period should reflect substantial decay (5.0 * e^-1 ~ 1.839): {}",
+            load_after > 1.0 && load_after < 2.5,
+            "load after one decay period should reflect 5.0 * e^-1 ~ 1.839: {}",
             load_after
         );
         assert!(
             load_after < load_before,
-            "penalty should decay over time as observed through load(): {} < {}",
+            "effective RTT should decay over time: {} < {}",
             load_after,
             load_before
         );
     }
 
     #[tokio::test(flavor = "current_thread", start_paused = true)]
-    async fn test_sequential_failures_maintain_penalty() {
+    async fn test_sequential_failures_maintain_load() {
         let inner = MockService::new(http::StatusCode::TOO_MANY_REQUESTS);
         let config = LoadBiaserConfig {
             default_rtt: Duration::from_millis(1),
@@ -911,89 +895,39 @@ mod tests {
         time::sleep(Duration::from_millis(1)).await;
 
         let _ = biaser.call(()).await;
-        let penalty_after_first = biaser.get_penalty();
+        let rtt_first = biaser.get_rtt();
         assert!(
-            (penalty_after_first - 5.0).abs() < 0.1,
-            "first 429 should inject ~5s penalty, got: {penalty_after_first}"
+            (rtt_first - 5.0).abs() < 0.1,
+            "first 429 should record ~5s, got: {rtt_first}"
         );
 
-        // Second 429 arrives 1s later. The penalty has decayed slightly but
-        // add_peak replaces the decayed value with the fresh penalty.
+        // A second 429 one second later: add_peak replaces the slightly decayed
+        // value with the new 5s measurement.
         time::sleep(Duration::from_secs(1)).await;
         let _ = biaser.call(()).await;
-        let penalty_after_second = biaser.get_penalty();
+        let rtt_second = biaser.get_rtt();
         assert!(
-            (penalty_after_second - 5.0).abs() < 0.1,
-            "second 429 should maintain penalty at ~5s, got: {penalty_after_second}"
+            (rtt_second - 5.0).abs() < 0.1,
+            "second 429 should maintain ~5s, got: {rtt_second}"
         );
 
-        // Third 429 after another second. Still at ~5s.
         time::sleep(Duration::from_secs(1)).await;
         let _ = biaser.call(()).await;
-        let penalty_after_third = biaser.get_penalty();
+        let rtt_third = biaser.get_rtt();
         assert!(
-            (penalty_after_third - 5.0).abs() < 0.1,
-            "third 429 should maintain penalty at ~5s, got: {penalty_after_third}"
+            (rtt_third - 5.0).abs() < 0.1,
+            "third 429 should maintain ~5s, got: {rtt_third}"
         );
     }
 
     #[tokio::test(flavor = "current_thread", start_paused = true)]
-    async fn test_load_is_max_of_rtt_based_and_penalty() {
-        let inner = MockService::new(http::StatusCode::OK);
-        let biaser = LoadBiaser::new(inner, test_config());
-
-        time::sleep(Duration::from_millis(1)).await;
-
-        // Inject a high RTT (10 seconds)
-        biaser.inject_rtt(10.0);
-
-        // Inject a lower penalty (1 second)
-        biaser.inject_penalty(1.0);
-
-        // Load should be RTT-based since it's higher: 10 * 1 = 10
-        let load = biaser.load();
-        assert!(
-            (load - 10.0).abs() < 0.1,
-            "load should be RTT-based when higher: {}",
-            load
-        );
-
-        // Now inject a very high penalty
-        biaser.inject_penalty(20.0);
-
-        // Load should be penalty since it's higher
-        let load = biaser.load();
-        assert!(
-            (load - 20.0).abs() < 0.1,
-            "load should be penalty when higher: {}",
-            load
-        );
-    }
-
-    #[tokio::test(flavor = "current_thread", start_paused = true)]
-    async fn test_clone_shares_state() {
-        let inner = MockService::new(http::StatusCode::TOO_MANY_REQUESTS);
-        let mut biaser1 = LoadBiaser::new(inner.clone(), test_config());
-        let biaser2 = biaser1.clone();
-
-        time::sleep(Duration::from_millis(1)).await;
-
-        // Trigger penalty on biaser1
-        let _ = biaser1.call(()).await;
-
-        // biaser2 should see the same penalty (shared state)
-        assert_eq!(biaser1.get_penalty(), biaser2.get_penalty());
-        assert_eq!(biaser1.load(), biaser2.load());
-    }
-
-    #[tokio::test(flavor = "current_thread", start_paused = true)]
-    async fn test_pending_decremented_on_completion() {
+    async fn test_pending_counted_via_strong_count() {
         let inner = MockService::new(http::StatusCode::OK);
         let mut biaser = LoadBiaser::new(inner, test_config());
 
         assert_eq!(biaser.get_pending(), 0, "pending should start at 0");
 
-        // Start a request, pending increments
+        // Start a request: the future holds a handle, raising the count.
         let fut = biaser.call(());
         assert_eq!(
             biaser.get_pending(),
@@ -1001,7 +935,7 @@ mod tests {
             "pending should be 1 during request"
         );
 
-        // Complete the request, pending decrements
+        // Complete the request: the handle drops, lowering the count.
         let _ = fut.await;
         assert_eq!(
             biaser.get_pending(),
@@ -1011,38 +945,11 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread", start_paused = true)]
-    async fn test_rtt_not_updated_on_error() {
-        let inner = ErrorService;
-        let mut biaser = LoadBiaser::new(inner, test_config());
-
-        time::sleep(Duration::from_millis(1)).await;
-
-        // RTT should start at default_rtt before any requests
-        let initial_rtt = biaser.get_rtt();
-        assert!(
-            (initial_rtt - 0.1).abs() < 0.01,
-            "RTT should start at default_rtt (0.1s), got: {initial_rtt}"
-        );
-
-        // Make a request that returns an error
-        let _ = biaser.call(()).await;
-
-        // RTT should remain at default_rtt because error responses don't
-        // update RTT. This prevents P2C from routing more traffic to broken
-        // endpoints that fail fast (appearing "fast" to the load metric).
-        let rtt_after_error = biaser.get_rtt();
-        assert!(
-            (rtt_after_error - initial_rtt).abs() < 0.01,
-            "RTT should not change on error responses: {rtt_after_error} vs {initial_rtt}"
-        );
-    }
-
-    #[tokio::test(flavor = "current_thread", start_paused = true)]
-    async fn test_pending_decremented_on_cancellation() {
+    async fn test_cancellation_records_measurement() {
         use tokio::sync::oneshot;
 
         // Build a service whose response future blocks on a oneshot receiver.
-        // This lets us drop the future mid-flight to test PinnedDrop.
+        // This lets us drop the future mid-flight.
         struct DelayedService {
             rx: Option<oneshot::Receiver<http::Response<&'static str>>>,
         }
@@ -1074,12 +981,10 @@ mod tests {
                 match Pin::new(&mut self.rx).poll(cx) {
                     Poll::Ready(Ok(resp)) => Poll::Ready(Ok(resp)),
                     Poll::Ready(Err(_)) => {
-                        // Sender dropped. Return a default response
                         let resp = http::Response::builder()
                             .status(http::StatusCode::OK)
                             .body("cancelled")
                             .unwrap();
-
                         Poll::Ready(Ok(resp))
                     }
                     Poll::Pending => Poll::Pending,
@@ -1097,15 +1002,24 @@ mod tests {
         let fut = biaser.call(());
         assert_eq!(biaser.get_pending(), 1);
 
-        // Drop the future without completing it. The oneshot receiver
-        // never receives a value, so the inner future is still pending.
-        // PinnedDrop must decrement the pending count.
+        // Advance time so the cancelled request has measurable elapsed time.
+        time::sleep(Duration::from_secs(3)).await;
+
+        let rtt_before = biaser.get_rtt();
+
+        // Drop the future without completing it. The handle's drop should
+        // records the elapsed wait as an RTT measurement.
         drop(fut);
 
         assert_eq!(
             biaser.get_pending(),
             0,
-            "PinnedDrop should decrement pending on cancellation"
+            "dropping the future should release the handle and decrease pending"
+        );
+        let rtt_after = biaser.get_rtt();
+        assert!(
+            rtt_after > rtt_before,
+            "cancellation should record the elapsed wait: {rtt_after} > {rtt_before}"
         );
 
         // tx is unused. Dropping it here is fine, it just closes the channel.
@@ -1155,7 +1069,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread", start_paused = true)]
-    async fn test_429_with_retry_after_uses_adaptive_penalty() {
+    async fn test_429_with_retry_after_records_hint() {
         let inner = RetryAfterService {
             status: http::StatusCode::TOO_MANY_REQUESTS,
             retry_after_secs: 30,
@@ -1167,44 +1081,32 @@ mod tests {
         // Make a request that returns 429 with Retry-After: 30
         let _ = biaser.call(()).await;
 
-        // Amplified: penalty_secs * FACTOR * exp(RA/decay) = 5.0 * 0.5 * e^3
-        let expected = 5.0_f64 * RETRY_AFTER_PENALTY_FACTOR * (30.0_f64 / 10.0_f64).exp();
-        let penalty = biaser.get_penalty();
-
+        // The hint should be recorded as the effective RTT (30s)
+        let rtt = biaser.get_rtt();
         assert!(
-            (penalty - expected).abs() < 1.0,
-            "penalty should be ~{expected:.1} (amplified), got: {}",
-            penalty
+            (rtt - 30.0).abs() < 0.5,
+            "429 with Retry-After: 30 should record ~30s effective RTT, got: {rtt}"
         );
     }
 
     #[tokio::test(flavor = "current_thread", start_paused = true)]
-    async fn test_429_with_retry_after_clamped_to_max() {
+    async fn test_429_with_retry_after_capped_at_max() {
         let inner = RetryAfterService {
             status: http::StatusCode::TOO_MANY_REQUESTS,
             retry_after_secs: 600,
         };
-        let config = LoadBiaserConfig {
-            max_duration: DEFAULT_RETRY_AFTER_MAX_DURATION,
-            ..test_config()
-        };
-        let mut biaser = LoadBiaser::new(inner, config);
+        let mut biaser = LoadBiaser::new(inner, test_config());
 
         time::sleep(Duration::from_millis(1)).await;
 
         // Make a request that returns 429 with Retry-After: 600, clamped to 300s
         let _ = biaser.call(()).await;
 
-        // Amplified: penalty_secs * FACTOR * exp(clamped_RA/decay) = 5.0 * 0.5 * e^30
-        // exceeds the 1e12 penalty clamp, so the actual penalty is clamped.
-        let unclamped = 5.0_f64 * RETRY_AFTER_PENALTY_FACTOR * (300.0_f64 / 10.0_f64).exp();
-        let expected = unclamped.min(1e12);
-        let penalty = biaser.get_penalty();
-
+        // Retry-After: 600 is capped to max_duration (300s).
+        let rtt = biaser.get_rtt();
         assert!(
-            (penalty - expected).abs() / expected < 0.01,
-            "penalty should be ~{expected:.0} (amplified, clamped RA=300), got: {}",
-            penalty
+            (rtt - 300.0).abs() < 0.5,
+            "429 with Retry-After: 600 should cap to 300s, got: {rtt}"
         );
     }
 
@@ -1416,24 +1318,24 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread", start_paused = true)]
-    async fn test_503_injects_full_penalty() {
+    async fn test_503_records_base_penalized_effective_rtt() {
         let inner = MockService::new(http::StatusCode::SERVICE_UNAVAILABLE);
         let mut biaser = LoadBiaser::new(inner, test_config());
 
         time::sleep(Duration::from_millis(1)).await;
 
         let _ = biaser.call(()).await;
-        let penalty = biaser.get_penalty();
+        let rtt = biaser.get_rtt();
 
         // test_config has penalty_secs = 5.0
         assert!(
-            (penalty - 5.0).abs() < 0.1,
-            "503 should inject full penalty (~5.0s), got: {penalty}"
+            (rtt - 5.0).abs() < 0.1,
+            "503 should record the base penalized effective RTT (~5.0s), got: {rtt}"
         );
     }
 
     #[tokio::test(flavor = "current_thread", start_paused = true)]
-    async fn test_503_with_retry_after_uses_adaptive_penalty() {
+    async fn test_503_with_retry_after_records_hint() {
         let inner = RetryAfterService {
             status: http::StatusCode::SERVICE_UNAVAILABLE,
             retry_after_secs: 30,
@@ -1445,48 +1347,17 @@ mod tests {
         // Make a request that returns 503 with Retry-After: 30
         let _ = biaser.call(()).await;
 
-        // Same amplification formula as 429:
-        // penalty_secs * FACTOR * exp(RA/decay) = 5.0 * 0.5 * e^3
-        let expected = 5.0_f64 * RETRY_AFTER_PENALTY_FACTOR * (30.0_f64 / 10.0_f64).exp();
-        let penalty = biaser.get_penalty();
+        // 503 honors the hint the same way 429 does.
+        let rtt = biaser.get_rtt();
+
         assert!(
-            (penalty - expected).abs() < 1.0,
-            "503+RA penalty should be ~{expected:.1} (amplified), got: {penalty}"
+            (rtt - 30.0).abs() < 0.5,
+            "503 with Retry-After: 30 should record ~30s, got: {rtt}"
         );
     }
 
     #[tokio::test(flavor = "current_thread", start_paused = true)]
-    async fn test_503_with_retry_after_clamped_to_max() {
-        let inner = RetryAfterService {
-            status: http::StatusCode::SERVICE_UNAVAILABLE,
-            retry_after_secs: 600,
-        };
-        let config = LoadBiaserConfig {
-            max_duration: DEFAULT_RETRY_AFTER_MAX_DURATION,
-            ..test_config()
-        };
-        let mut biaser = LoadBiaser::new(inner, config);
-
-        time::sleep(Duration::from_millis(1)).await;
-
-        // Make a request that returns 503 with Retry-After: 600, clamped to 300s
-        let _ = biaser.call(()).await;
-
-        // Amplified with clamped RA:
-        // penalty_secs * FACTOR * exp(clamped_RA/decay) = 5.0 * 0.5 * e^30
-        // exceeds the 1e12 penalty clamp, so the actual penalty is clamped.
-        let unclamped = 5.0_f64 * RETRY_AFTER_PENALTY_FACTOR * (300.0_f64 / 10.0_f64).exp();
-        let expected = unclamped.min(1e12);
-        let penalty = biaser.get_penalty();
-        assert!(
-            (penalty - expected).abs() / expected < 0.01,
-            "503+RA penalty should be ~{expected:.0} (amplified, clamped RA=300), got: {penalty}"
-        );
-    }
-
-    #[tokio::test(flavor = "current_thread", start_paused = true)]
-    async fn test_429_and_503_retry_after_produce_identical_penalty() {
-        // 429 path: RetryAfterService returns TOO_MANY_REQUESTS with Retry-After: 30
+    async fn test_429_and_503_retry_after_produce_identical_load() {
         let inner_429 = RetryAfterService {
             status: http::StatusCode::TOO_MANY_REQUESTS,
             retry_after_secs: 30,
@@ -1517,19 +1388,19 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread", start_paused = true)]
-    async fn test_500_injects_penalty() {
+    async fn test_500_records_base_penalized_effective_rtt() {
         let inner = MockService::new(http::StatusCode::INTERNAL_SERVER_ERROR);
         let mut biaser = LoadBiaser::new(inner, test_config());
 
         time::sleep(Duration::from_millis(1)).await;
 
         let _ = biaser.call(()).await;
-        let penalty = biaser.get_penalty();
+        let rtt = biaser.get_rtt();
 
         // test_config has penalty_secs = 5.0
         assert!(
-            (penalty - 5.0).abs() < 0.1,
-            "500 should inject full penalty (~5.0s), got: {penalty}"
+            (rtt - 5.0).abs() < 0.1,
+            "500 should record the base penalized effective RTT (~5.0s), got: {rtt}"
         );
     }
 
@@ -1575,21 +1446,21 @@ mod tests {
         }
     }
 
-    async fn assert_grpc_injects_penalty(grpc_status: u16, label: &str) {
+    async fn assert_grpc_records_penalized_effective_rtt(grpc_status: u16, label: &str) {
         let inner = GrpcErrorService { grpc_status };
         let mut biaser = LoadBiaser::new(inner, test_config());
 
         time::sleep(Duration::from_millis(1)).await;
         let _ = biaser.call(()).await;
-        let penalty = biaser.get_penalty();
+        let rtt = biaser.get_rtt();
 
         assert!(
-            (penalty - 5.0).abs() < 0.1,
-            "gRPC {label} (status {grpc_status}) should inject full penalty (~5s), got: {penalty}"
+            (rtt - 5.0).abs() < 0.1,
+            "gRPC {label} (status {grpc_status}) should record the base penalized effective RTT (~5s), got: {rtt}"
         );
     }
 
-    async fn assert_grpc_no_penalty(grpc_status: u16, label: &str) {
+    async fn assert_grpc_records_low_rtt(grpc_status: u16, label: &str) {
         let inner = GrpcErrorService { grpc_status };
         let mut biaser = LoadBiaser::new(inner, test_config());
 
@@ -1597,105 +1468,38 @@ mod tests {
         let _ = biaser.call(()).await;
 
         assert!(
-            biaser.get_penalty().is_infinite(),
-            "gRPC {label} (status {grpc_status}) should not inject penalty"
+            biaser.get_rtt() < 1.0,
+            "gRPC {label} (status {grpc_status}) should record only the measured RTT: {}",
+            biaser.get_rtt()
         );
     }
 
     #[tokio::test(flavor = "current_thread", start_paused = true)]
-    async fn test_grpc_server_errors_inject_penalty() {
-        assert_grpc_injects_penalty(8, "RESOURCE_EXHAUSTED").await;
-        assert_grpc_injects_penalty(14, "UNAVAILABLE").await;
-        assert_grpc_injects_penalty(13, "INTERNAL").await;
-        assert_grpc_injects_penalty(2, "UNKNOWN").await;
-        assert_grpc_injects_penalty(4, "DEADLINE_EXCEEDED").await;
-        assert_grpc_injects_penalty(15, "DATA_LOSS").await;
+    async fn test_grpc_server_errors_record_effective_rtt() {
+        assert_grpc_records_penalized_effective_rtt(8, "RESOURCE_EXHAUSTED").await;
+        assert_grpc_records_penalized_effective_rtt(14, "UNAVAILABLE").await;
+        assert_grpc_records_penalized_effective_rtt(13, "INTERNAL").await;
+        assert_grpc_records_penalized_effective_rtt(2, "UNKNOWN").await;
+        assert_grpc_records_penalized_effective_rtt(4, "DEADLINE_EXCEEDED").await;
+        assert_grpc_records_penalized_effective_rtt(15, "DATA_LOSS").await;
     }
 
     #[tokio::test(flavor = "current_thread", start_paused = true)]
-    async fn test_grpc_client_errors_no_penalty() {
-        assert_grpc_no_penalty(1, "CANCELLED").await;
-        assert_grpc_no_penalty(3, "INVALID_ARGUMENT").await;
-        assert_grpc_no_penalty(5, "NOT_FOUND").await;
-        assert_grpc_no_penalty(6, "ALREADY_EXISTS").await;
-        assert_grpc_no_penalty(7, "PERMISSION_DENIED").await;
-        assert_grpc_no_penalty(9, "FAILED_PRECONDITION").await;
-        assert_grpc_no_penalty(10, "ABORTED").await;
-        assert_grpc_no_penalty(11, "OUT_OF_RANGE").await;
-        assert_grpc_no_penalty(12, "UNIMPLEMENTED").await;
-        assert_grpc_no_penalty(16, "UNAUTHENTICATED").await;
+    async fn test_grpc_client_errors_record_low_rtt() {
+        assert_grpc_records_low_rtt(1, "CANCELLED").await;
+        assert_grpc_records_low_rtt(3, "INVALID_ARGUMENT").await;
+        assert_grpc_records_low_rtt(5, "NOT_FOUND").await;
+        assert_grpc_records_low_rtt(6, "ALREADY_EXISTS").await;
+        assert_grpc_records_low_rtt(7, "PERMISSION_DENIED").await;
+        assert_grpc_records_low_rtt(9, "FAILED_PRECONDITION").await;
+        assert_grpc_records_low_rtt(10, "ABORTED").await;
+        assert_grpc_records_low_rtt(11, "OUT_OF_RANGE").await;
+        assert_grpc_records_low_rtt(12, "UNIMPLEMENTED").await;
+        assert_grpc_records_low_rtt(16, "UNAUTHENTICATED").await;
     }
 
     #[tokio::test(flavor = "current_thread", start_paused = true)]
-    async fn test_grpc_ok_no_penalty() {
-        assert_grpc_no_penalty(0, "OK").await;
-    }
-
-    async fn assert_disabled_no_penalty<S>(mut biaser: LoadBiaser<S>, label: &str)
-    where
-        S: Service<(), Response = http::Response<&'static str>, Error = Infallible>,
-    {
-        time::sleep(Duration::from_millis(1)).await;
-        let _ = biaser.call(()).await;
-        assert!(
-            biaser.get_penalty().is_infinite(),
-            "penalty should not be injected when disabled for {label}: {}",
-            biaser.get_penalty()
-        );
-    }
-
-    fn disabled_config() -> LoadBiaserConfig {
-        LoadBiaserConfig {
-            enabled: false,
-            ..test_config()
-        }
-    }
-
-    #[tokio::test(flavor = "current_thread", start_paused = true)]
-    async fn test_429_disabled_no_penalty() {
-        let inner = MockService::new(http::StatusCode::TOO_MANY_REQUESTS);
-        assert_disabled_no_penalty(LoadBiaser::new(inner, disabled_config()), "429").await;
-    }
-
-    #[tokio::test(flavor = "current_thread", start_paused = true)]
-    async fn test_503_disabled_no_penalty() {
-        let inner = MockService::new(http::StatusCode::SERVICE_UNAVAILABLE);
-        assert_disabled_no_penalty(LoadBiaser::new(inner, disabled_config()), "503").await;
-    }
-
-    #[tokio::test(flavor = "current_thread", start_paused = true)]
-    async fn test_500_disabled_no_penalty() {
-        let inner = MockService::new(http::StatusCode::INTERNAL_SERVER_ERROR);
-        assert_disabled_no_penalty(LoadBiaser::new(inner, disabled_config()), "500").await;
-    }
-
-    #[tokio::test(flavor = "current_thread", start_paused = true)]
-    async fn test_grpc_resource_exhausted_disabled_no_penalty() {
-        let inner = GrpcErrorService { grpc_status: 8 };
-        assert_disabled_no_penalty(
-            LoadBiaser::new(inner, disabled_config()),
-            "gRPC RESOURCE_EXHAUSTED (status 8)",
-        )
-        .await;
-    }
-
-    #[tokio::test(flavor = "current_thread", start_paused = true)]
-    async fn test_grpc_unavailable_disabled_no_penalty() {
-        let inner = GrpcErrorService { grpc_status: 14 };
-        assert_disabled_no_penalty(
-            LoadBiaser::new(inner, disabled_config()),
-            "gRPC UNAVAILABLE (status 14)",
-        )
-        .await;
-    }
-
-    #[tokio::test(flavor = "current_thread", start_paused = true)]
-    async fn test_grpc_internal_disabled_no_penalty() {
-        let inner = GrpcErrorService { grpc_status: 13 };
-        assert_disabled_no_penalty(
-            LoadBiaser::new(inner, disabled_config()),
-            "gRPC INTERNAL (status 13)",
-        )
-        .await;
+    async fn test_grpc_ok_records_low_rtt() {
+        assert_grpc_records_low_rtt(0, "OK").await;
     }
 }
