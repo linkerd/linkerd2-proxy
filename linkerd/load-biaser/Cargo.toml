@@ -21,10 +21,14 @@ tower = { workspace = true, features = ["load"] }
 tower-service = { workspace = true }
 tracing = { workspace = true }
 
+hyper-balance = { path = "../../hyper-balance" }
 linkerd-ewma = { path = "../ewma" }
 linkerd-http-classify = { path = "../http/classify" }
 linkerd-stack = { path = "../stack" }
 
 [dev-dependencies]
+bytes = { workspace = true }
+http-body = { workspace = true }
+http-body-util = { workspace = true }
 tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
 tokio-test = "0.4"

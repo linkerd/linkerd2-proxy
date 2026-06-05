@@ -1991,8 +1991,12 @@ dependencies = [
 name = "linkerd-load-biaser"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "futures",
  "http",
+ "http-body",
+ "http-body-util",
+ "hyper-balance",
  "linkerd-ewma",
  "linkerd-http-classify",
  "linkerd-stack",

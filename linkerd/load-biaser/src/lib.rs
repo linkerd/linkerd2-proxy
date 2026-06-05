@@ -25,6 +25,7 @@
 #![forbid(unsafe_code)]
 
 use futures::ready;
+use hyper_balance::PendingUntilFirstData;
 use linkerd_ewma::{Ewma, MIN_DECAY};
 use linkerd_stack::NewService;
 use parking_lot::RwLock;
@@ -38,7 +39,7 @@ use std::{
     time::Duration,
 };
 use tokio::time::Instant;
-use tower::load::{CompleteOnResponse, Load, TrackCompletion};
+use tower::load::{Load, TrackCompletion};
 use tower_service::Service;
 
 /// Default maximum duration for Retry-After hints.
@@ -302,11 +303,11 @@ impl SharedState {
 /// penalty has been injected.
 ///
 /// The completion type `C` controls when a successful request's RTT is
-/// measured, mirroring PeakEwma. The default drops the handle when the response
-/// future resolves. `hyper_balance::PendingUntilFirstData` defers it to the
-/// first response body frame, matching the proxy's HTTP balancer.
+/// measured, mirroring PeakEwma. The default is
+/// `hyper_balance::PendingUntilFirstData`, which records the RTT at the first
+/// response data frame.
 #[derive(Debug)]
-pub struct LoadBiaser<S, C = CompleteOnResponse> {
+pub struct LoadBiaser<S, C = PendingUntilFirstData> {
     inner: S,
     /// Per-endpoint RTT state and failure config.
     shared: Arc<SharedState>,
@@ -315,7 +316,7 @@ pub struct LoadBiaser<S, C = CompleteOnResponse> {
 
 /// A `NewService` implementation that creates `LoadBiaser` wrappers.
 #[derive(Debug)]
-pub struct NewLoadBiaser<N, Req, C = CompleteOnResponse> {
+pub struct NewLoadBiaser<N, Req, C = PendingUntilFirstData> {
     inner: N,
     completion: C,
     config: LoadBiaserConfig,
@@ -419,11 +420,11 @@ impl<S, C> LoadBiaser<S, C> {
     }
 }
 
-impl<S> LoadBiaser<S, CompleteOnResponse> {
-    /// Creates a new `LoadBiaser` recording RTT when the response resolves.
+impl<S> LoadBiaser<S, PendingUntilFirstData> {
+    /// Creates a new `LoadBiaser` recording RTT at the first response data frame.
     #[must_use]
     pub fn new(inner: S, config: LoadBiaserConfig) -> Self {
-        Self::with_completion(inner, CompleteOnResponse::default(), config)
+        Self::with_completion(inner, PendingUntilFirstData::default(), config)
     }
 }
 
@@ -506,10 +507,10 @@ impl<N, Req, C> NewLoadBiaser<N, Req, C> {
     }
 }
 
-impl<N, Req> NewLoadBiaser<N, Req, CompleteOnResponse> {
+impl<N, Req> NewLoadBiaser<N, Req, PendingUntilFirstData> {
     /// Creates a new `NewLoadBiaser` with the given configuration.
     pub fn new(config: LoadBiaserConfig, inner: N) -> Self {
-        Self::with_completion(config, CompleteOnResponse::default(), inner)
+        Self::with_completion(config, PendingUntilFirstData::default(), inner)
     }
 }
 
@@ -585,8 +586,32 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bytes::Bytes;
+    use http_body_util::{BodyExt, Full};
     use std::convert::Infallible;
     use tokio::time;
+
+    /// Response body used by mock services.
+    ///
+    /// Reports `is_end_stream() == false` until polled, causing
+    /// `PendingUntilFirstData` to record the RTT on success once the
+    /// body reaches its first frame or is dropped.
+    type TestBody = Full<Bytes>;
+
+    /// Test body with a small payload.
+    fn body() -> TestBody {
+        Full::new(Bytes::from_static(b"test"))
+    }
+
+    /// Drives a response body to its first frame.
+    async fn drive_to_first_frame<B>(resp: http::Response<B>)
+    where
+        B: http_body::Body + Unpin,
+        B::Error: std::fmt::Debug,
+    {
+        let mut b = resp.into_body();
+        let _ = b.frame().await;
+    }
 
     impl<S, C> LoadBiaser<S, C> {
         pub fn get_rtt(&self) -> f64 {
@@ -623,7 +648,7 @@ mod tests {
     }
 
     impl Service<()> for MockService {
-        type Response = http::Response<&'static str>;
+        type Response = http::Response<TestBody>;
         type Error = Infallible;
         type Future = futures::future::Ready<Result<Self::Response, Self::Error>>;
 
@@ -634,7 +659,7 @@ mod tests {
         fn call(&mut self, _: ()) -> Self::Future {
             let resp = http::Response::builder()
                 .status(self.status)
-                .body("test")
+                .body(body())
                 .unwrap();
             futures::future::ready(Ok(resp))
         }
@@ -935,12 +960,21 @@ mod tests {
             "pending should be 1 during request"
         );
 
-        // Complete the request: the handle drops, lowering the count.
-        let _ = fut.await;
+        // Resolve the response future. The default tracker causes the handle to
+        // consider the request in-flight until the body yields the first frame.
+        let resp = fut.await.unwrap();
+        assert_eq!(
+            biaser.get_pending(),
+            1,
+            "pending should stay 1 while until the body yields it first frame"
+        );
+
+        // When the body produces its first frame the handle drops
+        drive_to_first_frame(resp).await;
         assert_eq!(
             biaser.get_pending(),
             0,
-            "pending should be 0 after completion"
+            "pending should be 0 after the body yields its first frame"
         );
     }
 
@@ -951,11 +985,11 @@ mod tests {
         // Build a service whose response future blocks on a oneshot receiver.
         // This lets us drop the future mid-flight.
         struct DelayedService {
-            rx: Option<oneshot::Receiver<http::Response<&'static str>>>,
+            rx: Option<oneshot::Receiver<http::Response<TestBody>>>,
         }
 
         impl Service<()> for DelayedService {
-            type Response = http::Response<&'static str>;
+            type Response = http::Response<TestBody>;
             type Error = Infallible;
             type Future = DelayedFuture;
 
@@ -971,11 +1005,11 @@ mod tests {
         }
 
         struct DelayedFuture {
-            rx: oneshot::Receiver<http::Response<&'static str>>,
+            rx: oneshot::Receiver<http::Response<TestBody>>,
         }
 
         impl std::future::Future for DelayedFuture {
-            type Output = Result<http::Response<&'static str>, Infallible>;
+            type Output = Result<http::Response<TestBody>, Infallible>;
 
             fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
                 match Pin::new(&mut self.rx).poll(cx) {
@@ -983,7 +1017,7 @@ mod tests {
                     Poll::Ready(Err(_)) => {
                         let resp = http::Response::builder()
                             .status(http::StatusCode::OK)
-                            .body("cancelled")
+                            .body(body())
                             .unwrap();
                         Poll::Ready(Ok(resp))
                     }
@@ -1049,7 +1083,7 @@ mod tests {
     }
 
     impl Service<()> for RetryAfterService {
-        type Response = http::Response<&'static str>;
+        type Response = http::Response<TestBody>;
         type Error = Infallible;
         type Future = futures::future::Ready<Result<Self::Response, Self::Error>>;
 
@@ -1061,7 +1095,7 @@ mod tests {
             let resp = http::Response::builder()
                 .status(self.status)
                 .header(http::header::RETRY_AFTER, self.retry_after_secs.to_string())
-                .body("retry-after response")
+                .body(body())
                 .unwrap();
 
             futures::future::ready(Ok(resp))
@@ -1426,7 +1460,7 @@ mod tests {
     }
 
     impl Service<()> for GrpcErrorService {
-        type Response = http::Response<&'static str>;
+        type Response = http::Response<TestBody>;
         type Error = Infallible;
         type Future = futures::future::Ready<Result<Self::Response, Self::Error>>;
 
@@ -1439,7 +1473,7 @@ mod tests {
                 .status(http::StatusCode::OK)
                 .header(http::header::CONTENT_TYPE, "application/grpc")
                 .header("grpc-status", self.grpc_status.to_string())
-                .body("grpc error")
+                .body(body())
                 .unwrap();
 
             futures::future::ready(Ok(resp))
