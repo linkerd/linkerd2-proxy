@@ -75,16 +75,32 @@ where
 
         let mk_dispatch = move |bke: &policy::Backend| match bke.dispatcher {
             policy::BackendDispatcher::BalanceP2c(
-                policy::Load::PeakEwma(policy::PeakEwma { decay, default_rtt }),
+                ref load,
                 policy::EndpointDiscovery::DestinationGet { ref path },
-            ) => mk_concrete(
-                BackendRef(bke.meta.clone()),
-                concrete::Dispatch::Balance(
-                    path.parse::<NameAddr>()
-                        .expect("destination must be a nameaddr"),
-                    http::balance::EwmaConfig { decay, default_rtt },
-                ),
-            ),
+            ) => {
+                // Opaque traffic balances on round-trip time, since the
+                // penalty estimator needs HTTP classification that does not
+                // apply here. Read the RTT configuration from whichever estimator
+                // the policy chose and drop any penalty fields, warning the
+                // operator when the dropped configuration was non-trivial.
+                if let Some(p) = load.dropped_penalty() {
+                    tracing::warn!(
+                        penalty = ?p.penalty,
+                        penalty_decay = ?p.penalty_decay,
+                        max_retry_after = ?p.max_retry_after,
+                        "Opaque balancer ignores the response-penalty estimator; only round-trip time applies",
+                    );
+                }
+                let (decay, default_rtt) = load.peak_ewma_rtt();
+                mk_concrete(
+                    BackendRef(bke.meta.clone()),
+                    concrete::Dispatch::Balance(
+                        path.parse::<NameAddr>()
+                            .expect("destination must be a nameaddr"),
+                        http::balance::EwmaConfig { decay, default_rtt },
+                    ),
+                )
+            }
             policy::BackendDispatcher::Forward(addr, ref md) => mk_concrete(
                 EndpointRef::new(md, addr.port().try_into().expect("port must not be 0")).into(),
                 concrete::Dispatch::Forward(Remote(ServerAddr(addr)), md.clone()),

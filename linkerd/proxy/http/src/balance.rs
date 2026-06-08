@@ -63,7 +63,7 @@ impl<B, X, R, N> NewBalance<B, X, R, N> {
     }
 }
 
-impl<T, B, RspB, X, R, M, N, S> NewService<T> for NewBalance<B, X, R, M>
+impl<T, B, RspB, PenB, X, R, M, N, S> NewService<T> for NewBalance<B, X, R, M>
 where
     T: Param<Load>
         + Param<EwmaConfig>
@@ -84,17 +84,22 @@ where
     // The penalty estimator inspects responses for rate-limit signals, and HTTP
     // responses hold those signals in their headers.
     S::Response: ResponseFailureHint + Send + 'static,
-    // The endpoint's response body is boxed on both arms; the peak-EWMA arm
-    // tracks load through a [`Body`] wrapper whose data and error types match.
+    // Each branch boxes its response body, so the two estimators need not produce
+    // the same body type. The peak-EWMA branch tracks load through a [`Body`]
+    // wrapper while the penalty branch tracks it through the biaser's own
+    // completion wrapper, and both bodies must be independently boxable.
     RspB: http_body::Body + Send + 'static,
     RspB::Data: Send + 'static,
     RspB::Error: Into<Error> + 'static,
+    PenB: http_body::Body + Send + 'static,
+    PenB::Data: Send + 'static,
+    PenB::Error: Into<Error> + 'static,
     PeakEwma<B, X, R, M>: NewService<T>,
     Penalty<B, X, R, M>: NewService<T>,
     <PeakEwma<B, X, R, M> as NewService<T>>::Service:
         Service<http::Request<B>, Response = http::Response<Body<RspB>>>,
     <Penalty<B, X, R, M> as NewService<T>>::Service:
-        Service<http::Request<B>, Response = http::Response<RspB>>,
+        Service<http::Request<B>, Response = http::Response<PenB>>,
 {
     // Selection is per backend, so the two pool service types are unified behind
     // a single returned service. Each branch boxes its response body so they
