@@ -961,3 +961,290 @@ pub mod proto {
             .map_err(Into::into)
     }
 }
+
+#[cfg(all(test, feature = "proto"))]
+mod failure_accrual_proto_tests {
+    use super::proto::InvalidFailureAccrual;
+    use super::{ConsecutiveFailures, FailureAccrual, SuccessRateThreshold, Unified};
+    use linkerd2_proxy_api::outbound;
+    use std::time::Duration as StdDuration;
+
+    fn second(seconds: i64) -> prost_types::Duration {
+        prost_types::Duration { seconds, nanos: 0 }
+    }
+
+    // A backoff that survives `try_backoff`: both bounds set, sane jitter.
+    fn valid_backoff() -> outbound::ExponentialBackoff {
+        outbound::ExponentialBackoff {
+            min_backoff: Some(second(1)),
+            max_backoff: Some(second(10)),
+            jitter_ratio: 0.0,
+            respect_retry_after_hint: false,
+        }
+    }
+
+    fn consecutive(
+        max_failures: u32,
+        backoff: Option<outbound::ExponentialBackoff>,
+    ) -> outbound::FailureAccrual {
+        outbound::FailureAccrual {
+            ejection: None,
+            kind: Some(outbound::failure_accrual::Kind::ConsecutiveFailures(
+                outbound::failure_accrual::ConsecutiveFailures {
+                    max_failures,
+                    backoff,
+                },
+            )),
+        }
+    }
+
+    // A unified kind with all required fields populated, and individual tests poke
+    // one field at a time off this baseline.
+    fn unified(
+        success_rate_threshold: f64,
+        decay: Option<prost_types::Duration>,
+        min_requests: u32,
+    ) -> outbound::FailureAccrual {
+        outbound::FailureAccrual {
+            ejection: None,
+            kind: Some(outbound::failure_accrual::Kind::Unified(
+                outbound::failure_accrual::Unified {
+                    success_rate_threshold,
+                    decay,
+                    min_requests,
+                    max_consecutive_failures: 7,
+                    backoff: Some(valid_backoff()),
+                },
+            )),
+        }
+    }
+
+    #[test]
+    fn from_fraction_round_trips_through_basis_points() {
+        // A fraction at a whole basis point survives unchanged.
+        assert_eq!(
+            SuccessRateThreshold::from_fraction(0.95).as_fraction(),
+            0.95
+        );
+        // Precision below one basis point rounds to the nearest 0.01%.
+        assert_eq!(
+            SuccessRateThreshold::from_fraction(0.12345),
+            SuccessRateThreshold::from_fraction(0.1235),
+        );
+        // Endpoints and interior points all preserve their fraction.
+        for fraction in [0.0, 0.0001, 0.25, 0.5, 0.9999, 1.0] {
+            let t = SuccessRateThreshold::from_fraction(fraction);
+            assert_eq!(
+                t.as_fraction(),
+                fraction,
+                "round-trip failed for {fraction}"
+            );
+        }
+        // Zero is the disable sentinel, and anything above it is not.
+        assert!(SuccessRateThreshold::from_fraction(0.0).is_zero());
+        assert!(!SuccessRateThreshold::from_fraction(0.0001).is_zero());
+    }
+
+    #[test]
+    fn consecutive_kind_converts() {
+        let mut backoff = valid_backoff();
+        backoff.respect_retry_after_hint = true;
+        let result = FailureAccrual::try_from(consecutive(5, Some(backoff))).unwrap();
+        match result {
+            FailureAccrual::Consecutive(ConsecutiveFailures {
+                max_failures,
+                respect_retry_after_hint,
+                ..
+            }) => {
+                assert_eq!(max_failures, 5);
+                // The hint preference is read off the backoff message.
+                assert!(respect_retry_after_hint);
+            }
+            other => panic!("expected a consecutive policy, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn consecutive_kind_defaults_retry_after_hint_off() {
+        // valid_backoff leaves the hint unset, so the conversion reports it off.
+        let result = FailureAccrual::try_from(consecutive(5, Some(valid_backoff()))).unwrap();
+        match result {
+            FailureAccrual::Consecutive(cf) => assert!(!cf.respect_retry_after_hint),
+            other => panic!("expected a consecutive policy, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn consecutive_kind_requires_backoff() {
+        let result = FailureAccrual::try_from(consecutive(5, None));
+        assert!(
+            matches!(result, Err(InvalidFailureAccrual::Missing(_))),
+            "a consecutive policy without a backoff must be rejected, got: {result:?}",
+        );
+    }
+
+    #[test]
+    fn missing_kind_is_rejected() {
+        let accrual = outbound::FailureAccrual {
+            ejection: None,
+            kind: None,
+        };
+        let result = FailureAccrual::try_from(accrual);
+        assert!(
+            matches!(result, Err(InvalidFailureAccrual::Missing(_))),
+            "an accrual with no kind must be rejected, got: {result:?}",
+        );
+    }
+
+    #[test]
+    fn unified_kind_converts() {
+        let result = FailureAccrual::try_from(unified(0.95, Some(second(30)), 20)).unwrap();
+        match result {
+            FailureAccrual::Unified(Unified {
+                threshold,
+                decay,
+                min_requests,
+                max_consecutive_failures,
+                ..
+            }) => {
+                // The wire fraction is converted into the basis-points newtype.
+                assert_eq!(threshold, SuccessRateThreshold::from_fraction(0.95));
+                assert_eq!(threshold.as_fraction(), 0.95);
+                assert_eq!(decay, StdDuration::from_secs(30));
+                assert_eq!(min_requests, 20);
+                assert_eq!(max_consecutive_failures, 7);
+            }
+            other => panic!("expected a unified policy, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn unified_decay_defaults_when_absent() {
+        let result = FailureAccrual::try_from(unified(0.9, None, 20)).unwrap();
+        match result {
+            FailureAccrual::Unified(u) => assert_eq!(u.decay, StdDuration::from_secs(10)),
+            other => panic!("expected a unified policy, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn unified_accepts_threshold_of_one() {
+        let result = FailureAccrual::try_from(unified(1.0, None, 20)).unwrap();
+        match result {
+            FailureAccrual::Unified(u) => {
+                assert_eq!(u.threshold, SuccessRateThreshold::from_fraction(1.0));
+                assert!(!u.threshold.is_zero());
+            }
+            other => panic!("expected a unified policy, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn unified_accepts_zero_min_requests() {
+        let result = FailureAccrual::try_from(unified(0.9, None, 0)).unwrap();
+        match result {
+            FailureAccrual::Unified(u) => assert_eq!(u.min_requests, 0),
+            other => panic!("expected a unified policy, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn unified_rejects_threshold_above_one() {
+        let result = FailureAccrual::try_from(unified(1.5, None, 20));
+        assert!(
+            matches!(result, Err(InvalidFailureAccrual::InvalidValue(_))),
+            "a threshold above 1.0 must be rejected, got: {result:?}",
+        );
+    }
+
+    #[test]
+    fn unified_rejects_threshold_below_zero() {
+        let result = FailureAccrual::try_from(unified(-0.1, None, 20));
+        assert!(
+            matches!(result, Err(InvalidFailureAccrual::InvalidValue(_))),
+            "a threshold below 0.0 must be rejected, got: {result:?}",
+        );
+    }
+
+    #[test]
+    fn unified_rejects_nan_threshold() {
+        // NaN compares false against both range bounds, so it lands outside the
+        // accepted interval and never reaches the basis-points conversion.
+        let result = FailureAccrual::try_from(unified(f64::NAN, None, 20));
+        assert!(
+            matches!(result, Err(InvalidFailureAccrual::InvalidValue(_))),
+            "a NaN threshold must be rejected, got: {result:?}",
+        );
+    }
+
+    #[test]
+    fn unified_rejects_decay_below_floor() {
+        // Just under the inclusive 10ms window floor.
+        let decay = prost_types::Duration {
+            seconds: 0,
+            nanos: 9_999_999,
+        };
+        let result = FailureAccrual::try_from(unified(0.9, Some(decay), 20));
+        assert!(
+            matches!(result, Err(InvalidFailureAccrual::InvalidValue(_))),
+            "a decay below the minimum window must be rejected, got: {result:?}",
+        );
+    }
+
+    #[test]
+    fn unified_accepts_decay_at_floor() {
+        let decay = prost_types::Duration {
+            seconds: 0,
+            nanos: 10_000_000,
+        };
+        let result = FailureAccrual::try_from(unified(0.9, Some(decay), 20)).unwrap();
+        match result {
+            FailureAccrual::Unified(u) => assert_eq!(u.decay, StdDuration::from_millis(10)),
+            other => panic!("expected a unified policy, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn unified_rejects_min_requests_above_ceiling() {
+        let result = FailureAccrual::try_from(unified(0.9, None, 1_000_001));
+        assert!(
+            matches!(result, Err(InvalidFailureAccrual::InvalidValue(_))),
+            "a min_requests above the ceiling must be rejected, got: {result:?}",
+        );
+    }
+
+    #[test]
+    fn ejection_field_is_ignored() {
+        // A populated ejection field is out of scope for this conversion, and the
+        // breaker reads only `kind`. The result must match the same accrual with
+        // ejection unset.
+        let mut with_ejection = unified(0.9, Some(second(20)), 30);
+        with_ejection.ejection = Some(outbound::EjectionConfig {
+            min_ready_endpoints: 3,
+        });
+        let without_ejection = unified(0.9, Some(second(20)), 30);
+
+        let from_set = FailureAccrual::try_from(with_ejection).unwrap();
+        let from_unset = FailureAccrual::try_from(without_ejection).unwrap();
+        assert_eq!(from_set, from_unset);
+    }
+
+    #[test]
+    fn unified_skips_decay_floor_when_success_rate_disabled() {
+        // A zero success-rate threshold disables that dimension, so decay is
+        // never read at runtime. A sub-floor decay must not reject the policy.
+        // The consecutive-failure ceiling has to survive.
+        let below_floor = prost_types::Duration {
+            seconds: 0,
+            nanos: 0,
+        };
+        let result = FailureAccrual::try_from(unified(0.0, Some(below_floor), 20)).unwrap();
+        match result {
+            FailureAccrual::Unified(u) => {
+                assert!(u.threshold.is_zero());
+                assert!(u.max_consecutive_failures > 0);
+            }
+            other => panic!("expected a unified policy, got {other:?}"),
+        }
+    }
+}
