@@ -94,8 +94,8 @@ pub fn parse_grpc_retry_pushback(headers: &HeaderMap, max: Duration) -> Option<D
     let value = headers.get(GRPC_RETRY_PUSHBACK_MS)?;
     let s = value.to_str().ok()?;
 
-    // Parse as i64 to handle potential negative values
-    let ms: i64 = match s.trim().parse() {
+    // Parse as i32 per the gRPC A6 spec, which defines a signed 32-bit value.
+    let ms: i32 = match s.trim().parse() {
         Ok(v) => v,
         Err(_) => {
             tracing::debug!(%s, "Failed to parse grpc-retry-pushback-ms");
