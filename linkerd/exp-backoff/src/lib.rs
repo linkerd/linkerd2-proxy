@@ -11,8 +11,6 @@ use thiserror::Error;
 use tokio::time;
 
 /// A jittered exponential backoff strategy.
-//
-// TODO(kate): add respect_retry_after_hint field here.
 #[derive(Copy, Clone, Debug, Default)]
 pub struct ExponentialBackoff {
     /// The minimum amount of time to wait before resuming an operation.
@@ -50,11 +48,28 @@ impl ExponentialBackoff {
         Self { min, max, jitter }
     }
 
+    /// The minimum backoff duration.
+    ///
+    /// Exposed so that callers can clamp delays supplied from outside, such as
+    /// retry-after or gRPC pushback hints, into the configured backoff window
+    /// `[min, max]`.
+    pub const fn min(&self) -> time::Duration {
+        self.min
+    }
+
+    /// The maximum backoff duration.
+    ///
+    /// Exposed so that callers can clamp delays supplied from outside, such as
+    /// retry-after or gRPC pushback hints, into the configured backoff window
+    /// `[min, max]`.
+    pub const fn max(&self) -> time::Duration {
+        self.max
+    }
+
     pub fn try_new(
         min: time::Duration,
         max: time::Duration,
         jitter: f64,
-        // TODO(kate): add respect_retry_after_hint parameter here.
     ) -> Result<Self, InvalidBackoff> {
         if min > max {
             return Err(InvalidBackoff("maximum must not be less than minimum"));
