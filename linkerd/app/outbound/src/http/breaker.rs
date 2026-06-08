@@ -8,6 +8,9 @@ mod success_rate;
 mod unified;
 pub mod wrap_classify;
 
+#[cfg(test)]
+mod integration_tests;
+
 use self::consecutive_failures::ConsecutiveFailures;
 use self::retry_after::{GrpcRetryPushbackStore, RetryAfterStore};
 use self::unified::{UnifiedBreaker, UnifiedBreakerConfig};
