@@ -2439,6 +2439,8 @@ dependencies = [
  "linkerd-http-variant",
  "linkerd-io",
  "linkerd-proxy-balance",
+ "linkerd-proxy-client-policy",
+ "linkerd-proxy-core",
  "linkerd-stack",
  "linkerd-tracing",
  "pin-project",
