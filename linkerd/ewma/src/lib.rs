@@ -218,6 +218,27 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_add_peak_retains_higher_value() {
+        let now = Instant::now();
+        let mut ewma = Ewma::new(Duration::from_secs(10), now);
+
+        ewma.add_peak(10.0, now + Duration::from_secs(1));
+        assert_eq!(ewma.get(), 10.0);
+
+        // A lower sample arrives shortly after. The decayed projection
+        // would be close to 9.9, well above 1.0. Now add_peak() should add
+        // the measurement, but it should only slightly move the EWMA,
+        // leaving the moving average still close to 10.
+        ewma.add_peak(1.0, now + Duration::from_millis(1100));
+        let v = ewma.get();
+
+        assert!(
+            v > 9.0 && v < 10.0,
+            "expected EWMA value between 9 and 10, got {v}"
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
     async fn test_zero_decay_clamped_in_new() {
         let now = Instant::now();
         let zero = Ewma::new(Duration::ZERO, now);
