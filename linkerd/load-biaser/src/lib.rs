@@ -757,27 +757,31 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread", start_paused = true)]
     async fn test_rtt_tracked_after_request() {
-        let inner = MockService::new(http::StatusCode::OK);
+        // Drive one request that takes a measurable delay and assert the RTT
+        // recorded matches the delay.
+        let delay = Duration::from_millis(250);
+        let inner = MockService::with_delay(http::StatusCode::OK, delay);
         let mut biaser = LoadBiaser::new(inner, test_config());
 
         // Advance time so EWMA accepts updates
         time::sleep(Duration::from_millis(1)).await;
 
-        // RTT should start at default_rtt (0.1s) before any requests
+        // RTT should start at default_rtt before any requests
         let initial_rtt = biaser.get_rtt();
         assert!(
             (initial_rtt - 0.1).abs() < 0.01,
             "RTT should start at default_rtt (0.1s), got: {initial_rtt}"
         );
 
-        // Make a request (will record RTT)
-        let _ = biaser.call(()).await;
+        // First frame drops the handle and records the measurement.
+        let resp = biaser.call(()).await.unwrap();
+        drive_to_first_frame(resp).await;
 
-        // RTT should now reflect the actual request latency
+        // The recorded RTT should match the request delay (250ms).
         let rtt = biaser.get_rtt();
         assert!(
-            rtt < initial_rtt,
-            "RTT should decrease after a fast request"
+            (rtt - delay.as_secs_f64()).abs() < 0.005,
+            "RTT should reflect the 250ms request delay, got: {rtt}"
         );
     }
 
