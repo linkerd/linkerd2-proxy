@@ -2003,7 +2003,6 @@ dependencies = [
  "parking_lot",
  "pin-project",
  "tokio",
- "tokio-test",
  "tower",
  "tower-service",
  "tracing",
