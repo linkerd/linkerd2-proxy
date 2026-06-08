@@ -22,8 +22,9 @@ pub struct RouteParams {
 pub struct Http1 {
     pub routes: Arc<[Route]>,
 
-    /// Configures how endpoints accrue observed failures.
-    pub failure_accrual: FailureAccrual,
+    /// Configures how endpoints accrue observed failures. `None` disables
+    /// failure accrual.
+    pub failure_accrual: Option<FailureAccrual>,
 }
 
 // TODO: window sizes, etc
@@ -31,8 +32,9 @@ pub struct Http1 {
 pub struct Http2 {
     pub routes: Arc<[Route]>,
 
-    /// Configures how endpoints accrue observed failures.
-    pub failure_accrual: FailureAccrual,
+    /// Configures how endpoints accrue observed failures. `None` disables
+    /// failure accrual.
+    pub failure_accrual: Option<FailureAccrual>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -84,7 +86,7 @@ impl Default for Http1 {
     fn default() -> Self {
         Self {
             routes: Arc::new([]),
-            failure_accrual: Default::default(),
+            failure_accrual: None,
         }
     }
 }
@@ -95,7 +97,7 @@ impl Default for Http2 {
     fn default() -> Self {
         Self {
             routes: Arc::new([]),
-            failure_accrual: Default::default(),
+            failure_accrual: None,
         }
     }
 }
@@ -229,7 +231,10 @@ pub mod proto {
                 .collect::<Result<Arc<[_]>, _>>()?;
             Ok(Self {
                 routes,
-                failure_accrual: proto.failure_accrual.try_into()?,
+                failure_accrual: proto
+                    .failure_accrual
+                    .map(FailureAccrual::try_from)
+                    .transpose()?,
             })
         }
     }
@@ -246,7 +251,10 @@ pub mod proto {
                 .collect::<Result<Arc<[_]>, _>>()?;
             Ok(Self {
                 routes,
-                failure_accrual: proto.failure_accrual.try_into()?,
+                failure_accrual: proto
+                    .failure_accrual
+                    .map(FailureAccrual::try_from)
+                    .transpose()?,
             })
         }
     }

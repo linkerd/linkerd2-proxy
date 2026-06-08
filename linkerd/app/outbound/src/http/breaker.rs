@@ -9,6 +9,9 @@ mod unified;
 pub mod wrap_classify;
 
 use self::consecutive_failures::ConsecutiveFailures;
+use self::retry_after::{GrpcRetryPushbackStore, RetryAfterStore};
+use self::unified::{UnifiedBreaker, UnifiedBreakerConfig};
+pub use self::wrap_classify::{HasFailureAccrual, NewRetryAfterGateSet, RetryAfterGateParams};
 
 /// Reason a circuit breaker tripped.
 ///
@@ -24,10 +27,19 @@ pub enum TripReason {
 }
 
 /// Params configuring a circuit breaker stack.
-#[derive(Copy, Clone, Debug)]
+///
+/// The Retry-After stores pass hints from response classification to the
+/// breaker's backoff logic. One pair is built per endpoint and shared by its
+/// classifier and breaker, so a hint seen on one endpoint never extends the
+/// backoff of another. An absent policy disables the breaker.
+#[derive(Clone, Debug)]
 pub(crate) struct Params {
-    pub(crate) accrual: FailureAccrual,
+    pub(crate) accrual: Option<FailureAccrual>,
     pub(crate) channel_capacity: usize,
+    /// Shared store for HTTP Retry-After hints.
+    pub(crate) retry_after_store: RetryAfterStore,
+    /// Shared store for gRPC retry-pushback hints.
+    pub(crate) grpc_retry_pushback_store: GrpcRetryPushbackStore,
 }
 
 impl<T> svc::ExtractParam<gate::Params<classify::Class>, T> for Params {
@@ -36,20 +48,19 @@ impl<T> svc::ExtractParam<gate::Params<classify::Class>, T> for Params {
         // control the gate.
         let (prms, gate, rsps) = gate::Params::channel(self.channel_capacity);
 
-        match self.accrual {
-            FailureAccrual::None => {
+        match &self.accrual {
+            None => {
                 // No failure accrual for this target; construct a gate
                 // that will never close.
                 tracing::trace!("No failure accrual policy enabled.");
                 prms
             }
-            FailureAccrual::ConsecutiveFailures {
-                max_failures,
-                backoff,
-            } => {
+            Some(FailureAccrual::Consecutive(cf)) => {
+                // Consecutive-only policy: trip after N back-to-back failures and
+                // probe leniently, letting the default classifier judge a 429.
                 tracing::trace!(
-                    max_failures,
-                    backoff = ?backoff,
+                    max_failures = cf.max_failures,
+                    backoff = ?cf.backoff,
                     "Using consecutive-failures failure accrual policy.",
                 );
 
@@ -58,11 +69,46 @@ impl<T> svc::ExtractParam<gate::Params<classify::Class>, T> for Params {
                 // 2. After an ejection timeout, open the gate so that 1 request can be processed.
                 // 3. If that request succeeds, open the gate. If it fails, increase the
                 //    ejection timeout and repeat.
-                let breaker = ConsecutiveFailures::new(max_failures, backoff, gate, rsps);
+                let breaker = ConsecutiveFailures::new(cf.max_failures, cf.backoff, gate, rsps);
                 tokio::spawn(
                     breaker
                         .run()
                         .instrument(trace_span!("consecutive_failures").or_current()),
+                );
+
+                prms
+            }
+            Some(FailureAccrual::Unified(u)) => {
+                // Unified policy with a consecutive-failure ceiling and a
+                // windowed success-rate threshold, either of which can trip. The
+                // probe is strict, so a 429 keeps the circuit shut, and the
+                // fraction is recovered from the basis-points threshold for the
+                // engine.
+                tracing::trace!(
+                    max_consecutive_failures = u.max_consecutive_failures,
+                    threshold = %u.threshold,
+                    min_requests = u.min_requests,
+                    backoff = ?u.backoff,
+                    respect_retry_after_hint = u.respect_retry_after_hint,
+                    "Using unified failure accrual policy with consecutive failures and success rate tracking.",
+                );
+
+                let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
+                    max_failures: u.max_consecutive_failures,
+                    threshold: u.threshold.as_fraction(),
+                    decay: u.decay,
+                    backoff: u.backoff,
+                    min_requests: u.min_requests as usize,
+                    gate,
+                    rsps,
+                    retry_after_store: self.retry_after_store.clone(),
+                    grpc_retry_pushback_store: self.grpc_retry_pushback_store.clone(),
+                    respect_retry_after_hint: u.respect_retry_after_hint,
+                });
+                tokio::spawn(
+                    breaker
+                        .run()
+                        .instrument(trace_span!("unified_breaker").or_current()),
                 );
 
                 prms

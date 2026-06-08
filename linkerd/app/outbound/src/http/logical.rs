@@ -42,7 +42,7 @@ pub struct Concrete<T> {
     parent: T,
     parent_ref: ParentRef,
     backend_ref: BackendRef,
-    failure_accrual: policy::FailureAccrual,
+    failure_accrual: Option<policy::FailureAccrual>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -154,7 +154,7 @@ where
                                     target: concrete::Dispatch::Forward(remote, meta),
                                     authority: None,
                                     parent,
-                                    failure_accrual: Default::default(),
+                                    failure_accrual: None,
                                 })
                             }
                             Self::Profile(profile) => {
@@ -251,8 +251,8 @@ impl<T> svc::Param<BackendRef> for Concrete<T> {
     }
 }
 
-impl<T> svc::Param<policy::FailureAccrual> for Concrete<T> {
-    fn param(&self) -> policy::FailureAccrual {
+impl<T> svc::Param<Option<policy::FailureAccrual>> for Concrete<T> {
+    fn param(&self) -> Option<policy::FailureAccrual> {
         self.failure_accrual
     }
 }

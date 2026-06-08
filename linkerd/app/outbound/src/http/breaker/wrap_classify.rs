@@ -71,14 +71,15 @@ pub trait HasFailureAccrual {
 /// Whether an accrual policy can never trip, which makes it equivalent to having
 /// no circuit breaking.
 ///
-/// An absent policy ([`FailureAccrual::None`]) is inert by definition.
-/// Consecutive tracking does nothing when `max_failures` is zero, so such a
-/// policy could only ever spawn an unused breaker task. Either inert case is
-/// treated as having no breaker, so no task or hint stores are allocated for it.
+/// Consecutive tracking does nothing when `max_failures` is zero, and a unified
+/// policy is inert only when both of its conditions are off, meaning a zero
+/// consecutive-failure ceiling together with a zero success-rate threshold.
+/// Either inert case could only ever spawn an unused breaker task, so it is
+/// treated as having no breaker and no task or hint stores are allocated for it.
 fn is_effectively_disabled(accrual: &FailureAccrual) -> bool {
     match accrual {
-        FailureAccrual::None => true,
-        FailureAccrual::ConsecutiveFailures { max_failures, .. } => *max_failures == 0,
+        FailureAccrual::Consecutive(cf) => cf.max_failures == 0,
+        FailureAccrual::Unified(u) => u.max_consecutive_failures == 0 && u.threshold.is_zero(),
     }
 }
 
@@ -87,12 +88,11 @@ fn is_effectively_disabled(accrual: &FailureAccrual) -> bool {
 /// A hint longer than the maximum backoff can never extend the probe wait past
 /// it, since the breaker clamps each hint to its `[min, max]` backoff. Capping
 /// at the same ceiling when recording keeps an oversized header from sitting in
-/// the store until the breaker discards it. An absent policy has no probe and so
-/// no cap.
+/// the store until the breaker discards it.
 fn accrual_max_backoff(accrual: &FailureAccrual) -> Duration {
     match accrual {
-        FailureAccrual::None => Duration::ZERO,
-        FailureAccrual::ConsecutiveFailures { backoff, .. } => backoff.max(),
+        FailureAccrual::Consecutive(cf) => cf.backoff.max(),
+        FailureAccrual::Unified(u) => u.backoff.max(),
     }
 }
 
@@ -264,8 +264,10 @@ where
                 let http_store = RetryAfterStore::new();
                 let grpc_store = GrpcRetryPushbackStore::new();
                 let breaker_params = Params {
-                    accrual: *accrual,
+                    accrual: Some(*accrual),
                     channel_capacity: self.channel_capacity,
+                    retry_after_store: http_store.clone(),
+                    grpc_retry_pushback_store: grpc_store.clone(),
                 };
                 let params: gate::Params<classify::Class> =
                     <Params as ExtractParam<gate::Params<classify::Class>, T>>::extract_param(
@@ -337,7 +339,7 @@ mod tests {
     use super::*;
     use linkerd_app_core::{exp_backoff::ExponentialBackoff, svc::NewService};
     use linkerd_http_classify::ClassifyResponse;
-    use linkerd_proxy_client_policy::http::StatusRanges;
+    use linkerd_proxy_client_policy::{http::StatusRanges, ConsecutiveFailures};
     use std::time::Duration;
 
     // `super::*` re-exports `http` (`linkerd_app_core::proxy::http`). Its
@@ -379,15 +381,12 @@ mod tests {
     // of having no circuit breaking at all.
     #[test]
     fn effectively_disabled_accrual_produces_no_breaker_task() {
-        // The absent policy is inert by definition.
-        assert!(is_effectively_disabled(&FailureAccrual::None));
-        assert_eq!(resolved_accrual(Some(FailureAccrual::None)), None);
-
         // A consecutive policy with a zero ceiling can never trip.
-        let disabled = FailureAccrual::ConsecutiveFailures {
+        let disabled = FailureAccrual::Consecutive(ConsecutiveFailures {
             max_failures: 0,
             backoff: mk_backoff(),
-        };
+            respect_retry_after_hint: false,
+        });
         assert!(
             is_effectively_disabled(&disabled),
             "max_failures 0 can never trip",
@@ -395,14 +394,15 @@ mod tests {
         assert_eq!(
             resolved_accrual(Some(disabled)),
             None,
-            "an inert accrual policy must resolve to the disabled path, same as None",
+            "an inert accrual policy must resolve to the disabled path, same as having no policy",
         );
 
         // A genuinely live policy keeps its enabled resolution.
-        let live = FailureAccrual::ConsecutiveFailures {
+        let live = FailureAccrual::Consecutive(ConsecutiveFailures {
             max_failures: 3,
             backoff: mk_backoff(),
-        };
+            respect_retry_after_hint: false,
+        });
         assert!(!is_effectively_disabled(&live));
         assert!(resolved_accrual(Some(live)).is_some());
     }
