@@ -94,13 +94,6 @@ impl CachedRateLimitHint {
 /// requiring `&mut self` on the read path:
 /// - `attach_parsed_rate_limit_hint(&mut self)`: parse and cache (needs `&mut`)
 /// - `rate_limit_hint(&self, max)`: read cached value or parse on-read (only needs `&self`)
-///
-/// # Stack ordering and caching
-///
-/// In the current proxy stack `RetryAfterClassify::start()` (the circuit breaker's
-/// classifier) calls `rate_limit_hint()` before `LoadBiaserFuture::poll()` calls
-/// `attach_parsed_rate_limit_hint()`, because responses flow inner-to-outer. This
-/// means the cache is always cold for the circuit breaker path.
 pub trait ResponseFailureHint {
     /// Returns a failure hint if the response indicates a failure condition.
     fn failure_hint(&self) -> Option<FailureHint>;
@@ -153,8 +146,8 @@ impl<B> ResponseFailureHint for http::Response<B> {
             // responses that somehow happen to include a grpc-status header.
             //
             // Note: for streaming gRPC, grpc-status is in trailers (not headers)
-            // and will not be detected here. The circuit breaker handles streaming
-            // gRPC failures via GrpcRetryPushbackClassifyEos.
+            // and is not detected here; such responses record only their
+            // measured RTT and are not penalized.
             self.headers()
                 .get("grpc-status")
                 .and_then(|v| v.to_str().ok())
@@ -259,7 +252,7 @@ impl Default for LoadBiaserConfig {
 struct SharedState {
     /// RwLocked RTT EWMA. Read in load(), written when measuring.
     rtt: RwLock<Ewma>,
-    /// Penalty value to inject on failure responses (in seconds) when no
+    /// Penalty value to inject on failure responses (in milliseconds) when no
     /// hint is present.
     penalty_ms: u32,
     /// Maximum Retry-After duration to honor (clamped)
@@ -1047,10 +1040,9 @@ mod tests {
 
     #[test]
     fn default_max_duration_matches_client_policy() {
-        // Enforces the invariant at LoadBiaserConfig::default():
-        // max_duration must match the local DEFAULT_RETRY_AFTER_MAX_DURATION constant.
-        // Production code reads the constant directly via EwmaConfig::to_load_biaser_config;
-        // this assertion keeps the test-only default() in sync.
+        // Ensure that LoadBiaserConfig::default().max_duration matches
+        // DEFAULT_RETRY_AFTER_MAX_DURATION constant, keeping the default() in
+        // sync with that constant.
         assert_eq!(
             LoadBiaserConfig::default().max_duration,
             DEFAULT_RETRY_AFTER_MAX_DURATION,
