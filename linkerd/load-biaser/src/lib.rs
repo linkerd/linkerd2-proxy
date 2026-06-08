@@ -637,33 +637,88 @@ mod tests {
         }
     }
 
-    // Mock service for testing returning a specific HTTP status.
+    // Mock service for testing returning a specific HTTP status, optionally
+    // after a delay and with extra response headers.
     #[derive(Clone)]
     struct MockService {
         status: http::StatusCode,
+        delay: Duration,
+        headers: Vec<(http::HeaderName, http::HeaderValue)>,
     }
 
     impl MockService {
         fn new(status: http::StatusCode) -> Self {
-            Self { status }
+            Self {
+                status,
+                delay: Duration::ZERO,
+                headers: Vec::new(),
+            }
+        }
+
+        fn with_delay(status: http::StatusCode, delay: Duration) -> Self {
+            Self {
+                status,
+                delay,
+                headers: Vec::new(),
+            }
+        }
+
+        // HTTP error carrying a Retry-After header, in seconds.
+        fn retry_after(status: http::StatusCode, retry_after_secs: u64) -> Self {
+            Self {
+                status,
+                delay: Duration::ZERO,
+                headers: vec![(
+                    http::header::RETRY_AFTER,
+                    http::HeaderValue::from(retry_after_secs),
+                )],
+            }
+        }
+
+        // HTTP 200 with a grpc-status header, simulating a gRPC trailers-only
+        // error response.
+        fn grpc_status(grpc_status: u16) -> Self {
+            Self {
+                status: http::StatusCode::OK,
+                delay: Duration::ZERO,
+                headers: vec![
+                    (
+                        http::header::CONTENT_TYPE,
+                        http::HeaderValue::from_static("application/grpc"),
+                    ),
+                    (
+                        http::HeaderName::from_static("grpc-status"),
+                        http::HeaderValue::from(grpc_status),
+                    ),
+                ],
+            }
         }
     }
 
     impl Service<()> for MockService {
         type Response = http::Response<TestBody>;
         type Error = Infallible;
-        type Future = futures::future::Ready<Result<Self::Response, Self::Error>>;
+        type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
         fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
             Poll::Ready(Ok(()))
         }
 
         fn call(&mut self, _: ()) -> Self::Future {
-            let resp = http::Response::builder()
-                .status(self.status)
-                .body(body())
-                .unwrap();
-            futures::future::ready(Ok(resp))
+            let status = self.status;
+            let delay = self.delay;
+            let headers = self.headers.clone();
+            Box::pin(async move {
+                if !delay.is_zero() {
+                    time::sleep(delay).await;
+                }
+                let mut builder = http::Response::builder().status(status);
+                for (name, value) in headers {
+                    builder = builder.header(name, value);
+                }
+                let resp = builder.body(body()).unwrap();
+                Ok(resp)
+            })
         }
     }
 
@@ -787,10 +842,7 @@ mod tests {
         let mut prev = f64::NEG_INFINITY;
 
         for secs in hints {
-            let inner = RetryAfterService {
-                status: http::StatusCode::TOO_MANY_REQUESTS,
-                retry_after_secs: secs,
-            };
+            let inner = MockService::retry_after(http::StatusCode::TOO_MANY_REQUESTS, secs);
             let mut biaser = LoadBiaser::new(inner, test_config());
 
             time::sleep(Duration::from_millis(1)).await;
@@ -982,54 +1034,9 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread", start_paused = true)]
     async fn test_cancellation_records_measurement() {
-        use tokio::sync::oneshot;
-
-        // Build a service whose response future blocks on a oneshot receiver.
-        // This lets us drop the future mid-flight.
-        struct DelayedService {
-            rx: Option<oneshot::Receiver<http::Response<TestBody>>>,
-        }
-
-        impl Service<()> for DelayedService {
-            type Response = http::Response<TestBody>;
-            type Error = Infallible;
-            type Future = DelayedFuture;
-
-            fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-                Poll::Ready(Ok(()))
-            }
-
-            fn call(&mut self, _: ()) -> Self::Future {
-                DelayedFuture {
-                    rx: self.rx.take().expect("called more than once"),
-                }
-            }
-        }
-
-        struct DelayedFuture {
-            rx: oneshot::Receiver<http::Response<TestBody>>,
-        }
-
-        impl std::future::Future for DelayedFuture {
-            type Output = Result<http::Response<TestBody>, Infallible>;
-
-            fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-                match Pin::new(&mut self.rx).poll(cx) {
-                    Poll::Ready(Ok(resp)) => Poll::Ready(Ok(resp)),
-                    Poll::Ready(Err(_)) => {
-                        let resp = http::Response::builder()
-                            .status(http::StatusCode::OK)
-                            .body(body())
-                            .unwrap();
-                        Poll::Ready(Ok(resp))
-                    }
-                    Poll::Pending => Poll::Pending,
-                }
-            }
-        }
-
-        let (tx, rx) = oneshot::channel();
-        let inner = DelayedService { rx: Some(rx) };
+        // A request that stays in flight. The long delay keeps the future
+        // pending. The test drops it to exercise the cancellation path.
+        let inner = MockService::with_delay(http::StatusCode::OK, Duration::from_secs(3600));
         let mut biaser = LoadBiaser::new(inner, test_config());
 
         assert_eq!(biaser.get_pending(), 0);
@@ -1057,9 +1064,6 @@ mod tests {
             rtt_after > rtt_before,
             "cancellation should record the elapsed wait: {rtt_after} > {rtt_before}"
         );
-
-        // tx is unused. Dropping it here is fine, it just closes the channel.
-        drop(tx);
     }
 
     #[test]
@@ -1076,40 +1080,9 @@ mod tests {
         );
     }
 
-    // Mock service returning an HTTP error with a Retry-After header.
-    // Parameterized by status code to avoid duplicating 429 and 503 variants.
-    #[derive(Clone)]
-    struct RetryAfterService {
-        status: http::StatusCode,
-        retry_after_secs: u64,
-    }
-
-    impl Service<()> for RetryAfterService {
-        type Response = http::Response<TestBody>;
-        type Error = Infallible;
-        type Future = futures::future::Ready<Result<Self::Response, Self::Error>>;
-
-        fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-            Poll::Ready(Ok(()))
-        }
-
-        fn call(&mut self, _: ()) -> Self::Future {
-            let resp = http::Response::builder()
-                .status(self.status)
-                .header(http::header::RETRY_AFTER, self.retry_after_secs.to_string())
-                .body(body())
-                .unwrap();
-
-            futures::future::ready(Ok(resp))
-        }
-    }
-
     #[tokio::test(flavor = "current_thread", start_paused = true)]
     async fn test_429_with_retry_after_records_hint() {
-        let inner = RetryAfterService {
-            status: http::StatusCode::TOO_MANY_REQUESTS,
-            retry_after_secs: 30,
-        };
+        let inner = MockService::retry_after(http::StatusCode::TOO_MANY_REQUESTS, 30);
         let mut biaser = LoadBiaser::new(inner, test_config());
 
         time::sleep(Duration::from_millis(1)).await;
@@ -1127,10 +1100,7 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread", start_paused = true)]
     async fn test_429_with_retry_after_capped_at_max() {
-        let inner = RetryAfterService {
-            status: http::StatusCode::TOO_MANY_REQUESTS,
-            retry_after_secs: 600,
-        };
+        let inner = MockService::retry_after(http::StatusCode::TOO_MANY_REQUESTS, 600);
         let mut biaser = LoadBiaser::new(inner, test_config());
 
         time::sleep(Duration::from_millis(1)).await;
@@ -1372,10 +1342,7 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread", start_paused = true)]
     async fn test_503_with_retry_after_records_hint() {
-        let inner = RetryAfterService {
-            status: http::StatusCode::SERVICE_UNAVAILABLE,
-            retry_after_secs: 30,
-        };
+        let inner = MockService::retry_after(http::StatusCode::SERVICE_UNAVAILABLE, 30);
         let mut biaser = LoadBiaser::new(inner, test_config());
 
         time::sleep(Duration::from_millis(1)).await;
@@ -1394,17 +1361,11 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread", start_paused = true)]
     async fn test_429_and_503_retry_after_produce_identical_load() {
-        let inner_429 = RetryAfterService {
-            status: http::StatusCode::TOO_MANY_REQUESTS,
-            retry_after_secs: 30,
-        };
+        let inner_429 = MockService::retry_after(http::StatusCode::TOO_MANY_REQUESTS, 30);
         let mut biaser_429 = LoadBiaser::new(inner_429, test_config());
 
-        // 503 path: RetryAfterService returns SERVICE_UNAVAILABLE with Retry-After: 30
-        let inner_503 = RetryAfterService {
-            status: http::StatusCode::SERVICE_UNAVAILABLE,
-            retry_after_secs: 30,
-        };
+        // 503 path: SERVICE_UNAVAILABLE with Retry-After: 30
+        let inner_503 = MockService::retry_after(http::StatusCode::SERVICE_UNAVAILABLE, 30);
         let mut biaser_503 = LoadBiaser::new(inner_503, test_config());
 
         // Bootstrap EWMA timestamps
@@ -1454,36 +1415,8 @@ mod tests {
         );
     }
 
-    // Mock service that returns HTTP 200 with a `grpc-status` header,
-    // simulating a gRPC trailers-only error response.
-    #[derive(Clone)]
-    struct GrpcErrorService {
-        grpc_status: u16,
-    }
-
-    impl Service<()> for GrpcErrorService {
-        type Response = http::Response<TestBody>;
-        type Error = Infallible;
-        type Future = futures::future::Ready<Result<Self::Response, Self::Error>>;
-
-        fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-            Poll::Ready(Ok(()))
-        }
-
-        fn call(&mut self, _: ()) -> Self::Future {
-            let resp = http::Response::builder()
-                .status(http::StatusCode::OK)
-                .header(http::header::CONTENT_TYPE, "application/grpc")
-                .header("grpc-status", self.grpc_status.to_string())
-                .body(body())
-                .unwrap();
-
-            futures::future::ready(Ok(resp))
-        }
-    }
-
     async fn assert_grpc_records_penalized_effective_rtt(grpc_status: u16, label: &str) {
-        let inner = GrpcErrorService { grpc_status };
+        let inner = MockService::grpc_status(grpc_status);
         let mut biaser = LoadBiaser::new(inner, test_config());
 
         time::sleep(Duration::from_millis(1)).await;
@@ -1497,7 +1430,7 @@ mod tests {
     }
 
     async fn assert_grpc_records_low_rtt(grpc_status: u16, label: &str) {
-        let inner = GrpcErrorService { grpc_status };
+        let inner = MockService::grpc_status(grpc_status);
         let mut biaser = LoadBiaser::new(inner, test_config());
 
         time::sleep(Duration::from_millis(1)).await;
