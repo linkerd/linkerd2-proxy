@@ -1010,6 +1010,58 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_two_concurrent_requests_counted() {
+        // Two concurrent in-flight requests each hold a handle. The strong count
+        // should report two pending while both are unresolved.
+        let delay = Duration::from_millis(200);
+        let inner = MockService::with_delay(http::StatusCode::OK, delay);
+        let mut biaser = LoadBiaser::new(inner, test_config());
+
+        time::sleep(Duration::from_millis(1)).await;
+
+        assert_eq!(biaser.get_pending(), 0, "pending should start at 0");
+        let load_idle = biaser.load();
+
+        // Start two requests without resolving them
+        let fut1 = biaser.call(());
+        let fut2 = biaser.call(());
+        tokio::pin!(fut1);
+        tokio::pin!(fut2);
+
+        // Poll each once, ensure they are pending
+        let mut cx = Context::from_waker(std::task::Waker::noop());
+        assert!(fut1.as_mut().poll(&mut cx).is_pending());
+        assert!(fut2.as_mut().poll(&mut cx).is_pending());
+
+        assert_eq!(
+            biaser.get_pending(),
+            2,
+            "two concurrent requests should report two pending"
+        );
+
+        // Load = RTT * (pending + 1) = RTT * 3, triple load.
+        let load_two = biaser.load();
+        assert_eq!(
+            load_two,
+            load_idle * 3.0,
+            "two pending should triple the idle load: {load_two} vs {load_idle}"
+        );
+
+        // Advance past the delay, then drive the body to drop the handles.
+        time::sleep(Duration::from_millis(250)).await;
+        let resp1 = fut1.await.unwrap();
+        let resp2 = fut2.await.unwrap();
+        drive_to_first_frame(resp1).await;
+        drive_to_first_frame(resp2).await;
+
+        assert_eq!(
+            biaser.get_pending(),
+            0,
+            "pending should fall back to 0 once both requests resolve"
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
     async fn test_cancellation_records_measurement() {
         // A request that stays in flight. The long delay keeps the future
         // pending. The test drops it to exercise the cancellation path.
