@@ -142,6 +142,43 @@ pub struct PenaltyPeakEwma {
     pub max_retry_after: time::Duration,
 }
 
+impl Load {
+    /// Returns the `(decay, default_rtt)` pair shared by both peak-EWMA
+    /// estimators.
+    ///
+    /// The penalty estimator's rate-limit fields are left out on purpose,
+    /// since callers that bias on responses read [`PenaltyPeakEwma`] on their
+    /// own, while callers without a per-response signal such as opaque and TLS
+    /// traffic use only this pair.
+    pub fn peak_ewma_rtt(&self) -> (time::Duration, time::Duration) {
+        match *self {
+            Load::PeakEwma(PeakEwma { decay, default_rtt }) => (decay, default_rtt),
+            Load::PenaltyPeakEwma(PenaltyPeakEwma {
+                decay, default_rtt, ..
+            }) => (decay, default_rtt),
+        }
+    }
+
+    /// Returns the penalty configuration discarded by a balancer that tracks
+    /// only round-trip time, such as opaque and TLS traffic that has no
+    /// per-response signal to bias on. The result is `Some` when the policy
+    /// selected the penalty estimator and set at least one penalty field, so a
+    /// plain peak-EWMA policy or a penalty estimator left at zero reports that
+    /// nothing was dropped.
+    pub fn dropped_penalty(&self) -> Option<PenaltyPeakEwma> {
+        match *self {
+            Load::PenaltyPeakEwma(ppe)
+                if !ppe.penalty.is_zero()
+                    || !ppe.penalty_decay.is_zero()
+                    || !ppe.max_retry_after.is_zero() =>
+            {
+                Some(ppe)
+            }
+            _ => None,
+        }
+    }
+}
+
 /// Success-rate trip threshold, stored in basis points (fraction × 10000).
 ///
 /// The control-plane fraction is quantized to an integer so that the
@@ -393,6 +430,69 @@ impl fmt::Display for Meta {
                 Ok(())
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod load_tests {
+    use super::{Load, PeakEwma, PenaltyPeakEwma};
+    use std::time::Duration;
+
+    #[test]
+    fn peak_ewma_rtt_reads_both_variants() {
+        let decay = Duration::from_secs(7);
+        let default_rtt = Duration::from_millis(42);
+        assert_eq!(
+            Load::PeakEwma(PeakEwma { decay, default_rtt }).peak_ewma_rtt(),
+            (decay, default_rtt),
+        );
+        // The penalty estimator's rate-limit fields do not affect the pair.
+        assert_eq!(
+            Load::PenaltyPeakEwma(PenaltyPeakEwma {
+                decay,
+                default_rtt,
+                penalty: Duration::from_secs(5),
+                penalty_decay: Duration::from_secs(10),
+                max_retry_after: Duration::from_secs(300),
+            })
+            .peak_ewma_rtt(),
+            (decay, default_rtt),
+        );
+    }
+
+    #[test]
+    fn dropped_penalty_reports_only_meaningful_config() {
+        let decay = Duration::from_secs(7);
+        let default_rtt = Duration::from_millis(42);
+
+        // The plain peak-EWMA estimator has no penalty to drop.
+        assert_eq!(
+            Load::PeakEwma(PeakEwma { decay, default_rtt }).dropped_penalty(),
+            None,
+        );
+
+        // A penalty estimator left at zero drops nothing meaningful.
+        assert_eq!(
+            Load::PenaltyPeakEwma(PenaltyPeakEwma {
+                decay,
+                default_rtt,
+                penalty: Duration::ZERO,
+                penalty_decay: Duration::ZERO,
+                max_retry_after: Duration::ZERO,
+            })
+            .dropped_penalty(),
+            None,
+        );
+
+        // A set penalty field reports the discarded configuration.
+        let ppe = PenaltyPeakEwma {
+            decay,
+            default_rtt,
+            penalty: Duration::from_secs(5),
+            penalty_decay: Duration::ZERO,
+            max_retry_after: Duration::ZERO,
+        };
+        assert_eq!(Load::PenaltyPeakEwma(ppe).dropped_penalty(), Some(ppe));
     }
 }
 

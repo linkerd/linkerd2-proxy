@@ -169,14 +169,14 @@ where
 
         let mk_dispatch = move |bke: &policy::Backend| match bke.dispatcher {
             policy::BackendDispatcher::BalanceP2c(
-                policy::Load::PeakEwma(policy::PeakEwma { decay, default_rtt }),
+                load,
                 policy::EndpointDiscovery::DestinationGet { ref path },
             ) => mk_concrete(
                 BackendRef(bke.meta.clone()),
                 concrete::Dispatch::Balance(
                     path.parse::<NameAddr>()
                         .expect("destination must be a nameaddr"),
-                    http::balance::EwmaConfig { decay, default_rtt },
+                    load,
                 ),
             ),
             policy::BackendDispatcher::Forward(addr, ref md) => mk_concrete(

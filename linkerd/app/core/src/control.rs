@@ -244,15 +244,28 @@ mod balance {
 
     pub(super) type Resolve = recover::Resolve<ResolveRecover, DnsResolve>;
 
+    /// Control-plane clients balance over discovered endpoints using round-trip
+    /// time, since the response-rate penalties depend on HTTP classification
+    /// that does not apply here. They use the Tower peak-EWMA balancer directly
+    /// and keep its `PendingUntilFirstData` load completion and unboxed response
+    /// body as they are in the default balancer.
+    type NewBalance<B, N> = linkerd_proxy_balance::NewBalance<
+        http::balance::PendingUntilFirstData,
+        http::Request<B>,
+        Params,
+        Resolve,
+        NewIntoTarget<N>,
+    >;
+
     pub fn layer<B, N>(
         metrics: Metrics,
         dns: dns::Resolver,
         backoff: ExponentialBackoff,
-    ) -> impl svc::Layer<N, Service = http::NewBalance<B, Params, Resolve, NewIntoTarget<N>>> {
+    ) -> impl svc::Layer<N, Service = NewBalance<B, N>> {
         let resolve = recover::Resolve::new(ResolveRecover::new(backoff), DnsResolve::new(dns));
 
         svc::layer::mk(move |inner| {
-            http::NewBalance::new(
+            NewBalance::new(
                 NewIntoTarget { inner },
                 resolve.clone(),
                 Params(metrics.clone()),

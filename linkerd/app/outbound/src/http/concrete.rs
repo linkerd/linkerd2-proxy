@@ -1,7 +1,7 @@
 //! A stack that (optionally) resolves a service to a set of endpoint replicas
 //! and distributes HTTP requests among them.
 
-use super::{balance::EwmaConfig, client, handle_proxy_error_headers};
+use super::{client, handle_proxy_error_headers};
 use crate::{
     http, stack_labels,
     zone::{tcp_zone_labels, TcpZoneLabels},
@@ -20,7 +20,7 @@ use linkerd_app_core::{
     transport::{self, addrs::*},
     Error, Infallible, NameAddr, Result,
 };
-use linkerd_proxy_client_policy::FailureAccrual;
+use linkerd_proxy_client_policy::{FailureAccrual, Load};
 use std::{fmt::Debug, net::SocketAddr, sync::Arc};
 use tracing::info_span;
 
@@ -31,7 +31,10 @@ pub use self::balance::BalancerMetrics;
 /// Parameter configuring dispatcher behavior.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Dispatch {
-    Balance(NameAddr, EwmaConfig),
+    /// Load balance over discovered endpoints with the given estimator. The
+    /// estimator selects peak-EWMA endpoint selection or, when a policy opts in,
+    /// the response-aware penalty estimator.
+    Balance(NameAddr, Load),
     Forward(Remote<ServerAddr>, Arc<Metadata>),
     /// A backend dispatcher that explicitly fails all requests.
     Fail {
@@ -119,10 +122,10 @@ impl<N> Outbound<N> {
                 .push_switch(
                     move |parent: T| -> Result<_, Infallible> {
                         Ok(match parent.param() {
-                            Dispatch::Balance(addr, ewma) => {
+                            Dispatch::Balance(addr, load) => {
                                 svc::Either::Left(svc::Either::Left(balance::Balance {
                                     addr,
-                                    ewma,
+                                    load,
                                     parent,
                                     queue,
                                 }))
