@@ -3,6 +3,7 @@ use linkerd_proxy_client_policy::FailureAccrual;
 use tracing::{trace_span, Instrument};
 
 mod consecutive_failures;
+mod success_rate;
 
 use self::consecutive_failures::ConsecutiveFailures;
 
