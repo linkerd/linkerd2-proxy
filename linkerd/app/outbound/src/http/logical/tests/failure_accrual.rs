@@ -50,10 +50,13 @@ async fn consecutive_failures_accrue() {
             meta: ParentRef(client_policy::Meta::new_default("parent")),
             backends: Arc::new([backend.clone()]),
             routes: Arc::new([default_route(backend)]),
-            failure_accrual: client_policy::FailureAccrual::ConsecutiveFailures {
-                max_failures: 3,
-                backoff,
-            },
+            failure_accrual: Some(client_policy::FailureAccrual::Consecutive(
+                client_policy::ConsecutiveFailures {
+                    max_failures: 3,
+                    backoff,
+                    respect_retry_after_hint: false,
+                },
+            )),
         })));
     let target = Target {
         num: 1,
@@ -212,10 +215,13 @@ async fn balancer_doesnt_select_tripped_breakers() {
             meta: ParentRef(client_policy::Meta::new_default("parent")),
             backends: Arc::new([backend.clone()]),
             routes: Arc::new([default_route(backend)]),
-            failure_accrual: client_policy::FailureAccrual::ConsecutiveFailures {
-                max_failures: 3,
-                backoff,
-            },
+            failure_accrual: Some(client_policy::FailureAccrual::Consecutive(
+                client_policy::ConsecutiveFailures {
+                    max_failures: 3,
+                    backoff,
+                    respect_retry_after_hint: false,
+                },
+            )),
         })));
     let target = Target {
         num: 1,

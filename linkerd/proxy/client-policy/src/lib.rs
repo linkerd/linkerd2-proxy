@@ -103,7 +103,6 @@ pub enum BackendDispatcher {
     Forward(SocketAddr, Arc<EndpointMetadata>),
     BalanceP2c(Load, EndpointDiscovery),
     Fail { message: Arc<str> },
-    // TODO(kate): add a `PenaltyPeakEwma` variant here.
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -123,20 +122,84 @@ pub struct PeakEwma {
     pub default_rtt: time::Duration,
 }
 
+/// Success-rate trip threshold, stored in basis points (fraction × 10000).
+///
+/// The control-plane fraction is quantized to an integer so that the
+/// configuration can be part of a backend's cache identity, since an integer
+/// is `Eq` and `Hash` while an `f64` is neither once IEEE 754 makes `NaN`
+/// compare unequal to itself. The 0.01% step is far finer than any meaningful
+/// difference in a success-rate target, no `NaN` can arise in the integer
+/// domain, and the valid range is `0..=10000`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct SuccessRateThreshold(u32);
+
+impl SuccessRateThreshold {
+    /// Builds a threshold from a control-plane fraction in `[0.0, 1.0]`.
+    ///
+    /// The fraction is clamped to `[0.0, 1.0]` before quantizing so that the
+    /// result always lands in `0..=10000` whatever the caller passes, and a
+    /// `NaN` fraction collapses to `0`, which disables success-rate tripping.
+    /// The proto path already rejects out of range and `NaN` values earlier with
+    /// a precise error, and this clamp keeps the invariant for any other caller.
+    pub fn from_fraction(f: f64) -> Self {
+        Self((f.clamp(0.0, 1.0) * 10000.0).round() as u32)
+    }
+
+    /// Returns the threshold as a fraction in `[0.0, 1.0]`.
+    pub fn as_fraction(self) -> f64 {
+        self.0 as f64 / 10000.0
+    }
+
+    /// True for a zero threshold, which disables success-rate tripping.
+    pub fn is_zero(self) -> bool {
+        self.0 == 0
+    }
+}
+
+impl fmt::Display for SuccessRateThreshold {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.as_fraction())
+    }
+}
+
+/// Failure-accrual circuit breaking configuration for an endpoint.
+///
+/// The consecutive-failures policy counts failures in a row, while the
+/// unified policy adds a success-rate threshold over a trailing window on top of
+/// a consecutive-failure ceiling so that either condition can trip the breaker.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum FailureAccrual {
-    /// Endpoints do not become unavailable due to observed failures.
-    None,
-    /// Endpoints are marked as unavailable when `max_failures` consecutive
-    /// failures are observed.
-    ConsecutiveFailures {
-        /// The number of consecutive failures after which an endpoint becomes
-        /// unavailable.
-        max_failures: usize,
-        /// Backoff for probing the endpoint when it is in a failed state.
-        backoff: linkerd_exp_backoff::ExponentialBackoff,
-    },
-    // TODO(kate): add a `Unified` variant here.
+    Consecutive(ConsecutiveFailures),
+    Unified(Unified),
+}
+
+/// Consecutive-failure tracking parameters.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct ConsecutiveFailures {
+    /// The number of consecutive failures after which an endpoint becomes
+    /// unavailable.
+    pub max_failures: usize,
+    /// Backoff for probing the endpoint when it is in a failed state.
+    pub backoff: linkerd_exp_backoff::ExponentialBackoff,
+    /// Whether a response's Retry-After hint seeds the probe backoff.
+    pub respect_retry_after_hint: bool,
+}
+
+/// Unified circuit breaking configuration.
+///
+/// The circuit trips when the success ratio over the trailing window drops
+/// below `threshold` after at least `min_requests` responses sit in the window,
+/// or when consecutive failures reach `max_consecutive_failures`.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Unified {
+    pub threshold: SuccessRateThreshold,
+    /// Success-rate measurement window: responses older than this no longer
+    /// count toward the ratio. (The proto field is named `decay`.)
+    pub decay: time::Duration,
+    pub min_requests: u32,
+    pub max_consecutive_failures: usize,
+    pub backoff: linkerd_exp_backoff::ExponentialBackoff,
+    pub respect_retry_after_hint: bool,
 }
 
 // === impl ClientPolicy ===
@@ -173,11 +236,11 @@ impl ClientPolicy {
                 timeout,
                 http1: http::Http1 {
                     routes: HTTP_ROUTES.clone(),
-                    failure_accrual: Default::default(),
+                    failure_accrual: None,
                 },
                 http2: http::Http2 {
                     routes: HTTP_ROUTES.clone(),
-                    failure_accrual: Default::default(),
+                    failure_accrual: None,
                 },
 
                 opaque: opaq::Opaque {
@@ -213,11 +276,11 @@ impl ClientPolicy {
                 timeout,
                 http1: http::Http1 {
                     routes: NO_HTTP_ROUTES.clone(),
-                    failure_accrual: Default::default(),
+                    failure_accrual: None,
                 },
                 http2: http::Http2 {
                     routes: NO_HTTP_ROUTES.clone(),
-                    failure_accrual: Default::default(),
+                    failure_accrual: None,
                 },
                 opaque: opaq::Opaque { routes: None },
             },
@@ -313,14 +376,6 @@ impl fmt::Display for Meta {
     }
 }
 
-// === impl FailureAccrual ===
-
-impl Default for FailureAccrual {
-    fn default() -> Self {
-        Self::None
-    }
-}
-
 #[cfg(feature = "proto")]
 pub mod proto {
     use super::*;
@@ -396,9 +451,6 @@ pub mod proto {
 
         #[error("invalid backend metadata: {0}")]
         Meta(#[from] InvalidMeta),
-
-        #[error("penalty peak ewma mode is not yet supported")]
-        PenaltyPeakEwmaUnsupported,
     }
 
     #[derive(Debug, thiserror::Error)]
@@ -428,8 +480,10 @@ pub mod proto {
         Backoff(#[from] InvalidBackoff),
         #[error("missing {0}")]
         Missing(&'static str),
-        #[error("unified failure accrual is not yet supported")]
-        UnifiedUnsupported,
+        #[error("invalid value: {0}")]
+        InvalidValue(&'static str),
+        #[error("invalid success-rate decay duration: {0}")]
+        Decay(prost_types::DurationError),
     }
 
     #[derive(Debug, thiserror::Error)]
@@ -674,10 +728,6 @@ pub mod proto {
                             default_rtt: duration("peak EWMA default RTT", default_rtt)?,
                             decay: duration("peak EWMA decay", decay)?,
                         }),
-                        balance_p2c::Load::PenaltyPeakEwma(_) => {
-                            // TODO(kate): marshal `PenaltyPeakEwma` here.
-                            return Err(InvalidBackend::PenaltyPeakEwmaUnsupported);
-                        }
                     };
                     BackendDispatcher::BalanceP2c(load, discovery)
                 }
@@ -729,34 +779,96 @@ pub mod proto {
         }
     }
 
+    /// Lower bound on the success-rate window length. The breaker realizes the
+    /// window as ten one-millisecond floored buckets at minimum, so a decay below
+    /// ten milliseconds cannot be honored at its configured value. Rejecting it
+    /// surfaces the misconfiguration here instead of silently widening the window
+    /// later.
+    const MIN_SUCCESS_RATE_DECAY: time::Duration = time::Duration::from_millis(10);
+
+    /// Upper bound on the success-rate first-start request floor. A floor above
+    /// this means first start never ends, so the policy could never trip.
+    const MAX_SUCCESS_RATE_MIN_REQUESTS: u32 = 1_000_000;
+
     impl TryFrom<outbound::FailureAccrual> for FailureAccrual {
         type Error = InvalidFailureAccrual;
         fn try_from(accrual: outbound::FailureAccrual) -> Result<Self, Self::Error> {
-            use outbound::failure_accrual::{self, ConsecutiveFailures};
-            let kind = accrual.kind.ok_or(InvalidFailureAccrual::Missing("kind"))?;
-            match kind {
-                failure_accrual::Kind::ConsecutiveFailures(ConsecutiveFailures {
+            use outbound::failure_accrual::{
+                ConsecutiveFailures as ProtoConsecutive, Kind, Unified,
+            };
+            // Ejection protection (`accrual.ejection`) is out of scope here, and the
+            // breaker reads only `kind`.
+            match accrual.kind.ok_or(InvalidFailureAccrual::Missing("kind"))? {
+                Kind::ConsecutiveFailures(ProtoConsecutive {
                     max_failures,
                     backoff,
-                }) => Ok(FailureAccrual::ConsecutiveFailures {
-                    max_failures: max_failures as usize,
-                    backoff: backoff.map(try_backoff).transpose()?.ok_or(
+                }) => {
+                    let respect_retry_after_hint = retry_after_hint(backoff.as_ref());
+                    let backoff = backoff.map(try_backoff).transpose()?.ok_or(
                         InvalidFailureAccrual::Missing("consecutive failures backoff"),
-                    )?,
-                }),
-                // TODO(kate): marshal `Unified` here.
-                failure_accrual::Kind::Unified(_) => Err(InvalidFailureAccrual::UnifiedUnsupported),
+                    )?;
+                    Ok(FailureAccrual::Consecutive(ConsecutiveFailures {
+                        max_failures: max_failures as usize,
+                        backoff,
+                        respect_retry_after_hint,
+                    }))
+                }
+                Kind::Unified(Unified {
+                    success_rate_threshold,
+                    decay,
+                    min_requests,
+                    max_consecutive_failures,
+                    backoff,
+                }) => {
+                    if !(0.0..=1.0).contains(&success_rate_threshold) {
+                        return Err(InvalidFailureAccrual::InvalidValue(
+                            "success rate threshold must be between 0.0 and 1.0",
+                        ));
+                    }
+                    // Range and NaN already rejected, so rounding lands in 0..=10000.
+                    let threshold = SuccessRateThreshold::from_fraction(success_rate_threshold);
+                    let decay = decay
+                        .map(time::Duration::try_from)
+                        .transpose()
+                        .map_err(InvalidFailureAccrual::Decay)?
+                        .unwrap_or(time::Duration::from_secs(10));
+                    // The decay floor only matters when the success-rate dimension
+                    // is active. A zero threshold disables that dimension and the
+                    // runtime never reads decay, so any value is accepted and the
+                    // consecutive-failure ceiling stays in force.
+                    if !threshold.is_zero() && decay < MIN_SUCCESS_RATE_DECAY {
+                        return Err(InvalidFailureAccrual::InvalidValue(
+                            "success rate decay is below the minimum window length",
+                        ));
+                    }
+                    if min_requests > MAX_SUCCESS_RATE_MIN_REQUESTS {
+                        return Err(InvalidFailureAccrual::InvalidValue(
+                            "success rate min_requests exceeds the supported maximum",
+                        ));
+                    }
+                    let respect_retry_after_hint = retry_after_hint(backoff.as_ref());
+                    let backoff = backoff
+                        .map(try_backoff)
+                        .transpose()?
+                        .ok_or(InvalidFailureAccrual::Missing("unified backoff"))?;
+                    Ok(FailureAccrual::Unified(crate::Unified {
+                        threshold,
+                        decay,
+                        min_requests,
+                        max_consecutive_failures: max_consecutive_failures as usize,
+                        backoff,
+                        respect_retry_after_hint,
+                    }))
+                }
             }
         }
     }
 
-    impl TryFrom<Option<outbound::FailureAccrual>> for FailureAccrual {
-        type Error = InvalidFailureAccrual;
-        fn try_from(accrual: Option<outbound::FailureAccrual>) -> Result<Self, Self::Error> {
-            accrual
-                .map(Self::try_from)
-                .unwrap_or(Ok(FailureAccrual::None))
-        }
+    // The Retry-After preference rides on the proto backoff message. Read it
+    // before the backoff is consumed by `try_backoff`. An absent backoff means
+    // it is off.
+    fn retry_after_hint(backoff: Option<&outbound::ExponentialBackoff>) -> bool {
+        backoff.is_some_and(|b| b.respect_retry_after_hint)
     }
 
     pub(crate) fn try_backoff(
@@ -764,7 +876,8 @@ pub mod proto {
             min_backoff,
             max_backoff,
             jitter_ratio,
-            respect_retry_after_hint: _, // TODO(kate): use respect_retry_after_hint
+            // Read separately via `retry_after_hint`, so it does not affect the window.
+            respect_retry_after_hint: _,
         }: outbound::ExponentialBackoff,
     ) -> Result<linkerd_exp_backoff::ExponentialBackoff, InvalidBackoff> {
         let min = min_backoff

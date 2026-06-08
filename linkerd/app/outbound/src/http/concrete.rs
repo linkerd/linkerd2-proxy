@@ -76,7 +76,7 @@ impl<N> Outbound<N> {
         T: svc::Param<ParentRef>,
         T: svc::Param<BackendRef>,
         T: svc::Param<Dispatch>,
-        T: svc::Param<FailureAccrual>,
+        T: svc::Param<Option<FailureAccrual>>,
         T: Clone + Debug + Send + Sync + 'static,
         // Endpoint resolution.
         R: Resolve<ConcreteAddr, Error = Error, Endpoint = Metadata>,

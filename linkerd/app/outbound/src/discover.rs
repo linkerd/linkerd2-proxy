@@ -277,11 +277,11 @@ fn policy_for_backend(
         timeout,
         http1: policy::http::Http1 {
             routes: routes.clone(),
-            failure_accrual: Default::default(),
+            failure_accrual: None,
         },
         http2: policy::http::Http2 {
             routes,
-            failure_accrual: Default::default(),
+            failure_accrual: None,
         },
         opaque,
     };

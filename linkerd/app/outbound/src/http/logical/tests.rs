@@ -252,7 +252,7 @@ fn mock_http(params: client_policy::http::RouteParams) -> (svc::BoxCloneHttp, Ha
         meta: ParentRef(client_policy::Meta::new_default("parent")),
         backends: Arc::new([backend]),
         routes: Arc::new([route]),
-        failure_accrual: client_policy::FailureAccrual::None,
+        failure_accrual: None,
     }))
 }
 
@@ -265,7 +265,7 @@ fn mock_grpc(params: client_policy::grpc::RouteParams) -> (svc::BoxCloneHttp, Ha
         meta: ParentRef(client_policy::Meta::new_default("parent")),
         backends: Arc::new([backend]),
         routes: Arc::new([route]),
-        failure_accrual: client_policy::FailureAccrual::None,
+        failure_accrual: None,
     }))
 }
 

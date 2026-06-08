@@ -22,9 +22,10 @@ pub struct RouteParams {
 pub struct Grpc {
     pub routes: Arc<[Route]>,
 
-    /// Configures how endpoints accrue observed failures.
+    /// Configures how endpoints accrue observed failures. `None` disables
+    /// failure accrual.
     // TODO(ver) Move this to backends and scope to endpoints.
-    pub failure_accrual: FailureAccrual,
+    pub failure_accrual: Option<FailureAccrual>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -65,7 +66,7 @@ impl Default for Grpc {
     fn default() -> Self {
         Self {
             routes: Arc::new([]),
-            failure_accrual: Default::default(),
+            failure_accrual: None,
         }
     }
 }
@@ -196,7 +197,10 @@ pub mod proto {
                 .collect::<Result<Arc<[_]>, _>>()?;
             Ok(Self {
                 routes,
-                failure_accrual: proto.failure_accrual.try_into()?,
+                failure_accrual: proto
+                    .failure_accrual
+                    .map(FailureAccrual::try_from)
+                    .transpose()?,
             })
         }
 

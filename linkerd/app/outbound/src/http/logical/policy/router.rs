@@ -18,7 +18,7 @@ pub struct Params<M, F, E> {
     pub meta: ParentRef,
     pub routes: Arc<[http_route::Route<M, policy::RoutePolicy<F, E>>]>,
     pub backends: Arc<[policy::Backend]>,
-    pub failure_accrual: policy::FailureAccrual,
+    pub failure_accrual: Option<policy::FailureAccrual>,
 }
 
 pub type HttpParams =
