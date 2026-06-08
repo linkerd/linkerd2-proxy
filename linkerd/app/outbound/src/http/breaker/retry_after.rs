@@ -42,12 +42,16 @@
 //!         max(http_hint, grpc_hint), clamped to [min, max] backoff
 //! ```
 
+use futures::stream::StreamExt;
 use http::HeaderMap;
 use linkerd_app_core::classify::{self, grpc_code};
+use linkerd_app_core::exp_backoff::ExponentialBackoffStream;
+use linkerd_app_core::proxy::http::classify::gate;
 use linkerd_http_classify::{ClassifyEos, ClassifyResponse};
 use parking_lot::Mutex;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::mpsc;
 use tokio::time::Instant;
 use tonic::Code;
 
@@ -380,6 +384,73 @@ fn clamp_hint(hint: Duration, min: Duration, max: Duration, source: &'static str
     } else {
         hint
     }
+}
+
+// === wait_for_backoff ===
+
+/// Wait out the backoff stream, optionally floored by a Retry-After hint.
+///
+/// With a hint the wait is `max(hint, backoff)`, so both the hint sleep and the
+/// backoff stream must elapse before the breaker proceeds. Without one it follows
+/// the backoff alone. Either way, responses arriving while the gate is shut are
+/// drained and ignored, and a closed `rsps` channel or a lost gate ends the
+/// breaker via `Err(())` rather than spinning on the `None` that `recv()` returns
+/// at once on a closed channel.
+///
+/// Both breaker engines wait out a tripped backoff here, so the two-phase
+/// hint/backoff join and the drain rules stay identical between them. The hint
+/// is produced by [`take_combined_hint`], which clamps it to `[min, max]`, and
+/// `max` is the same backoff ceiling passed here so the function can assert the
+/// clamp held.
+pub(super) async fn wait_for_backoff(
+    gate: &gate::Tx,
+    rsps: &mut mpsc::Receiver<classify::Class>,
+    backoff: &mut ExponentialBackoffStream,
+    hint: Option<Duration>,
+    max: Duration,
+) -> Result<(), ()> {
+    let Some(hint) = hint else {
+        // No hint, so follow the backoff schedule.
+        loop {
+            tokio::select! {
+                _ = backoff.next() => break,
+                // Drain responses while the breaker is shut, but stop when the
+                // channel closes. recv() on a closed channel returns None at
+                // once, so looping on it would spin this task.
+                rsp = rsps.recv() => { rsp.ok_or(())?; }
+                _ = gate.lost() => return Err(()),
+            }
+        }
+        return Ok(());
+    };
+
+    debug_assert!(
+        hint <= max,
+        "hint {hint:?} exceeds backoff max {max:?} -- take_combined_hint should have clamped",
+    );
+    tracing::info!(?hint, "Using Retry-After hint as backoff floor");
+    let hint_sleep = tokio::time::sleep(hint);
+    tokio::pin!(hint_sleep);
+    let mut backoff_done = false;
+    let mut hint_done = false;
+    // Wait for both the backoff and the hint to complete.
+    loop {
+        tokio::select! {
+            _ = backoff.next(), if !backoff_done => {
+                backoff_done = true;
+                if hint_done { break; }
+            }
+            _ = &mut hint_sleep, if !hint_done => {
+                hint_done = true;
+                if backoff_done { break; }
+            }
+            // Drain responses while the breaker is shut, but stop when the
+            // channel closes, as in the no-hint branch above.
+            rsp = rsps.recv() => { rsp.ok_or(())?; }
+            _ = gate.lost() => return Err(()),
+        }
+    }
+    Ok(())
 }
 
 // === RetryAfterClassify ===

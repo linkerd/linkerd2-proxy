@@ -77,13 +77,12 @@
 //! (code 0) counts as success.
 
 use super::{
-    retry_after::{take_combined_hint, GrpcRetryPushbackStore, RetryAfterStore},
+    retry_after::{self, take_combined_hint, GrpcRetryPushbackStore, RetryAfterStore},
     success_rate::SuccessRateWindow,
     TripReason,
 };
-use futures::stream::StreamExt;
 use linkerd_app_core::proxy::http::classify::gate;
-use linkerd_app_core::{classify, exp_backoff, exp_backoff::ExponentialBackoff};
+use linkerd_app_core::{classify, exp_backoff::ExponentialBackoff};
 use tokio::sync::mpsc;
 use tokio::time::{Duration, Instant};
 use tonic::Code;
@@ -401,8 +400,14 @@ impl UnifiedBreaker {
                 None
             };
 
-            self.wait_for_backoff(&mut backoff, retry_after_hint)
-                .await?;
+            retry_after::wait_for_backoff(
+                &self.gate,
+                &mut self.rsps,
+                &mut backoff,
+                retry_after_hint,
+                self.backoff.max(),
+            )
+            .await?;
 
             // Bound the probe by the configured backoff ceiling rather than the
             // window just waited. These are two different quantities. The wait
@@ -463,65 +468,6 @@ impl UnifiedBreaker {
             classify::Class::Grpc(Err(_)) => false,
             _ => class.is_success(),
         }
-    }
-
-    /// Wait out the backoff, optionally extended by a Retry-After hint.
-    ///
-    /// With a hint the wait is `max(hint, backoff)`: the breaker drives both the
-    /// hint sleep and the backoff stream and proceeds only once both complete.
-    /// Without one it follows the backoff alone.
-    async fn wait_for_backoff(
-        &mut self,
-        backoff: &mut exp_backoff::ExponentialBackoffStream,
-        retry_after_hint: Option<Duration>,
-    ) -> Result<(), ()> {
-        if let Some(hint) = retry_after_hint {
-            debug_assert!(
-                hint <= self.backoff.max(),
-                "hint {hint:?} exceeds backoff max {:?} -- take_combined_hint should have clamped",
-                self.backoff.max()
-            );
-            tracing::info!(?hint, "Using Retry-After hint as backoff floor");
-
-            let hint_sleep = tokio::time::sleep(hint);
-            tokio::pin!(hint_sleep);
-
-            let mut backoff_done = false;
-            let mut hint_done = false;
-
-            // Wait for both the backoff and the hint to complete.
-            loop {
-                tokio::select! {
-                    _ = backoff.next(), if !backoff_done => {
-                        backoff_done = true;
-                        if hint_done { break; }
-                    }
-                    _ = &mut hint_sleep, if !hint_done => {
-                        hint_done = true;
-                        if backoff_done { break; }
-                    }
-                    // Drain responses while the breaker is shut, but stop when
-                    // the channel closes. recv() on a closed channel returns
-                    // None at once, so looping on it would spin this task.
-                    rsp = self.rsps.recv() => { rsp.ok_or(())?; continue }
-                    _ = self.gate.lost() => return Err(()),
-                }
-            }
-        } else {
-            // No hint; follow the backoff schedule.
-            loop {
-                tokio::select! {
-                    _ = backoff.next() => break,
-                    // Drain responses while the breaker is shut, but stop when
-                    // the channel closes. recv() on a closed channel returns
-                    // None at once, so looping on it would spin this task.
-                    rsp = self.rsps.recv() => { rsp.ok_or(())?; continue }
-                    _ = self.gate.lost() => return Err(()),
-                }
-            }
-        }
-
-        Ok(())
     }
 
     /// Probation state that admits one probe request, bounded by `deadline`.
