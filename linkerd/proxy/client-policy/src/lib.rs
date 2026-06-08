@@ -114,12 +114,32 @@ pub enum EndpointDiscovery {
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Load {
     PeakEwma(PeakEwma),
+    PenaltyPeakEwma(PenaltyPeakEwma),
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct PeakEwma {
     pub decay: time::Duration,
     pub default_rtt: time::Duration,
+}
+
+/// Peak EWMA load estimation that penalizes rate-limited endpoints.
+///
+/// A response that has a rate-limit signal raises the endpoint's load estimate
+/// by `penalty` so that P2C selection leans toward other
+/// endpoints. That added load fades over `penalty_decay`. The `max_retry_after`
+/// field caps how long a Retry-After hint may extend the penalty, so one
+/// hostile hint cannot hold an endpoint out of rotation forever. The balancer
+/// maps these control-plane fields onto its estimator. Since every field is a
+/// `Duration`, the strategy stays part of a backend's cache identity
+/// (`Eq + Hash`).
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct PenaltyPeakEwma {
+    pub decay: time::Duration,
+    pub default_rtt: time::Duration,
+    pub penalty: time::Duration,
+    pub penalty_decay: time::Duration,
+    pub max_retry_after: time::Duration,
 }
 
 /// Success-rate trip threshold, stored in basis points (fraction × 10000).
@@ -707,6 +727,22 @@ pub mod proto {
                     .map_err(|error| InvalidBackend::Duration { field, error })
             }
 
+            // The penalty estimator's fields are optional on the wire: an absent
+            // value takes the documented default, while a present but invalid
+            // value still surfaces an error rather than being silently dropped.
+            fn duration_or(
+                field: &'static str,
+                duration: Option<prost_types::Duration>,
+                default: Duration,
+            ) -> Result<Duration, InvalidBackend> {
+                match duration {
+                    None => Ok(default),
+                    Some(d) => d
+                        .try_into()
+                        .map_err(|error| InvalidBackend::Duration { field, error }),
+                }
+            }
+
             let meta: Arc<Meta> = {
                 let meta = backend
                     .metadata
@@ -727,6 +763,39 @@ pub mod proto {
                         }) => Load::PeakEwma(PeakEwma {
                             default_rtt: duration("peak EWMA default RTT", default_rtt)?,
                             decay: duration("peak EWMA decay", decay)?,
+                        }),
+                        balance_p2c::Load::PenaltyPeakEwma(balance_p2c::PenaltyPeakEwma {
+                            default_rtt,
+                            decay,
+                            penalty,
+                            max_retry_after,
+                            penalty_decay,
+                        }) => Load::PenaltyPeakEwma(PenaltyPeakEwma {
+                            default_rtt: duration_or(
+                                "penalty peak EWMA default RTT",
+                                default_rtt,
+                                time::Duration::from_millis(30),
+                            )?,
+                            decay: duration_or(
+                                "penalty peak EWMA decay",
+                                decay,
+                                time::Duration::from_secs(10),
+                            )?,
+                            penalty: duration_or(
+                                "penalty peak EWMA penalty",
+                                penalty,
+                                time::Duration::from_secs(5),
+                            )?,
+                            penalty_decay: duration_or(
+                                "penalty peak EWMA penalty decay",
+                                penalty_decay,
+                                time::Duration::from_secs(10),
+                            )?,
+                            max_retry_after: duration_or(
+                                "penalty peak EWMA max retry-after",
+                                max_retry_after,
+                                time::Duration::from_secs(300),
+                            )?,
                         }),
                     };
                     BackendDispatcher::BalanceP2c(load, discovery)
