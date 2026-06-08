@@ -48,6 +48,24 @@ impl ExponentialBackoff {
         Self { min, max, jitter }
     }
 
+    /// The minimum backoff duration.
+    ///
+    /// Exposed so that callers can clamp delays supplied from outside, such as
+    /// retry-after or gRPC pushback hints, into the configured backoff window
+    /// `[min, max]`.
+    pub const fn min(&self) -> time::Duration {
+        self.min
+    }
+
+    /// The maximum backoff duration.
+    ///
+    /// Exposed so that callers can clamp delays supplied from outside, such as
+    /// retry-after or gRPC pushback hints, into the configured backoff window
+    /// `[min, max]`.
+    pub const fn max(&self) -> time::Duration {
+        self.max
+    }
+
     pub fn try_new(
         min: time::Duration,
         max: time::Duration,
