@@ -97,7 +97,7 @@ impl Ewma {
         if ts <= self.timestamp {
             return;
         }
-        if self.value == f64::INFINITY {
+        if self.value.is_infinite() {
             self.value = value;
             self.timestamp = ts;
             return;
