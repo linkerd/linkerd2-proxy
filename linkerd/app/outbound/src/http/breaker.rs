@@ -6,6 +6,7 @@ mod consecutive_failures;
 pub mod retry_after;
 mod success_rate;
 mod unified;
+pub mod wrap_classify;
 
 use self::consecutive_failures::ConsecutiveFailures;
 
