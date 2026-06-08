@@ -88,8 +88,7 @@ impl CachedRateLimitHint {
 /// Trait for extracting failure hints from responses.
 ///
 /// This allows the load biaser to classify responses and apply appropriate
-/// penalties. Default implementations return None (no failure detected),
-/// which is appropriate for non-HTTP transports.
+/// penalties.
 ///
 /// The trait splits rate limit hint access into two methods to avoid
 /// requiring `&mut self` on the read path:
@@ -104,24 +103,20 @@ impl CachedRateLimitHint {
 /// means the cache is always cold for the circuit breaker path.
 pub trait ResponseFailureHint {
     /// Returns a failure hint if the response indicates a failure condition.
-    fn failure_hint(&self) -> Option<FailureHint> {
-        None
-    }
+    fn failure_hint(&self) -> Option<FailureHint>;
 
     /// Parse and cache the raw (uncapped) rate limit hint from this response.
     ///
     /// The raw uncapped value is cached so that each consumer can apply their
     /// own cap via `rate_limit_hint(max)`.
-    fn attach_parsed_rate_limit_hint(&mut self) {}
+    fn attach_parsed_rate_limit_hint(&mut self);
 
     /// Returns the rate limit hint if available.
     ///
     /// Checks cached value first (from a previous `attach_parsed_rate_limit_hint` call).
     /// If no cached value, attempts to parse the header directly (capping at `max`).
     /// Returns `None` only if the header is absent or unparseable.
-    fn rate_limit_hint(&self, _max: Duration) -> Option<Duration> {
-        None
-    }
+    fn rate_limit_hint(&self, max: Duration) -> Option<Duration>;
 }
 
 fn is_grpc(headers: &http::HeaderMap) -> bool {
@@ -224,20 +219,6 @@ impl<B> ResponseFailureHint for http::Response<B> {
         None
     }
 }
-
-/// Connection tuples (Connection, Metadata) used by TCP/TLS paths never indicate failures.
-/// This is meant for MakeConnection services that return `(I, M)` tuples.
-impl<C, M> ResponseFailureHint for (C, M) {}
-
-/// TCP streams never indicate failures (no HTTP status codes).
-impl ResponseFailureHint for tokio::net::TcpStream {}
-
-/// Duplex streams (used in testing) never indicate failures.
-impl ResponseFailureHint for tokio::io::DuplexStream {}
-
-/// Mock IO streams never indicate failures.
-#[cfg(feature = "tokio-test")]
-impl ResponseFailureHint for tokio_test::io::Mock {}
 
 /// Configuration for LoadBiaser behavior.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
