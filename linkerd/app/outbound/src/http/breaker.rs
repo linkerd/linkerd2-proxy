@@ -5,8 +5,22 @@ use tracing::{trace_span, Instrument};
 mod consecutive_failures;
 pub mod retry_after;
 mod success_rate;
+mod unified;
 
 use self::consecutive_failures::ConsecutiveFailures;
+
+/// Reason a circuit breaker tripped.
+///
+/// The unified breaker can trip on one of two conditions and reports which one
+/// fired. The reason is reported for observability. Either condition opens the
+/// circuit in the same way.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TripReason {
+    /// Tripped on a run of consecutive 5xx failures.
+    ConsecutiveFailures,
+    /// Tripped when the windowed success rate fell below the threshold.
+    LowSuccessRate,
+}
 
 /// Params configuring a circuit breaker stack.
 #[derive(Copy, Clone, Debug)]
