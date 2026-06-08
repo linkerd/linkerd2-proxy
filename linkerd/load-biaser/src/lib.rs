@@ -396,11 +396,6 @@ impl<S, C> LoadBiaser<S, C> {
         }
     }
 
-    /// Returns a reference to the inner service.
-    pub fn get_ref(&self) -> &S {
-        &self.inner
-    }
-
     fn handle(&self) -> Handle {
         Handle {
             shared: self.shared.clone(),
