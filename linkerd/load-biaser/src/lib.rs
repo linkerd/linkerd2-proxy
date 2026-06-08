@@ -223,8 +223,8 @@ pub struct LoadBiaserConfig {
     /// Controls how quickly RTT estimates adapt to changing latency
     pub rtt_decay: Duration,
 
-    /// The base penalty to inject on failure responses (429, 503, 5xx)
-    /// in milliseconds, when the server sends no backoff hint.
+    /// Base penalty for failure responses (429, 503, 5xx), in milliseconds.
+    /// Also the floor for the recorded effective RTT.
     pub penalty_ms: u32,
 
     /// Maximum Retry-After duration to honor. Clamped to this value.
@@ -252,8 +252,7 @@ impl Default for LoadBiaserConfig {
 struct SharedState {
     /// RwLocked RTT EWMA. Read in load(), written when measuring.
     rtt: RwLock<Ewma>,
-    /// Penalty value to inject on failure responses (in milliseconds) when no
-    /// hint is present.
+    /// Base penalty (milliseconds) and floor for the recorded effective RTT.
     penalty_ms: u32,
     /// Maximum Retry-After duration to honor (clamped)
     max_duration: Duration,
@@ -270,8 +269,10 @@ impl SharedState {
             FailureHint::InternalError => None,
         };
 
-        // A hint, if present, is honored verbatim (capped).
-        from_hint.unwrap_or_else(|| Duration::from_millis(u64::from(self.penalty_ms)).as_secs_f64())
+        let base = Duration::from_millis(u64::from(self.penalty_ms)).as_secs_f64();
+        // Honor a hint only above the base penalty. This keeps a failing
+        // endpoint from looking healthier than a hintless one.
+        from_hint.map(|h| h.max(base)).unwrap_or(base)
     }
 }
 
@@ -1066,6 +1067,21 @@ mod tests {
         assert!(
             (rtt - 30.0).abs() < 0.5,
             "429 with Retry-After: 30 should record ~30s effective RTT, got: {rtt}"
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_small_retry_after_floored_at_base_penalty() {
+        // A Retry-After below the base penalty must not lower the effective RTT.
+        let inner = MockService::retry_after(http::StatusCode::TOO_MANY_REQUESTS, 1);
+        let mut biaser = LoadBiaser::new(inner, test_config());
+        time::sleep(Duration::from_millis(1)).await;
+        let _ = biaser.call(()).await;
+        // penalty_ms = 5000; a 1s hint is floored to the 5s base.
+        let rtt = biaser.get_rtt();
+        assert!(
+            (rtt - 5.0).abs() < 0.1,
+            "1s hint should floor to 5s base, got: {rtt}"
         );
     }
 
