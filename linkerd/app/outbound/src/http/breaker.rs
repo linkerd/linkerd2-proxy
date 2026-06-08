@@ -56,8 +56,11 @@ impl<T> svc::ExtractParam<gate::Params<classify::Class>, T> for Params {
                 prms
             }
             Some(FailureAccrual::Consecutive(cf)) => {
-                // Consecutive-only policy: trip after N back-to-back failures and
-                // probe leniently, letting the default classifier judge a 429.
+                // Consecutive-only policy that trips after N consecutive
+                // failures and probes leniently, so the default classifier
+                // judges a 429. This breaker follows its plain exponential
+                // backoff and does not floor on server hints; only the unified
+                // breaker reads the shared hint stores.
                 tracing::trace!(
                     max_failures = cf.max_failures,
                     backoff = ?cf.backoff,
