@@ -12,8 +12,10 @@ tokio = { version = "1", features = ["time"] }
 tracing = { workspace = true }
 
 linkerd-error = { path = "../../error" }
+linkerd-load-biaser = { path = "../../load-biaser" }
 linkerd-metrics = { path = "../../metrics" }
 linkerd-pool-p2c = { path = "../../pool/p2c" }
+linkerd-proxy-client-policy = { path = "../client-policy" }
 linkerd-proxy-core = { path = "../core" }
 linkerd-proxy-balance-gauge-endpoints = { path = "gauge-endpoints" }
 linkerd-proxy-balance-queue = { path = "queue" }

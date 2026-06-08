@@ -2326,10 +2326,12 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "linkerd-error",
+ "linkerd-load-biaser",
  "linkerd-metrics",
  "linkerd-pool-p2c",
  "linkerd-proxy-balance-gauge-endpoints",
  "linkerd-proxy-balance-queue",
+ "linkerd-proxy-client-policy",
  "linkerd-proxy-core",
  "linkerd-stack",
  "tokio",
