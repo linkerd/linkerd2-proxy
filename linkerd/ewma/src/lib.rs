@@ -154,6 +154,25 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_add_ignores_stale_timestamps() {
+        let now = Instant::now();
+        let t1 = now + Duration::from_secs(2);
+        let mut ewma = Ewma::new(Duration::from_secs(10), now);
+
+        // Store an initial value at t1, replacing the inf sentinel.
+        ewma.add(1.0, t1);
+        assert_eq!(ewma.get(), 1.0);
+
+        // A measurement at the stored timestamp is discarded.
+        ewma.add(99.0, t1);
+        assert_eq!(ewma.get(), 1.0);
+
+        // Also discarded if the timestamp is before the stored one.
+        ewma.add(99.0, t1 - Duration::from_secs(1));
+        assert_eq!(ewma.get(), 1.0);
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
     async fn test_add_peak() {
         let now = Instant::now();
         let mut ewma = Ewma::new(Duration::from_secs(10), now);
