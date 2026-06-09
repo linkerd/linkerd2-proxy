@@ -76,11 +76,12 @@
 //! failures because it is not a hard failure. During a probe only gRPC Ok
 //! (code 0) counts as success.
 
+
 use super::{
-    retry_after::{self, take_combined_hint, GrpcRetryPushbackStore, RetryAfterStore},
     success_rate::SuccessRateWindow,
     TripReason,
 };
+use futures::stream::StreamExt;
 use linkerd_app_core::proxy::http::classify::gate;
 use linkerd_app_core::{classify, exp_backoff::ExponentialBackoff};
 use tokio::sync::mpsc;
@@ -102,7 +103,7 @@ pub struct UnifiedBreaker {
     /// below this. A threshold of zero disables the success-rate dimension.
     threshold: f64,
     /// Length of the trailing window over which the success ratio is computed.
-    decay: Duration,
+    window: Duration,
     /// Exponential backoff schedule for recovery.
     backoff: ExponentialBackoff,
     /// Minimum requests in the window before the circuit can trip on success
@@ -116,11 +117,6 @@ pub struct UnifiedBreaker {
     rsps: mpsc::Receiver<classify::Class>,
 
     // === Retry-After Integration ===
-    /// Shared store for HTTP Retry-After hints from 429 responses.
-    retry_after_store: RetryAfterStore,
-    /// Shared store for gRPC retry pushback hints from RESOURCE_EXHAUSTED
-    /// responses.
-    grpc_retry_pushback_store: GrpcRetryPushbackStore,
     /// Whether to honor server Retry-After/pushback hints as a backoff floor.
     /// When false the breaker ignores both stores and follows its own backoff
     /// schedule, so the hint is strictly opt-in.
@@ -151,10 +147,10 @@ impl OpenState {
     /// endpoint starts with no samples and cannot trip on success rate until
     /// `min_requests` responses build up. This is the optimistic start a new
     /// endpoint should have. There is no seeded "assume healthy" value to decay away.
-    fn new(active: bool, decay: Duration, now: Instant) -> Self {
+    fn new(active: bool, window: Duration, now: Instant) -> Self {
         Self {
             consecutive_failures: 0,
-            success_rate: active.then(|| SuccessRateWindow::new(decay, now)),
+            success_rate: active.then(|| SuccessRateWindow::new(window, now)),
         }
     }
 
@@ -178,13 +174,11 @@ impl OpenState {
 pub(crate) struct UnifiedBreakerConfig {
     pub(crate) max_failures: usize,
     pub(crate) threshold: f64,
-    pub(crate) decay: Duration,
+    pub(crate) window: Duration,
     pub(crate) backoff: ExponentialBackoff,
     pub(crate) min_requests: usize,
     pub(crate) gate: gate::Tx,
     pub(crate) rsps: mpsc::Receiver<classify::Class>,
-    pub(crate) retry_after_store: RetryAfterStore,
-    pub(crate) grpc_retry_pushback_store: GrpcRetryPushbackStore,
     pub(crate) respect_retry_after_hint: bool,
 }
 
@@ -194,25 +188,21 @@ impl UnifiedBreaker {
         let UnifiedBreakerConfig {
             max_failures,
             threshold,
-            decay,
+            window,
             backoff,
             min_requests,
             gate,
             rsps,
-            retry_after_store,
-            grpc_retry_pushback_store,
             respect_retry_after_hint,
         } = config;
         Self {
             max_failures,
             threshold,
-            decay,
+            window,
             backoff,
             min_requests,
             gate,
             rsps,
-            retry_after_store,
-            grpc_retry_pushback_store,
             respect_retry_after_hint,
             #[cfg(test)]
             trip_observer: None,
@@ -243,7 +233,7 @@ impl UnifiedBreaker {
     /// out the backoff. Probation admits one probe where a success reopens and a
     /// failure shuts the gate again.
     pub async fn run(mut self) {
-        let mut state = OpenState::new(self.success_rate_active(), self.decay, Instant::now());
+        let mut state = OpenState::new(self.success_rate_active(), self.window, Instant::now());
 
         loop {
             // Open state: track failures until a trip condition is met.
@@ -382,63 +372,23 @@ impl UnifiedBreaker {
             tracing::debug!(backoff = ?backoff.duration(), ?trip_reason, "Shut");
             self.gate.shut().map_err(|_| ())?;
 
-            // Re-read the hint on every iteration so a fresh, longer server
-            // Retry-After/pushback sent by a later probe in this trip episode
-            // raises the floor for the waits that follow. The store consumes a hint
-            // once and subtracts elapsed time and drops entries that are too old, so
-            // reading each time cannot apply an old value twice. The read is gated on
-            // the opt-in flag, so a breaker that does not respect hints never touches
-            // the stores.
-            let retry_after_hint = if self.respect_retry_after_hint {
-                take_combined_hint(
-                    &self.retry_after_store,
-                    &self.grpc_retry_pushback_store,
-                    self.backoff.min(),
-                    self.backoff.max(),
-                )
-            } else {
-                None
-            };
-
-            retry_after::wait_for_backoff(
-                &self.gate,
-                &mut self.rsps,
-                &mut backoff,
-                retry_after_hint,
-                self.backoff.max(),
-            )
-            .await?;
-
-            // Bound the probe by the configured backoff ceiling rather than the
-            // window just waited. These are two different quantities. The wait
-            // between probes grows so a still-broken endpoint is retried less
-            // often, but the time a probe gets to resolve a class must stay fixed.
-            // Otherwise a healthy endpoint slower than an early window reads as a
-            // silent failure and is ejected again, such as a cross-zone peer, one
-            // that starts cold, or a streaming response whose verdict only lands at
-            // body end. The fixed ceiling separates probe latency from the retry
-            // cadence and still guarantees forward progress, since a routed probe
-            // that never resolves is bounded by max_backoff. One case remains where
-            // an endpoint slower than the ceiling is still ejected. Telling
-            // slow-healthy from dead needs a per-probe completion signal that the
-            // classify channel does not deliver.
-            let deadline = self.backoff.max();
-
-            // Enter probation and wait for a probe verdict.
-            match self.probation(deadline).await? {
-                Some(class) => {
-                    tracing::trace!(?class, "Probe response");
-
-                    if self.is_probe_success(&class) {
-                        return Ok(());
-                    }
-                    // Probe failed, so resume the backoff loop.
+            loop {
+                tokio::select! {
+                    _ = backoff.next() => break,
+                    // Ignore responses while the breaker is shut, but
+                    // terminate if the channel is closed. recv() on a
+                    // closed channel returns None immediately, which would
+                    // otherwise busy-spin this loop.
+                    rsp = self.rsps.recv() => { rsp.ok_or(())?; },
+                    _ = self.gate.lost() => return Err(()),
                 }
-                None => {
-                    // No verdict within the window. Treat as a failed probe and
-                    // keep backing off.
-                    tracing::debug!(?deadline, "Probe timed out, treating as failure");
-                }
+            }
+
+            let class = self.probation().await?;
+            tracing::trace!(?class, "Response");
+            if class.is_success() {
+                // Open!
+                return Ok(());
             }
         }
     }
@@ -470,29 +420,13 @@ impl UnifiedBreaker {
         }
     }
 
-    /// Probation state that admits one probe request, bounded by `deadline`.
-    ///
-    /// `gate.limit(1)` admits one request. `Some(class)` holds the probe verdict,
-    /// a `None` verdict means the probe produced no class within `deadline`, and an
-    /// `Err` means the gate was lost. The probe may give no class when a
-    /// `ResponseFuture` is cancelled before its head resolves, or when a
-    /// classification send drops on a full channel. The deadline then keeps the
-    /// loop moving. A probe that is never routed cannot block the breaker or hold
-    /// the endpoint's coordinator slot.
-    async fn probation(&mut self, deadline: Duration) -> Result<Option<classify::Class>, ()> {
-        tracing::debug!(?deadline, "Probation");
-
+    /// Wait for a response to determine whether the breaker should be opened.
+    async fn probation(&mut self) -> Result<classify::Class, ()> {
+        tracing::debug!("Probation");
         let _sem = self.gate.limit(1).map_err(|_| ())?;
-
-        // Discard any class buffered before the probe was admitted. The gate was
-        // shut for the whole preceding backoff, so anything queued is old
-        // pre-trip data and must not be read as this probe's verdict.
-        while self.rsps.try_recv().is_ok() {}
-
         tokio::select! {
-            rsp = self.rsps.recv() => rsp.map(Some).ok_or(()),
+            rsp = self.rsps.recv() => rsp.ok_or(()),
             _ = self.gate.lost() => Err(()),
-            _ = tokio::time::sleep(deadline) => Ok(None),
         }
     }
 }
@@ -548,13 +482,11 @@ mod tests {
         UnifiedBreakerConfig {
             max_failures: 3,
             threshold: 0.8,
-            decay: time::Duration::from_secs(10),
+            window: time::Duration::from_secs(10),
             backoff: make_backoff(),
             min_requests: 1,
             gate: gate_tx,
             rsps,
-            retry_after_store: RetryAfterStore::new(),
-            grpc_retry_pushback_store: GrpcRetryPushbackStore::new(),
             respect_retry_after_hint: true,
         }
     }
@@ -828,18 +760,13 @@ mod tests {
         let _trace = linkerd_tracing::test::trace_init();
 
         let (params, gate_tx, rsps) = gate::Params::channel(1);
-        let retry_after_store = RetryAfterStore::new();
 
         let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
-            retry_after_store: retry_after_store.clone(),
             ..default_config(gate_tx, rsps)
         });
         let mut task = task::spawn(breaker.run());
 
         assert_pending!(task.poll());
-
-        // Record a Retry-After hint of 5s (longer than the 1s base backoff).
-        retry_after_store.record(time::Duration::from_secs(5));
 
         // Trip the breaker.
         for _ in 0..3 {
@@ -874,19 +801,14 @@ mod tests {
         let _trace = linkerd_tracing::test::trace_init();
 
         let (params, gate_tx, rsps) = gate::Params::channel(1);
-        let retry_after_store = RetryAfterStore::new();
 
         let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
-            retry_after_store: retry_after_store.clone(),
             respect_retry_after_hint: false,
             ..default_config(gate_tx, rsps)
         });
         let mut task = task::spawn(breaker.run());
 
         assert_pending!(task.poll());
-
-        // A 5s hint is recorded but must not extend the backoff.
-        retry_after_store.record(time::Duration::from_secs(5));
 
         for _ in 0..3 {
             send_err(&params, http::StatusCode::BAD_GATEWAY);
@@ -1175,18 +1097,13 @@ mod tests {
         let _trace = linkerd_tracing::test::trace_init();
 
         let (params, gate_tx, rsps) = gate::Params::channel(1);
-        let retry_after_store = RetryAfterStore::new();
 
         let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
-            retry_after_store: retry_after_store.clone(),
             ..default_config(gate_tx, rsps)
         });
         let mut task = task::spawn(breaker.run());
 
         assert_pending!(task.poll());
-
-        // Record a Duration::MAX hint before tripping.
-        retry_after_store.record(Duration::MAX);
 
         // Trip via three consecutive 5xx.
         for _ in 0..3 {
@@ -1329,7 +1246,7 @@ mod tests {
             max_failures: 100,
             threshold: 0.5,
             min_requests: 3,
-            decay: time::Duration::from_secs(10),
+            window: time::Duration::from_secs(10),
             ..default_config(gate_tx, rsps)
         });
         let mut task = task::spawn(breaker.run());
@@ -1383,7 +1300,7 @@ mod tests {
             max_failures: 100,
             threshold: 0.5,
             min_requests: 3,
-            decay: time::Duration::from_secs(10),
+            window: time::Duration::from_secs(10),
             ..default_config(gate_tx, rsps)
         });
         let mut task = task::spawn(breaker.run());
@@ -1616,7 +1533,7 @@ mod tests {
             max_failures: 0,
             threshold: 0.5,
             min_requests: 3,
-            decay: time::Duration::from_secs(10),
+            window: time::Duration::from_secs(10),
             ..default_config(gate_tx, rsps)
         });
         let mut task = task::spawn(breaker.run());
@@ -1700,7 +1617,7 @@ mod tests {
             max_failures: 5,
             threshold: 0.8,
             min_requests: 3,
-            decay: time::Duration::from_secs(10),
+            window: time::Duration::from_secs(10),
             ..default_config(gate_tx, rsps)
         })
         .with_trip_observer(trip_tx);
@@ -1793,7 +1710,7 @@ mod tests {
             max_failures: 0,
             threshold: 0.5,
             min_requests: 1,
-            decay: time::Duration::from_secs(10),
+            window: time::Duration::from_secs(10),
             ..default_config(gate_tx, rsps)
         })
         .with_trip_observer(trip_tx);
@@ -1837,7 +1754,7 @@ mod tests {
             max_failures: 3,
             threshold: 0.8,
             min_requests: 3,
-            decay: time::Duration::from_secs(10),
+            window: time::Duration::from_secs(10),
             ..default_config(gate_tx, rsps)
         })
         .with_trip_observer(trip_tx);
@@ -2037,9 +1954,7 @@ mod tests {
         let _trace = linkerd_tracing::test::trace_init();
 
         let (mut params, gate_tx, rsps) = gate::Params::channel(1);
-        let retry_after_store = RetryAfterStore::new();
         let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
-            retry_after_store: retry_after_store.clone(),
             ..default_config(gate_tx, rsps)
         });
         let mut task = task::spawn(breaker.run());
@@ -2065,10 +1980,6 @@ mod tests {
             other => panic!("expected Limited state, got {other:?}"),
         }
 
-        // Record a fresh 10s hint, then fail the first probe with a 502. The
-        // breaker loops into the second backoff and re-reads the store. The hint
-        // floors that wait even though it arrived after the first iteration.
-        retry_after_store.record(time::Duration::from_secs(10));
         send_err(&params, http::StatusCode::BAD_GATEWAY);
         time::advance(time::Duration::from_millis(10)).await;
         assert_pending!(task.poll());
