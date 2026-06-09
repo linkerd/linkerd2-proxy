@@ -290,7 +290,7 @@ impl UnifiedBreaker {
             // same rate-limit notion, so it lives in one place.
             let degrades_success_rate = class.is_failure() || is_rate_limit_signal(&class);
 
-            if degrades_success_rate &&  self.respect_retry_after_hint {
+            if degrades_success_rate && self.respect_retry_after_hint {
                 state.retry_after_hint = rate_limit_hint(&class)
             }
 
@@ -403,7 +403,7 @@ impl UnifiedBreaker {
                     );
 
                     Either::Left(tokio::time::sleep(wait_duration))
-                },
+                }
                 _ => {
                     tracing::debug!(backoff = ?backoff.duration(), "Waiting out backoff");
                     Either::Right(backoff.next().map(|_| ()))
