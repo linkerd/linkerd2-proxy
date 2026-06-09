@@ -116,12 +116,6 @@ pub struct UnifiedBreaker {
     /// Channel receiving response classifications.
     rsps: mpsc::Receiver<classify::Class>,
 
-    // === Retry-After Integration ===
-    /// Whether to honor server Retry-After/pushback hints as a backoff floor.
-    /// When false the breaker ignores both stores and follows its own backoff
-    /// schedule, so the hint is strictly opt-in.
-    respect_retry_after_hint: bool,
-
     /// Lets tests see the reason charged to each trip without affecting behavior.
     #[cfg(test)]
     trip_observer: Option<mpsc::UnboundedSender<TripReason>>,
@@ -179,7 +173,6 @@ pub(crate) struct UnifiedBreakerConfig {
     pub(crate) min_requests: usize,
     pub(crate) gate: gate::Tx,
     pub(crate) rsps: mpsc::Receiver<classify::Class>,
-    pub(crate) respect_retry_after_hint: bool,
 }
 
 impl UnifiedBreaker {
@@ -193,7 +186,6 @@ impl UnifiedBreaker {
             min_requests,
             gate,
             rsps,
-            respect_retry_after_hint,
         } = config;
         Self {
             max_failures,
@@ -203,7 +195,6 @@ impl UnifiedBreaker {
             min_requests,
             gate,
             rsps,
-            respect_retry_after_hint,
             #[cfg(test)]
             trip_observer: None,
         }
@@ -487,7 +478,6 @@ mod tests {
             min_requests: 1,
             gate: gate_tx,
             rsps,
-            respect_retry_after_hint: true,
         }
     }
 
@@ -803,7 +793,6 @@ mod tests {
         let (params, gate_tx, rsps) = gate::Params::channel(1);
 
         let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
-            respect_retry_after_hint: false,
             ..default_config(gate_tx, rsps)
         });
         let mut task = task::spawn(breaker.run());

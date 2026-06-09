@@ -238,8 +238,6 @@ pub struct ConsecutiveFailures {
     pub max_failures: usize,
     /// Backoff for probing the endpoint when it is in a failed state.
     pub backoff: linkerd_exp_backoff::ExponentialBackoff,
-    /// Whether a response's Retry-After hint seeds the probe backoff.
-    pub respect_retry_after_hint: bool,
 }
 
 /// Unified circuit breaking configuration.
@@ -972,14 +970,12 @@ pub mod proto {
                     max_failures,
                     backoff,
                 }) => {
-                    let respect_retry_after_hint = retry_after_hint(backoff.as_ref());
                     let backoff = backoff.map(try_backoff).transpose()?.ok_or(
                         InvalidFailureAccrual::Missing("consecutive failures backoff"),
                     )?;
                     Ok(FailureAccrual::Consecutive(ConsecutiveFailures {
                         max_failures: max_failures as usize,
                         backoff,
-                        respect_retry_after_hint,
                     }))
                 }
                 Kind::Unified(Unified {
@@ -1153,12 +1149,9 @@ mod failure_accrual_proto_tests {
         match result {
             FailureAccrual::Consecutive(ConsecutiveFailures {
                 max_failures,
-                respect_retry_after_hint,
                 ..
             }) => {
                 assert_eq!(max_failures, 5);
-                // The hint preference is read off the backoff message.
-                assert!(respect_retry_after_hint);
             }
             other => panic!("expected a consecutive policy, got {other:?}"),
         }
@@ -1169,7 +1162,7 @@ mod failure_accrual_proto_tests {
         // valid_backoff leaves the hint unset, so the conversion reports it off.
         let result = FailureAccrual::try_from(consecutive(5, Some(valid_backoff()))).unwrap();
         match result {
-            FailureAccrual::Consecutive(cf) => assert!(!cf.respect_retry_after_hint),
+            FailureAccrual::Consecutive(_) => (),
             other => panic!("expected a consecutive policy, got {other:?}"),
         }
     }

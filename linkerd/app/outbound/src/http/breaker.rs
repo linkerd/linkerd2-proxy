@@ -99,7 +99,6 @@ impl<T> svc::ExtractParam<gate::Params<classify::Class>, T> for Params {
                     min_requests: u.min_requests as usize,
                     gate,
                     rsps,
-                    respect_retry_after_hint: u.respect_retry_after_hint,
                 });
                 tokio::spawn(
                     breaker
