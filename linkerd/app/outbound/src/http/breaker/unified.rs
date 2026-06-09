@@ -386,7 +386,7 @@ impl UnifiedBreaker {
 
             let class = self.probation().await?;
             tracing::trace!(?class, "Response");
-            if class.is_success() {
+            if self.is_probe_success(&class) {
                 // Open!
                 return Ok(());
             }
