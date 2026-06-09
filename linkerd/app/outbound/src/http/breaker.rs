@@ -3,18 +3,14 @@ use linkerd_proxy_client_policy::FailureAccrual;
 use tracing::{trace_span, Instrument};
 
 mod consecutive_failures;
-pub mod retry_after;
 mod success_rate;
 mod unified;
-pub mod wrap_classify;
 
 #[cfg(test)]
 mod integration_tests;
 
 use self::consecutive_failures::ConsecutiveFailures;
-use self::retry_after::{GrpcRetryPushbackStore, RetryAfterStore};
 use self::unified::{UnifiedBreaker, UnifiedBreakerConfig};
-pub use self::wrap_classify::{HasFailureAccrual, NewRetryAfterGateSet, RetryAfterGateParams};
 
 /// Reason a circuit breaker tripped.
 ///
@@ -39,10 +35,6 @@ pub enum TripReason {
 pub(crate) struct Params {
     pub(crate) accrual: Option<FailureAccrual>,
     pub(crate) channel_capacity: usize,
-    /// Shared store for HTTP Retry-After hints.
-    pub(crate) retry_after_store: RetryAfterStore,
-    /// Shared store for gRPC retry-pushback hints.
-    pub(crate) grpc_retry_pushback_store: GrpcRetryPushbackStore,
 }
 
 impl<T> svc::ExtractParam<gate::Params<classify::Class>, T> for Params {
@@ -102,13 +94,11 @@ impl<T> svc::ExtractParam<gate::Params<classify::Class>, T> for Params {
                 let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
                     max_failures: u.max_consecutive_failures,
                     threshold: u.threshold.as_fraction(),
-                    decay: u.decay,
+                    window: u.window,
                     backoff: u.backoff,
                     min_requests: u.min_requests as usize,
                     gate,
                     rsps,
-                    retry_after_store: self.retry_after_store.clone(),
-                    grpc_retry_pushback_store: self.grpc_retry_pushback_store.clone(),
                     respect_retry_after_hint: u.respect_retry_after_hint,
                 });
                 tokio::spawn(

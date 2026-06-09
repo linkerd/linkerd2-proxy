@@ -252,7 +252,7 @@ pub struct Unified {
     pub threshold: SuccessRateThreshold,
     /// Success-rate measurement window: responses older than this no longer
     /// count toward the ratio. (The proto field is named `decay`.)
-    pub decay: time::Duration,
+    pub window: time::Duration,
     pub min_requests: u32,
     pub max_consecutive_failures: usize,
     pub backoff: linkerd_exp_backoff::ExponentialBackoff,
@@ -602,8 +602,8 @@ pub mod proto {
         Missing(&'static str),
         #[error("invalid value: {0}")]
         InvalidValue(&'static str),
-        #[error("invalid success-rate decay duration: {0}")]
-        Decay(prost_types::DurationError),
+        #[error("invalid success-rate window: {0}")]
+        Window(prost_types::DurationError),
     }
 
     #[derive(Debug, thiserror::Error)]
@@ -949,11 +949,11 @@ pub mod proto {
     }
 
     /// Lower bound on the success-rate window length. The breaker realizes the
-    /// window as ten one-millisecond floored buckets at minimum, so a decay below
-    /// ten milliseconds cannot be honored at its configured value. Rejecting it
+    /// window as ten one-millisecond floored buckets at minimum, so a window
+    /// below ten milliseconds cannot be honored at its configured value. Rejecting it
     /// surfaces the misconfiguration here instead of silently widening the window
     /// later.
-    const MIN_SUCCESS_RATE_DECAY: time::Duration = time::Duration::from_millis(10);
+    const MIN_SUCCESS_RATE_WINDOW: time::Duration = time::Duration::from_millis(10);
 
     /// Upper bound on the success-rate first-start request floor. A floor above
     /// this means first start never ends, so the policy could never trip.
@@ -996,18 +996,18 @@ pub mod proto {
                     }
                     // Range and NaN already rejected, so rounding lands in 0..=10000.
                     let threshold = SuccessRateThreshold::from_fraction(success_rate_threshold);
-                    let decay = decay
+                    let window = decay
                         .map(time::Duration::try_from)
                         .transpose()
-                        .map_err(InvalidFailureAccrual::Decay)?
+                        .map_err(InvalidFailureAccrual::Window)?
                         .unwrap_or(time::Duration::from_secs(10));
-                    // The decay floor only matters when the success-rate dimension
+                    // The window floor only matters when the success-rate dimension
                     // is active. A zero threshold disables that dimension and the
-                    // runtime never reads decay, so any value is accepted and the
+                    // runtime never reads window, so any value is accepted and the
                     // consecutive-failure ceiling stays in force.
-                    if !threshold.is_zero() && decay < MIN_SUCCESS_RATE_DECAY {
+                    if !threshold.is_zero() && window < MIN_SUCCESS_RATE_WINDOW {
                         return Err(InvalidFailureAccrual::InvalidValue(
-                            "success rate decay is below the minimum window length",
+                            "success rate window is below the minimum length",
                         ));
                     }
                     if min_requests > MAX_SUCCESS_RATE_MIN_REQUESTS {
@@ -1022,7 +1022,7 @@ pub mod proto {
                         .ok_or(InvalidFailureAccrual::Missing("unified backoff"))?;
                     Ok(FailureAccrual::Unified(crate::Unified {
                         threshold,
-                        decay,
+                        window,
                         min_requests,
                         max_consecutive_failures: max_consecutive_failures as usize,
                         backoff,
@@ -1102,7 +1102,7 @@ mod failure_accrual_proto_tests {
     // one field at a time off this baseline.
     fn unified(
         success_rate_threshold: f64,
-        decay: Option<prost_types::Duration>,
+        window: Option<prost_types::Duration>,
         min_requests: u32,
     ) -> outbound::FailureAccrual {
         outbound::FailureAccrual {
@@ -1110,7 +1110,7 @@ mod failure_accrual_proto_tests {
             kind: Some(outbound::failure_accrual::Kind::Unified(
                 outbound::failure_accrual::Unified {
                     success_rate_threshold,
-                    decay,
+                    decay: window,
                     min_requests,
                     max_consecutive_failures: 7,
                     backoff: Some(valid_backoff()),
@@ -1202,7 +1202,7 @@ mod failure_accrual_proto_tests {
         match result {
             FailureAccrual::Unified(Unified {
                 threshold,
-                decay,
+                window,
                 min_requests,
                 max_consecutive_failures,
                 ..
@@ -1210,7 +1210,7 @@ mod failure_accrual_proto_tests {
                 // The wire fraction is converted into the basis-points newtype.
                 assert_eq!(threshold, SuccessRateThreshold::from_fraction(0.95));
                 assert_eq!(threshold.as_fraction(), 0.95);
-                assert_eq!(decay, StdDuration::from_secs(30));
+                assert_eq!(window, StdDuration::from_secs(30));
                 assert_eq!(min_requests, 20);
                 assert_eq!(max_consecutive_failures, 7);
             }
@@ -1219,10 +1219,10 @@ mod failure_accrual_proto_tests {
     }
 
     #[test]
-    fn unified_decay_defaults_when_absent() {
+    fn unified_window_defaults_when_absent() {
         let result = FailureAccrual::try_from(unified(0.9, None, 20)).unwrap();
         match result {
-            FailureAccrual::Unified(u) => assert_eq!(u.decay, StdDuration::from_secs(10)),
+            FailureAccrual::Unified(u) => assert_eq!(u.window, StdDuration::from_secs(10)),
             other => panic!("expected a unified policy, got {other:?}"),
         }
     }
@@ -1278,28 +1278,28 @@ mod failure_accrual_proto_tests {
     }
 
     #[test]
-    fn unified_rejects_decay_below_floor() {
+    fn unified_rejects_window_below_floor() {
         // Just under the inclusive 10ms window floor.
-        let decay = prost_types::Duration {
+        let window = prost_types::Duration {
             seconds: 0,
             nanos: 9_999_999,
         };
-        let result = FailureAccrual::try_from(unified(0.9, Some(decay), 20));
+        let result = FailureAccrual::try_from(unified(0.9, Some(window), 20));
         assert!(
             matches!(result, Err(InvalidFailureAccrual::InvalidValue(_))),
-            "a decay below the minimum window must be rejected, got: {result:?}",
+            "a window below the minimum window must be rejected, got: {result:?}",
         );
     }
 
     #[test]
-    fn unified_accepts_decay_at_floor() {
-        let decay = prost_types::Duration {
+    fn unified_accepts_window_at_floor() {
+        let window = prost_types::Duration {
             seconds: 0,
             nanos: 10_000_000,
         };
-        let result = FailureAccrual::try_from(unified(0.9, Some(decay), 20)).unwrap();
+        let result = FailureAccrual::try_from(unified(0.9, Some(window), 20)).unwrap();
         match result {
-            FailureAccrual::Unified(u) => assert_eq!(u.decay, StdDuration::from_millis(10)),
+            FailureAccrual::Unified(u) => assert_eq!(u.window, StdDuration::from_millis(10)),
             other => panic!("expected a unified policy, got {other:?}"),
         }
     }
@@ -1330,9 +1330,9 @@ mod failure_accrual_proto_tests {
     }
 
     #[test]
-    fn unified_skips_decay_floor_when_success_rate_disabled() {
-        // A zero success-rate threshold disables that dimension, so decay is
-        // never read at runtime. A sub-floor decay must not reject the policy.
+    fn unified_skips_window_floor_when_success_rate_disabled() {
+        // A zero success-rate threshold disables that dimension, so window is
+        // never read at runtime. A sub-floor window must not reject the policy.
         // The consecutive-failure ceiling has to survive.
         let below_floor = prost_types::Duration {
             seconds: 0,
