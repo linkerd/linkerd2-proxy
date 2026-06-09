@@ -1147,10 +1147,7 @@ mod failure_accrual_proto_tests {
         backoff.respect_retry_after_hint = true;
         let result = FailureAccrual::try_from(consecutive(5, Some(backoff))).unwrap();
         match result {
-            FailureAccrual::Consecutive(ConsecutiveFailures {
-                max_failures,
-                ..
-            }) => {
+            FailureAccrual::Consecutive(ConsecutiveFailures { max_failures, .. }) => {
                 assert_eq!(max_failures, 5);
             }
             other => panic!("expected a consecutive policy, got {other:?}"),

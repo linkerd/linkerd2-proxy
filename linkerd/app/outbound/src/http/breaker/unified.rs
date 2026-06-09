@@ -76,11 +76,7 @@
 //! failures because it is not a hard failure. During a probe only gRPC Ok
 //! (code 0) counts as success.
 
-
-use super::{
-    success_rate::SuccessRateWindow,
-    TripReason,
-};
+use super::{success_rate::SuccessRateWindow, TripReason};
 use futures::stream::StreamExt;
 use linkerd_app_core::proxy::http::classify::gate;
 use linkerd_app_core::{classify, exp_backoff::ExponentialBackoff};
