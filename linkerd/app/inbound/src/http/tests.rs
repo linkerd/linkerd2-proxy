@@ -687,7 +687,10 @@ async fn grpc_response_class() {
                 },
             }),
             Some(http::StatusCode::OK),
-            &classify::Class::Grpc(Err(tonic::Code::Unknown)),
+            &classify::Class::Grpc {
+                code: Err(tonic::Code::Unknown),
+                retry_after_hint: None,
+            },
         )
         .expect("response_total not found");
     assert_eq!(response_total, 1.0);
@@ -785,7 +788,10 @@ async fn test_unsafe_authority_labels(
                 },
             }),
             Some(http::StatusCode::OK),
-            &classify::Class::Http(Ok(http::StatusCode::OK)),
+            &classify::Class::Http {
+                status: Ok(http::StatusCode::OK),
+                retry_after_hint: None,
+            },
         )
         .expect("response_total not found");
     assert_eq!(response_total, 1.0);

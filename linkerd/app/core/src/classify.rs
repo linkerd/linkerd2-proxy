@@ -2,7 +2,7 @@ use crate::profiles;
 use linkerd_error::Error;
 use linkerd_proxy_client_policy as client_policy;
 use linkerd_proxy_http::{classify, HasH2Reason, ResponseTimeoutError};
-use std::borrow::Cow;
+use std::{borrow::Cow, time::Duration};
 use tonic as grpc;
 use tracing::trace;
 
@@ -31,7 +31,10 @@ pub enum ClientPolicy {
 #[derive(Clone, Debug)]
 pub enum Eos {
     Class(Class),
-    GrpcOpen(client_policy::grpc::Codes),
+    GrpcOpen {
+        codes: client_policy::grpc::Codes,
+        retry_after_hint: Option<Duration>,
+    },
     ProfileUnmatched(Class),
 }
 
@@ -39,8 +42,14 @@ pub type Result<T> = std::result::Result<T, T>;
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum Class {
-    Http(Result<http::StatusCode>),
-    Grpc(Result<grpc::Code>),
+    Http {
+        status: Result<http::StatusCode>,
+        retry_after_hint: Option<Duration>,
+    },
+    Grpc {
+        code: Result<grpc::Code>,
+        retry_after_hint: Option<Duration>,
+    },
     Error(Cow<'static, str>),
 }
 
@@ -101,6 +110,8 @@ impl Response {
         rsp: &http::Response<B>,
         classes: &[profiles::http::ResponseClass],
     ) -> Option<Class> {
+        let retry_after_hint = http_retry_after_hint(rsp.status(), rsp.headers());
+
         for class in classes {
             if class.is_match(rsp) {
                 let res = if class.is_failure() {
@@ -108,7 +119,10 @@ impl Response {
                 } else {
                     Ok(rsp.status())
                 };
-                return Some(Class::Http(res));
+                return Some(Class::Http {
+                    status: res,
+                    retry_after_hint,
+                });
             }
         }
 
@@ -123,33 +137,47 @@ impl classify::ClassifyResponse for Response {
     fn start<B>(self, rsp: &http::Response<B>) -> Eos {
         let status = rsp.status();
         match self {
-            Self::Http(statuses) => Eos::Class(Class::Http(if statuses.contains(status) {
-                Err(status)
-            } else {
-                Ok(status)
-            })),
+            Self::Http(statuses) => Eos::Class(Class::Http {
+                status: if statuses.contains(status) {
+                    Err(status)
+                } else {
+                    Ok(status)
+                },
+                retry_after_hint: http_retry_after_hint(status, rsp.headers()),
+            }),
 
-            Self::Grpc(codes) => grpc_code(rsp.headers())
-                .map(|c| Eos::Class(Class::Grpc(if codes.contains(c) { Err(c) } else { Ok(c) })))
-                .unwrap_or(Eos::GrpcOpen(codes)),
+            Self::Grpc(codes) => {
+                let retry_after_hint = grpc_retry_after_hint(rsp.headers());
+                if let Some(code) = grpc_code(rsp.headers()) {
+                    Eos::Class(grpc_class(&codes, code, retry_after_hint))
+                } else {
+                    Eos::GrpcOpen {
+                        codes,
+                        retry_after_hint,
+                    }
+                }
+            }
 
             Self::Profile(ref classes) => Self::match_class(rsp, classes.as_ref())
                 .map(Eos::Class)
                 .unwrap_or_else(|| {
                     if let Some(code) = grpc_code(rsp.headers()) {
                         let codes = client_policy::grpc::Codes::default();
-                        return Eos::Class(Class::Grpc(if codes.contains(code) {
-                            Err(code)
-                        } else {
-                            Ok(code)
-                        }));
+                        return Eos::Class(grpc_class(
+                            &codes,
+                            code,
+                            grpc_retry_after_hint(rsp.headers()),
+                        ));
                     }
 
-                    let http = Class::Http(if status.is_server_error() {
-                        Err(status)
-                    } else {
-                        Ok(status)
-                    });
+                    let http = Class::Http {
+                        status: if status.is_server_error() {
+                            Err(status)
+                        } else {
+                            Ok(status)
+                        },
+                        retry_after_hint: http_retry_after_hint(status, rsp.headers()),
+                    };
                     Eos::ProfileUnmatched(http)
                 }),
         }
@@ -173,24 +201,38 @@ impl classify::ClassifyEos for Eos {
     fn eos(self, trailers: Option<&http::HeaderMap>) -> Class {
         match self {
             Self::Class(class) => class,
-            Self::GrpcOpen(codes) => {
+            Self::GrpcOpen {
+                codes,
+                retry_after_hint,
+            } => {
+                let retry_after_hint = max_retry_after_hint(
+                    retry_after_hint,
+                    trailers.and_then(grpc_retry_after_hint),
+                );
                 let code = match trailers.and_then(grpc_code) {
-                    None => return Class::Grpc(Ok(grpc::Code::Unknown)),
+                    None => {
+                        return Class::Grpc {
+                            code: Ok(grpc::Code::Unknown),
+                            retry_after_hint,
+                        };
+                    }
                     Some(code) => code,
                 };
                 if codes.contains(code) {
-                    return Class::Grpc(Err(code));
+                    return Class::Grpc {
+                        code: Err(code),
+                        retry_after_hint,
+                    };
                 }
-                Class::Grpc(Ok(code))
+                Class::Grpc {
+                    code: Ok(code),
+                    retry_after_hint,
+                }
             }
             Self::ProfileUnmatched(http_class) => {
                 if let Some(code) = trailers.and_then(grpc_code) {
                     let codes = client_policy::grpc::Codes::default();
-                    return Class::Grpc(if codes.contains(code) {
-                        Err(code)
-                    } else {
-                        Ok(code)
-                    });
+                    return grpc_class(&codes, code, trailers.and_then(grpc_retry_after_hint));
                 }
                 http_class
             }
@@ -207,6 +249,38 @@ pub fn grpc_code(hdrs: &http::HeaderMap) -> Option<grpc::Code> {
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.parse::<u16>().ok())
         .map(|code| grpc::Code::from_i32(code as i32))
+}
+
+fn http_retry_after_hint(status: http::StatusCode, hdrs: &http::HeaderMap) -> Option<Duration> {
+    classify::retry_after::parse_retry_after(status, hdrs, Duration::MAX)
+}
+
+fn grpc_retry_after_hint(hdrs: &http::HeaderMap) -> Option<Duration> {
+    classify::retry_after::parse_grpc_retry_pushback(hdrs, Duration::MAX)
+}
+
+fn max_retry_after_hint(a: Option<Duration>, b: Option<Duration>) -> Option<Duration> {
+    match (a, b) {
+        (Some(a), Some(b)) => Some(a.max(b)),
+        (Some(a), None) => Some(a),
+        (None, Some(b)) => Some(b),
+        (None, None) => None,
+    }
+}
+
+fn grpc_class(
+    codes: &client_policy::grpc::Codes,
+    code: grpc::Code,
+    retry_after_hint: Option<Duration>,
+) -> Class {
+    Class::Grpc {
+        code: if codes.contains(code) {
+            Err(code)
+        } else {
+            Ok(code)
+        },
+        retry_after_hint,
+    }
 }
 
 fn h2_error(err: &Error) -> String {
@@ -239,7 +313,7 @@ impl Class {
     pub fn is_failure(&self) -> bool {
         matches!(
             self,
-            Class::Http(Err(_)) | Class::Grpc(Err(_)) | Class::Error(_),
+            Class::Http { status: Err(_), .. } | Class::Grpc { code: Err(_), .. } | Class::Error(_),
         )
     }
 }
@@ -252,12 +326,27 @@ mod tests {
         classify::{ClassifyEos, ClassifyResponse},
         Classify,
     };
+    use std::time::Duration;
+
+    fn http(status: super::Result<StatusCode>) -> Class {
+        Class::Http {
+            status,
+            retry_after_hint: None,
+        }
+    }
+
+    fn grpc(code: super::Result<tonic::Code>) -> Class {
+        Class::Grpc {
+            code,
+            retry_after_hint: None,
+        }
+    }
 
     #[test]
     fn http_response_status_ok() {
         let rsp = Response::builder().status(StatusCode::OK).body(()).unwrap();
         let class = super::Response::default().start(&rsp).eos(None);
-        assert_eq!(class, Class::Http(Ok(http::StatusCode::OK)));
+        assert_eq!(class, http(Ok(http::StatusCode::OK)));
     }
 
     #[test]
@@ -267,7 +356,7 @@ mod tests {
             .body(())
             .unwrap();
         let class = super::Response::default().start(&rsp).eos(None);
-        assert_eq!(class, Class::Http(Ok(StatusCode::BAD_REQUEST)));
+        assert_eq!(class, http(Ok(StatusCode::BAD_REQUEST)));
     }
 
     #[test]
@@ -277,7 +366,24 @@ mod tests {
             .body(())
             .unwrap();
         let class = super::Response::default().start(&rsp).eos(None);
-        assert_eq!(class, Class::Http(Err(StatusCode::INTERNAL_SERVER_ERROR)));
+        assert_eq!(class, http(Err(StatusCode::INTERNAL_SERVER_ERROR)));
+    }
+
+    #[test]
+    fn http_response_retry_after_hint() {
+        let rsp = Response::builder()
+            .status(StatusCode::TOO_MANY_REQUESTS)
+            .header(http::header::RETRY_AFTER, "5")
+            .body(())
+            .unwrap();
+        let class = super::Response::default().start(&rsp).eos(None);
+        assert_eq!(
+            class,
+            Class::Http {
+                status: Ok(StatusCode::TOO_MANY_REQUESTS),
+                retry_after_hint: Some(Duration::from_secs(5)),
+            }
+        );
     }
 
     #[test]
@@ -290,7 +396,7 @@ mod tests {
         let class = super::Response::Grpc(Default::default())
             .start(&rsp)
             .eos(None);
-        assert_eq!(class, Class::Grpc(Ok(tonic::Code::Ok)));
+        assert_eq!(class, grpc(Ok(tonic::Code::Ok)));
     }
 
     #[test]
@@ -303,7 +409,7 @@ mod tests {
         let class = super::Response::Grpc(Default::default())
             .start(&rsp)
             .eos(None);
-        assert_eq!(class, Class::Grpc(Err(tonic::Code::Unknown)));
+        assert_eq!(class, grpc(Err(tonic::Code::Unknown)));
     }
 
     #[test]
@@ -315,7 +421,7 @@ mod tests {
         let class = super::Response::Grpc(Default::default())
             .start(&rsp)
             .eos(Some(&trailers));
-        assert_eq!(class, Class::Grpc(Ok(tonic::Code::Ok)));
+        assert_eq!(class, grpc(Ok(tonic::Code::Ok)));
     }
 
     #[test]
@@ -327,7 +433,26 @@ mod tests {
         let class = super::Response::Grpc(Default::default())
             .start(&rsp)
             .eos(Some(&trailers));
-        assert_eq!(class, Class::Grpc(Err(tonic::Code::DeadlineExceeded)));
+        assert_eq!(class, grpc(Err(tonic::Code::DeadlineExceeded)));
+    }
+
+    #[test]
+    fn grpc_response_trailer_retry_pushback_hint() {
+        let rsp = Response::builder().status(StatusCode::OK).body(()).unwrap();
+        let mut trailers = HeaderMap::new();
+        trailers.insert("grpc-status", "14".parse().unwrap());
+        trailers.insert("grpc-retry-pushback-ms", "2500".parse().unwrap());
+
+        let class = super::Response::Grpc(Default::default())
+            .start(&rsp)
+            .eos(Some(&trailers));
+        assert_eq!(
+            class,
+            Class::Grpc {
+                code: Err(tonic::Code::Unavailable),
+                retry_after_hint: Some(Duration::from_millis(2500)),
+            }
+        );
     }
 
     #[test]
@@ -337,7 +462,7 @@ mod tests {
         let class = super::Response::Grpc(Default::default())
             .start(&rsp)
             .eos(Some(&trailers));
-        assert_eq!(class, Class::Grpc(Ok(tonic::Code::Unknown)));
+        assert_eq!(class, grpc(Ok(tonic::Code::Unknown)));
     }
 
     #[test]
@@ -349,7 +474,7 @@ mod tests {
         let class = super::Response::Profile(Default::default())
             .start(&rsp)
             .eos(Some(&trailers));
-        assert_eq!(class, Class::Grpc(Err(tonic::Code::DeadlineExceeded)));
+        assert_eq!(class, grpc(Err(tonic::Code::DeadlineExceeded)));
     }
 
     #[test]
@@ -366,7 +491,7 @@ mod tests {
             .start(&rsp)
             .eos(Some(&trailers));
 
-        assert_eq!(class, Class::Grpc(Ok(tonic::Code::Ok)));
+        assert_eq!(class, grpc(Ok(tonic::Code::Ok)));
     }
 
     #[test]
@@ -383,6 +508,6 @@ mod tests {
             .start(&rsp)
             .eos(Some(&trailers));
 
-        assert_eq!(class, Class::Grpc(Err(tonic::Code::DeadlineExceeded)));
+        assert_eq!(class, grpc(Err(tonic::Code::DeadlineExceeded)));
     }
 }

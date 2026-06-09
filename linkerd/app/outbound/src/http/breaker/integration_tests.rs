@@ -81,11 +81,23 @@ fn send_class(gate_params: &gate::Params<classify::Class>, class: classify::Clas
 }
 
 fn send_ok(gate_params: &gate::Params<classify::Class>, status: http::StatusCode) {
-    send_class(gate_params, classify::Class::Http(Ok(status)));
+    send_class(
+        gate_params,
+        classify::Class::Http {
+            status: Ok(status),
+            retry_after_hint: None,
+        },
+    );
 }
 
 fn send_err(gate_params: &gate::Params<classify::Class>, status: http::StatusCode) {
-    send_class(gate_params, classify::Class::Http(Err(status)));
+    send_class(
+        gate_params,
+        classify::Class::Http {
+            status: Err(status),
+            retry_after_hint: None,
+        },
+    );
 }
 
 /// Feed `count` 5xx responses, advancing a small step after each so the spawned
@@ -531,9 +543,10 @@ async fn failure_accrual_none_produces_no_breaker_task() {
     );
 
     // No breaker task consumes the receiver, so the send is dropped.
-    let send_result = gate_params.responses.try_send(classify::Class::Http(Err(
-        http::StatusCode::INTERNAL_SERVER_ERROR,
-    )));
+    let send_result = gate_params.responses.try_send(classify::Class::Http {
+        status: Err(http::StatusCode::INTERNAL_SERVER_ERROR),
+        retry_after_hint: None,
+    });
     assert!(
         send_result.is_err(),
         "with no breaker task the response receiver is dropped and sends fail",

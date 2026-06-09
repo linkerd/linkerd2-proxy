@@ -75,13 +75,8 @@
 //! failure for the windowed success rate. It does not count toward consecutive
 //! failures because it is not a hard failure. During a probe only gRPC Ok
 //! (code 0) counts as success.
-
-
-use super::{
-    success_rate::SuccessRateWindow,
-    TripReason,
-};
-use futures::stream::StreamExt;
+use super::{success_rate::SuccessRateWindow, TripReason};
+use futures::{future::Either, stream::StreamExt, FutureExt};
 use linkerd_app_core::proxy::http::classify::gate;
 use linkerd_app_core::{classify, exp_backoff::ExponentialBackoff};
 use tokio::sync::mpsc;
@@ -137,6 +132,16 @@ struct OpenState {
     /// a non-zero threshold. A zero threshold leaves it `None`, so no
     /// per-response bookkeeping or trip computation runs for that dimension.
     success_rate: Option<SuccessRateWindow>,
+    /// The latest Retry-After hint seen while open, used as a backoff floor when
+    /// `respect_retry_after_hint` is true. This is updated on each failure so
+    /// that the hint from the most recent failure is used.
+    retry_after_hint: Option<Duration>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Trip {
+    reason: TripReason,
+    retry_after_hint: Option<std::time::Duration>,
 }
 
 impl OpenState {
@@ -151,6 +156,7 @@ impl OpenState {
         Self {
             consecutive_failures: 0,
             success_rate: active.then(|| SuccessRateWindow::new(window, now)),
+            retry_after_hint: None,
         }
     }
 
@@ -162,6 +168,7 @@ impl OpenState {
         if let Some(window) = self.success_rate.as_mut() {
             window.reset(now);
         }
+        self.retry_after_hint = None;
     }
 }
 
@@ -237,21 +244,21 @@ impl UnifiedBreaker {
 
         loop {
             // Open state: track failures until a trip condition is met.
-            let trip_reason = match self.open(&mut state).await {
-                Ok(reason) => reason,
+            let trip = match self.open(&mut state).await {
+                Ok(trip) => trip,
                 Err(()) => return, // Gate lost.
             };
 
             #[cfg(test)]
             if let Some(tx) = self.trip_observer.as_ref() {
-                let _ = tx.send(trip_reason);
+                let _ = tx.send(trip.reason);
             }
 
-            tracing::info!(?trip_reason, "Unified circuit breaker tripped");
+            tracing::info!(?trip, "Unified circuit breaker tripped");
 
             // Shut state plus probation: close the gate, wait out the backoff,
             // then probe.
-            match self.closed(trip_reason).await {
+            match self.closed(trip).await {
                 Ok(()) => {
                     state.reset(Instant::now());
                     tracing::info!("Unified circuit breaker reopened");
@@ -264,7 +271,7 @@ impl UnifiedBreaker {
     /// Open state: track both policies until either trips.
     ///
     /// Returns the reason for the trip, or `Err(())` if the gate is lost.
-    async fn open(&mut self, state: &mut OpenState) -> Result<TripReason, ()> {
+    async fn open(&mut self, state: &mut OpenState) -> Result<Trip, ()> {
         tracing::debug!("Open");
 
         self.gate.open().map_err(|_| ())?;
@@ -282,6 +289,10 @@ impl UnifiedBreaker {
             // rate-limit signal. The trip side here and the probe side share the
             // same rate-limit notion, so it lives in one place.
             let degrades_success_rate = class.is_failure() || is_rate_limit_signal(&class);
+
+            if degrades_success_rate &&  self.respect_retry_after_hint {
+                state.retry_after_hint = rate_limit_hint(&class)
+            }
 
             // Update the consecutive failure count and skip the work when the
             // policy is off. Rate-limit signals like 429 and RESOURCE_EXHAUSTED do
@@ -335,14 +346,17 @@ impl UnifiedBreaker {
     /// thresholds at once the reported reason is [`TripReason::ConsecutiveFailures`].
     /// This reason is reported for observability. Either condition trips the
     /// circuit.
-    fn should_trip(&self, state: &OpenState) -> Option<TripReason> {
+    fn should_trip(&self, state: &OpenState) -> Option<Trip> {
         // A zero max_failures disables the consecutive failure policy entirely.
         if self.max_failures == 0 {
             // Skip the consecutive failures check, since only success rate can trip.
         } else if state.consecutive_failures >= self.max_failures {
             // Consecutive failures crossed the threshold. There is no first-start
             // protection here, so this can trip right after a run of 5xx errors.
-            return Some(TripReason::ConsecutiveFailures);
+            return Some(Trip {
+                reason: TripReason::ConsecutiveFailures,
+                retry_after_hint: state.retry_after_hint,
+            });
         }
 
         // Windowed success rate dropped below the threshold. The window is present
@@ -351,7 +365,10 @@ impl UnifiedBreaker {
         // `min_requests` responses sit in the window.
         if let Some(window) = state.success_rate.as_ref() {
             if window.should_trip(self.min_requests, self.threshold) {
-                return Some(TripReason::LowSuccessRate);
+                return Some(Trip {
+                    reason: TripReason::LowSuccessRate,
+                    retry_after_hint: state.retry_after_hint,
+                });
             }
         }
 
@@ -364,21 +381,40 @@ impl UnifiedBreaker {
     /// returns `Ok(())` while a failed or timed-out probe resumes the backoff loop.
     /// A probe that never produces a verdict must not hang the loop, so probation is
     /// bounded by the backoff ceiling and a timed-out probe is retried as a failure.
-    async fn closed(&mut self, trip_reason: TripReason) -> Result<(), ()> {
+    async fn closed(&mut self, trip: Trip) -> Result<(), ()> {
         let mut backoff = self.backoff.stream();
+        let mut retry_after_hint = trip.retry_after_hint;
 
         loop {
             // Shut the gate.
-            tracing::debug!(backoff = ?backoff.duration(), ?trip_reason, "Shut");
+            tracing::debug!(?trip, "Shut");
             self.gate.shut().map_err(|_| ())?;
+
+            let next_backoff = match retry_after_hint {
+                Some(hint) if self.respect_retry_after_hint => {
+                    let backoff_duration = backoff.duration();
+                    let wait_duration = hint.clamp(backoff_duration, self.backoff.max());
+
+                    tracing::debug!(
+                        ?hint,
+                        backoff_duration = ?backoff_duration,
+                        wait_duration = ?wait_duration,
+                        "Waiting out Retry-After hint"
+                    );
+
+                    Either::Left(tokio::time::sleep(wait_duration))
+                },
+                _ => {
+                    tracing::debug!(backoff = ?backoff.duration(), "Waiting out backoff");
+                    Either::Right(backoff.next().map(|_| ()))
+                }
+            };
+
+            tokio::pin!(next_backoff);
 
             loop {
                 tokio::select! {
-                    _ = backoff.next() => break,
-                    // Ignore responses while the breaker is shut, but
-                    // terminate if the channel is closed. recv() on a
-                    // closed channel returns None immediately, which would
-                    // otherwise busy-spin this loop.
+                    _ = &mut next_backoff => break,
                     rsp = self.rsps.recv() => { rsp.ok_or(())?; },
                     _ = self.gate.lost() => return Err(()),
                 }
@@ -390,6 +426,7 @@ impl UnifiedBreaker {
                 // Open!
                 return Ok(());
             }
+            retry_after_hint = rate_limit_hint(&class);
         }
     }
 
@@ -410,12 +447,14 @@ impl UnifiedBreaker {
         match class {
             // A 429 is already handled above, so the only remaining bar is a 5xx
             // a client policy let through as a non-failure.
-            classify::Class::Http(Ok(status)) => !status.is_server_error(),
-            classify::Class::Http(Err(_)) => false, // 5xx failure.
+            classify::Class::Http {
+                status: Ok(status), ..
+            } => !status.is_server_error(),
+            classify::Class::Http { status: Err(_), .. } => false, // 5xx failure.
             // RESOURCE_EXHAUSTED is handled above, so any other accepted Ok code
             // is a recovered probe.
-            classify::Class::Grpc(Ok(_)) => true,
-            classify::Class::Grpc(Err(_)) => false,
+            classify::Class::Grpc { code: Ok(_), .. } => true,
+            classify::Class::Grpc { code: Err(_), .. } => false,
             _ => class.is_success(),
         }
     }
@@ -440,9 +479,25 @@ impl UnifiedBreaker {
 /// apart.
 fn is_rate_limit_signal(class: &classify::Class) -> bool {
     match class {
-        classify::Class::Http(Ok(status)) => *status == http::StatusCode::TOO_MANY_REQUESTS,
-        classify::Class::Grpc(Ok(code)) => *code == Code::ResourceExhausted,
+        classify::Class::Http {
+            status: Ok(status), ..
+        } => *status == http::StatusCode::TOO_MANY_REQUESTS,
+        classify::Class::Grpc { code: Ok(code), .. } => *code == Code::ResourceExhausted,
         _ => false,
+    }
+}
+
+fn rate_limit_hint(class: &classify::Class) -> Option<Duration> {
+    match class {
+        classify::Class::Http {
+            retry_after_hint: Some(hint),
+            ..
+        } => Some(*hint),
+        classify::Class::Grpc {
+            retry_after_hint: Some(hint),
+            ..
+        } => Some(*hint),
+        _ => None,
     }
 }
 
@@ -468,11 +523,23 @@ mod tests {
     }
 
     fn send_ok(params: &gate::Params<classify::Class>, status: http::StatusCode) {
-        send_class(params, classify::Class::Http(Ok(status)));
+        send_class(
+            params,
+            classify::Class::Http {
+                status: Ok(status),
+                retry_after_hint: None,
+            },
+        );
     }
 
     fn send_err(params: &gate::Params<classify::Class>, status: http::StatusCode) {
-        send_class(params, classify::Class::Http(Err(status)));
+        send_class(
+            params,
+            classify::Class::Http {
+                status: Err(status),
+                retry_after_hint: None,
+            },
+        );
     }
 
     fn default_config(
@@ -837,9 +904,15 @@ mod tests {
                 | tonic::Code::Unavailable
                 | tonic::Code::DataLoss
         ) {
-            classify::Class::Grpc(Err(code))
+            classify::Class::Grpc {
+                code: Err(code),
+                retry_after_hint: None,
+            }
         } else {
-            classify::Class::Grpc(Ok(code))
+            classify::Class::Grpc {
+                code: Ok(code),
+                retry_after_hint: None,
+            }
         };
         send_class(params, class);
     }

@@ -493,13 +493,13 @@ impl legacy::FmtLabels for Class {
         let class = |ok: bool| if ok { "success" } else { "failure" };
 
         match self {
-            Class::Http(res) => write!(
+            Class::Http { status: res, .. } => write!(
                 f,
                 "classification=\"{}\",grpc_status=\"\",error=\"\"",
                 class(res.is_ok())
             ),
 
-            Class::Grpc(res) => write!(
+            Class::Grpc { code: res, .. } => write!(
                 f,
                 "classification=\"{}\",grpc_status=\"{}\",error=\"\"",
                 class(res.is_ok()),

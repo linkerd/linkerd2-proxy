@@ -124,7 +124,10 @@ mod tests {
         let send = |res: Result<http::StatusCode, http::StatusCode>| {
             params
                 .responses
-                .try_send(classify::Class::Http(res))
+                .try_send(classify::Class::Http {
+                    status: res,
+                    retry_after_hint: None,
+                })
                 .unwrap()
         };
 
@@ -225,7 +228,10 @@ mod tests {
         let send = |res: Result<http::StatusCode, http::StatusCode>| {
             params
                 .responses
-                .try_send(classify::Class::Http(res))
+                .try_send(classify::Class::Http {
+                    status: res,
+                    retry_after_hint: None,
+                })
                 .unwrap()
         };
 
