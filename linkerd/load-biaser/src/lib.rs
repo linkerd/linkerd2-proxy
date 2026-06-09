@@ -594,8 +594,9 @@ mod tests {
             (Arc::strong_count(&self.shared) as u32).saturating_sub(1)
         }
 
+        /// Sets the RTT EWMA to an exact value for tests.
         pub fn inject_rtt(&self, rtt_secs: f64) {
-            self.shared.rtt.write().add_peak(rtt_secs, Instant::now());
+            self.shared.rtt.write().reset(rtt_secs, Instant::now());
         }
     }
 
@@ -720,9 +721,10 @@ mod tests {
         let inner = MockService::new(http::StatusCode::OK);
         let biaser = LoadBiaser::new(inner, test_config());
 
-        // Inject a known RTT below the default
+        // Inject a known RTT below the default.
         time::sleep(Duration::from_millis(1)).await;
         biaser.inject_rtt(0.05); // 50ms
+        assert_eq!(biaser.get_rtt(), 0.05, "inject_rtt sets the RTT exactly");
 
         // No pending handles. Load = RTT * (0 + 1) = 0.05.
         let load_idle = biaser.load();
@@ -731,12 +733,22 @@ mod tests {
         // Hold a handle to simulate an in-flight request: the strong count of
         // the shared Arc increments per live handle like during a call.
         let h1 = biaser.handle();
+        // Load = RTT * (1 + 1) = 0.1.
         let load_one_pending = biaser.load();
         assert_eq!(load_one_pending, biaser.get_rtt() * 2.0);
+        assert!(
+            (load_one_pending - 0.1).abs() < 1e-9,
+            "load with one request pending should be 0.1: {load_one_pending}"
+        );
 
         let h2 = biaser.handle();
+        // Load = RTT * (2 + 1) = 0.15.
         let load_two_pending = biaser.load();
         assert_eq!(load_two_pending, biaser.get_rtt() * 3.0);
+        assert!(
+            (load_two_pending - 0.15).abs() < 1e-9,
+            "load with two requests pending should be 0.15: {load_two_pending}"
+        );
 
         assert!(
             load_one_pending > load_idle,
