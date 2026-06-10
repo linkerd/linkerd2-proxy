@@ -324,10 +324,16 @@ pub struct Handle {
 impl Drop for Handle {
     fn drop(&mut self) {
         let now = Instant::now();
-        let value = self
-            .penalty
-            .unwrap_or_else(|| now.saturating_duration_since(self.sent_at));
-        self.shared.rtt.write().add_peak(value.as_secs_f64(), now);
+        let mut rtt = self.shared.rtt.write();
+        let value = self.penalty.map_or_else(
+            || now.saturating_duration_since(self.sent_at).as_secs_f64(),
+            |penalty| {
+                // Floor at the current decayed RTT. Lower penalties would
+                // otherwise steer P2C towards failing endpoints.
+                penalty.as_secs_f64().max(rtt.get_at(now))
+            },
+        );
+        rtt.add_peak(value, now);
     }
 }
 
@@ -1468,6 +1474,41 @@ mod tests {
         assert!(
             (rtt - 5.0).abs() < 0.1,
             "500 should record the base penalized effective RTT (~5.0s), got: {rtt}"
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_sub_measured_penalty_failures_floor_at_measured_rtt() {
+        // A penalty below the measured latency must not drag the recorded RTT
+        // towards it. That would make the failing endpoint look cheaper.
+        const PENALTY: f64 = 0.1;
+        const MEASURED: f64 = 0.5;
+
+        let config = LoadBiaserConfig {
+            penalty_ms: (PENALTY * 1000.0) as u32,
+            ..test_config()
+        };
+        let inner = MockService::new(http::StatusCode::INTERNAL_SERVER_ERROR);
+        let mut biaser = LoadBiaser::new(inner, config);
+
+        time::sleep(Duration::from_millis(1)).await;
+
+        biaser.inject_rtt(MEASURED);
+        assert!((biaser.get_rtt() - MEASURED).abs() < 1e-9);
+
+        // Failures one second apart let the EWMA blend towards the penalty.
+        for _ in 0..8 {
+            time::sleep(Duration::from_secs(1)).await;
+            let _ = biaser.call(()).await;
+        }
+
+        // The floor keeps the RTT nearer the measured latency than the penalty.
+        let rtt = biaser.get_rtt();
+        let midpoint = (PENALTY + MEASURED) / 2.0;
+        assert!(
+            rtt > midpoint,
+            "sustained penalties below the measured RTT must not drag RTT downwards: \
+             rtt={rtt} should exceed midpoint {midpoint}"
         );
     }
 
