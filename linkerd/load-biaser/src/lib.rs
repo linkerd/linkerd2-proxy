@@ -261,15 +261,15 @@ struct SharedState {
 impl SharedState {
     /// Translates a classified failure into an effective RTT measurement,
     /// taking into account Retry-After/grpc-retry-pushback hints.
-    fn effective_rtt<R: ResponseFailureHint>(&self, hint: FailureHint, resp: &R) -> f64 {
+    fn effective_rtt<R: ResponseFailureHint>(&self, hint: FailureHint, resp: &R) -> Duration {
         let from_hint = match hint {
-            FailureHint::RateLimited | FailureHint::ServiceUnavailable => resp
-                .rate_limit_hint(self.max_duration)
-                .map(|d| d.as_secs_f64()),
+            FailureHint::RateLimited | FailureHint::ServiceUnavailable => {
+                resp.rate_limit_hint(self.max_duration)
+            }
             FailureHint::InternalError => None,
         };
 
-        let base = Duration::from_millis(u64::from(self.penalty_ms)).as_secs_f64();
+        let base = Duration::from_millis(u64::from(self.penalty_ms));
         // Honor a hint only above the base penalty. This keeps a failing
         // endpoint from looking healthier than a hintless one.
         from_hint.map(|h| h.max(base)).unwrap_or(base)
@@ -312,47 +312,30 @@ pub struct NewLoadBiaser<N, Req, C = PendingUntilFirstData> {
 /// It clones the shared `Arc`, so while it lives the endpoint's strong count
 /// is incremented by one. On drop it records the elapsed time as an RTT
 /// measurement, so a cancelled request still measures latency.
-/// A failure disables the handle first, because it needs to record its own
-/// penalty-injected measurement.
+/// A failure sets a penalty before dropping the handle. The penalty is recorded
+/// instead of the elapsed time.
 #[derive(Debug)]
 pub struct Handle {
     shared: Arc<SharedState>,
     sent_at: Instant,
-    enabled: bool,
-}
-
-impl Handle {
-    /// Records the measured elapsed time, then prevents the drop from recording
-    /// again.
-    fn record_elapsed(&mut self, now: Instant) {
-        if self.enabled {
-            let elapsed = now.saturating_duration_since(self.sent_at).as_secs_f64();
-            self.shared.rtt.write().add_peak(elapsed, now);
-            self.enabled = false;
-        }
-    }
-
-    /// Records a computed effective RTT and disables the handle so its drop does
-    /// not also record the measurement of the failure.
-    fn record_effective_rtt(&mut self, value: f64, now: Instant) {
-        self.shared.rtt.write().add_peak(value, now);
-        self.enabled = false;
-    }
+    penalty: Option<Duration>,
 }
 
 impl Drop for Handle {
     fn drop(&mut self) {
-        // Ensure we take a measurement if the request was cancelled (enabled
-        // should be true).
-        self.record_elapsed(Instant::now());
+        let now = Instant::now();
+        let value = self
+            .penalty
+            .unwrap_or_else(|| now.saturating_duration_since(self.sent_at));
+        self.shared.rtt.write().add_peak(value.as_secs_f64(), now);
     }
 }
 
 /// Response future that records a measurement and checks for failure responses.
 ///
-/// On resolution a failure injects a computed RTT and disables the handle.
-/// A success leaves the handle for the completion tracker, which decides when
-/// to record the measurement.
+/// A failure sets a computed penalty and drops the handle immediately. A
+/// success leaves the handle for the completion tracker, which decides when to
+/// record the measured RTT.
 #[pin_project]
 pub struct LoadBiaserFuture<F, Rsp, C> {
     #[pin]
@@ -394,7 +377,7 @@ impl<S, C> LoadBiaser<S, C> {
         Handle {
             shared: self.shared.clone(),
             sent_at: Instant::now(),
-            enabled: true,
+            penalty: None,
         }
     }
 }
@@ -447,7 +430,7 @@ impl<S, C, Req> Service<Req> for LoadBiaser<S, C>
 where
     S: Service<Req>,
     S::Response: ResponseFailureHint,
-    C: TrackCompletion<Handle, S::Response> + Clone,
+    C: TrackCompletion<Option<Handle>, S::Response> + Clone,
 {
     type Response = C::Output;
     type Error = S::Error;
@@ -517,29 +500,37 @@ impl<F, Rsp, E, C> Future for LoadBiaserFuture<F, Rsp, C>
 where
     F: Future<Output = Result<Rsp, E>>,
     Rsp: ResponseFailureHint,
-    C: TrackCompletion<Handle, Rsp>,
+    C: TrackCompletion<Option<Handle>, Rsp>,
 {
     type Output = Result<C::Output, E>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
         let result = ready!(this.inner.poll(cx));
-        let now = Instant::now();
         let mut handle = this.handle.take().expect("polled after completion");
 
         match result {
             Ok(mut resp) => {
-                if let Some(hint) = resp.failure_hint() {
-                    // Cache the uncapped hint while we hold &mut, then record the
-                    // failure as a penalized effective RTT.
+                let handle = if let Some(hint) = resp.failure_hint() {
+                    // Cache the uncapped hint while the response is mutable. The
+                    // handle records the penalty when dropped.
                     resp.attach_parsed_rate_limit_hint();
-                    let value = handle.shared.effective_rtt(hint, &resp);
-                    tracing::debug!(rtt_secs = value, ?hint, "Failure recorded as effective RTT");
-                    handle.record_effective_rtt(value, now);
-                }
+                    let penalty = handle.shared.effective_rtt(hint, &resp);
+                    tracing::debug!(
+                        rtt_secs = penalty.as_secs_f64(),
+                        ?hint,
+                        "Failure recorded as effective RTT"
+                    );
+                    handle.penalty = Some(penalty);
+                    drop(handle);
+                    None
+                } else {
+                    Some(handle)
+                };
 
-                // The completion tracker will drop the handle now or at first body
-                // frame, and that drop will record the measured RTT.
+                // Successful responses keep the handle until completion.
+                // Failed responses pass `None` since their penalty was recorded
+                // above.
                 let output = this.completion.track_completion(handle, resp);
 
                 Poll::Ready(Ok(output))
@@ -597,14 +588,6 @@ mod tests {
         /// Sets the RTT EWMA to an exact value for tests.
         pub fn inject_rtt(&self, rtt_secs: f64) {
             self.shared.rtt.write().reset(rtt_secs, Instant::now());
-        }
-    }
-
-    impl Handle {
-        /// Disable a handle so dropping it records nothing. Lets a test hold a
-        /// handle just to raise the pending count.
-        fn disable(mut self) {
-            self.enabled = false;
         }
     }
 
@@ -763,8 +746,8 @@ mod tests {
             load_one_pending
         );
 
-        h1.disable();
-        h2.disable();
+        drop(h1);
+        drop(h2);
     }
 
     #[tokio::test(flavor = "current_thread", start_paused = true)]
@@ -822,6 +805,38 @@ mod tests {
         assert!(
             load_failing > 4.0,
             "503 should record the base effective RTT (~5s): {load_failing}"
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_failure_records_once_at_response_head() {
+        let inner = MockService::new(http::StatusCode::SERVICE_UNAVAILABLE);
+        let mut biaser = LoadBiaser::new(inner, test_config());
+
+        time::sleep(Duration::from_millis(1)).await;
+
+        // Keep the response without polling its body. A failure records and
+        // releases its handle when the response head is available.
+        let resp = biaser.call(()).await.unwrap();
+        assert_eq!(
+            biaser.get_pending(),
+            0,
+            "failure should stop counting as pending at the response head"
+        );
+        let recorded = biaser.get_rtt();
+        assert!(
+            (recorded - 5.0).abs() < 0.1,
+            "503 should record the base penalty at the response head: {recorded}"
+        );
+
+        // The completion tracker holds `None` for a failed response. Reaching
+        // the first body frame must not record a second measurement.
+        time::sleep(Duration::from_secs(3)).await;
+        drive_to_first_frame(resp).await;
+        assert_eq!(
+            biaser.get_rtt(),
+            recorded,
+            "failure body completion should not record another measurement"
         );
     }
 
