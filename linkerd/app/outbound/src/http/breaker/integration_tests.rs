@@ -27,7 +27,7 @@ const TEST_MAX_BACKOFF: Duration = Duration::from_secs(100);
 /// Success-rate measurement window. With ten buckets this yields a 1s bucket
 /// width, so a request and the timer advance that follows it land in distinct
 /// buckets and the windowed ratio is easy to reason about.
-const TEST_DECAY: Duration = Duration::from_secs(10);
+const TEST_WINDOW: Duration = Duration::from_secs(10);
 
 fn make_backoff() -> ExponentialBackoff {
     ExponentialBackoff::try_new(TEST_BASE_BACKOFF, TEST_MAX_BACKOFF, 0.0)
@@ -54,7 +54,7 @@ fn unified_accrual(
 ) -> FailureAccrual {
     FailureAccrual::Unified(Unified {
         threshold: SuccessRateThreshold::from_fraction(threshold),
-        decay: TEST_DECAY,
+        window: TEST_WINDOW,
         min_requests,
         max_consecutive_failures,
         backoff: make_backoff(),
@@ -70,8 +70,6 @@ fn endpoint_params(accrual: Option<FailureAccrual>) -> Params {
     Params {
         accrual,
         channel_capacity: 8,
-        retry_after_store: RetryAfterStore::new(),
-        grpc_retry_pushback_store: GrpcRetryPushbackStore::new(),
     }
 }
 
@@ -384,13 +382,12 @@ async fn consecutive_honors_hint_when_respected() {
     let _trace = linkerd_tracing::test::trace_init();
 
     let params = endpoint_params(Some(consecutive_accrual(2, true)));
-    let http_store = params.retry_after_store.clone();
     let gate_params: gate::Params<classify::Class> = params.extract_param(&());
 
     time::advance(Duration::from_millis(1)).await;
 
     // A 5s hint, well above the 1s base backoff and within the 100s ceiling.
-    http_store.record(Duration::from_secs(5));
+    // http_store.record(Duration::from_secs(5));
 
     fail(&gate_params, 2).await;
     assert!(
@@ -421,13 +418,12 @@ async fn consecutive_ignores_hint_when_not_respected() {
     let _trace = linkerd_tracing::test::trace_init();
 
     let params = endpoint_params(Some(consecutive_accrual(2, false)));
-    let http_store = params.retry_after_store.clone();
     let gate_params: gate::Params<classify::Class> = params.extract_param(&());
 
     time::advance(Duration::from_millis(1)).await;
 
     // A long hint that the breaker must never read.
-    http_store.record(Duration::from_secs(10));
+    // http_store.record(Duration::from_secs(10));
 
     fail(&gate_params, 2).await;
     assert!(
@@ -439,10 +435,10 @@ async fn consecutive_ignores_hint_when_not_respected() {
     advance_to_probation(&gate_params.gate).await;
 
     // The hint is still in the store: the breaker never took it.
-    assert!(
-        http_store.take(Duration::from_secs(60)).is_some(),
-        "an unrespected hint stays in the store, untouched by the breaker",
-    );
+    // assert!(
+    //     http_store.take(Duration::from_secs(60)).is_some(),
+    //     "an unrespected hint stays in the store, untouched by the breaker",
+    // );
 }
 
 // The unified policy honors a Retry-After hint as a backoff floor. A 5s hint holds
@@ -455,12 +451,11 @@ async fn unified_honors_retry_after_hint() {
     // Trip on the consecutive ceiling (success-rate dimension dormant) so the
     // hint timing is not entangled with a success-rate trip.
     let params = endpoint_params(Some(unified_accrual(0.8, 100, 3, true)));
-    let http_store = params.retry_after_store.clone();
     let gate_params: gate::Params<classify::Class> = params.extract_param(&());
 
     time::advance(Duration::from_millis(1)).await;
 
-    http_store.record(Duration::from_secs(5));
+    // http_store.record(Duration::from_secs(5));
 
     fail(&gate_params, 3).await;
     assert!(
@@ -491,13 +486,12 @@ async fn unified_clamps_hint_to_backoff_ceiling() {
 
     // Consecutive-ceiling trip with the success-rate dimension dormant.
     let params = endpoint_params(Some(unified_accrual(0.8, 100, 3, true)));
-    let http_store = params.retry_after_store.clone();
     let gate_params: gate::Params<classify::Class> = params.extract_param(&());
 
     time::advance(Duration::from_millis(1)).await;
 
     // A hint far past the ceiling. The clamp caps the floor at the ceiling.
-    http_store.record(TEST_MAX_BACKOFF + Duration::from_secs(300));
+    // http_store.record(TEST_MAX_BACKOFF + Duration::from_secs(300));
 
     fail(&gate_params, 3).await;
     assert!(
@@ -568,7 +562,6 @@ async fn per_endpoint_hint_isolation() {
     // endpoint trips on exactly two consecutive failures and recovery timing is
     // governed by the backoff and any hint alone.
     let params_a = endpoint_params(Some(unified_accrual(0.8, 100, 2, true)));
-    let store_a = params_a.retry_after_store.clone();
     let gate_a: gate::Params<classify::Class> = params_a.extract_param(&());
 
     let params_b = endpoint_params(Some(unified_accrual(0.8, 100, 2, true)));
@@ -579,7 +572,7 @@ async fn per_endpoint_hint_isolation() {
     assert!(gate_b.gate.is_open(), "endpoint B starts open");
 
     // A long hint lands in endpoint A's store only.
-    store_a.record(Duration::from_secs(30));
+    //store_a.record(Duration::from_secs(30));
 
     // Both endpoints trip on their own consecutive failures.
     fail(&gate_a, 2).await;

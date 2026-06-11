@@ -5,6 +5,7 @@ use crate::{
     stack_labels, BackendRef, ParentRef,
 };
 use linkerd_app_core::{
+    classify,
     config::{ConnectConfig, QueueConfig},
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
@@ -99,12 +100,6 @@ impl<T: svc::Param<BackendRef>> svc::Param<BackendRef> for Balance<T> {
     }
 }
 
-impl<T: svc::Param<Option<FailureAccrual>>> breaker::HasFailureAccrual for Balance<T> {
-    fn failure_accrual(&self) -> Option<FailureAccrual> {
-        self.parent.param()
-    }
-}
-
 impl<T> Balance<T>
 where
     // Parent target.
@@ -171,9 +166,15 @@ where
                 })
                 .push_on_service(svc::MapErr::layer_boxed())
                 .lift_new_with_target()
-                .push(breaker::NewRetryAfterGateSet::layer(
-                    breaker::RetryAfterGateParams::new(http_queue.capacity),
-                ))
+                .push(
+                    http::NewClassifyGateSet::<classify::Response, _, _, _>::layer_via({
+                        let channel_capacity = http_queue.capacity;
+                        move |target: &Self| breaker::Params {
+                            accrual: target.parent.param(),
+                            channel_capacity,
+                        }
+                    }),
+                )
                 .push_on_service(svc::OnServiceLayer::new(
                     stack_metrics.layer(stack_labels("http", "endpoint")),
                 ))
