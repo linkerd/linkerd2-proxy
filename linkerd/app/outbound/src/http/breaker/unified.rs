@@ -144,34 +144,19 @@ impl OpenState {
     }
 }
 
-/// Configuration for [`UnifiedBreaker::new`].
-///
-/// The engine takes plain primitive parameters, and the config layer reduces its
-/// policy types to these before it builds the breaker, so the state machine never
-/// depends on how the configuration is represented.
-#[derive(Debug)]
-pub(crate) struct UnifiedBreakerConfig {
-    pub(crate) max_failures: usize,
-    pub(crate) threshold: f64,
-    pub(crate) window: Duration,
-    pub(crate) backoff: ExponentialBackoff,
-    pub(crate) min_requests: usize,
-    pub(crate) gate: gate::Tx,
-    pub(crate) rsps: mpsc::Receiver<classify::Class>,
-}
-
 impl UnifiedBreaker {
-    /// Create a new unified circuit breaker.
-    pub fn new(config: UnifiedBreakerConfig) -> Self {
-        let UnifiedBreakerConfig {
-            max_failures,
-            threshold,
-            window,
-            backoff,
-            min_requests,
-            gate,
-            rsps,
-        } = config;
+    /// Create a new unified circuit breaker from the consecutive-failure ceiling,
+    /// the success-rate threshold and its window, the recovery backoff, the
+    /// first-start sample floor, and the gate and response channels.
+    pub fn new(
+        max_failures: usize,
+        threshold: f64,
+        window: Duration,
+        backoff: ExponentialBackoff,
+        min_requests: usize,
+        gate: gate::Tx,
+        rsps: mpsc::Receiver<classify::Class>,
+    ) -> Self {
         Self {
             max_failures,
             threshold,
@@ -438,20 +423,12 @@ mod tests {
         send_class(params, classify::Class::Http(Err(status)));
     }
 
-    fn default_config(
-        gate_tx: gate::Tx,
-        rsps: mpsc::Receiver<classify::Class>,
-    ) -> UnifiedBreakerConfig {
-        UnifiedBreakerConfig {
-            max_failures: 3,
-            threshold: 0.8,
-            window: time::Duration::from_secs(10),
-            backoff: make_backoff(),
-            min_requests: 1,
-            gate: gate_tx,
-            rsps,
-        }
-    }
+    /// Default parameters shared across these tests. Each site overrides the
+    /// fields it exercises and keeps the rest at these values.
+    const DEFAULT_MAX_FAILURES: usize = 3;
+    const DEFAULT_THRESHOLD: f64 = 0.8;
+    const DEFAULT_MIN_REQUESTS: usize = 1;
+    const DEFAULT_WINDOW: Duration = Duration::from_secs(10);
 
     #[tokio::test(flavor = "current_thread", start_paused = true)]
     async fn starts_open() {
@@ -459,9 +436,15 @@ mod tests {
 
         let (params, gate_tx, rsps) = gate::Params::channel(1);
 
-        let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
-            ..default_config(gate_tx, rsps)
-        });
+        let breaker = UnifiedBreaker::new(
+            DEFAULT_MAX_FAILURES,
+            DEFAULT_THRESHOLD,
+            DEFAULT_WINDOW,
+            make_backoff(),
+            DEFAULT_MIN_REQUESTS,
+            gate_tx,
+            rsps,
+        );
         let mut task = task::spawn(breaker.run());
 
         assert_pending!(task.poll());
@@ -477,10 +460,15 @@ mod tests {
         // Success rate disabled so this isolates the consecutive failures.
         // With the windowed ratio active, a single 5xx at min_requests=1 would
         // trip on rate before the consecutive counter reached its limit.
-        let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
-            threshold: 0.0,
-            ..default_config(gate_tx, rsps)
-        });
+        let breaker = UnifiedBreaker::new(
+            DEFAULT_MAX_FAILURES,
+            0.0,
+            DEFAULT_WINDOW,
+            make_backoff(),
+            DEFAULT_MIN_REQUESTS,
+            gate_tx,
+            rsps,
+        );
         let mut task = task::spawn(breaker.run());
 
         assert_pending!(task.poll());
@@ -511,10 +499,15 @@ mod tests {
 
         // Isolate the consecutive counter: with success rate off, only a run of
         // three 5xx can trip, so a success resetting the count is observable.
-        let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
-            threshold: 0.0,
-            ..default_config(gate_tx, rsps)
-        });
+        let breaker = UnifiedBreaker::new(
+            DEFAULT_MAX_FAILURES,
+            0.0,
+            DEFAULT_WINDOW,
+            make_backoff(),
+            DEFAULT_MIN_REQUESTS,
+            gate_tx,
+            rsps,
+        );
         let mut task = task::spawn(breaker.run());
 
         assert_pending!(task.poll());
@@ -555,10 +548,15 @@ mod tests {
 
         let (params, gate_tx, rsps) = gate::Params::channel(1);
 
-        let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
-            max_failures: 100, // High so consecutive failures does not trip.
-            ..default_config(gate_tx, rsps)
-        });
+        let breaker = UnifiedBreaker::new(
+            100, // High so consecutive failures does not trip.
+            DEFAULT_THRESHOLD,
+            DEFAULT_WINDOW,
+            make_backoff(),
+            DEFAULT_MIN_REQUESTS,
+            gate_tx,
+            rsps,
+        );
         let mut task = task::spawn(breaker.run());
 
         assert_pending!(task.poll());
@@ -589,10 +587,15 @@ mod tests {
         // High max_failures keeps the consecutive policy out of the way. With a
         // 0.8 threshold and a one-sample floor, a single 5xx puts the windowed
         // ratio at 0/1, below the threshold, and trips on rate alone.
-        let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
-            max_failures: 100,
-            ..default_config(gate_tx, rsps)
-        });
+        let breaker = UnifiedBreaker::new(
+            100,
+            DEFAULT_THRESHOLD,
+            DEFAULT_WINDOW,
+            make_backoff(),
+            DEFAULT_MIN_REQUESTS,
+            gate_tx,
+            rsps,
+        );
         let mut task = task::spawn(breaker.run());
 
         assert_pending!(task.poll());
@@ -614,11 +617,15 @@ mod tests {
 
         let (params, gate_tx, rsps) = gate::Params::channel(1);
 
-        let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
-            max_failures: 100,
-            min_requests: 5,
-            ..default_config(gate_tx, rsps)
-        });
+        let breaker = UnifiedBreaker::new(
+            100,
+            DEFAULT_THRESHOLD,
+            DEFAULT_WINDOW,
+            make_backoff(),
+            5,
+            gate_tx,
+            rsps,
+        );
         let mut task = task::spawn(breaker.run());
 
         assert_pending!(task.poll());
@@ -642,9 +649,15 @@ mod tests {
 
         let (mut params, gate_tx, rsps) = gate::Params::channel(1);
 
-        let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
-            ..default_config(gate_tx, rsps)
-        });
+        let breaker = UnifiedBreaker::new(
+            DEFAULT_MAX_FAILURES,
+            DEFAULT_THRESHOLD,
+            DEFAULT_WINDOW,
+            make_backoff(),
+            DEFAULT_MIN_REQUESTS,
+            gate_tx,
+            rsps,
+        );
         let mut task = task::spawn(breaker.run());
 
         assert_pending!(task.poll());
@@ -682,9 +695,15 @@ mod tests {
 
         let (mut params, gate_tx, rsps) = gate::Params::channel(1);
 
-        let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
-            ..default_config(gate_tx, rsps)
-        });
+        let breaker = UnifiedBreaker::new(
+            DEFAULT_MAX_FAILURES,
+            DEFAULT_THRESHOLD,
+            DEFAULT_WINDOW,
+            make_backoff(),
+            DEFAULT_MIN_REQUESTS,
+            gate_tx,
+            rsps,
+        );
         let mut task = task::spawn(breaker.run());
 
         assert_pending!(task.poll());
@@ -740,11 +759,15 @@ mod tests {
 
         let (params, gate_tx, rsps) = gate::Params::channel(1);
 
-        let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
-            threshold: 0.1,    // Very low so success rate does not trip.
-            min_requests: 100, // High so success rate does not trip.
-            ..default_config(gate_tx, rsps)
-        });
+        let breaker = UnifiedBreaker::new(
+            DEFAULT_MAX_FAILURES,
+            0.1, // Very low so success rate does not trip.
+            DEFAULT_WINDOW,
+            make_backoff(),
+            100, // High so success rate does not trip.
+            gate_tx,
+            rsps,
+        );
         let mut task = task::spawn(breaker.run());
 
         assert_pending!(task.poll());
@@ -768,10 +791,15 @@ mod tests {
 
         let (params, gate_tx, rsps) = gate::Params::channel(1);
 
-        let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
-            max_failures: 100, // High so consecutive failures does not trip.
-            ..default_config(gate_tx, rsps)
-        });
+        let breaker = UnifiedBreaker::new(
+            100, // High so consecutive failures does not trip.
+            DEFAULT_THRESHOLD,
+            DEFAULT_WINDOW,
+            make_backoff(),
+            DEFAULT_MIN_REQUESTS,
+            gate_tx,
+            rsps,
+        );
         let mut task = task::spawn(breaker.run());
 
         assert_pending!(task.poll());
@@ -800,10 +828,15 @@ mod tests {
 
         let (params, gate_tx, rsps) = gate::Params::channel(1);
 
-        let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
-            max_failures: 100,
-            ..default_config(gate_tx, rsps)
-        });
+        let breaker = UnifiedBreaker::new(
+            100,
+            DEFAULT_THRESHOLD,
+            DEFAULT_WINDOW,
+            make_backoff(),
+            DEFAULT_MIN_REQUESTS,
+            gate_tx,
+            rsps,
+        );
         let mut task = task::spawn(breaker.run());
 
         assert_pending!(task.poll());
@@ -830,9 +863,15 @@ mod tests {
 
         let (mut params, gate_tx, rsps) = gate::Params::channel(1);
 
-        let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
-            ..default_config(gate_tx, rsps)
-        });
+        let breaker = UnifiedBreaker::new(
+            DEFAULT_MAX_FAILURES,
+            DEFAULT_THRESHOLD,
+            DEFAULT_WINDOW,
+            make_backoff(),
+            DEFAULT_MIN_REQUESTS,
+            gate_tx,
+            rsps,
+        );
         let mut task = task::spawn(breaker.run());
 
         assert_pending!(task.poll());
@@ -875,9 +914,15 @@ mod tests {
 
         let (mut params, gate_tx, rsps) = gate::Params::channel(1);
 
-        let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
-            ..default_config(gate_tx, rsps)
-        });
+        let breaker = UnifiedBreaker::new(
+            DEFAULT_MAX_FAILURES,
+            DEFAULT_THRESHOLD,
+            DEFAULT_WINDOW,
+            make_backoff(),
+            DEFAULT_MIN_REQUESTS,
+            gate_tx,
+            rsps,
+        );
         let mut task = task::spawn(breaker.run());
 
         assert_pending!(task.poll());
@@ -919,9 +964,15 @@ mod tests {
 
         let (mut params, gate_tx, rsps) = gate::Params::channel(1);
 
-        let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
-            ..default_config(gate_tx, rsps)
-        });
+        let breaker = UnifiedBreaker::new(
+            DEFAULT_MAX_FAILURES,
+            DEFAULT_THRESHOLD,
+            DEFAULT_WINDOW,
+            make_backoff(),
+            DEFAULT_MIN_REQUESTS,
+            gate_tx,
+            rsps,
+        );
         let mut task = task::spawn(breaker.run());
 
         assert_pending!(task.poll());
@@ -961,11 +1012,15 @@ mod tests {
 
         let (params, gate_tx, rsps) = gate::Params::channel(1);
 
-        let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
-            threshold: 0.1,    // Very low so success rate does not trip.
-            min_requests: 100, // High so success rate does not trip.
-            ..default_config(gate_tx, rsps)
-        });
+        let breaker = UnifiedBreaker::new(
+            DEFAULT_MAX_FAILURES,
+            0.1, // Very low so success rate does not trip.
+            DEFAULT_WINDOW,
+            make_backoff(),
+            100, // High so success rate does not trip.
+            gate_tx,
+            rsps,
+        );
         let mut task = task::spawn(breaker.run());
 
         assert_pending!(task.poll());
@@ -989,12 +1044,15 @@ mod tests {
         let _trace = linkerd_tracing::test::trace_init();
         let (params, gate_tx, rsps) = gate::Params::channel(1);
 
-        let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
-            max_failures: 100, // High so consecutive failures does not trip.
-            threshold: 0.0,    // Success rate disabled.
-            min_requests: 1,
-            ..default_config(gate_tx, rsps)
-        });
+        let breaker = UnifiedBreaker::new(
+            100, // High so consecutive failures does not trip.
+            0.0, // Success rate disabled.
+            DEFAULT_WINDOW,
+            make_backoff(),
+            1,
+            gate_tx,
+            rsps,
+        );
         let mut task = task::spawn(breaker.run());
 
         assert_pending!(task.poll());
@@ -1044,12 +1102,15 @@ mod tests {
         let _trace = linkerd_tracing::test::trace_init();
         let (params, gate_tx, rsps) = gate::Params::channel(1);
 
-        let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
-            max_failures: 100, // Consecutive policy out of the way.
-            threshold: 0.8,
-            min_requests: 0,
-            ..default_config(gate_tx, rsps)
-        });
+        let breaker = UnifiedBreaker::new(
+            100, // Consecutive policy out of the way.
+            0.8,
+            DEFAULT_WINDOW,
+            make_backoff(),
+            0,
+            gate_tx,
+            rsps,
+        );
         let mut task = task::spawn(breaker.run());
 
         assert_pending!(task.poll());
@@ -1076,10 +1137,15 @@ mod tests {
 
         let (mut params, gate_tx, rsps) = gate::Params::channel(1);
 
-        let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
-            max_failures: 2,
-            ..default_config(gate_tx, rsps)
-        });
+        let breaker = UnifiedBreaker::new(
+            2,
+            DEFAULT_THRESHOLD,
+            DEFAULT_WINDOW,
+            make_backoff(),
+            DEFAULT_MIN_REQUESTS,
+            gate_tx,
+            rsps,
+        );
         let mut task = task::spawn(breaker.run());
 
         assert_pending!(task.poll());
@@ -1146,11 +1212,15 @@ mod tests {
 
         let (params, gate_tx, rsps) = gate::Params::channel(1);
 
-        let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
-            max_failures: 0,
-            threshold: 0.0,
-            ..default_config(gate_tx, rsps)
-        });
+        let breaker = UnifiedBreaker::new(
+            0,
+            0.0,
+            DEFAULT_WINDOW,
+            make_backoff(),
+            DEFAULT_MIN_REQUESTS,
+            gate_tx,
+            rsps,
+        );
         let mut task = task::spawn(breaker.run());
 
         assert_pending!(task.poll());
@@ -1185,13 +1255,8 @@ mod tests {
 
         let (params, gate_tx, rsps) = gate::Params::channel(1);
 
-        let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
-            max_failures: 100,
-            threshold: 0.5,
-            min_requests: 3,
-            window: time::Duration::from_secs(10),
-            ..default_config(gate_tx, rsps)
-        });
+        let breaker =
+            UnifiedBreaker::new(100, 0.5, DEFAULT_WINDOW, make_backoff(), 3, gate_tx, rsps);
         let mut task = task::spawn(breaker.run());
 
         assert_pending!(task.poll());
@@ -1239,13 +1304,8 @@ mod tests {
 
         let (params, gate_tx, rsps) = gate::Params::channel(1);
 
-        let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
-            max_failures: 100,
-            threshold: 0.5,
-            min_requests: 3,
-            window: time::Duration::from_secs(10),
-            ..default_config(gate_tx, rsps)
-        });
+        let breaker =
+            UnifiedBreaker::new(100, 0.5, DEFAULT_WINDOW, make_backoff(), 3, gate_tx, rsps);
         let mut task = task::spawn(breaker.run());
 
         assert_pending!(task.poll());
@@ -1308,10 +1368,15 @@ mod tests {
 
         // max_failures=1 trips the breaker on the first 5xx, dropping it into the
         // closed state and the backoff wait.
-        let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
-            max_failures: 1,
-            ..default_config(gate_tx, rsps)
-        });
+        let breaker = UnifiedBreaker::new(
+            1,
+            DEFAULT_THRESHOLD,
+            DEFAULT_WINDOW,
+            make_backoff(),
+            DEFAULT_MIN_REQUESTS,
+            gate_tx,
+            rsps,
+        );
         let mut task = task::spawn(breaker.run());
 
         assert_pending!(task.poll());
@@ -1354,10 +1419,15 @@ mod tests {
         // dropped by holding a second gate receiver.
         let leaked_gate = params.gate.clone();
 
-        let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
-            max_failures: 1,
-            ..default_config(gate_tx, rsps)
-        });
+        let breaker = UnifiedBreaker::new(
+            1,
+            DEFAULT_THRESHOLD,
+            DEFAULT_WINDOW,
+            make_backoff(),
+            DEFAULT_MIN_REQUESTS,
+            gate_tx,
+            rsps,
+        );
         let breaker = tokio::spawn(breaker.run());
 
         let svc = svc::Gate::new(
@@ -1418,9 +1488,15 @@ mod tests {
 
         let (params, gate_tx, rsps) = gate::Params::channel(1);
 
-        let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
-            ..default_config(gate_tx, rsps)
-        });
+        let breaker = UnifiedBreaker::new(
+            DEFAULT_MAX_FAILURES,
+            DEFAULT_THRESHOLD,
+            DEFAULT_WINDOW,
+            make_backoff(),
+            DEFAULT_MIN_REQUESTS,
+            gate_tx,
+            rsps,
+        );
         let mut task = task::spawn(breaker.run());
 
         assert_pending!(task.poll());
@@ -1472,13 +1548,7 @@ mod tests {
         // later recovery. A three-sample floor means one failure after recovery is
         // not enough evidence to trip again, and decay=10s keeps the arithmetic
         // readable.
-        let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
-            max_failures: 0,
-            threshold: 0.5,
-            min_requests: 3,
-            window: time::Duration::from_secs(10),
-            ..default_config(gate_tx, rsps)
-        });
+        let breaker = UnifiedBreaker::new(0, 0.5, DEFAULT_WINDOW, make_backoff(), 3, gate_tx, rsps);
         let mut task = task::spawn(breaker.run());
 
         assert_pending!(task.poll());
@@ -1556,14 +1626,8 @@ mod tests {
 
         // Both mechanisms active: a five-failure consecutive budget and an 80%
         // success-rate floor with a three-request first start.
-        let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
-            max_failures: 5,
-            threshold: 0.8,
-            min_requests: 3,
-            window: time::Duration::from_secs(10),
-            ..default_config(gate_tx, rsps)
-        })
-        .with_trip_observer(trip_tx);
+        let breaker = UnifiedBreaker::new(5, 0.8, DEFAULT_WINDOW, make_backoff(), 3, gate_tx, rsps)
+            .with_trip_observer(trip_tx);
         let mut task = task::spawn(breaker.run());
 
         assert_pending!(task.poll());
@@ -1615,11 +1679,15 @@ mod tests {
         let (params, gate_tx, rsps) = gate::Params::channel(1);
         let (trip_tx, mut trip_rx) = mpsc::unbounded_channel();
 
-        let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
-            max_failures: 3,
-            threshold: 0.0,
-            ..default_config(gate_tx, rsps)
-        })
+        let breaker = UnifiedBreaker::new(
+            3,
+            0.0,
+            DEFAULT_WINDOW,
+            make_backoff(),
+            DEFAULT_MIN_REQUESTS,
+            gate_tx,
+            rsps,
+        )
         .with_trip_observer(trip_tx);
         let mut task = task::spawn(breaker.run());
 
@@ -1649,14 +1717,8 @@ mod tests {
         let (params, gate_tx, rsps) = gate::Params::channel(1);
         let (trip_tx, mut trip_rx) = mpsc::unbounded_channel();
 
-        let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
-            max_failures: 0,
-            threshold: 0.5,
-            min_requests: 1,
-            window: time::Duration::from_secs(10),
-            ..default_config(gate_tx, rsps)
-        })
-        .with_trip_observer(trip_tx);
+        let breaker = UnifiedBreaker::new(0, 0.5, DEFAULT_WINDOW, make_backoff(), 1, gate_tx, rsps)
+            .with_trip_observer(trip_tx);
         let mut task = task::spawn(breaker.run());
 
         assert_pending!(task.poll());
@@ -1693,14 +1755,8 @@ mod tests {
         let (params, gate_tx, rsps) = gate::Params::channel(1);
         let (trip_tx, mut trip_rx) = mpsc::unbounded_channel();
 
-        let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
-            max_failures: 3,
-            threshold: 0.8,
-            min_requests: 3,
-            window: time::Duration::from_secs(10),
-            ..default_config(gate_tx, rsps)
-        })
-        .with_trip_observer(trip_tx);
+        let breaker = UnifiedBreaker::new(3, 0.8, DEFAULT_WINDOW, make_backoff(), 3, gate_tx, rsps)
+            .with_trip_observer(trip_tx);
         let mut task = task::spawn(breaker.run());
 
         assert_pending!(task.poll());
@@ -1731,9 +1787,15 @@ mod tests {
         let _trace = linkerd_tracing::test::trace_init();
 
         let (mut params, gate_tx, rsps) = gate::Params::channel(1);
-        let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
-            ..default_config(gate_tx, rsps)
-        });
+        let breaker = UnifiedBreaker::new(
+            DEFAULT_MAX_FAILURES,
+            DEFAULT_THRESHOLD,
+            DEFAULT_WINDOW,
+            make_backoff(),
+            DEFAULT_MIN_REQUESTS,
+            gate_tx,
+            rsps,
+        );
         let mut task = task::spawn(breaker.run());
 
         assert_pending!(task.poll());

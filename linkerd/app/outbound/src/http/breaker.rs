@@ -10,7 +10,7 @@ mod unified;
 mod integration_tests;
 
 use self::consecutive_failures::ConsecutiveFailures;
-use self::unified::{UnifiedBreaker, UnifiedBreakerConfig};
+use self::unified::UnifiedBreaker;
 
 /// Reason a circuit breaker tripped.
 ///
@@ -87,15 +87,15 @@ impl<T> svc::ExtractParam<gate::Params<classify::Class>, T> for Params {
                     "Using unified failure accrual policy with consecutive failures and success rate tracking.",
                 );
 
-                let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
-                    max_failures: u.max_consecutive_failures,
-                    threshold: u.threshold.as_fraction(),
-                    window: u.window,
-                    backoff: u.backoff,
-                    min_requests: u.min_requests as usize,
+                let breaker = UnifiedBreaker::new(
+                    u.max_consecutive_failures,
+                    u.threshold.as_fraction(),
+                    u.window,
+                    u.backoff,
+                    u.min_requests as usize,
                     gate,
                     rsps,
-                });
+                );
                 tokio::spawn(
                     breaker
                         .run()
