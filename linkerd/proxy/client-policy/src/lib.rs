@@ -991,6 +991,9 @@ pub mod proto {
                     }
                     // Range and NaN already rejected, so rounding lands in 0..=10000.
                     let threshold = SuccessRateThreshold::from_fraction(success_rate_threshold);
+                    // The proto calls this `decay`, a name kept from an earlier
+                    // EWMA design. Here the breaker reads it as the success-rate
+                    // `window`.
                     let window = decay
                         .map(time::Duration::try_from)
                         .transpose()
