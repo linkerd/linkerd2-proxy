@@ -1,6 +1,6 @@
 use super::Endpoint;
 use crate::{
-    http::{self, balance, breaker},
+    http::{self, breaker},
     metrics::{BalancerMetricsParams, ConcreteLabels},
     stack_labels, BackendRef, ParentRef,
 };
@@ -15,7 +15,7 @@ use linkerd_app_core::{
     transport::addrs::*,
     Error, NameAddr,
 };
-use linkerd_proxy_client_policy::FailureAccrual;
+use linkerd_proxy_client_policy::{FailureAccrual, Load};
 use std::{fmt::Debug, net::SocketAddr};
 use tracing::info_span;
 
@@ -23,7 +23,7 @@ use tracing::info_span;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Balance<T> {
     pub addr: NameAddr,
-    pub ewma: balance::EwmaConfig,
+    pub load: Load,
     pub queue: QueueConfig,
     pub parent: T,
 }
@@ -43,7 +43,36 @@ pub type BalancerMetrics = BalancerMetricsParams<ConcreteLabels>;
 
 impl<T> svc::Param<http::balance::EwmaConfig> for Balance<T> {
     fn param(&self) -> http::balance::EwmaConfig {
-        self.ewma
+        // Both estimators read the same RTT configuration. Reading it from the
+        // `Load` the target holds keeps the peak-EWMA selection identical to the
+        // default balancer regardless of which estimator the policy chose.
+        let (decay, default_rtt) = self.load.peak_ewma_rtt();
+        http::balance::EwmaConfig { decay, default_rtt }
+    }
+}
+
+impl<T> svc::Param<Load> for Balance<T> {
+    fn param(&self) -> Load {
+        self.load
+    }
+}
+
+impl<T> svc::Param<linkerd_proxy_client_policy::PenaltyPeakEwma> for Balance<T> {
+    fn param(&self) -> linkerd_proxy_client_policy::PenaltyPeakEwma {
+        // The balancer reads this parameter only when the policy holds a
+        // `PenaltyPeakEwma` load and selects the penalty estimator, so on any
+        // other load we still return a penalty-free configuration to keep this
+        // `Param` implementation total.
+        match self.load {
+            Load::PenaltyPeakEwma(penalty) => penalty,
+            Load::PeakEwma(peak) => linkerd_proxy_client_policy::PenaltyPeakEwma {
+                decay: peak.decay,
+                default_rtt: peak.default_rtt,
+                penalty: std::time::Duration::ZERO,
+                penalty_decay: std::time::Duration::ZERO,
+                max_retry_after: std::time::Duration::ZERO,
+            },
+        }
     }
 }
 
@@ -76,7 +105,7 @@ where
     // Parent target.
     T: svc::Param<ParentRef>,
     T: svc::Param<BackendRef>,
-    T: svc::Param<FailureAccrual>,
+    T: svc::Param<Option<FailureAccrual>>,
     T: Clone + Debug + Send + Sync + 'static,
 {
     pub(super) fn layer<N, NSvc, R>(
@@ -157,11 +186,13 @@ where
                 .push(svc::ArcNewService::layer());
 
             endpoint
+                // The balancer boxes its response body internally to unify the
+                // peak-EWMA and penalty estimator response types, so no further
+                // response boxing is needed here.
                 .push(http::NewBalance::layer(
                     resolve.clone(),
                     balance_metrics.clone(),
                 ))
-                .push_on_service(http::BoxResponse::layer())
                 .push_on_service(stack_metrics.layer(stack_labels("http", "balance")))
                 .push(svc::NewMapErr::layer_from_target::<BalanceError, _>())
                 .instrument(|t: &Self| {

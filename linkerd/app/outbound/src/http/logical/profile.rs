@@ -49,6 +49,16 @@ pub(crate) const DEFAULT_EWMA: balance::EwmaConfig = balance::EwmaConfig {
     decay: time::Duration::from_secs(10),
 };
 
+/// Profile-derived backends balance over discovered endpoints with peak-EWMA
+/// endpoint selection and use the same RTT configuration as the default
+/// balancer. Profiles have no penalty configuration, so the penalty estimator
+/// is never selected here.
+pub(crate) const DEFAULT_LOAD: linkerd_proxy_client_policy::Load =
+    linkerd_proxy_client_policy::Load::PeakEwma(linkerd_proxy_client_policy::PeakEwma {
+        default_rtt: DEFAULT_EWMA.default_rtt,
+        decay: DEFAULT_EWMA.decay,
+    });
+
 pub(crate) fn should_override_policy(rx: &watch::Receiver<Profile>) -> Option<LogicalAddr> {
     let p = rx.borrow();
     if p.has_routes_or_targets() {
@@ -114,10 +124,10 @@ where
             let concrete = Concrete {
                 parent_ref: ParentRef(parent_meta.clone()),
                 backend_ref: BackendRef(parent_meta),
-                target: concrete::Dispatch::Balance(addr.clone(), DEFAULT_EWMA),
+                target: concrete::Dispatch::Balance(addr.clone(), DEFAULT_LOAD),
                 authority: Some(addr.as_http_authority()),
                 parent: parent.clone(),
-                failure_accrual: Default::default(),
+                failure_accrual: None,
             };
             let backends = std::iter::once(concrete.clone()).collect();
             let distribution = Distribution::first_available(std::iter::once(concrete));
@@ -130,10 +140,10 @@ where
                     backend_ref: BackendRef(
                         service_meta(&t.addr).unwrap_or_else(|| UNKNOWN_META.clone()),
                     ),
-                    target: concrete::Dispatch::Balance(t.addr.clone(), DEFAULT_EWMA),
+                    target: concrete::Dispatch::Balance(t.addr.clone(), DEFAULT_LOAD),
                     authority: Some(t.addr.as_http_authority()),
                     parent: parent.clone(),
-                    failure_accrual: Default::default(),
+                    failure_accrual: None,
                 })
                 .collect();
             let distribution = Distribution::random_available(targets.iter().cloned().map(
@@ -144,9 +154,9 @@ where
                             service_meta(&addr).unwrap_or_else(|| UNKNOWN_META.clone()),
                         ),
                         authority: Some(addr.as_http_authority()),
-                        target: concrete::Dispatch::Balance(addr, DEFAULT_EWMA),
+                        target: concrete::Dispatch::Balance(addr, DEFAULT_LOAD),
                         parent: parent.clone(),
-                        failure_accrual: Default::default(),
+                        failure_accrual: None,
                     };
                     (concrete, weight)
                 },
@@ -326,5 +336,29 @@ impl<T> svc::Param<http::ResponseTimeout> for RouteParams<T> {
 impl<T> svc::Param<classify::Request> for RouteParams<T> {
     fn param(&self) -> classify::Request {
         self.profile.response_classes().clone().into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use linkerd_proxy_client_policy::Load;
+
+    // Profile-derived backends carry no penalty configuration, so the default
+    // load must select the plain peak-EWMA estimator. Pinning the variant keeps a
+    // later change to the constant from silently routing the default balancer
+    // through the penalty estimator, which biases load away from healthy
+    // endpoints. The RTT pair matches the default balancer's own configuration.
+    #[test]
+    fn default_load_is_peak_ewma() {
+        match DEFAULT_LOAD {
+            Load::PeakEwma(peak) => {
+                assert_eq!(peak.default_rtt, DEFAULT_EWMA.default_rtt);
+                assert_eq!(peak.decay, DEFAULT_EWMA.decay);
+            }
+            Load::PenaltyPeakEwma(_) => {
+                panic!("the profile default must not select the penalty estimator")
+            }
+        }
     }
 }

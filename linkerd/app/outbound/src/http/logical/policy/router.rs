@@ -18,7 +18,7 @@ pub struct Params<M, F, E> {
     pub meta: ParentRef,
     pub routes: Arc<[http_route::Route<M, policy::RoutePolicy<F, E>>]>,
     pub backends: Arc<[policy::Backend]>,
-    pub failure_accrual: policy::FailureAccrual,
+    pub failure_accrual: Option<policy::FailureAccrual>,
 }
 
 pub type HttpParams =
@@ -169,14 +169,14 @@ where
 
         let mk_dispatch = move |bke: &policy::Backend| match bke.dispatcher {
             policy::BackendDispatcher::BalanceP2c(
-                policy::Load::PeakEwma(policy::PeakEwma { decay, default_rtt }),
+                load,
                 policy::EndpointDiscovery::DestinationGet { ref path },
             ) => mk_concrete(
                 BackendRef(bke.meta.clone()),
                 concrete::Dispatch::Balance(
                     path.parse::<NameAddr>()
                         .expect("destination must be a nameaddr"),
-                    http::balance::EwmaConfig { decay, default_rtt },
+                    load,
                 ),
             ),
             policy::BackendDispatcher::Forward(addr, ref md) => mk_concrete(

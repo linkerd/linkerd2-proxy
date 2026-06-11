@@ -36,10 +36,40 @@ pub struct ResponseBody<C: ClassifyEos, B> {
     state: Option<State<C, C::Class>>,
 }
 
-#[derive(Debug)]
+/// State for tracking a response classification.
 struct State<C, T> {
+    /// The classifier for this response.
     classify: C,
+    /// Channel to send classification results.
     tx: mpsc::Sender<T>,
+}
+
+impl<C: Debug, T> Debug for State<C, T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("State")
+            .field("classify", &self.classify)
+            .field("tx", &self.tx)
+            .finish()
+    }
+}
+
+/// Sends a classification over the channel, reporting only if it is dropped.
+///
+/// By default no breaker consumes classifications, so the receiver is dropped
+/// and the channel stays closed. That is the expected case, so a closed channel
+/// stays quiet. A full channel instead means a consumer exists but is falling
+/// behind, which is worth a debug line.
+fn send_or_report<T>(tx: &mpsc::Sender<T>, class: T) {
+    use mpsc::error::TrySendError;
+    match tx.try_send(class) {
+        Ok(()) => {}
+        Err(TrySendError::Closed(_)) => {
+            tracing::trace!("classification dropped; no consumer on channel");
+        }
+        Err(TrySendError::Full(_)) => {
+            tracing::debug!("classification dropped; breaker channel full");
+        }
+    }
 }
 
 // === impl BroadcastClassification ===
@@ -125,7 +155,7 @@ where
             Err(e) => {
                 if let Some(State { classify, tx }) = this.state.take() {
                     let class = classify.error(&e);
-                    let _ = tx.try_send(class);
+                    send_or_report(&tx, class);
                 }
                 Poll::Ready(Err(e))
             }
@@ -152,7 +182,7 @@ where
             None => {
                 // Classify the stream if it has reached a `None`.
                 if let Some(State { classify, tx }) = this.state.take() {
-                    let _ = tx.try_send(classify.eos(None));
+                    send_or_report(&tx, classify.eos(None));
                 }
                 Poll::Ready(None)
             }
@@ -160,7 +190,7 @@ where
                 // Classify the stream if this is a trailers frame.
                 if let trls @ Some(_) = data.trailers_ref() {
                     if let Some(State { classify, tx }) = this.state.take() {
-                        let _ = tx.try_send(classify.eos(trls));
+                        send_or_report(&tx, classify.eos(trls));
                     }
                 }
                 Poll::Ready(Some(Ok(data)))
@@ -168,7 +198,7 @@ where
             Some(Err(e)) => {
                 // Classify the stream if an error has been encountered.
                 if let Some(State { classify, tx }) = this.state.take() {
-                    let _ = tx.try_send(classify.error(&e));
+                    send_or_report(&tx, classify.error(&e));
                 }
                 Poll::Ready(Some(Err(e)))
             }
@@ -192,7 +222,7 @@ impl<C: ClassifyEos, B> PinnedDrop for ResponseBody<C, B> {
         tracing::debug!("dropping ResponseBody");
         if let Some(State { classify, tx }) = self.project().state.take() {
             tracing::debug!("sending EOS to classify");
-            let _ = tx.try_send(classify.eos(None));
+            send_or_report(&tx, classify.eos(None));
         }
     }
 }

@@ -61,15 +61,15 @@ impl Rx {
 
     /// Indicates whether the gate is open.
     pub fn is_open(&self) -> bool {
-        matches!(self.state(), State::Open)
+        matches!(*self.0.borrow(), State::Open)
     }
 
     pub fn is_limited(&self) -> bool {
-        matches!(self.state(), State::Limited(_))
+        matches!(*self.0.borrow(), State::Limited(_))
     }
 
     pub fn is_shut(&self) -> bool {
-        matches!(self.state(), State::Shut)
+        matches!(*self.0.borrow(), State::Shut)
     }
 
     /// Waits for the gate state to change.
