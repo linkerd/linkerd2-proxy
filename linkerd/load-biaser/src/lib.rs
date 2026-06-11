@@ -452,11 +452,9 @@ fn failure_hint<B>(rsp: &http::Response<B>) -> Option<FailureHint> {
 }
 
 fn rate_limit_hint<B>(rsp: &http::Response<B>, max: Duration) -> Option<Duration> {
-    if let Some(d) = linkerd_http_classify::retry_after::parse_retry_after(
-        rsp.status(),
-        rsp.headers(),
-        max,
-    ) {
+    if let Some(d) =
+        linkerd_http_classify::retry_after::parse_retry_after(rsp.status(), rsp.headers(), max)
+    {
         return Some(d);
     }
     // Try gRPC pushback
