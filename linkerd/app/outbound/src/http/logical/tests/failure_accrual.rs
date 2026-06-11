@@ -54,7 +54,6 @@ async fn consecutive_failures_accrue() {
                 client_policy::ConsecutiveFailures {
                     max_failures: 3,
                     backoff,
-                    respect_retry_after_hint: false,
                 },
             )),
         })));
@@ -219,7 +218,6 @@ async fn balancer_doesnt_select_tripped_breakers() {
                 client_policy::ConsecutiveFailures {
                     max_failures: 3,
                     backoff,
-                    respect_retry_after_hint: false,
                 },
             )),
         })));

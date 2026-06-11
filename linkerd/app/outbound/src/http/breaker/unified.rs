@@ -741,77 +741,6 @@ mod tests {
         );
     }
 
-    #[tokio::test(flavor = "current_thread", start_paused = true)]
-    async fn retry_after_hint_extends_backoff() {
-        let _trace = linkerd_tracing::test::trace_init();
-
-        let (params, gate_tx, rsps) = gate::Params::channel(1);
-
-        let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
-            ..default_config(gate_tx, rsps)
-        });
-        let mut task = task::spawn(breaker.run());
-
-        assert_pending!(task.poll());
-
-        // Trip the breaker.
-        for _ in 0..3 {
-            send_err(&params, http::StatusCode::BAD_GATEWAY);
-            time::advance(time::Duration::from_millis(100)).await;
-            assert_pending!(task.poll());
-        }
-        assert!(params.gate.is_shut());
-
-        // After 1s (normal backoff would complete) the gate is still shut due to
-        // the hint floor.
-        time::sleep(time::Duration::from_secs(1)).await;
-        assert_pending!(task.poll());
-        assert!(params.gate.is_shut());
-
-        // After 3s more (4s total) it is still shut.
-        time::sleep(time::Duration::from_secs(3)).await;
-        assert_pending!(task.poll());
-        assert!(params.gate.is_shut());
-
-        // After 1s more (5s total) it enters probation.
-        time::sleep(time::Duration::from_secs(1)).await;
-        assert_pending!(task.poll());
-        assert!(params.gate.is_limited());
-    }
-
-    // When hints are not respected, a recorded Retry-After is ignored and the
-    // breaker follows its own backoff schedule. With opt-out the gate reaches
-    // probation at the base backoff regardless of the stored 5s hint.
-    #[tokio::test(flavor = "current_thread", start_paused = true)]
-    async fn retry_after_hint_ignored_when_disabled() {
-        let _trace = linkerd_tracing::test::trace_init();
-
-        let (params, gate_tx, rsps) = gate::Params::channel(1);
-
-        let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
-            ..default_config(gate_tx, rsps)
-        });
-        let mut task = task::spawn(breaker.run());
-
-        assert_pending!(task.poll());
-
-        for _ in 0..3 {
-            send_err(&params, http::StatusCode::BAD_GATEWAY);
-            time::advance(time::Duration::from_millis(100)).await;
-            assert_pending!(task.poll());
-        }
-        assert!(params.gate.is_shut());
-
-        // The base 1s backoff alone governs recovery: probation begins at 1s even
-        // though a longer hint sits in the store.
-        time::sleep(time::Duration::from_secs(1)).await;
-        assert_pending!(task.poll());
-        assert!(
-            params.gate.is_limited(),
-            "an unrespected hint must not extend the backoff",
-        );
-    }
-
     fn send_grpc(params: &gate::Params<classify::Class>, code: tonic::Code) {
         let class = if matches!(
             code,
@@ -1071,41 +1000,6 @@ mod tests {
         assert!(
             params.gate.is_shut(),
             "min_requests=0 trips on the first failing in-window sample",
-        );
-    }
-
-    // An over-ceiling hint is clamped to the backoff maximum. A Duration::MAX
-    // hint cannot push recovery past the 100s backoff ceiling, so the gate
-    // reaches probation at the ceiling rather than sleeping forever.
-    #[tokio::test(flavor = "current_thread", start_paused = true)]
-    async fn duration_max_hint_is_clamped() {
-        let _trace = linkerd_tracing::test::trace_init();
-
-        let (params, gate_tx, rsps) = gate::Params::channel(1);
-
-        let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
-            ..default_config(gate_tx, rsps)
-        });
-        let mut task = task::spawn(breaker.run());
-
-        assert_pending!(task.poll());
-
-        // Trip via three consecutive 5xx.
-        for _ in 0..3 {
-            send_err(&params, http::StatusCode::BAD_GATEWAY);
-            time::advance(time::Duration::from_millis(100)).await;
-            assert_pending!(task.poll());
-        }
-        assert!(params.gate.is_shut(), "should trip after 3 consecutive 5xx");
-
-        // After the 100s backoff ceiling the breaker should enter probation.
-        time::sleep(time::Duration::from_secs(100)).await;
-        assert_pending!(task.poll());
-
-        assert!(
-            params.gate.is_limited(),
-            "a Duration::MAX hint is clamped to the backoff ceiling; the gate \
-             reaches probation rather than sleeping forever"
         );
     }
 
@@ -1926,65 +1820,6 @@ mod tests {
         assert!(
             params.gate.is_shut(),
             "with no fresh verdict the probe times out and re-shuts",
-        );
-    }
-
-    // A longer Retry-After/pushback hint sent by a later probe raises the backoff
-    // floor for the waits that follow. The hint is re-read before every backoff wait,
-    // so one recorded after the first probe still applies. Here a 10s hint recorded
-    // before the second backoff floors it well past the 2s the exponential schedule
-    // alone would give.
-    #[tokio::test(flavor = "current_thread", start_paused = true)]
-    async fn cycle_2_fresh_hint_honored() {
-        let _trace = linkerd_tracing::test::trace_init();
-
-        let (mut params, gate_tx, rsps) = gate::Params::channel(1);
-        let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
-            ..default_config(gate_tx, rsps)
-        });
-        let mut task = task::spawn(breaker.run());
-
-        assert_pending!(task.poll());
-
-        // Trip via three consecutive 5xx. The store is empty, so the first backoff
-        // is the base 1s.
-        for _ in 0..3 {
-            send_err(&params, http::StatusCode::BAD_GATEWAY);
-            time::advance(time::Duration::from_millis(100)).await;
-            assert_pending!(task.poll());
-        }
-        assert!(params.gate.is_shut());
-
-        // The first backoff (1s) elapses and probation begins.
-        time::sleep(time::Duration::from_secs(1)).await;
-        assert_pending!(task.poll());
-        match params.gate.state() {
-            gate::State::Limited(_) => {
-                params.gate.opened_for_test().await.unwrap().forget();
-            }
-            other => panic!("expected Limited state, got {other:?}"),
-        }
-
-        send_err(&params, http::StatusCode::BAD_GATEWAY);
-        time::advance(time::Duration::from_millis(10)).await;
-        assert_pending!(task.poll());
-        assert!(params.gate.is_shut(), "a failed probe re-shuts the gate");
-
-        // The plain second backoff would be 2s. At 5s the gate is still shut, since
-        // the 10s hint raised the floor for this iteration.
-        time::sleep(time::Duration::from_secs(5)).await;
-        assert_pending!(task.poll());
-        assert!(
-            params.gate.is_shut(),
-            "the fresh 10s hint floors the second backoff past the 2s base",
-        );
-
-        // Past the hint window the gate finally enters probation.
-        time::sleep(time::Duration::from_secs(6)).await;
-        assert_pending!(task.poll());
-        assert!(
-            params.gate.is_limited(),
-            "once the 10s hint elapses the breaker probes again",
         );
     }
 }

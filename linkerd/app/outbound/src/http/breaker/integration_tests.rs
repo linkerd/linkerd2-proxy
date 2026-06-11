@@ -35,12 +35,11 @@ fn make_backoff() -> ExponentialBackoff {
 }
 
 /// A consecutive-failures policy: trip after `max_failures` consecutive
-/// failures, optionally flooring the probe backoff with a server hint.
-fn consecutive_accrual(max_failures: usize, respect_retry_after_hint: bool) -> FailureAccrual {
+/// failures.
+fn consecutive_accrual(max_failures: usize) -> FailureAccrual {
     FailureAccrual::Consecutive(ConsecutiveFailures {
         max_failures,
         backoff: make_backoff(),
-        respect_retry_after_hint,
     })
 }
 
@@ -315,7 +314,7 @@ async fn unified_timed_out_probe_re_shuts() {
 async fn consecutive_probe_is_lenient() {
     let _trace = linkerd_tracing::test::trace_init();
 
-    let params = endpoint_params(Some(consecutive_accrual(2, false)));
+    let params = endpoint_params(Some(consecutive_accrual(2)));
     let gate_params: gate::Params<classify::Class> = params.extract_param(&());
 
     time::advance(Duration::from_millis(1)).await;
@@ -374,147 +373,6 @@ async fn unified_probe_is_strict() {
     );
 }
 
-// With the consecutive policy opted into Retry-After, a recorded hint floors the
-// first probe backoff: a 5s hint holds the gate shut well past the 1s base
-// backoff, and probation arrives only once the hint window elapses.
-#[tokio::test(flavor = "current_thread", start_paused = true)]
-async fn consecutive_honors_hint_when_respected() {
-    let _trace = linkerd_tracing::test::trace_init();
-
-    let params = endpoint_params(Some(consecutive_accrual(2, true)));
-    let gate_params: gate::Params<classify::Class> = params.extract_param(&());
-
-    time::advance(Duration::from_millis(1)).await;
-
-    // A 5s hint, well above the 1s base backoff and within the 100s ceiling.
-    // http_store.record(Duration::from_secs(5));
-
-    fail(&gate_params, 2).await;
-    assert!(
-        gate_params.gate.is_shut(),
-        "two 5xx trip the consecutive breaker",
-    );
-
-    // At ~4s the base backoff has long elapsed, but the hint floor holds.
-    time::advance(Duration::from_secs(4)).await;
-    assert!(
-        gate_params.gate.is_shut(),
-        "a respected hint floors the first probe backoff to 5s",
-    );
-
-    // Past the hint window the gate admits a probe.
-    advance_to_probation(&gate_params.gate).await;
-    assert!(
-        gate_params.gate.is_limited(),
-        "the gate enters probation once the hint window elapses",
-    );
-}
-
-// With the consecutive policy not opted into Retry-After, a recorded hint is
-// ignored: probation arrives on the base backoff and the hint is left unread.
-// This pins the strict opt-in of the hint floor.
-#[tokio::test(flavor = "current_thread", start_paused = true)]
-async fn consecutive_ignores_hint_when_not_respected() {
-    let _trace = linkerd_tracing::test::trace_init();
-
-    let params = endpoint_params(Some(consecutive_accrual(2, false)));
-    let gate_params: gate::Params<classify::Class> = params.extract_param(&());
-
-    time::advance(Duration::from_millis(1)).await;
-
-    // A long hint that the breaker must never read.
-    // http_store.record(Duration::from_secs(10));
-
-    fail(&gate_params, 2).await;
-    assert!(
-        gate_params.gate.is_shut(),
-        "two 5xx trip the consecutive breaker",
-    );
-
-    // Probation arrives on the base backoff, since the hint was ignored.
-    advance_to_probation(&gate_params.gate).await;
-
-    // The hint is still in the store: the breaker never took it.
-    // assert!(
-    //     http_store.take(Duration::from_secs(60)).is_some(),
-    //     "an unrespected hint stays in the store, untouched by the breaker",
-    // );
-}
-
-// The unified policy honors a Retry-After hint as a backoff floor. A 5s hint holds
-// the gate shut past the base backoff and probation arrives only after the hint
-// window elapses, just as for the consecutive policy.
-#[tokio::test(flavor = "current_thread", start_paused = true)]
-async fn unified_honors_retry_after_hint() {
-    let _trace = linkerd_tracing::test::trace_init();
-
-    // Trip on the consecutive ceiling (success-rate dimension dormant) so the
-    // hint timing is not entangled with a success-rate trip.
-    let params = endpoint_params(Some(unified_accrual(0.8, 100, 3, true)));
-    let gate_params: gate::Params<classify::Class> = params.extract_param(&());
-
-    time::advance(Duration::from_millis(1)).await;
-
-    // http_store.record(Duration::from_secs(5));
-
-    fail(&gate_params, 3).await;
-    assert!(
-        gate_params.gate.is_shut(),
-        "three 5xx trip the unified breaker"
-    );
-
-    // At ~4s the base backoff has elapsed but the hint floor holds.
-    time::advance(Duration::from_secs(4)).await;
-    assert!(
-        gate_params.gate.is_shut(),
-        "the unified breaker holds the gate shut under the 5s hint floor",
-    );
-
-    advance_to_probation(&gate_params.gate).await;
-    assert!(
-        gate_params.gate.is_limited(),
-        "the unified breaker enters probation once the hint window elapses",
-    );
-}
-
-// An over-ceiling hint cannot hold an endpoint shut forever. A hint far larger than
-// the backoff ceiling is clamped to the ceiling, so probation arrives once the
-// ceiling elapses rather than after the raw hint.
-#[tokio::test(flavor = "current_thread", start_paused = true)]
-async fn unified_clamps_hint_to_backoff_ceiling() {
-    let _trace = linkerd_tracing::test::trace_init();
-
-    // Consecutive-ceiling trip with the success-rate dimension dormant.
-    let params = endpoint_params(Some(unified_accrual(0.8, 100, 3, true)));
-    let gate_params: gate::Params<classify::Class> = params.extract_param(&());
-
-    time::advance(Duration::from_millis(1)).await;
-
-    // A hint far past the ceiling. The clamp caps the floor at the ceiling.
-    // http_store.record(TEST_MAX_BACKOFF + Duration::from_secs(300));
-
-    fail(&gate_params, 3).await;
-    assert!(
-        gate_params.gate.is_shut(),
-        "three 5xx trip the unified breaker"
-    );
-
-    // Just short of the ceiling the gate is still shut.
-    time::advance(TEST_MAX_BACKOFF - Duration::from_secs(1)).await;
-    assert!(
-        gate_params.gate.is_shut(),
-        "the gate stays shut until the clamped ceiling elapses",
-    );
-
-    // Past the ceiling the gate admits a probe, while an unclamped hint would still
-    // hold it shut.
-    advance_to_probation(&gate_params.gate).await;
-    assert!(
-        gate_params.gate.is_limited(),
-        "an over-ceiling hint is clamped, so probation arrives at the ceiling",
-    );
-}
-
 // An absent policy spawns no breaker task. The gate stays open permanently and
 // the response receiver is dropped, so classification sends are silently
 // discarded. This is the default path for an endpoint with no failure accrual.
@@ -544,55 +402,5 @@ async fn failure_accrual_none_produces_no_breaker_task() {
     assert!(
         gate_params.gate.is_open(),
         "the gate stays open with no breaker task to close it",
-    );
-}
-
-// Per-endpoint hint isolation: a pushback recorded for one endpoint must not
-// extend another endpoint's backoff. Each endpoint gets its own store pair, so a
-// hostile or overloaded peer behind one endpoint cannot stretch the recovery of
-// an unrelated one. Endpoint A records a long hint and trips, while endpoint B
-// trips with an empty store and must recover on the base backoff, which proves B
-// never read A's hint.
-#[tokio::test(flavor = "current_thread", start_paused = true)]
-async fn per_endpoint_hint_isolation() {
-    let _trace = linkerd_tracing::test::trace_init();
-
-    // Two endpoints, each with its own dispatch params and store pair. The
-    // success-rate dimension is held dormant (a high sample floor) so each
-    // endpoint trips on exactly two consecutive failures and recovery timing is
-    // governed by the backoff and any hint alone.
-    let params_a = endpoint_params(Some(unified_accrual(0.8, 100, 2, true)));
-    let gate_a: gate::Params<classify::Class> = params_a.extract_param(&());
-
-    let params_b = endpoint_params(Some(unified_accrual(0.8, 100, 2, true)));
-    let gate_b: gate::Params<classify::Class> = params_b.extract_param(&());
-
-    time::advance(Duration::from_millis(1)).await;
-    assert!(gate_a.gate.is_open(), "endpoint A starts open");
-    assert!(gate_b.gate.is_open(), "endpoint B starts open");
-
-    // A long hint lands in endpoint A's store only.
-    //store_a.record(Duration::from_secs(30));
-
-    // Both endpoints trip on their own consecutive failures.
-    fail(&gate_a, 2).await;
-    fail(&gate_b, 2).await;
-    assert!(gate_a.gate.is_shut(), "endpoint A trips");
-    assert!(gate_b.gate.is_shut(), "endpoint B trips");
-
-    // Endpoint B has an empty store, so its backoff stays on the base schedule
-    // and it admits a probe within a few seconds. A's hint never reached it.
-    advance_to_probation(&gate_b.gate).await;
-    assert!(
-        gate_b.gate.is_limited(),
-        "endpoint B recovers on the base backoff; endpoint A's hint never reached it",
-    );
-
-    // Endpoint A is still shut under its own 30s hint floor. The probation
-    // helper advanced only a few seconds, far short of that floor, so A could
-    // not have admitted a probe.
-    assert!(
-        gate_a.gate.is_shut(),
-        "endpoint A stays shut under its own hint floor while B has recovered",
     );
 }
