@@ -87,7 +87,6 @@ impl<T> svc::ExtractParam<gate::Params<classify::Class>, T> for Params {
                     threshold = %u.threshold,
                     min_requests = u.min_requests,
                     backoff = ?u.backoff,
-                    respect_retry_after_hint = u.respect_retry_after_hint,
                     "Using unified failure accrual policy with consecutive failures and success rate tracking.",
                 );
 

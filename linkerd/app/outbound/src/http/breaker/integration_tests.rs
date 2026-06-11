@@ -49,7 +49,6 @@ fn unified_accrual(
     threshold: f64,
     min_requests: u32,
     max_consecutive_failures: usize,
-    respect_retry_after_hint: bool,
 ) -> FailureAccrual {
     FailureAccrual::Unified(Unified {
         threshold: SuccessRateThreshold::from_fraction(threshold),
@@ -57,7 +56,6 @@ fn unified_accrual(
         min_requests,
         max_consecutive_failures,
         backoff: make_backoff(),
-        respect_retry_after_hint,
     })
 }
 
@@ -129,7 +127,7 @@ async fn advance_to_open(gate: &gate::Rx) {
 async fn unified_trips_on_consecutive_failures() {
     let _trace = linkerd_tracing::test::trace_init();
 
-    let params = endpoint_params(Some(unified_accrual(0.8, 100, 3, true)));
+    let params = endpoint_params(Some(unified_accrual(0.8, 100, 3)));
     let gate_params: gate::Params<classify::Class> = params.extract_param(&());
 
     time::advance(Duration::from_millis(1)).await;
@@ -162,7 +160,7 @@ async fn unified_trips_on_low_success_rate() {
 
     // Consecutive ceiling high enough to stay out of the way, while a single
     // in-window sample satisfies the floor.
-    let params = endpoint_params(Some(unified_accrual(0.8, 1, 100, true)));
+    let params = endpoint_params(Some(unified_accrual(0.8, 1, 100)));
     let gate_params: gate::Params<classify::Class> = params.extract_param(&());
 
     time::advance(Duration::from_millis(1)).await;
@@ -199,7 +197,7 @@ async fn unified_probe_success_reopens() {
     // Trip on the consecutive ceiling (success-rate dimension held dormant by a
     // high sample floor) so the two failures trip cleanly and the next
     // classification is unambiguously the probe verdict.
-    let params = endpoint_params(Some(unified_accrual(0.8, 100, 2, true)));
+    let params = endpoint_params(Some(unified_accrual(0.8, 100, 2)));
     let gate_params: gate::Params<classify::Class> = params.extract_param(&());
 
     time::advance(Duration::from_millis(1)).await;
@@ -231,7 +229,7 @@ async fn unified_failed_probe_advances_backoff() {
 
     // Consecutive-ceiling trip with the success-rate dimension dormant, so the
     // probe slot is clean and the escalation is attributable to the failed probe.
-    let params = endpoint_params(Some(unified_accrual(0.8, 100, 2, true)));
+    let params = endpoint_params(Some(unified_accrual(0.8, 100, 2)));
     let gate_params: gate::Params<classify::Class> = params.extract_param(&());
 
     time::advance(Duration::from_millis(1)).await;
@@ -284,7 +282,7 @@ async fn unified_timed_out_probe_re_shuts() {
     // Consecutive-ceiling trip with the success-rate dimension dormant, so no
     // stray classification can stand in for the probe the test deliberately
     // withholds.
-    let params = endpoint_params(Some(unified_accrual(0.8, 100, 2, true)));
+    let params = endpoint_params(Some(unified_accrual(0.8, 100, 2)));
     let gate_params: gate::Params<classify::Class> = params.extract_param(&());
 
     time::advance(Duration::from_millis(1)).await;
@@ -348,7 +346,7 @@ async fn unified_probe_is_strict() {
     // A non-zero threshold keeps the strict probe in force, while a high sample
     // floor keeps the success-rate dimension from tripping, so the two 5xx trip
     // on the consecutive ceiling and the 429 probe exercises the strict path.
-    let params = endpoint_params(Some(unified_accrual(0.8, 100, 2, true)));
+    let params = endpoint_params(Some(unified_accrual(0.8, 100, 2)));
     let gate_params: gate::Params<classify::Class> = params.extract_param(&());
 
     time::advance(Duration::from_millis(1)).await;

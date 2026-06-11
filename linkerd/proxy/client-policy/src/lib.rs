@@ -254,7 +254,6 @@ pub struct Unified {
     pub min_requests: u32,
     pub max_consecutive_failures: usize,
     pub backoff: linkerd_exp_backoff::ExponentialBackoff,
-    pub respect_retry_after_hint: bool,
 }
 
 // === impl ClientPolicy ===
@@ -1011,7 +1010,6 @@ pub mod proto {
                             "success rate min_requests exceeds the supported maximum",
                         ));
                     }
-                    let respect_retry_after_hint = retry_after_hint(backoff.as_ref());
                     let backoff = backoff
                         .map(try_backoff)
                         .transpose()?
@@ -1022,18 +1020,10 @@ pub mod proto {
                         min_requests,
                         max_consecutive_failures: max_consecutive_failures as usize,
                         backoff,
-                        respect_retry_after_hint,
                     }))
                 }
             }
         }
-    }
-
-    // The Retry-After preference rides on the proto backoff message. Read it
-    // before the backoff is consumed by `try_backoff`. An absent backoff means
-    // it is off.
-    fn retry_after_hint(backoff: Option<&outbound::ExponentialBackoff>) -> bool {
-        backoff.is_some_and(|b| b.respect_retry_after_hint)
     }
 
     pub(crate) fn try_backoff(
@@ -1041,7 +1031,7 @@ pub mod proto {
             min_backoff,
             max_backoff,
             jitter_ratio,
-            // Read separately via `retry_after_hint`, so it does not affect the window.
+            // The proxy does not act on this proto field.
             respect_retry_after_hint: _,
         }: outbound::ExponentialBackoff,
     ) -> Result<linkerd_exp_backoff::ExponentialBackoff, InvalidBackoff> {
