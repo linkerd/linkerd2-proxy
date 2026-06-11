@@ -1133,23 +1133,12 @@ mod failure_accrual_proto_tests {
 
     #[test]
     fn consecutive_kind_converts() {
-        let mut backoff = valid_backoff();
-        backoff.respect_retry_after_hint = true;
+        let backoff = valid_backoff();
         let result = FailureAccrual::try_from(consecutive(5, Some(backoff))).unwrap();
         match result {
             FailureAccrual::Consecutive(ConsecutiveFailures { max_failures, .. }) => {
                 assert_eq!(max_failures, 5);
             }
-            other => panic!("expected a consecutive policy, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn consecutive_kind_defaults_retry_after_hint_off() {
-        // valid_backoff leaves the hint unset, so the conversion reports it off.
-        let result = FailureAccrual::try_from(consecutive(5, Some(valid_backoff()))).unwrap();
-        match result {
-            FailureAccrual::Consecutive(_) => (),
             other => panic!("expected a consecutive policy, got {other:?}"),
         }
     }
