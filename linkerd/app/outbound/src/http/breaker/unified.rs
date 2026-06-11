@@ -1645,13 +1645,12 @@ mod tests {
         );
     }
 
-    // A healthy endpoint whose probe verdict lands after the base backoff window but
-    // before the ceiling still reopens. The deadline is the backoff ceiling rather
-    // than the window just waited, so a slow but good probe is not cut into a silent
-    // failure. Were the deadline the base 1s window, the probe slot would already
-    // have expired and shut the gate before the verdict arrived.
+    // A healthy endpoint whose probe verdict lands well after the base backoff
+    // window still reopens. Probation has no timer bounding the probe. It waits
+    // for the verdict, so a slow but good probe stays in the gate-limited state
+    // until its answer arrives. No timer cuts it into a silent failure.
     #[tokio::test(flavor = "current_thread", start_paused = true)]
-    async fn slow_healthy_probe_within_ceiling_reopens() {
+    async fn slow_healthy_probe_reopens() {
         let _trace = linkerd_tracing::test::trace_init();
 
         let (mut params, gate_tx, rsps) = gate::Params::channel(1);
@@ -1678,23 +1677,23 @@ mod tests {
         // Route a probe: take the permit the breaker opened.
         params.gate.opened_for_test().await.unwrap().forget();
 
-        // Advance well past the base 1s window but far short of the 100s ceiling.
-        // The probe slot is still live: a slow healthy peer has not yet answered,
-        // and the gate stays limited rather than re-shutting on a phantom timeout.
+        // Advance well past the base 1s window. The probe slot is still live.
+        // A slow healthy peer has not yet answered, and the gate stays limited
+        // since nothing re-shuts it until the verdict lands.
         time::sleep(time::Duration::from_secs(5)).await;
         assert_pending!(task.poll());
         assert!(
             params.gate.is_limited(),
-            "a probe slower than the base backoff is still pending under the ceiling",
+            "a probe slower than the base backoff is still pending",
         );
 
-        // The verdict finally lands within the ceiling. The slow but healthy
-        // probe reopens the circuit.
+        // The verdict finally lands. The slow but healthy probe reopens the
+        // circuit.
         send_ok(&params, http::StatusCode::OK);
         assert_pending!(task.poll());
         assert!(
             params.gate.is_open(),
-            "a healthy verdict within the ceiling reopens the gate",
+            "a healthy verdict reopens the gate whenever it lands",
         );
     }
 }
