@@ -1841,6 +1841,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd-ewma"
+version = "0.1.0"
+dependencies = [
+ "tokio",
+]
+
+[[package]]
 name = "linkerd-exp-backoff"
 version = "0.1.0"
 dependencies = [
@@ -1904,6 +1911,7 @@ dependencies = [
  "futures",
  "http",
  "http-body",
+ "httpdate",
  "linkerd-error",
  "linkerd-http-box",
  "linkerd-stack",
@@ -2130,6 +2138,27 @@ dependencies = [
  "tokio",
  "tokio-test",
  "tokio-util",
+]
+
+[[package]]
+name = "linkerd-load-biaser"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "futures",
+ "http",
+ "http-body",
+ "http-body-util",
+ "hyper-balance",
+ "linkerd-ewma",
+ "linkerd-http-classify",
+ "linkerd-stack",
+ "parking_lot",
+ "pin-project",
+ "tokio",
+ "tower",
+ "tower-service",
+ "tracing",
 ]
 
 [[package]]

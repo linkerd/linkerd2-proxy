@@ -12,6 +12,7 @@ pub use self::{
 mod channel;
 pub mod gate;
 mod insert;
+pub mod retry_after;
 
 /// Determines how a request's response should be classified.
 pub trait Classify {

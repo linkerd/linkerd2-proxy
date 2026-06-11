@@ -22,6 +22,7 @@ members = [
     "linkerd/error",
     "linkerd/errno",
     "linkerd/error-respond",
+    "linkerd/ewma",
     "linkerd/exp-backoff",
     "linkerd/http/access-log",
     "linkerd/http/body-eos",
@@ -42,6 +43,7 @@ members = [
     "linkerd/identity",
     "linkerd/idle-cache",
     "linkerd/io",
+    "linkerd/load-biaser",
     "linkerd/meshtls",
     "linkerd/meshtls/verifier",
     "linkerd/metrics",
@@ -105,6 +107,7 @@ drain = { version = "0.2", default-features = false }
 h2 = { version = "0.4" }
 http = { version = "1" }
 http-body = { version = "1" }
+httpdate = { version = "1.0" }
 hyper = { version = "1", default-features = false }
 prometheus-client = { version = "0.23" }
 prost = { version = "0.14" }
