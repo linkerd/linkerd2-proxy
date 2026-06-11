@@ -27,10 +27,8 @@ pub enum TripReason {
 
 /// Params configuring a circuit breaker stack.
 ///
-/// The Retry-After stores pass hints from response classification to the
-/// breaker's backoff logic. One pair is built per endpoint and shared by its
-/// classifier and breaker, so a hint seen on one endpoint never extends the
-/// backoff of another. An absent policy disables the breaker.
+/// The outbound stack builds one set per endpoint. Each endpoint's breaker
+/// tracks only its own failures. An absent policy disables the breaker.
 #[derive(Clone, Debug)]
 pub(crate) struct Params {
     pub(crate) accrual: Option<FailureAccrual>,
@@ -54,8 +52,7 @@ impl<T> svc::ExtractParam<gate::Params<classify::Class>, T> for Params {
                 // Consecutive-only policy that trips after N consecutive
                 // failures and probes leniently, so the default classifier
                 // judges a 429. This breaker follows its plain exponential
-                // backoff and does not floor on server hints; only the unified
-                // breaker reads the shared hint stores.
+                // backoff.
                 tracing::trace!(
                     max_failures = cf.max_failures,
                     backoff = ?cf.backoff,

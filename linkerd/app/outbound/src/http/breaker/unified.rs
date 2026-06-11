@@ -56,19 +56,6 @@
 //! during probation counts as a failure, since it shows the endpoint is still
 //! rate limiting and the circuit must not reopen while that is the case.
 //!
-//! ## Retry-After Integration
-//!
-//! When a 429 or 503 response has a `Retry-After` header the duration is
-//! stored in a [`RetryAfterStore`] and used as a backoff floor. While the circuit is
-//! tripped the store is consulted before each backoff wait, so a longer hint
-//! sent by a later probe raises the floor for the waits that follow.
-//!
-//! A gRPC RESOURCE_EXHAUSTED response with a `grpc-retry-pushback-ms` header
-//! or trailer is stored in a [`GrpcRetryPushbackStore`] and used the same way, and
-//! when both an HTTP and a gRPC hint exist the larger wins. Both hints are clamped
-//! to the probe backoff's bounds in [`take_combined_hint`], so a single response
-//! can neither shorten the base backoff nor push past the escalation ceiling.
-//!
 //! ## gRPC RESOURCE_EXHAUSTED Handling
 //!
 //! gRPC's RESOURCE_EXHAUSTED (code 8) is treated like HTTP 429. It counts as a

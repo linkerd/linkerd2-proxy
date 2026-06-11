@@ -4,10 +4,9 @@
 //! These tests drive the breaker through the [`Params`] dispatch that the
 //! outbound stack uses to spawn a policy for each endpoint. They cover the two
 //! trip conditions (the success-rate time window and the consecutive-failure
-//! ceiling), recovery through bounded probation, how the two policies probe
-//! either strictly or leniently, honoring a server pushback hint as a backoff
-//! floor, and the per-endpoint isolation of those hints. The engine's internal
-//! state machine is unit-tested in `unified`, so what these tests exercise is the
+//! ceiling) plus recovery through a single probe. They also check that the
+//! two policies probe either strictly or leniently. The `unified` module
+//! covers the engine's internal state machine. These tests exercise the
 //! wiring that turns a [`FailureAccrual`] policy into a running breaker.
 
 use super::*;
@@ -20,7 +19,7 @@ use std::time::Duration;
 use tokio::time;
 
 /// Base probe backoff: a 1s floor and a 100s ceiling, no jitter so the timing
-/// assertions are deterministic. A recorded hint is clamped to the ceiling.
+/// assertions are deterministic.
 const TEST_BASE_BACKOFF: Duration = Duration::from_secs(1);
 const TEST_MAX_BACKOFF: Duration = Duration::from_secs(100);
 
@@ -59,10 +58,7 @@ fn unified_accrual(
     })
 }
 
-/// Build the breaker dispatch params for one endpoint with fresh hint stores.
-///
-/// Each call mints a distinct store pair, modeling the per-endpoint stores the
-/// stack builds so a hint seen on one endpoint cannot reach another's breaker.
+/// Build the breaker dispatch params for one endpoint.
 fn endpoint_params(accrual: Option<FailureAccrual>) -> Params {
     Params {
         accrual,
