@@ -65,152 +65,11 @@ pub enum FailureHint {
     InternalError,
 }
 
-/// Cached Retry-After hint stored in HTTP response extensions.
-///
-/// Stores the **uncapped** parsed value. Each consumer applies its own cap
-/// via `rate_limit_hint(max)`, so different callers (e.g. load biaser vs
-/// circuit breaker) can use different maximums from the same cached value.
-#[derive(Clone, Copy, Debug)]
-pub struct CachedRateLimitHint(Duration);
-
-impl CachedRateLimitHint {
-    /// Wraps a parsed, uncapped rate limit duration for caching.
-    pub fn new(d: Duration) -> Self {
-        Self(d)
-    }
-
-    /// Returns the cached duration, capped at `max`.
-    pub fn duration_capped(&self, max: Duration) -> Duration {
-        self.0.min(max)
-    }
-}
-
-/// Trait for extracting failure hints from responses.
-///
-/// This allows the load biaser to classify responses and apply appropriate
-/// penalties.
-///
-/// The trait splits rate limit hint access into two methods to avoid
-/// requiring `&mut self` on the read path:
-/// - `attach_parsed_rate_limit_hint(&mut self)`: parse and cache (needs `&mut`)
-/// - `rate_limit_hint(&self, max)`: read cached value or parse on-read (only needs `&self`)
-pub trait ResponseFailureHint {
-    /// Returns a failure hint if the response indicates a failure condition.
-    fn failure_hint(&self) -> Option<FailureHint>;
-
-    /// Parse and cache the raw (uncapped) rate limit hint from this response.
-    ///
-    /// The raw uncapped value is cached so that each consumer can apply their
-    /// own cap via `rate_limit_hint(max)`.
-    fn attach_parsed_rate_limit_hint(&mut self);
-
-    /// Returns the rate limit hint if available.
-    ///
-    /// Checks cached value first (from a previous `attach_parsed_rate_limit_hint` call).
-    /// If no cached value, attempts to parse the header directly (capping at `max`).
-    /// Returns `None` only if the header is absent or unparseable.
-    fn rate_limit_hint(&self, max: Duration) -> Option<Duration>;
-}
-
 fn is_grpc(headers: &http::HeaderMap) -> bool {
     headers
         .get(http::header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
         .is_some_and(|ct| ct.starts_with("application/grpc"))
-}
-
-/// HTTP responses classify failures by status code and parse Retry-After hints.
-///
-/// For gRPC trailers-only responses (HTTP 200 with `content-type: application/grpc`
-/// and `grpc-status` in headers), the `grpc-status` header is inspected:
-/// - gRPC status 8 (RESOURCE_EXHAUSTED) -> `RateLimited`
-/// - gRPC status 14 (UNAVAILABLE) -> `ServiceUnavailable`
-/// - gRPC status 2 (UNKNOWN), 4 (DEADLINE_EXCEEDED), 13 (INTERNAL),
-///   15 (DATA_LOSS) -> `InternalError`
-/// - Others (client errors, ie. CANCELLED, NOT_FOUND, etc) -> ignored
-///
-/// Non-gRPC HTTP 200 responses are not inspected for `grpc-status`.
-impl<B> ResponseFailureHint for http::Response<B> {
-    fn failure_hint(&self) -> Option<FailureHint> {
-        let status = self.status();
-        if status == http::StatusCode::TOO_MANY_REQUESTS {
-            Some(FailureHint::RateLimited)
-        } else if status == http::StatusCode::SERVICE_UNAVAILABLE {
-            Some(FailureHint::ServiceUnavailable)
-        } else if status.is_server_error() {
-            Some(FailureHint::InternalError)
-        } else if status == http::StatusCode::OK && is_grpc(self.headers()) {
-            // gRPC trailers-only responses: grpc-status appears in headers.
-            // We inspect grpc-status when content-type confirms this is a gRPC
-            // response so that we avoid misclassifying non-gRPC HTTP 200
-            // responses that somehow happen to include a grpc-status header.
-            //
-            // Note: for streaming gRPC, grpc-status is in trailers (not headers)
-            // and is not detected here; such responses record only their
-            // measured RTT and are not penalized.
-            self.headers()
-                .get("grpc-status")
-                .and_then(|v| v.to_str().ok())
-                .and_then(|s| s.parse::<u16>().ok())
-                .and_then(|code| match code {
-                    0 => None,                                   // OK
-                    8 => Some(FailureHint::RateLimited),         // RESOURCE_EXHAUSTED
-                    14 => Some(FailureHint::ServiceUnavailable), // UNAVAILABLE
-                    // UNKNOWN, DEADLINE_EXCEEDED, INTERNAL, DATA_LOSS
-                    2 | 4 | 13 | 15 => Some(FailureHint::InternalError),
-                    _ => None, // Client errors (CANCELLED, INVALID_ARGUMENT, etc.)
-                })
-        } else {
-            None
-        }
-    }
-
-    fn attach_parsed_rate_limit_hint(&mut self) {
-        // Store the uncapped value. Each consumer applies their own cap via
-        // rate_limit_hint(max).
-        if let Some(d) = linkerd_http_classify::retry_after::parse_retry_after(
-            self.status(),
-            self.headers(),
-            Duration::MAX,
-        ) {
-            self.extensions_mut().insert(CachedRateLimitHint::new(d));
-            return;
-        }
-        // Try gRPC retry-pushback-ms (for trailers-only responses)
-        if self.status() == http::StatusCode::OK && is_grpc(self.headers()) {
-            if let Some(d) = linkerd_http_classify::retry_after::parse_grpc_retry_pushback(
-                self.headers(),
-                Duration::MAX,
-            ) {
-                self.extensions_mut().insert(CachedRateLimitHint::new(d));
-            }
-        }
-    }
-
-    fn rate_limit_hint(&self, max: Duration) -> Option<Duration> {
-        // Check cache first (from previous attach call), apply caller's cap
-        if let Some(cached) = self.extensions().get::<CachedRateLimitHint>() {
-            return Some(cached.duration_capped(max));
-        }
-        // Parse on-read as fallback (header present but attach wasn't called)
-        if let Some(d) = linkerd_http_classify::retry_after::parse_retry_after(
-            self.status(),
-            self.headers(),
-            max,
-        ) {
-            return Some(d);
-        }
-        // Try gRPC pushback
-        if self.status() == http::StatusCode::OK && is_grpc(self.headers()) {
-            if let Some(d) =
-                linkerd_http_classify::retry_after::parse_grpc_retry_pushback(self.headers(), max)
-            {
-                return Some(d);
-            }
-        }
-        // No header or unparseable
-        None
-    }
 }
 
 /// Configuration for LoadBiaser behavior.
@@ -261,10 +120,10 @@ struct SharedState {
 impl SharedState {
     /// Translates a classified failure into an effective RTT measurement,
     /// taking into account Retry-After/grpc-retry-pushback hints.
-    fn effective_rtt<R: ResponseFailureHint>(&self, hint: FailureHint, resp: &R) -> Duration {
+    fn effective_rtt<B>(&self, hint: FailureHint, resp: &http::Response<B>) -> Duration {
         let from_hint = match hint {
             FailureHint::RateLimited | FailureHint::ServiceUnavailable => {
-                resp.rate_limit_hint(self.max_duration)
+                rate_limit_hint(resp, self.max_duration)
             }
             FailureHint::InternalError => None,
         };
@@ -432,15 +291,14 @@ impl<S, C> Load for LoadBiaser<S, C> {
     }
 }
 
-impl<S, C, Req> Service<Req> for LoadBiaser<S, C>
+impl<S, C, B, Req> Service<Req> for LoadBiaser<S, C>
 where
-    S: Service<Req>,
-    S::Response: ResponseFailureHint,
-    C: TrackCompletion<Option<Handle>, S::Response> + Clone,
+    S: Service<Req, Response = http::Response<B>>,
+    C: TrackCompletion<Option<Handle>, http::Response<B>> + Clone,
 {
     type Response = C::Output;
     type Error = S::Error;
-    type Future = LoadBiaserFuture<S::Future, S::Response, C>;
+    type Future = LoadBiaserFuture<S::Future, B, C>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.inner.poll_ready(cx)
@@ -502,11 +360,10 @@ where
     }
 }
 
-impl<F, Rsp, E, C> Future for LoadBiaserFuture<F, Rsp, C>
+impl<F, B, E, C> Future for LoadBiaserFuture<F, B, C>
 where
-    F: Future<Output = Result<Rsp, E>>,
-    Rsp: ResponseFailureHint,
-    C: TrackCompletion<Option<Handle>, Rsp>,
+    F: Future<Output = Result<http::Response<B>, E>>,
+    C: TrackCompletion<Option<Handle>, http::Response<B>>,
 {
     type Output = Result<C::Output, E>;
 
@@ -516,11 +373,8 @@ where
         let mut handle = this.handle.take().expect("polled after completion");
 
         match result {
-            Ok(mut resp) => {
-                let handle = if let Some(hint) = resp.failure_hint() {
-                    // Cache the uncapped hint while the response is mutable. The
-                    // handle records the penalty when dropped.
-                    resp.attach_parsed_rate_limit_hint();
+            Ok(resp) => {
+                let handle = if let Some(hint) = failure_hint(&resp) {
                     let penalty = handle.shared.effective_rtt(hint, &resp);
                     tracing::debug!(
                         rtt_secs = penalty.as_secs_f64(),
@@ -550,6 +404,71 @@ where
             }
         }
     }
+}
+
+/// HTTP responses classify failures by status code and parse Retry-After hints.
+///
+/// For gRPC trailers-only responses (HTTP 200 with `content-type: application/grpc`
+/// and `grpc-status` in headers), the `grpc-status` header is inspected:
+/// - gRPC status 8 (RESOURCE_EXHAUSTED) -> `RateLimited`
+/// - gRPC status 14 (UNAVAILABLE) -> `ServiceUnavailable`
+/// - gRPC status 2 (UNKNOWN), 4 (DEADLINE_EXCEEDED), 13 (INTERNAL),
+///   15 (DATA_LOSS) -> `InternalError`
+/// - Others (client errors, ie. CANCELLED, NOT_FOUND, etc) -> ignored
+///
+/// Non-gRPC HTTP 200 responses are not inspected for `grpc-status`.
+fn failure_hint<B>(rsp: &http::Response<B>) -> Option<FailureHint> {
+    let status = rsp.status();
+    if status == http::StatusCode::TOO_MANY_REQUESTS {
+        Some(FailureHint::RateLimited)
+    } else if status == http::StatusCode::SERVICE_UNAVAILABLE {
+        Some(FailureHint::ServiceUnavailable)
+    } else if status.is_server_error() {
+        Some(FailureHint::InternalError)
+    } else if status == http::StatusCode::OK && is_grpc(rsp.headers()) {
+        // gRPC trailers-only responses: grpc-status appears in headers.
+        // We inspect grpc-status when content-type confirms this is a gRPC
+        // response so that we avoid misclassifying non-gRPC HTTP 200
+        // responses that somehow happen to include a grpc-status header.
+        //
+        // Note: for streaming gRPC, grpc-status is in trailers (not headers)
+        // and is not detected here; such responses record only their
+        // measured RTT and are not penalized.
+        rsp.headers()
+            .get("grpc-status")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| s.parse::<u16>().ok())
+            .and_then(|code| match code {
+                0 => None,                                   // OK
+                8 => Some(FailureHint::RateLimited),         // RESOURCE_EXHAUSTED
+                14 => Some(FailureHint::ServiceUnavailable), // UNAVAILABLE
+                // UNKNOWN, DEADLINE_EXCEEDED, INTERNAL, DATA_LOSS
+                2 | 4 | 13 | 15 => Some(FailureHint::InternalError),
+                _ => None, // Client errors (CANCELLED, INVALID_ARGUMENT, etc.)
+            })
+    } else {
+        None
+    }
+}
+
+fn rate_limit_hint<B>(rsp: &http::Response<B>, max: Duration) -> Option<Duration> {
+    if let Some(d) = linkerd_http_classify::retry_after::parse_retry_after(
+        rsp.status(),
+        rsp.headers(),
+        max,
+    ) {
+        return Some(d);
+    }
+    // Try gRPC pushback
+    if rsp.status() == http::StatusCode::OK && is_grpc(rsp.headers()) {
+        if let Some(d) =
+            linkerd_http_classify::retry_after::parse_grpc_retry_pushback(rsp.headers(), max)
+        {
+            return Some(d);
+        }
+    }
+    // No header or unparseable
+    None
 }
 
 #[cfg(test)]
@@ -1194,43 +1113,37 @@ mod tests {
 
     #[test]
     fn test_rate_limit_hint_parses_retry_after() {
-        let mut resp = http::Response::builder()
+        let resp = http::Response::builder()
             .status(http::StatusCode::TOO_MANY_REQUESTS)
             .header(http::header::RETRY_AFTER, "45")
             .body("rate limited")
             .unwrap();
         let max = Duration::from_secs(60);
 
-        resp.attach_parsed_rate_limit_hint();
-
-        assert_eq!(resp.rate_limit_hint(max), Some(Duration::from_secs(45)));
+        assert_eq!(rate_limit_hint(&resp, max), Some(Duration::from_secs(45)));
     }
 
     #[test]
     fn test_rate_limit_hint_none_for_200() {
-        let mut resp = http::Response::builder()
+        let resp = http::Response::builder()
             .status(http::StatusCode::OK)
             .header(http::header::RETRY_AFTER, "45")
             .body("ok")
             .unwrap();
         let max = Duration::from_secs(60);
 
-        resp.attach_parsed_rate_limit_hint();
-
-        assert_eq!(resp.rate_limit_hint(max), None);
+        assert_eq!(rate_limit_hint(&resp, max), None);
     }
 
     #[test]
     fn test_rate_limit_hint_none_without_header() {
-        let mut resp = http::Response::builder()
+        let resp = http::Response::builder()
             .status(http::StatusCode::TOO_MANY_REQUESTS)
             .body("rate limited")
             .unwrap();
         let max = Duration::from_secs(60);
 
-        resp.attach_parsed_rate_limit_hint();
-
-        assert_eq!(resp.rate_limit_hint(max), None);
+        assert_eq!(rate_limit_hint(&resp, max), None);
     }
 
     #[test]
@@ -1243,7 +1156,7 @@ mod tests {
 
         // No attach call, test on-read fallback
         assert_eq!(
-            resp.rate_limit_hint(Duration::from_secs(60)),
+            rate_limit_hint(&resp, Duration::from_secs(60)),
             Some(Duration::from_secs(45))
         );
     }
@@ -1258,7 +1171,7 @@ mod tests {
 
         // On-read parse caps at caller's max
         assert_eq!(
-            resp.rate_limit_hint(Duration::from_secs(60)),
+            rate_limit_hint(&resp, Duration::from_secs(60)),
             Some(Duration::from_secs(60))
         );
     }
@@ -1291,7 +1204,7 @@ mod tests {
             .unwrap()
     }
 
-    // Verifies the cached-path `.min(max)` clamp in `rate_limit_hint()` clamps HTTP
+    // Verifies the `.min(max)` clamp in `rate_limit_hint()` clamps HTTP
     // Retry-After hints to the caller-supplied cap consistently across cap
     // magnitudes (60s / 300s / 1800s) and directions (below-cap / over-cap).
     #[test]
@@ -1329,23 +1242,20 @@ mod tests {
         ];
 
         for Row { cap, header_value } in rows {
-            let mut resp = build_http_retry_after_response(header_value);
-            resp.attach_parsed_rate_limit_hint();
+            let resp = build_http_retry_after_response(header_value);
 
-            // Remove the source header after attach
-            resp.headers_mut().remove(http::header::RETRY_AFTER);
             let parsed = Duration::from_secs(header_value);
             let expected = parsed.min(cap);
 
             assert_eq!(
-                resp.rate_limit_hint(cap),
+                rate_limit_hint(&resp, cap),
                 Some(expected),
                 "cap={cap:?}, header={header_value}s, expected={expected:?}",
             );
         }
     }
 
-    // Verifies the cached-path `.min(max)` clamp in `rate_limit_hint()` clamps gRPC
+    // Verifies the `.min(max)` clamp in `rate_limit_hint()` clamps gRPC
     // retry-pushback-ms hints to the caller-supplied cap consistently across
     // cap magnitudes (60s / 300s / 1800s) and directions (below-cap / over-cap).
     #[test]
@@ -1383,16 +1293,13 @@ mod tests {
         ];
 
         for Row { cap, header_value } in rows {
-            let mut resp = build_grpc_pushback_response(header_value);
-            resp.attach_parsed_rate_limit_hint();
+            let resp = build_grpc_pushback_response(header_value);
 
-            // Remove the source header after attach
-            resp.headers_mut().remove("grpc-retry-pushback-ms");
             let parsed = Duration::from_millis(header_value);
             let expected = parsed.min(cap);
 
             assert_eq!(
-                resp.rate_limit_hint(cap),
+                rate_limit_hint(&resp, cap),
                 Some(expected),
                 "cap={cap:?}, header={header_value}ms, expected={expected:?}",
             );
@@ -1520,7 +1427,7 @@ mod tests {
             .body("")
             .unwrap();
         assert_eq!(
-            resp.failure_hint(),
+            failure_hint(&resp),
             None,
             "non-gRPC HTTP 200 with grpc-status header should not be classified"
         );
