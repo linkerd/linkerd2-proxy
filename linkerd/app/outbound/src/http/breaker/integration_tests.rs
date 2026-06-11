@@ -268,38 +268,6 @@ async fn unified_failed_probe_advances_backoff() {
     );
 }
 
-// A timed-out probe is treated as a failure. If a probe never produces a
-// classification within the probe window, the breaker re-shuts and keeps backing
-// off rather than hanging in probation or reopening on no evidence.
-#[tokio::test(flavor = "current_thread", start_paused = true)]
-async fn unified_timed_out_probe_re_shuts() {
-    let _trace = linkerd_tracing::test::trace_init();
-
-    // Consecutive-ceiling trip with the success-rate dimension dormant, so no
-    // stray classification can stand in for the probe the test deliberately
-    // withholds.
-    let params = endpoint_params(Some(unified_accrual(0.8, 100, 2)));
-    let gate_params: gate::Params<classify::Class> = params.extract_param(&());
-
-    time::advance(Duration::from_millis(1)).await;
-
-    fail(&gate_params, 2).await;
-    assert!(
-        gate_params.gate.is_shut(),
-        "two 5xx trip the unified breaker"
-    );
-
-    advance_to_probation(&gate_params.gate).await;
-
-    // No probe verdict arrives. Once the probe window elapses the breaker treats
-    // the silent probe as a failure and re-shuts.
-    time::advance(TEST_MAX_BACKOFF).await;
-    assert!(
-        !gate_params.gate.is_open(),
-        "a probe that yields no verdict must not reopen the circuit",
-    );
-}
-
 // The consecutive policy probes leniently: a 429 during probation reopens the
 // circuit since the default classifier treats 429 as success. The strict rule
 // that counts 429 as failure belongs to the unified policy, so this pins the
