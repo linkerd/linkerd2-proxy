@@ -51,17 +51,19 @@
 //!
 //! ## Recovery Conditions
 //!
-//! During probation a probe counts as recovery only when it is not a 5xx and not
-//! a 429 for HTTP, or anything other than RESOURCE_EXHAUSTED for gRPC. A 429
-//! during probation counts as a failure, since it shows the endpoint is still
-//! rate limiting and the circuit must not reopen while that is the case.
+//! During probation a probe counts as recovery when the response classifier
+//! marks it a success. Rate-limit signals are the exception. A 429 or a gRPC
+//! RESOURCE_EXHAUSTED fails the probe even when the classifier marks it a
+//! success. Reopening on a rate-limit signal would cut the backoff short while
+//! the endpoint is still shedding load.
 //!
 //! ## gRPC RESOURCE_EXHAUSTED Handling
 //!
 //! gRPC's RESOURCE_EXHAUSTED (code 8) is treated like HTTP 429. It counts as a
 //! failure for the windowed success rate. It does not count toward consecutive
-//! failures because it is not a hard failure. During a probe only gRPC Ok
-//! (code 0) counts as success.
+//! failures because it is not a hard failure. During a probe it counts as a
+//! failure, like a 429. Any other code the classifier accepts as a success
+//! reopens the circuit.
 
 use super::{success_rate::SuccessRateWindow, TripReason};
 use futures::stream::StreamExt;
@@ -369,29 +371,16 @@ impl UnifiedBreaker {
 
     /// Check whether a probe response indicates recovery.
     ///
-    /// A probe counts as recovery only when it is not a 5xx and not a 429 for
-    /// HTTP, and not RESOURCE_EXHAUSTED for gRPC. A 429 or RESOURCE_EXHAUSTED
-    /// during probation counts as a failure, since it signals the endpoint is
-    /// still rate limiting, so the circuit must not reopen while that is the case.
+    /// The probe verdict follows the response classifier. The probe succeeds
+    /// when the classifier marks the response a success. Rate-limit signals,
+    /// HTTP 429 and gRPC RESOURCE_EXHAUSTED, still count as failed probes.
+    /// Reopening on one would cut the server's backoff short while it is
+    /// still shedding load.
     fn is_probe_success(&self, class: &classify::Class) -> bool {
-        // A rate-limit signal counts as a probe failure because it shows the
-        // endpoint is still rate limiting, which the success-rate dimension
-        // tracks, so it must keep the circuit shut. This is the same notion the
-        // trip side uses, read here as its complement.
         if is_rate_limit_signal(class) {
             return false;
         }
-        match class {
-            // A 429 is already handled above, so the only remaining bar is a 5xx
-            // a client policy let through as a non-failure.
-            classify::Class::Http(Ok(status)) => !status.is_server_error(),
-            classify::Class::Http(Err(_)) => false, // 5xx failure.
-            // RESOURCE_EXHAUSTED is handled above, so any other accepted Ok code
-            // is a recovered probe.
-            classify::Class::Grpc(Ok(_)) => true,
-            classify::Class::Grpc(Err(_)) => false,
-            _ => class.is_success(),
-        }
+        class.is_success()
     }
 
     /// Wait for a response to determine whether the breaker should be opened.
@@ -875,6 +864,94 @@ mod tests {
         assert!(
             params.gate.is_open(),
             "gRPC Ok during probation should succeed"
+        );
+    }
+
+    // A non-default classifier can mark a 5xx a success. The probe verdict
+    // follows that classification and does not re-read the raw status.
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn probation_success_on_classified_5xx() {
+        let _trace = linkerd_tracing::test::trace_init();
+
+        let (mut params, gate_tx, rsps) = gate::Params::channel(1);
+
+        let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
+            ..default_config(gate_tx, rsps)
+        });
+        let mut task = task::spawn(breaker.run());
+
+        assert_pending!(task.poll());
+
+        // Trip the breaker.
+        for _ in 0..3 {
+            send_err(&params, http::StatusCode::BAD_GATEWAY);
+            time::advance(time::Duration::from_millis(100)).await;
+            assert_pending!(task.poll());
+        }
+        assert!(params.gate.is_shut());
+
+        // Wait out the backoff and enter probation.
+        time::sleep(time::Duration::from_secs(1)).await;
+        assert_pending!(task.poll());
+
+        match params.gate.state() {
+            gate::State::Limited(_) => {
+                params.gate.opened_for_test().await.unwrap().forget();
+            }
+            _ => panic!("Expected Limited state"),
+        }
+
+        // The probe is a 503 the classifier accepted as a success.
+        send_ok(&params, http::StatusCode::SERVICE_UNAVAILABLE);
+        assert_pending!(task.poll());
+        assert!(
+            params.gate.is_open(),
+            "a 5xx classified a success should reopen the circuit"
+        );
+    }
+
+    // A non-zero gRPC code outside the failure set classifies as a success.
+    // The probe verdict follows that classification. RESOURCE_EXHAUSTED is
+    // treated as a rate-limit signal and fails the probe.
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn probation_success_on_grpc_nonzero_code() {
+        let _trace = linkerd_tracing::test::trace_init();
+
+        let (mut params, gate_tx, rsps) = gate::Params::channel(1);
+
+        let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
+            ..default_config(gate_tx, rsps)
+        });
+        let mut task = task::spawn(breaker.run());
+
+        assert_pending!(task.poll());
+
+        // Trip the breaker.
+        for _ in 0..3 {
+            send_err(&params, http::StatusCode::BAD_GATEWAY);
+            time::advance(time::Duration::from_millis(100)).await;
+            assert_pending!(task.poll());
+        }
+        assert!(params.gate.is_shut());
+
+        // Wait out the backoff and enter probation.
+        time::sleep(time::Duration::from_secs(1)).await;
+        assert_pending!(task.poll());
+
+        match params.gate.state() {
+            gate::State::Limited(_) => {
+                params.gate.opened_for_test().await.unwrap().forget();
+            }
+            _ => panic!("Expected Limited state"),
+        }
+
+        // The probe resolves NotFound. The classifier accepts it as a success,
+        // and it is not a rate-limit signal.
+        send_grpc(&params, tonic::Code::NotFound);
+        assert_pending!(task.poll());
+        assert!(
+            params.gate.is_open(),
+            "a non-zero gRPC code classified a success should reopen the circuit"
         );
     }
 
