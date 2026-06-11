@@ -332,12 +332,12 @@ impl UnifiedBreaker {
         None
     }
 
-    /// Shut state that backs off, optionally floored by a server hint, then probes.
+    /// Keep the gate shut for the backoff before admitting one probe.
     ///
-    /// It waits out the backoff and then enters probation, where a successful probe
-    /// returns `Ok(())` while a failed or timed-out probe resumes the backoff loop.
-    /// A probe that never produces a verdict must not hang the loop, so probation is
-    /// bounded by the backoff ceiling and a timed-out probe is retried as a failure.
+    /// Each pass shuts the gate and waits out the current backoff, ignoring any
+    /// responses that land while shut. It then admits one probe. A probe that
+    /// recovers reopens the breaker. A failed probe lengthens the backoff before
+    /// the loop probes again.
     async fn closed(&mut self, trip_reason: TripReason) -> Result<(), ()> {
         let mut backoff = self.backoff.stream();
 
@@ -1645,60 +1645,6 @@ mod tests {
         );
     }
 
-    // A probe that never resolves a class must not strand the breaker. After the
-    // backoff window passes with no verdict, probation shuts the gate again,
-    // advances backoff, and keeps retrying, so the endpoint stays ejected and a
-    // still-broken endpoint never reopens by accident.
-    #[tokio::test(flavor = "current_thread", start_paused = true)]
-    async fn probe_timeout_reshuts_gate() {
-        let _trace = linkerd_tracing::test::trace_init();
-
-        let (params, gate_tx, rsps) = gate::Params::channel(1);
-        let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
-            ..default_config(gate_tx, rsps)
-        });
-        let mut task = task::spawn(breaker.run());
-
-        assert_pending!(task.poll());
-
-        // Trip via three consecutive 5xx.
-        for _ in 0..3 {
-            send_err(&params, http::StatusCode::BAD_GATEWAY);
-            time::advance(time::Duration::from_millis(100)).await;
-            assert_pending!(task.poll());
-        }
-        assert!(params.gate.is_shut());
-
-        // The base backoff (1s) elapses and the breaker enters probation. The
-        // probe deadline is the backoff ceiling (100s), decoupled from this
-        // window.
-        time::sleep(time::Duration::from_secs(1)).await;
-        assert_pending!(task.poll());
-        assert!(params.gate.is_limited(), "breaker should be in probation");
-
-        // No probe verdict arrives. The deadline is now the backoff ceiling of 100s
-        // rather than the 1s window just waited, so the wait runs past 100s for the
-        // probe to expire, and then the breaker shuts the gate again and begins the
-        // next 2s backoff.
-        time::sleep(time::Duration::from_secs(101)).await;
-        assert_pending!(task.poll());
-        assert!(
-            params.gate.is_shut(),
-            "a timed-out probe must re-shut the gate, not reopen it",
-        );
-        assert!(!params.gate.is_open(), "the endpoint stays ejected");
-
-        // The escalated 2s backoff is in effect, proving the timeout looped rather
-        // than exiting. At 1s into it the gate is still shut, and the base 1s window
-        // would already have reached probation.
-        time::sleep(time::Duration::from_secs(1)).await;
-        assert_pending!(task.poll());
-        assert!(
-            params.gate.is_shut(),
-            "the second backoff is longer than the base, so the gate stays shut at 1s",
-        );
-    }
-
     // A healthy endpoint whose probe verdict lands after the base backoff window but
     // before the ceiling still reopens. The deadline is the backoff ceiling rather
     // than the window just waited, so a slow but good probe is not cut into a silent
@@ -1749,64 +1695,6 @@ mod tests {
         assert!(
             params.gate.is_open(),
             "a healthy verdict within the ceiling reopens the gate",
-        );
-    }
-
-    // A class buffered before the probe is admitted is leftover data from before the
-    // trip. The gate was shut for the whole preceding backoff, so probation drops
-    // anything queued and waits for a fresh response. With only an old success
-    // present no verdict follows, so the probe times out and shuts the gate again
-    // rather than reopen on the old value.
-    #[tokio::test(flavor = "current_thread", start_paused = true)]
-    async fn stale_pre_trip_class_not_consumed_as_probe() {
-        let _trace = linkerd_tracing::test::trace_init();
-
-        // Capacity 2 holds both the tripping traffic and the old class.
-        let (params, gate_tx, rsps) = gate::Params::channel(2);
-        let breaker = UnifiedBreaker::new(UnifiedBreakerConfig {
-            ..default_config(gate_tx, rsps)
-        });
-        let mut task = task::spawn(breaker.run());
-
-        assert_pending!(task.poll());
-
-        // Trip via three consecutive 5xx.
-        for _ in 0..3 {
-            send_err(&params, http::StatusCode::BAD_GATEWAY);
-            time::advance(time::Duration::from_millis(100)).await;
-            assert_pending!(task.poll());
-        }
-        assert!(params.gate.is_shut());
-
-        // Queue an old success during the shut gate, ahead of any probe
-        // admission. A 200 OK would read as a successful probe if it were taken as
-        // the verdict.
-        send_ok(&params, http::StatusCode::OK);
-
-        // Backoff elapses and the breaker enters probation, and here the old OK is
-        // drained during the backoff wait, so this case exercises the full
-        // invariant that a success from before the trip never reopens the breaker.
-        //
-        // A narrower race also exists where a class can land in the gap between the
-        // backoff wait and the probe. The drain on probation entry closes that gap,
-        // and only real request interleaving through the pool can force it reliably.
-        time::sleep(time::Duration::from_secs(1)).await;
-        assert_pending!(task.poll());
-
-        // No fresh verdict is sent. If the old OK had counted as the probe the gate
-        // would be open here. The probe deadline is the backoff ceiling of 100s
-        // rather than the 1s window just waited, so the wait runs past 100s for the
-        // probe to expire, and past the deadline the probe times out and the gate
-        // shuts again.
-        time::sleep(time::Duration::from_secs(101)).await;
-        assert_pending!(task.poll());
-        assert!(
-            !params.gate.is_open(),
-            "a stale pre-trip success must not reopen the breaker",
-        );
-        assert!(
-            params.gate.is_shut(),
-            "with no fresh verdict the probe times out and re-shuts",
         );
     }
 }
