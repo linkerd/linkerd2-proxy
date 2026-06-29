@@ -136,6 +136,14 @@ version = "0.1"
 default-features = false
 features = ["tokio", "tracing"]
 
+[workspace.dependencies.kubert-prometheus-process]
+version = "0.2.0"
+default-features = false
+
+[workspace.dependencies.kubert-prometheus-tokio]
+version = "0.2.0"
+default-features = false
+
 [workspace.dependencies.linkerd2-proxy-api]
 version = "0.20.0"
 
