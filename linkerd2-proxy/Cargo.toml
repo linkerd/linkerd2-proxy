@@ -20,7 +20,7 @@ jemalloc-profiling = [
 
 [dependencies]
 futures = { version = "0.3", default-features = false }
-kubert-prometheus-tokio = { version = "0.2.0", features = ["rt"] }
+kubert-prometheus-tokio = { workspace = true, features = ["rt"] }
 linkerd-app = { path = "../linkerd/app" }
 linkerd-metrics = { path = "../linkerd/metrics" }
 linkerd-rustls = { path = "../linkerd/rustls" }
