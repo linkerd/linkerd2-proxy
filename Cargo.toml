@@ -137,12 +137,16 @@ default-features = false
 features = ["tokio", "tracing"]
 
 [workspace.dependencies.kubert-prometheus-process]
-version = "0.2.0"
+version = "0.2"
 default-features = false
+git = "https://github.com/linkerd/linkerd-kubert.git"
+tag = "kubert-prometheus-process/v0.2.3"
 
 [workspace.dependencies.kubert-prometheus-tokio]
 version = "0.2.0"
 default-features = false
+git = "https://github.com/linkerd/linkerd-kubert.git"
+tag = "kubert-prometheus-tokio/v0.2.0"
 
 [workspace.dependencies.linkerd2-proxy-api]
 version = "0.20.0"
