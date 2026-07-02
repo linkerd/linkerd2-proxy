@@ -1416,8 +1416,7 @@ checksum = "a4933f3f57a8e9d9da04db23fb153356ecaf00cbd14aee46279c33dc80925c37"
 [[package]]
 name = "kubert-prometheus-process"
 version = "0.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b89e2a641a3f74c2e7366eb050282ac4a6194b63dae5294084215c457237e47"
+source = "git+https://github.com/linkerd/linkerd-kubert.git?tag=kubert-prometheus-process%2Fv0.2.3#13e7733aad0a2db233592ed4c1341c55d9ec2dea"
 dependencies = [
  "libc",
  "procfs",
@@ -1428,8 +1427,7 @@ dependencies = [
 [[package]]
 name = "kubert-prometheus-tokio"
 version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "639670482534c37eb44caf6f4b72cc5da2f2c06aed39d1fb0cba940569428212"
+source = "git+https://github.com/linkerd/linkerd-kubert.git?tag=kubert-prometheus-tokio%2Fv0.2.0#acd081cce5fb85ec745a5e793ab09adf421f8b4f"
 dependencies = [
  "prometheus-client",
  "tokio",
