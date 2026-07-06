@@ -85,7 +85,7 @@ jobs:
     needs: meta
     if: needs.meta.outputs.cargo_changed == 'true' || needs.meta.outputs.rust_changed == 'true'
     runs-on: ${{ vars.LINKERD2_PROXY_RUNNER || 'ubuntu-24.04' }}
-    container: ghcr.io/linkerd/dev:v48-rust
+    container: ghcr.io/linkerd/dev:v50-rust
     permissions:
       contents: read
     timeout-minutes: 20
@@ -108,7 +108,7 @@ jobs:
     if: needs.meta.outputs.cargo_changed == 'true'
     timeout-minutes: 20
     runs-on: ${{ vars.LINKERD2_PROXY_RUNNER || 'ubuntu-24.04' }}
-    container: ghcr.io/linkerd/dev:v48-rust
+    container: ghcr.io/linkerd/dev:v50-rust
     strategy:
       matrix:
         crate: ${{ fromJson(needs.meta.outputs.cargo_crates) }}

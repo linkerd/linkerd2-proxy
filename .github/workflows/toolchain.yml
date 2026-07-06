@@ -14,7 +14,7 @@ permissions:
 jobs:
   devcontainer:
     runs-on: ${{ vars.LINKERD2_PROXY_RUNNER || 'ubuntu-24.04' }}
-    container: ghcr.io/linkerd/dev:v48-rust
+    container: ghcr.io/linkerd/dev:v50-rust
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
       - run: git config --global --add safe.directory "$PWD" # actions/runner#2033
