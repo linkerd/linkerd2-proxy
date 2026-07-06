@@ -879,8 +879,8 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     };
 
     let tap = tap?
-        .map(|(addr, ids)| super::tap::Config::Enabled {
-            permitted_client_ids: ids,
+        .map(|(addr, permitted_client_id)| super::tap::Config::Enabled {
+            permitted_client_id,
             config: ServerConfig {
                 addr: DualListenAddr(addr, None),
                 keepalive: inbound.proxy.server.keepalive,
@@ -943,15 +943,12 @@ impl Env {
 ///   ENV_TAP_SVC_NAME.
 fn parse_tap_config(
     strings: &dyn Strings,
-) -> Result<Option<(SocketAddr, HashSet<tls::server::ClientId>)>, EnvError> {
+) -> Result<Option<(SocketAddr, tls::server::ClientId)>, EnvError> {
     let tap_identity = parse(strings, ENV_TAP_SVC_NAME, parse_identity)?;
     let addr = parse(strings, ENV_CONTROL_LISTEN_ADDR, parse_socket_addr)?
         .unwrap_or_else(|| parse_socket_addr(DEFAULT_CONTROL_LISTEN_ADDR).unwrap());
     if let Some(id) = tap_identity {
-        return Ok(Some((
-            addr,
-            vec![id].into_iter().map(tls::ClientId).collect(),
-        )));
+        return Ok(Some((addr, tls::ClientId(id))));
     }
     Ok(None)
 }
