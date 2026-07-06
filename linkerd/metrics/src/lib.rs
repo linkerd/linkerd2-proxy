@@ -66,12 +66,6 @@ pub mod prom {
         *,
     };
 
-    /// TODO(kate): now that we depend upon prometheus_client@v0.24, we no longer need this
-    /// trait thanks to prometheus/client_rust#257. this can be removed.
-    pub trait EncodeLabelSetMut: encoding::EncodeLabelSet {
-        fn encode_label_set(&self, dst: &mut encoding::LabelSetEncoder<'_>) -> std::fmt::Result;
-    }
-
     pub type Report = Arc<Registry>;
 
     impl crate::legacy::FmtMetrics for Report {

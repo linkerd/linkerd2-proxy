@@ -4,7 +4,6 @@ use linkerd_app_core::{
     metrics::prom::{
         self,
         encoding::{EncodeLabelSet, LabelSetEncoder},
-        EncodeLabelSetMut,
     },
     svc,
 };
@@ -77,18 +76,12 @@ where
 
 // === impl RequestCountLabels ===
 
-impl EncodeLabelSetMut for RequestCountLabels {
-    fn encode_label_set(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
-        let Self { route } = self;
-
-        route.encode_label_set(enc)?;
-
-        Ok(())
-    }
-}
-
 impl EncodeLabelSet for RequestCountLabels {
     fn encode(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
-        self.encode_label_set(enc)
+        let Self { route } = self;
+
+        route.encode(enc)?;
+
+        Ok(())
     }
 }

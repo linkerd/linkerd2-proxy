@@ -7,11 +7,7 @@ use crate::{
 use linkerd_app_core::{
     config::QueueConfig,
     drain, io,
-    metrics::{
-        self,
-        prom::{self, EncodeLabelSetMut},
-        OutboundZoneLocality,
-    },
+    metrics::{self, prom, OutboundZoneLocality},
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
@@ -76,18 +72,12 @@ pub struct ConcreteLabels {
     concrete: Arc<str>,
 }
 
-impl prom::EncodeLabelSetMut for ConcreteLabels {
-    fn encode_label_set(&self, enc: &mut prom::encoding::LabelSetEncoder<'_>) -> std::fmt::Result {
+impl prom::encoding::EncodeLabelSet for ConcreteLabels {
+    fn encode(&self, enc: &mut prom::encoding::LabelSetEncoder<'_>) -> std::fmt::Result {
         use prom::encoding::EncodeLabel;
 
         ("concrete", &*self.concrete).encode(enc.encode_label())?;
         Ok(())
-    }
-}
-
-impl prom::encoding::EncodeLabelSet for ConcreteLabels {
-    fn encode(&self, enc: &mut prom::encoding::LabelSetEncoder<'_>) -> std::fmt::Result {
-        self.encode_label_set(enc)
     }
 }
 

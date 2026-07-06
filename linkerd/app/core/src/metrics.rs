@@ -15,7 +15,7 @@ use crate::{
 use linkerd_addr::Addr;
 pub use linkerd_metrics::*;
 use linkerd_proxy_server_policy as policy;
-use prometheus_client::encoding::{EncodeLabelSet, EncodeLabelValue};
+use prometheus_client::encoding::EncodeLabelValue;
 use std::{
     fmt::{self, Write},
     net::SocketAddr,
@@ -356,14 +356,8 @@ impl legacy::FmtLabels for ServerLabel {
     }
 }
 
-impl EncodeLabelSet for ServerLabel {
-    fn encode(&self, enc: &mut prometheus_client::encoding::LabelSetEncoder<'_>) -> fmt::Result {
-        prom::EncodeLabelSetMut::encode_label_set(self, enc)
-    }
-}
-
-impl prom::EncodeLabelSetMut for ServerLabel {
-    fn encode_label_set(&self, enc: &mut prom::encoding::LabelSetEncoder<'_>) -> fmt::Result {
+impl prom::encoding::EncodeLabelSet for ServerLabel {
+    fn encode(&self, enc: &mut prom::encoding::LabelSetEncoder<'_>) -> fmt::Result {
         use prometheus_client::encoding::EncodeLabel;
         ("srv_group", self.0.group()).encode(enc.encode_label())?;
         ("srv_kind", self.0.kind()).encode(enc.encode_label())?;

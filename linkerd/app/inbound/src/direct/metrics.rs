@@ -1,6 +1,6 @@
 use super::ClientInfo;
 use linkerd_app_core::{
-    metrics::prom::{self, EncodeLabelSetMut},
+    metrics::prom,
     svc, tls,
     transport_header::{SessionProtocol, TransportHeader},
 };
@@ -66,8 +66,8 @@ where
     }
 }
 
-impl prom::EncodeLabelSetMut for Labels {
-    fn encode_label_set(&self, enc: &mut prom::encoding::LabelSetEncoder<'_>) -> std::fmt::Result {
+impl prom::encoding::EncodeLabelSet for Labels {
+    fn encode(&self, enc: &mut prom::encoding::LabelSetEncoder<'_>) -> std::fmt::Result {
         use prom::encoding::EncodeLabel;
         (
             "session_protocol",
@@ -81,11 +81,5 @@ impl prom::EncodeLabelSetMut for Labels {
         ("target_name", self.header.name.as_deref()).encode(enc.encode_label())?;
         ("client_id", self.client_id.to_str()).encode(enc.encode_label())?;
         Ok(())
-    }
-}
-
-impl prom::encoding::EncodeLabelSet for Labels {
-    fn encode(&self, enc: &mut prom::encoding::LabelSetEncoder<'_>) -> Result<(), std::fmt::Error> {
-        self.encode_label_set(enc)
     }
 }

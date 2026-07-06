@@ -147,8 +147,8 @@ where
 
 // === impl RouteLabels ===
 
-impl prom::EncodeLabelSetMut for RouteLabels {
-    fn encode_label_set(&self, enc: &mut prom::encoding::LabelSetEncoder<'_>) -> std::fmt::Result {
+impl prom::encoding::EncodeLabelSet for RouteLabels {
+    fn encode(&self, enc: &mut prom::encoding::LabelSetEncoder<'_>) -> std::fmt::Result {
         use prom::encoding::*;
         let Self {
             parent,
@@ -171,12 +171,5 @@ impl prom::EncodeLabelSetMut for RouteLabels {
         ("target_port", addr.port()).encode(enc.encode_label())?;
 
         Ok(())
-    }
-}
-
-impl prom::encoding::EncodeLabelSet for RouteLabels {
-    fn encode(&self, enc: &mut prom::encoding::LabelSetEncoder<'_>) -> std::fmt::Result {
-        use prom::EncodeLabelSetMut;
-        self.encode_label_set(enc)
     }
 }

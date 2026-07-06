@@ -1,7 +1,5 @@
 //! Prometheus label types.
-use linkerd_app_core::{
-    dns, errors, metrics::prom::EncodeLabelSetMut, proxy::http, Error as BoxError,
-};
+use linkerd_app_core::{dns, errors, proxy::http, Error as BoxError};
 use prometheus_client::encoding::*;
 
 use crate::{BackendRef, ParentRef, RouteRef};
@@ -85,25 +83,19 @@ impl Route {
     }
 }
 
-impl EncodeLabelSetMut for Route {
-    fn encode_label_set(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
+impl EncodeLabelSet for Route {
+    fn encode(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
         let Self {
             parent,
             route,
             hostname,
         } = self;
 
-        parent.encode_label_set(enc)?;
-        route.encode_label_set(enc)?;
+        parent.encode(enc)?;
+        route.encode(enc)?;
         ("hostname", hostname.as_deref()).encode(enc.encode_label())?;
 
         Ok(())
-    }
-}
-
-impl EncodeLabelSet for Route {
-    fn encode(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
-        self.encode_label_set(enc)
     }
 }
 
@@ -115,36 +107,24 @@ impl From<(ParentRef, RouteRef, BackendRef)> for RouteBackend {
     }
 }
 
-impl EncodeLabelSetMut for RouteBackend {
-    fn encode_label_set(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
-        let Self(parent, route, backend) = self;
-        parent.encode_label_set(enc)?;
-        route.encode_label_set(enc)?;
-        backend.encode_label_set(enc)?;
-        Ok(())
-    }
-}
-
 impl EncodeLabelSet for RouteBackend {
     fn encode(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
-        self.encode_label_set(enc)
+        let Self(parent, route, backend) = self;
+        parent.encode(enc)?;
+        route.encode(enc)?;
+        backend.encode(enc)?;
+        Ok(())
     }
 }
 
 // === impl Rsp ===
 
-impl<P: EncodeLabelSetMut, L: EncodeLabelSetMut> EncodeLabelSetMut for Rsp<P, L> {
-    fn encode_label_set(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
-        let Self(route, rsp) = self;
-        route.encode_label_set(enc)?;
-        rsp.encode_label_set(enc)?;
-        Ok(())
-    }
-}
-
-impl<P: EncodeLabelSetMut, L: EncodeLabelSetMut> EncodeLabelSet for Rsp<P, L> {
+impl<P: EncodeLabelSet, L: EncodeLabelSet> EncodeLabelSet for Rsp<P, L> {
     fn encode(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
-        self.encode_label_set(enc)
+        let Self(route, rsp) = self;
+        route.encode(enc)?;
+        rsp.encode(enc)?;
+        Ok(())
     }
 }
 
@@ -187,20 +167,14 @@ impl HttpRsp {
     }
 }
 
-impl EncodeLabelSetMut for HttpRsp {
-    fn encode_label_set(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
+impl EncodeLabelSet for HttpRsp {
+    fn encode(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
         let Self { status, error } = self;
 
         ("http_status", status.map(|c| c.as_u16())).encode(enc.encode_label())?;
         ("error", *error).encode(enc.encode_label())?;
 
         Ok(())
-    }
-}
-
-impl EncodeLabelSet for HttpRsp {
-    fn encode(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
-        self.encode_label_set(enc)
     }
 }
 
@@ -255,8 +229,8 @@ impl GrpcRsp {
     }
 }
 
-impl EncodeLabelSetMut for GrpcRsp {
-    fn encode_label_set(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
+impl EncodeLabelSet for GrpcRsp {
+    fn encode(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
         let Self { status, error } = self;
 
         (
@@ -286,12 +260,6 @@ impl EncodeLabelSetMut for GrpcRsp {
         ("error", *error).encode(enc.encode_label())?;
 
         Ok(())
-    }
-}
-
-impl EncodeLabelSet for GrpcRsp {
-    fn encode(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
-        self.encode_label_set(enc)
     }
 }
 
