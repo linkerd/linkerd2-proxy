@@ -109,7 +109,7 @@ http = { version = "1" }
 http-body = { version = "1" }
 httpdate = { version = "1.0" }
 hyper = { version = "1", default-features = false }
-prometheus-client = { version = "0.23" }
+prometheus-client = { version = "0.24" }
 prost = { version = "0.14" }
 prost-build = { version = "0.14", default-features = false }
 prost-types = { version = "0.14" }
@@ -140,13 +140,13 @@ features = ["tokio", "tracing"]
 version = "0.2"
 default-features = false
 git = "https://github.com/linkerd/linkerd-kubert.git"
-tag = "kubert-prometheus-process/v0.2.3"
+tag = "kubert-prometheus-process/v0.2.4"
 
 [workspace.dependencies.kubert-prometheus-tokio]
-version = "0.2.0"
+version = "0.2"
 default-features = false
 git = "https://github.com/linkerd/linkerd-kubert.git"
-tag = "kubert-prometheus-tokio/v0.2.0"
+tag = "kubert-prometheus-tokio/v0.2.1"
 
 [workspace.dependencies.linkerd2-proxy-api]
 version = "0.20.0"

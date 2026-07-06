@@ -357,8 +357,8 @@ impl legacy::FmtLabels for ServerLabel {
 }
 
 impl EncodeLabelSet for ServerLabel {
-    fn encode(&self, mut enc: prometheus_client::encoding::LabelSetEncoder<'_>) -> fmt::Result {
-        prom::EncodeLabelSetMut::encode_label_set(self, &mut enc)
+    fn encode(&self, enc: &mut prometheus_client::encoding::LabelSetEncoder<'_>) -> fmt::Result {
+        prom::EncodeLabelSetMut::encode_label_set(self, enc)
     }
 }
 

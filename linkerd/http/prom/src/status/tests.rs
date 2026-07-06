@@ -505,7 +505,7 @@ mod util {
     impl EncodeLabelSet for Labels {
         fn encode(
             &self,
-            mut encoder: prometheus_client::encoding::LabelSetEncoder<'_>,
+            encoder: &mut prometheus_client::encoding::LabelSetEncoder<'_>,
         ) -> Result<(), std::fmt::Error> {
             let Self { grpc, http } = self;
 

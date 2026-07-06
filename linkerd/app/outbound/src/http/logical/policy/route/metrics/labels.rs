@@ -102,8 +102,8 @@ impl EncodeLabelSetMut for Route {
 }
 
 impl EncodeLabelSet for Route {
-    fn encode(&self, mut enc: LabelSetEncoder<'_>) -> std::fmt::Result {
-        self.encode_label_set(&mut enc)
+    fn encode(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
+        self.encode_label_set(enc)
     }
 }
 
@@ -126,8 +126,8 @@ impl EncodeLabelSetMut for RouteBackend {
 }
 
 impl EncodeLabelSet for RouteBackend {
-    fn encode(&self, mut enc: LabelSetEncoder<'_>) -> std::fmt::Result {
-        self.encode_label_set(&mut enc)
+    fn encode(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
+        self.encode_label_set(enc)
     }
 }
 
@@ -143,8 +143,8 @@ impl<P: EncodeLabelSetMut, L: EncodeLabelSetMut> EncodeLabelSetMut for Rsp<P, L>
 }
 
 impl<P: EncodeLabelSetMut, L: EncodeLabelSetMut> EncodeLabelSet for Rsp<P, L> {
-    fn encode(&self, mut enc: LabelSetEncoder<'_>) -> std::fmt::Result {
-        self.encode_label_set(&mut enc)
+    fn encode(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
+        self.encode_label_set(enc)
     }
 }
 
@@ -199,8 +199,8 @@ impl EncodeLabelSetMut for HttpRsp {
 }
 
 impl EncodeLabelSet for HttpRsp {
-    fn encode(&self, mut enc: LabelSetEncoder<'_>) -> std::fmt::Result {
-        self.encode_label_set(&mut enc)
+    fn encode(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
+        self.encode_label_set(enc)
     }
 }
 
@@ -290,8 +290,8 @@ impl EncodeLabelSetMut for GrpcRsp {
 }
 
 impl EncodeLabelSet for GrpcRsp {
-    fn encode(&self, mut enc: LabelSetEncoder<'_>) -> std::fmt::Result {
-        self.encode_label_set(&mut enc)
+    fn encode(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
+        self.encode_label_set(enc)
     }
 }
 

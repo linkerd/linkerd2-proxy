@@ -208,8 +208,8 @@ impl ParentRef {
 }
 
 impl EncodeLabelSet for ParentRef {
-    fn encode(&self, mut enc: LabelSetEncoder<'_>) -> std::fmt::Result {
-        self.encode_label_set(&mut enc)
+    fn encode(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
+        self.encode_label_set(enc)
     }
 }
 
@@ -222,8 +222,8 @@ impl BackendRef {
 }
 
 impl EncodeLabelSet for BackendRef {
-    fn encode(&self, mut enc: LabelSetEncoder<'_>) -> std::fmt::Result {
-        self.encode_label_set(&mut enc)
+    fn encode(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
+        self.encode_label_set(enc)
     }
 }
 
@@ -236,8 +236,8 @@ impl RouteRef {
 }
 
 impl EncodeLabelSet for RouteRef {
-    fn encode(&self, mut enc: LabelSetEncoder<'_>) -> std::fmt::Result {
-        self.encode_label_set(&mut enc)
+    fn encode(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
+        self.encode_label_set(enc)
     }
 }
 
@@ -265,7 +265,7 @@ impl EncodeLabelSetMut for ConcreteLabels {
 }
 
 impl EncodeLabelSet for ConcreteLabels {
-    fn encode(&self, mut enc: LabelSetEncoder<'_>) -> std::fmt::Result {
-        self.encode_label_set(&mut enc)
+    fn encode(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
+        self.encode_label_set(enc)
     }
 }

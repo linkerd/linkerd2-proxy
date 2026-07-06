@@ -164,7 +164,7 @@ where
 {
     fn encode(
         &self,
-        mut enc: prometheus_client::encoding::LabelSetEncoder,
+        enc: &mut prometheus_client::encoding::LabelSetEncoder,
     ) -> Result<(), std::fmt::Error> {
         use prometheus_client::encoding::EncodeLabel;
 

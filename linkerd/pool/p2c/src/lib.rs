@@ -355,7 +355,7 @@ where
 // === impl P2cMetrics ===
 
 impl<L: prom::encoding::EncodeLabelSet> prom::encoding::EncodeLabelSet for UpdateLabels<L> {
-    fn encode(&self, mut enc: prom::encoding::LabelSetEncoder<'_>) -> std::fmt::Result {
+    fn encode(&self, enc: &mut prom::encoding::LabelSetEncoder<'_>) -> std::fmt::Result {
         use prom::encoding::EncodeLabel;
         ("op", self.op).encode(enc.encode_label())?;
         self.labels.encode(enc)
