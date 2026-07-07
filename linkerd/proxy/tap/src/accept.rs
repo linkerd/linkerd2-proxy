@@ -8,7 +8,6 @@ use linkerd_io as io;
 use linkerd_meshtls as meshtls;
 use linkerd_tls as tls;
 use std::{
-    collections::HashSet,
     future::Future,
     pin::Pin,
     sync::Arc,
@@ -18,7 +17,7 @@ use tower::Service;
 
 #[derive(Clone, Debug)]
 pub struct AcceptPermittedClients {
-    permitted_client_ids: Arc<HashSet<tls::ClientId>>,
+    permitted_client_id: Arc<tls::ClientId>,
     server: Server,
 }
 
@@ -30,9 +29,9 @@ type Connection<T, I> = (
 pub type ServeFuture = Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>;
 
 impl AcceptPermittedClients {
-    pub fn new(permitted_client_ids: Arc<HashSet<tls::ClientId>>, server: Server) -> Self {
+    pub fn new(permitted_client_id: Arc<tls::ClientId>, server: Server) -> Self {
         Self {
-            permitted_client_ids,
+            permitted_client_id,
             server,
         }
     }
@@ -89,7 +88,7 @@ where
                     ..
                 } = tls
                 {
-                    if self.permitted_client_ids.contains(&id) {
+                    if *self.permitted_client_id == id {
                         return future::ok(Box::pin(self.serve_authenticated(io)));
                     }
                 }

@@ -9,7 +9,7 @@ use linkerd_app_core::{
     transport::{addrs::AddrPair, listen::Bind, ClientAddr, Local, Remote, ServerAddr},
     Error,
 };
-use std::{collections::HashSet, pin::Pin};
+use std::pin::Pin;
 use tower::util::{service_fn, ServiceExt};
 
 #[derive(Clone, Debug)]
@@ -18,7 +18,7 @@ pub enum Config {
     Disabled,
     Enabled {
         config: ServerConfig,
-        permitted_client_ids: HashSet<tls::server::ClientId>,
+        permitted_client_id: tls::server::ClientId,
     },
 }
 
@@ -58,13 +58,13 @@ impl Config {
             }
             Config::Enabled {
                 config,
-                permitted_client_ids,
+                permitted_client_id,
             } => {
                 let (listen_addr, listen) = bind.bind(&config)?;
                 let accept = svc::stack(server)
                     .push(svc::layer::mk(move |service| {
                         tap::AcceptPermittedClients::new(
-                            permitted_client_ids.clone().into(),
+                            permitted_client_id.clone().into(),
                             service,
                         )
                     }))
