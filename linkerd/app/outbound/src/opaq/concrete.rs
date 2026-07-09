@@ -93,8 +93,8 @@ impl prom::EncodeLabelSetMut for ConcreteLabels {
 }
 
 impl prom::encoding::EncodeLabelSet for ConcreteLabels {
-    fn encode(&self, mut enc: prom::encoding::LabelSetEncoder<'_>) -> std::fmt::Result {
-        self.encode_label_set(&mut enc)
+    fn encode(&self, enc: &mut prom::encoding::LabelSetEncoder<'_>) -> std::fmt::Result {
+        self.encode_label_set(enc)
     }
 }
 

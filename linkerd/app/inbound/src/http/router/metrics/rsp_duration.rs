@@ -96,7 +96,7 @@ impl prom::EncodeLabelSetMut for ResponseDurationLabels {
 }
 
 impl prom::encoding::EncodeLabelSet for ResponseDurationLabels {
-    fn encode(&self, mut encoder: prom::encoding::LabelSetEncoder<'_>) -> std::fmt::Result {
-        self.encode_label_set(&mut encoder)
+    fn encode(&self, encoder: &mut prom::encoding::LabelSetEncoder<'_>) -> std::fmt::Result {
+        self.encode_label_set(encoder)
     }
 }

@@ -95,7 +95,7 @@ impl<L: prometheus_client::encoding::EncodeLabelSet> prometheus_client::encoding
 {
     fn encode(
         &self,
-        mut enc: prometheus_client::encoding::LabelSetEncoder<'_>,
+        enc: &mut prometheus_client::encoding::LabelSetEncoder<'_>,
     ) -> std::fmt::Result {
         use prometheus_client::encoding::EncodeLabel;
         ("endpoint_state", self.state).encode(enc.encode_label())?;

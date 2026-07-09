@@ -119,7 +119,7 @@ impl prom::EncodeLabelSetMut for Labels {
 }
 
 impl prom::encoding::EncodeLabelSet for Labels {
-    fn encode(&self, mut enc: prom::encoding::LabelSetEncoder<'_>) -> Result<(), std::fmt::Error> {
-        self.encode_label_set(&mut enc)
+    fn encode(&self, enc: &mut prom::encoding::LabelSetEncoder<'_>) -> Result<(), std::fmt::Error> {
+        self.encode_label_set(enc)
     }
 }

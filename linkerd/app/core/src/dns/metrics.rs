@@ -65,7 +65,7 @@ impl Dns {
 // === impl Labels ===
 
 impl EncodeLabelSet for Labels {
-    fn encode(&self, mut encoder: LabelSetEncoder<'_>) -> Result<(), std::fmt::Error> {
+    fn encode(&self, encoder: &mut LabelSetEncoder<'_>) -> Result<(), std::fmt::Error> {
         let Self {
             client,
             record_type,

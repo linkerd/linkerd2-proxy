@@ -156,8 +156,8 @@ impl<L> EncodeLabelSet for ConnectionsClosedLabels<L>
 where
     L: Clone + Hash + Eq + EncodeLabelSetMut + Debug + Send + Sync + 'static,
 {
-    fn encode(&self, mut enc: LabelSetEncoder<'_>) -> std::fmt::Result {
-        self.encode_label_set(&mut enc)
+    fn encode(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
+        self.encode_label_set(enc)
     }
 }
 

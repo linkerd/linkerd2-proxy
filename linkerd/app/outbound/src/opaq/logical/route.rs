@@ -175,8 +175,8 @@ impl prom::EncodeLabelSetMut for RouteLabels {
 }
 
 impl prom::encoding::EncodeLabelSet for RouteLabels {
-    fn encode(&self, mut enc: prom::encoding::LabelSetEncoder<'_>) -> std::fmt::Result {
+    fn encode(&self, enc: &mut prom::encoding::LabelSetEncoder<'_>) -> std::fmt::Result {
         use prom::EncodeLabelSetMut;
-        self.encode_label_set(&mut enc)
+        self.encode_label_set(enc)
     }
 }

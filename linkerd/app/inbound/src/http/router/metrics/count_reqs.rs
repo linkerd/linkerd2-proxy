@@ -88,7 +88,7 @@ impl EncodeLabelSetMut for RequestCountLabels {
 }
 
 impl EncodeLabelSet for RequestCountLabels {
-    fn encode(&self, mut enc: LabelSetEncoder<'_>) -> std::fmt::Result {
-        self.encode_label_set(&mut enc)
+    fn encode(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
+        self.encode_label_set(enc)
     }
 }
