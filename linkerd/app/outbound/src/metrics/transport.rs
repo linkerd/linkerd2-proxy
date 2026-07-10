@@ -1,7 +1,7 @@
 use crate::{opaq, tls};
 use linkerd_app_core::{
     io,
-    metrics::prom::{self, encoding::*, registry::Registry, EncodeLabelSetMut, Family},
+    metrics::prom::{self, encoding::*, registry::Registry, Family},
     svc::{layer, NewService, Param, Service},
     Error,
 };
@@ -69,7 +69,7 @@ where
 
 impl<L> TransportRouteMetricsFamily<L>
 where
-    L: Clone + Hash + Eq + EncodeLabelSetMut + Debug + Send + Sync + 'static,
+    L: Clone + Hash + Eq + EncodeLabelSet + Debug + Send + Sync + 'static,
 {
     pub(crate) fn register(registry: &mut Registry) -> Self {
         let open = prom::Family::<L, prom::Counter>::default();
@@ -137,27 +137,18 @@ impl std::fmt::Display for ErrorKind {
 
 // === impl ConnectionsClosedLabels ===
 
-impl<L> EncodeLabelSetMut for ConnectionsClosedLabels<L>
+impl<L> EncodeLabelSet for ConnectionsClosedLabels<L>
 where
-    L: Clone + Hash + Eq + EncodeLabelSetMut + Debug + Send + Sync + 'static,
+    L: Clone + Hash + Eq + EncodeLabelSet + Debug + Send + Sync + 'static,
 {
-    fn encode_label_set(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
-        self.labels.encode_label_set(enc)?;
+    fn encode(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
+        self.labels.encode(enc)?;
         match self.error {
             Some(error) => ("error", error.to_string()).encode(enc.encode_label())?,
             None => ("error", "").encode(enc.encode_label())?,
         }
 
         Ok(())
-    }
-}
-
-impl<L> EncodeLabelSet for ConnectionsClosedLabels<L>
-where
-    L: Clone + Hash + Eq + EncodeLabelSetMut + Debug + Send + Sync + 'static,
-{
-    fn encode(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
-        self.encode_label_set(enc)
     }
 }
 
@@ -177,7 +168,7 @@ impl<N, L: Clone> NewTransportRouteMetrics<N, L> {
 impl<T, N, L, S> NewService<T> for NewTransportRouteMetrics<N, L>
 where
     N: NewService<T, Service = S>,
-    L: Clone + Hash + Eq + EncodeLabelSetMut + Debug + Send + Sync + 'static,
+    L: Clone + Hash + Eq + EncodeLabelSet + Debug + Send + Sync + 'static,
     T: Param<L> + Clone,
 {
     type Service = TransportRouteMetricsService<S>;

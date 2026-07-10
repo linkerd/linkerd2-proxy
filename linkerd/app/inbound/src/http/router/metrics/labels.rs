@@ -1,7 +1,4 @@
-use linkerd_app_core::metrics::prom::{
-    encoding::{self, EncodeLabelSet, LabelSetEncoder},
-    EncodeLabelSetMut,
-};
+use linkerd_app_core::metrics::prom::encoding::{self, EncodeLabelSet, LabelSetEncoder};
 
 /// Labels referencing an inbound server and route.
 ///
@@ -17,8 +14,8 @@ impl From<linkerd_app_core::metrics::RouteLabels> for RouteLabels {
     }
 }
 
-impl EncodeLabelSetMut for RouteLabels {
-    fn encode_label_set(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
+impl EncodeLabelSet for RouteLabels {
+    fn encode(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
         use encoding::EncodeLabel as _;
 
         let Self(linkerd_app_core::metrics::RouteLabels {
@@ -36,11 +33,5 @@ impl EncodeLabelSetMut for RouteLabels {
         ("route_name", route.name()).encode(enc.encode_label())?;
 
         Ok(())
-    }
-}
-
-impl EncodeLabelSet for RouteLabels {
-    fn encode(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
-        self.encode_label_set(enc)
     }
 }

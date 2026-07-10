@@ -9,10 +9,7 @@
 //! `DashMap` as we migrate other metrics registries.
 
 use crate::{policy, BackendRef, ParentRef, RouteRef};
-use linkerd_app_core::{
-    metrics::prom::{encoding::*, EncodeLabelSetMut},
-    svc,
-};
+use linkerd_app_core::{metrics::prom::encoding::*, svc};
 use std::fmt::Write;
 
 pub(crate) mod error;
@@ -56,7 +53,7 @@ struct ScopedKey<'a, 'b>(&'a str, &'b str);
 
 impl<K> BalancerMetricsParams<K>
 where
-    K: EncodeLabelSetMut + Clone + Eq + std::hash::Hash + std::fmt::Debug + Send + Sync + 'static,
+    K: EncodeLabelSet + Clone + Eq + std::hash::Hash + std::fmt::Debug + Send + Sync + 'static,
 {
     pub fn register(reg: &mut prom::registry::Registry) -> Self {
         Self(balance::MetricFamilies::register(reg))
@@ -255,17 +252,11 @@ impl legacy::FmtLabels for ConcreteLabels {
     }
 }
 
-impl EncodeLabelSetMut for ConcreteLabels {
-    fn encode_label_set(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
-        let Self(parent, backend) = self;
-        parent.encode_label_set(enc)?;
-        backend.encode_label_set(enc)?;
-        Ok(())
-    }
-}
-
 impl EncodeLabelSet for ConcreteLabels {
     fn encode(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
-        self.encode_label_set(enc)
+        let Self(parent, backend) = self;
+        parent.encode(enc)?;
+        backend.encode(enc)?;
+        Ok(())
     }
 }

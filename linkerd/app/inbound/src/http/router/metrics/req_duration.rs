@@ -1,9 +1,6 @@
 use super::RouteLabels;
 use crate::policy::PermitVariant;
-use linkerd_app_core::{
-    metrics::prom::{self, EncodeLabelSetMut},
-    svc,
-};
+use linkerd_app_core::{metrics::prom, svc};
 use linkerd_http_prom::{
     record_response::{self, Params},
     stream_label::with::MkWithLabels,
@@ -84,19 +81,10 @@ where
 
 // === impl RequestDurationLabels ===
 
-impl prom::EncodeLabelSetMut for RequestDurationLabels {
-    fn encode_label_set(
-        &self,
-        encoder: &mut prom::encoding::LabelSetEncoder<'_>,
-    ) -> std::fmt::Result {
-        let Self { route } = self;
-        route.encode_label_set(encoder)?;
-        Ok(())
-    }
-}
-
 impl prom::encoding::EncodeLabelSet for RequestDurationLabels {
     fn encode(&self, encoder: &mut prom::encoding::LabelSetEncoder<'_>) -> std::fmt::Result {
-        self.encode_label_set(encoder)
+        let Self { route } = self;
+        route.encode(encoder)?;
+        Ok(())
     }
 }

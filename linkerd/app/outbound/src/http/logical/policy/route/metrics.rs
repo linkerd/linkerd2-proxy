@@ -1,9 +1,5 @@
 use super::{backend::metrics as backend, retry};
-use linkerd_app_core::{
-    metrics::prom::{self, EncodeLabelSetMut},
-    proxy::http,
-    svc,
-};
+use linkerd_app_core::{metrics::prom, proxy::http, svc};
 use linkerd_http_prom::{
     body_data::request::{BodyDataMetrics, NewRecordBodyData, RequestBodyFamilies},
     record_response, status,
@@ -329,7 +325,14 @@ impl<P> From<P> for LabelHttpRsp<P> {
 
 impl<P> StreamLabel for LabelHttpRsp<P>
 where
-    P: EncodeLabelSetMut + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
+    P: prom::encoding::EncodeLabelSet
+        + Clone
+        + Eq
+        + std::fmt::Debug
+        + std::hash::Hash
+        + Send
+        + Sync
+        + 'static,
 {
     type StatusLabels = labels::Rsp<P, labels::HttpRsp>;
     type DurationLabels = P;
@@ -387,7 +390,14 @@ impl<P> From<P> for LabelGrpcRsp<P> {
 
 impl<P> StreamLabel for LabelGrpcRsp<P>
 where
-    P: EncodeLabelSetMut + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
+    P: prom::encoding::EncodeLabelSet
+        + Clone
+        + Eq
+        + std::fmt::Debug
+        + std::hash::Hash
+        + Send
+        + Sync
+        + 'static,
 {
     type StatusLabels = labels::Rsp<P, labels::GrpcRsp>;
     type DurationLabels = P;

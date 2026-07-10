@@ -1,9 +1,6 @@
 use super::Protocol;
 use crate::ParentRef;
-use linkerd_app_core::{
-    metrics::prom::{self, EncodeLabelSetMut},
-    svc,
-};
+use linkerd_app_core::{metrics::prom, svc};
 
 #[derive(Clone, Debug)]
 pub struct NewRecord<N> {
@@ -99,8 +96,8 @@ where
 
 // === impl Labels ===
 
-impl prom::EncodeLabelSetMut for Labels {
-    fn encode_label_set(&self, enc: &mut prom::encoding::LabelSetEncoder<'_>) -> std::fmt::Result {
+impl prom::encoding::EncodeLabelSet for Labels {
+    fn encode(&self, enc: &mut prom::encoding::LabelSetEncoder<'_>) -> Result<(), std::fmt::Error> {
         use prom::encoding::EncodeLabel;
 
         let protocol = match self.protocol {
@@ -115,11 +112,5 @@ impl prom::EncodeLabelSetMut for Labels {
         self.parent_ref.encode_label_set(enc)?;
 
         Ok(())
-    }
-}
-
-impl prom::encoding::EncodeLabelSet for Labels {
-    fn encode(&self, enc: &mut prom::encoding::LabelSetEncoder<'_>) -> Result<(), std::fmt::Error> {
-        self.encode_label_set(enc)
     }
 }

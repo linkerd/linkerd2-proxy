@@ -4,7 +4,6 @@ use linkerd_app_core::{
     metrics::prom::{
         self,
         encoding::{EncodeLabelSet, LabelSetEncoder},
-        EncodeLabelSetMut,
     },
     svc,
 };
@@ -67,19 +66,13 @@ impl RequestBodyFamilies {
 
 // === impl RequestBodyDataLabels ===
 
-impl EncodeLabelSetMut for RequestBodyDataLabels {
-    fn encode_label_set(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
-        let Self { route } = self;
-
-        route.encode_label_set(enc)?;
-
-        Ok(())
-    }
-}
-
 impl EncodeLabelSet for RequestBodyDataLabels {
     fn encode(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
-        self.encode_label_set(enc)
+        let Self { route } = self;
+
+        route.encode(enc)?;
+
+        Ok(())
     }
 }
 
