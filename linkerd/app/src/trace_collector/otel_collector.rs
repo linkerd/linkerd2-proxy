@@ -89,6 +89,7 @@ where
         KeyValue {
             key: key.to_string(),
             value: Some(self.into_any_value()),
+            key_strindex: 0,
         }
     }
 }
