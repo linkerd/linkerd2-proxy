@@ -109,7 +109,7 @@ http = { version = "1" }
 http-body = { version = "1" }
 httpdate = { version = "1.0" }
 hyper = { version = "1", default-features = false }
-prometheus-client = { version = "0.24" }
+prometheus-client = { version = "0.25" }
 prost = { version = "0.14" }
 prost-build = { version = "0.14", default-features = false }
 prost-types = { version = "0.14" }
