@@ -29,6 +29,28 @@ pub(super) fn parse_server<S: Strings>(
     })
 }
 
+pub(super) fn parse_client<S: Strings>(
+    strings: &S,
+    base: &str,
+) -> Result<h2::ClientParams, EnvError> {
+    Ok(h2::ClientParams {
+        flow_control: Some(parse_flow_control(strings, base)?),
+        keep_alive: parse_client_keep_alive(strings, &format!("{base}_KEEP_ALIVE"))?,
+        max_concurrent_reset_streams: parse(
+            strings,
+            &format!("{base}_MAX_CONCURRENT_RESET_STREAMS"),
+            parse_number,
+        )?,
+        max_frame_size: parse(strings, &format!("{base}_MAX_FRAME_SIZE"), parse_number)?,
+        max_header_list_size: parse(
+            strings,
+            &format!("{base}_MAX_HEADER_LIST_SIZE"),
+            parse_number,
+        )?,
+        max_send_buf_size: parse(strings, &format!("{base}_MAX_SEND_BUF_SIZE"), parse_number)?,
+    })
+}
+
 fn parse_flow_control<S: Strings>(strings: &S, base: &str) -> Result<h2::FlowControl, EnvError> {
     if let Some(true) = parse(
         strings,
@@ -72,6 +94,25 @@ fn parse_keep_alive<S: Strings>(
         parse(strings, &format!("{base}_INTERVAL"), parse_duration)?,
     ) {
         return Ok(Some(h2::KeepAlive { interval, timeout }));
+    }
+
+    Ok(None)
+}
+
+fn parse_client_keep_alive<S: Strings>(
+    strings: &S,
+    base: &str,
+) -> Result<Option<h2::ClientKeepAlive>, EnvError> {
+    if let (Some(timeout), Some(interval)) = (
+        parse(strings, &format!("{base}_TIMEOUT"), parse_duration)?,
+        parse(strings, &format!("{base}_INTERVAL"), parse_duration)?,
+    ) {
+        let while_idle = parse(
+            strings,
+            &format!("{base}_WHILE_IDLE"),
+            parse_bool,
+        )?.unwrap_or(false);
+        return Ok(Some(h2::ClientKeepAlive { interval, timeout, while_idle }));
     }
 
     Ok(None)
@@ -144,6 +185,58 @@ mod tests {
             h2::ServerParams {
                 flow_control: default.flow_control,
                 ..expected
+            }
+        );
+    }
+
+    #[test]
+    fn client_params() {
+        let mut env = HashMap::default();
+
+        // Produces empty params if no relevant env vars are set.
+        let default = h2::ClientParams {
+            flow_control: Some(h2::FlowControl::Fixed {
+                initial_stream_window_size: super::super::DEFAULT_INITIAL_STREAM_WINDOW_SIZE,
+                initial_connection_window_size:
+                    super::super::DEFAULT_INITIAL_CONNECTION_WINDOW_SIZE,
+            }),
+            ..Default::default()
+        };
+        assert_eq!(parse_client(&env, "TEST").unwrap(), default);
+
+        // Set all the fields.
+        env.insert("TEST_MAX_FRAME_SIZE", "4");
+        env.insert("TEST_MAX_HEADER_LIST_SIZE", "5");
+        env.insert("TEST_MAX_SEND_BUF_SIZE", "7");
+        env.insert("TEST_KEEP_ALIVE_TIMEOUT", "1s");
+        env.insert("TEST_KEEP_ALIVE_INTERVAL", "2s");
+        env.insert("TEST_KEEP_ALIVE_WHILE_IDLE", "true");
+        env.insert("TEST_INITIAL_STREAM_WINDOW_SIZE", "1");
+        env.insert("TEST_INITIAL_CONNECTION_WINDOW_SIZE", "2");
+        let expected = h2::ClientParams {
+            flow_control: Some(h2::FlowControl::Fixed {
+                initial_stream_window_size: 1,
+                initial_connection_window_size: 2,
+            }),
+            keep_alive: Some(h2::ClientKeepAlive {
+                interval: Duration::from_secs(2),
+                timeout: Duration::from_secs(1),
+                while_idle: true,
+            }),
+            max_frame_size: Some(4),
+            max_header_list_size: Some(5),
+            max_send_buf_size: Some(7),
+            ..Default::default()
+        };
+        assert_eq!(parse_client(&env, "TEST").unwrap(), expected);
+
+        // Enable adaptive flow control, overriding other flow control settings.
+        env.insert("TEST_ADAPTIVE_FLOW_CONTROL", "true");
+        assert_eq!(
+            parse_client(&env, "TEST").unwrap(),
+            h2::ClientParams {
+                flow_control: Some(h2::FlowControl::Adaptive),
+                ..expected.clone()
             }
         );
     }

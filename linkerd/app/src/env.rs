@@ -540,13 +540,10 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 OUTBOUND_CONNECT_BASE,
                 DEFAULT_OUTBOUND_CONNECT_BACKOFF,
             )?,
-            http2: h2::ClientParams {
-                flow_control: Some(h2::FlowControl::Fixed {
-                    initial_stream_window_size,
-                    initial_connection_window_size,
-                }),
-                ..Default::default()
-            },
+            http2: http2::parse_client(
+                strings,
+                "LINKERD2_PROXY_OUTBOUND_CONNECT_HTTP2",
+            )?,
             http1: h1::PoolSettings {
                 max_idle,
                 idle_timeout: connection_pool_timeout
@@ -634,13 +631,10 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 INBOUND_CONNECT_BASE,
                 DEFAULT_INBOUND_CONNECT_BACKOFF,
             )?,
-            http2: h2::ClientParams {
-                flow_control: Some(h2::FlowControl::Fixed {
-                    initial_stream_window_size,
-                    initial_connection_window_size,
-                }),
-                ..Default::default()
-            },
+            http2: http2::parse_client(
+                strings,
+                "LINKERD2_PROXY_INBOUND_CONNECT_HTTP2",
+            )?,
             http1: h1::PoolSettings {
                 max_idle,
                 idle_timeout: connection_pool_timeout,
