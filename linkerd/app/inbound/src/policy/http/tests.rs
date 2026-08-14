@@ -243,6 +243,158 @@ async fn http_route() {
     assert_eq!(permit.labels.route.route, rmeta);
 }
 
+// Route selection picks the most specific match, not the first that matches.
+// The lower-precedence rule is listed first so list order cannot explain a
+// pass.
+#[tokio::test(flavor = "current_thread")]
+async fn http_route_precedence() {
+    use linkerd_proxy_server_policy::http::{
+        r#match::{MatchPath, MatchRequest},
+        Policy, Route, Rule,
+    };
+
+    let prefix = Arc::new(Meta::Resource {
+        group: "gateway.networking.k8s.io".into(),
+        kind: "httproute".into(),
+        name: "prefix".into(),
+    });
+    let exact = Arc::new(Meta::Resource {
+        group: "gateway.networking.k8s.io".into(),
+        kind: "httproute".into(),
+        name: "exact".into(),
+    });
+    let authorizations: Arc<[Authorization]> = Arc::new([Authorization {
+        authentication: Authentication::Unauthenticated,
+        networks: vec![std::net::IpAddr::from([192, 168, 3, 3]).into()],
+        meta: Arc::new(Meta::Resource {
+            group: "policy.linkerd.io".into(),
+            kind: "AuthorizationPolicy".into(),
+            name: "test".into(),
+        }),
+    }]);
+
+    let (mut svc, _tx) = new_svc!(Protocol::Http1(Arc::new([Route {
+        hosts: vec![],
+        rules: vec![
+            Rule {
+                matches: vec![MatchRequest {
+                    path: Some(MatchPath::Prefix("/a".to_string())),
+                    ..MatchRequest::default()
+                }],
+                policy: Policy {
+                    authorizations: authorizations.clone(),
+                    filters: vec![],
+                    meta: prefix,
+                },
+            },
+            Rule {
+                matches: vec![MatchRequest {
+                    path: Some(MatchPath::Exact("/a/b".to_string())),
+                    ..MatchRequest::default()
+                }],
+                policy: Policy {
+                    authorizations: authorizations.clone(),
+                    filters: vec![],
+                    meta: exact.clone(),
+                },
+            },
+        ],
+    }])));
+
+    let rsp = svc
+        .call(
+            ::http::Request::builder()
+                .uri("/a/b")
+                .body(BoxBody::default())
+                .unwrap(),
+        )
+        .await
+        .expect("serves");
+    let permit = rsp
+        .extensions()
+        .get::<HttpRoutePermit>()
+        .expect("permitted");
+    assert_eq!(
+        permit.labels.route.route, exact,
+        "an exact path match must outrank a prefix match"
+    );
+}
+
+/// When two rules match equivalently, the first wins.
+#[tokio::test(flavor = "current_thread")]
+async fn http_route_tie_selects_first() {
+    use linkerd_proxy_server_policy::http::{
+        r#match::{MatchPath, MatchRequest},
+        Policy, Route, Rule,
+    };
+
+    let first = Arc::new(Meta::Resource {
+        group: "gateway.networking.k8s.io".into(),
+        kind: "httproute".into(),
+        name: "first".into(),
+    });
+    let second = Arc::new(Meta::Resource {
+        group: "gateway.networking.k8s.io".into(),
+        kind: "httproute".into(),
+        name: "second".into(),
+    });
+    let authorizations: Arc<[Authorization]> = Arc::new([Authorization {
+        authentication: Authentication::Unauthenticated,
+        networks: vec![std::net::IpAddr::from([192, 168, 3, 3]).into()],
+        meta: Arc::new(Meta::Resource {
+            group: "policy.linkerd.io".into(),
+            kind: "AuthorizationPolicy".into(),
+            name: "test".into(),
+        }),
+    }]);
+
+    let (mut svc, _tx) = new_svc!(Protocol::Http1(Arc::new([Route {
+        hosts: vec![],
+        rules: vec![
+            Rule {
+                matches: vec![MatchRequest {
+                    path: Some(MatchPath::Prefix("/a".to_string())),
+                    ..MatchRequest::default()
+                }],
+                policy: Policy {
+                    authorizations: authorizations.clone(),
+                    filters: vec![],
+                    meta: first.clone(),
+                },
+            },
+            Rule {
+                matches: vec![MatchRequest {
+                    path: Some(MatchPath::Prefix("/a".to_string())),
+                    ..MatchRequest::default()
+                }],
+                policy: Policy {
+                    authorizations: authorizations.clone(),
+                    filters: vec![],
+                    meta: second,
+                },
+            },
+        ],
+    }])));
+
+    let rsp = svc
+        .call(
+            ::http::Request::builder()
+                .uri("/a/b")
+                .body(BoxBody::default())
+                .unwrap(),
+        )
+        .await
+        .expect("serves");
+    let permit = rsp
+        .extensions()
+        .get::<HttpRoutePermit>()
+        .expect("permitted");
+    assert_eq!(
+        permit.labels.route.route, first,
+        "the first of two tied rules must win"
+    );
+}
+
 #[tokio::test(flavor = "current_thread")]
 async fn http_filter_header() {
     use linkerd_proxy_server_policy::http::{
