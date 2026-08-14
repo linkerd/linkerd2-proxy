@@ -18,6 +18,7 @@ pub enum Config {
     Disabled,
     Enabled {
         config: ServerConfig,
+        max_concurrent: usize,
         permitted_client_id: tls::server::ClientId,
     },
 }
@@ -58,6 +59,7 @@ impl Config {
             }
             Config::Enabled {
                 config,
+                max_concurrent,
                 permitted_client_id,
             } => {
                 let (listen_addr, listen) = bind.bind(&config)?;
@@ -83,6 +85,7 @@ impl Config {
                     .push(tls::NewDetectTls::<identity::Server, _, _>::layer(
                         TlsParams { identity },
                     ))
+                    .push_on_service(svc::ConcurrencyLimitLayer::new(max_concurrent))
                     .check_new_service::<B::Addrs, _>()
                     .into_inner();
 
