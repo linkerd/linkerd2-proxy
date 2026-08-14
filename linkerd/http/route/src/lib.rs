@@ -67,11 +67,7 @@ pub fn find<'r, M: Match + 'r, P, B>(
         } else {
             let uri = req.uri();
             trace!(%uri, "matching host");
-            let hm = rt
-                .hosts
-                .iter()
-                .filter_map(|a| a.summarize_match(uri))
-                .max()?;
+            let hm = first_max(rt.hosts.iter().filter_map(|a| a.summarize_match(uri)))?;
             Some(hm)
         };
 
@@ -84,13 +80,10 @@ pub fn find<'r, M: Match + 'r, P, B>(
                 return Some((M::Summary::default(), &rule.policy));
             }
             // Find the best match to compare against other rules/routes
-            // (if any apply). The order/precedence of matches is not
-            // relevant.
-            let summary = rule
-                .matches
-                .iter()
-                .filter_map(|m| m.match_request(req))
-                .max()?;
+            // (if any apply). The order/precedence of matches is based on
+            // sorting done in the control plane. Older rules are
+            // at the front of the list and take precedence under a tie.
+            let summary = first_max(rule.matches.iter().filter_map(|m| m.match_request(req)))?;
             trace!("matches!");
             Some((summary, &rule.policy))
         }))?;
@@ -104,4 +97,14 @@ fn best<M: Ord, P>(matches: impl Iterator<Item = (M, P)>) -> Option<(M, P)> {
     // This is roughly equivalent to `max_by(...)` but we want to ensure
     // that the first match wins.
     matches.reduce(|(m0, p0), (m1, p1)| if m0 >= m1 { (m0, p0) } else { (m1, p1) })
+}
+
+// Returns the max of items, keeping the first entry that ties.
+//
+// This function is similar to `Iterator::max`. However,
+// instead of tie breaking by using the "last" element, first_max
+// breaks ties by propagating the "first" element in the tie.
+#[inline]
+fn first_max<T: Ord>(items: impl Iterator<Item = T>) -> Option<T> {
+    items.reduce(|a, b| if a >= b { a } else { b })
 }
