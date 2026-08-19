@@ -55,6 +55,7 @@ pub struct Respond<R> {
     is_orig_proto_upgrade: bool,
     client: Option<ClientHandle>,
     emit_headers: bool,
+    uri: http::Uri,
 }
 
 // === impl HttpRescue ===
@@ -309,6 +310,7 @@ where
 
         let rescue = self.rescue.clone();
         let emit_headers = self.emit_headers;
+        let uri = req.uri().clone();
 
         match req.version() {
             http::Version::HTTP_2 => {
@@ -332,6 +334,7 @@ where
                     is_orig_proto_upgrade: false,
                     version: http::Version::HTTP_2,
                     emit_headers,
+                    uri,
                 }
             }
             version => {
@@ -343,6 +346,7 @@ where
                     is_grpc: false,
                     is_orig_proto_upgrade: is_h2_upgrade,
                     emit_headers,
+                    uri,
                 }
             }
         }
@@ -389,9 +393,9 @@ where
         let rsp = info_span!("rescue", client.addr = %self.client_addr()).in_scope(|| {
             if !self.is_grpc {
                 let version = self.version;
-                tracing::info!(error, "{version:?} request failed",);
+                tracing::info!(error, path = self.uri.path(), "{version:?} request failed",);
             } else {
-                tracing::info!(error, "gRPC request failed");
+                tracing::info!(error, path = self.uri.path(), "gRPC request failed",);
             };
             self.rescue.rescue(error)
         })?;

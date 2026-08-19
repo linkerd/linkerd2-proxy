@@ -56,7 +56,7 @@ impl MatchHost {
                 if !h.ends_with('.') {
                     host = host.strip_suffix('.').unwrap_or(host);
                 }
-                if h == host {
+                if h.eq_ignore_ascii_case(host) {
                     Some(HostMatch::Exact(h.len()))
                 } else {
                     None
@@ -69,7 +69,7 @@ impl MatchHost {
                 }
                 let mut length = 0;
                 for sfx in suffix.iter() {
-                    host = host.strip_suffix(sfx)?;
+                    host = strip_suffix_ignore_ascii_case(host, sfx)?;
                     host = host.strip_suffix('.')?;
                     length += sfx.len() + 1;
                 }
@@ -78,6 +78,14 @@ impl MatchHost {
             }
         }
     }
+}
+
+// Performs a case-insensitive suffix match against the provided host
+// without allocating a String.
+fn strip_suffix_ignore_ascii_case<'a>(host: &'a str, suffix: &str) -> Option<&'a str> {
+    let index = host.len().checked_sub(suffix.len())?;
+    let (head, tail) = host.split_at_checked(index)?;
+    tail.eq_ignore_ascii_case(suffix).then_some(head)
 }
 
 // === impl HostMatch ===
@@ -206,6 +214,67 @@ mod tests {
         assert_eq!(
             m.summarize_match(&"https://bar.foo.example.com./foo/bar".parse().unwrap()),
             Some(HostMatch::Suffix(".example.com.".len()))
+        );
+    }
+
+    #[test]
+    fn exact_case_insensitive() {
+        // DNS names are case-insensitive (RFC 4343), so the case of both the
+        // match and the request's host must be irrelevant.
+        let m = "Example.COM"
+            .parse::<MatchHost>()
+            .expect("Example.COM parses");
+        assert_eq!(
+            m.summarize_match(&"https://example.com/foo/bar".parse().unwrap()),
+            Some(HostMatch::Exact("example.com".len()))
+        );
+        assert_eq!(
+            m.summarize_match(&"https://EXAMPLE.com/foo/bar".parse().unwrap()),
+            Some(HostMatch::Exact("example.com".len()))
+        );
+
+        let m = "example.com"
+            .parse::<MatchHost>()
+            .expect("example.com parses");
+        assert_eq!(
+            m.summarize_match(&"https://ExAmPlE.CoM/foo/bar".parse().unwrap()),
+            Some(HostMatch::Exact("example.com".len()))
+        );
+        assert_eq!(
+            m.summarize_match(&"https://ExAmPlE.CoM./foo/bar".parse().unwrap()),
+            Some(HostMatch::Exact("example.com".len()))
+        );
+        assert_eq!(
+            m.summarize_match(&"https://foo.EXAMPLE.com/foo/bar".parse().unwrap()),
+            None
+        );
+    }
+
+    #[test]
+    fn suffix_case_insensitive() {
+        let m = "*.Example.COM"
+            .parse::<MatchHost>()
+            .expect("*.Example.COM parses");
+        assert_eq!(
+            m.summarize_match(&"https://foo.example.com/foo/bar".parse().unwrap()),
+            Some(HostMatch::Suffix(".example.com".len()))
+        );
+
+        let m = "*.example.com"
+            .parse::<MatchHost>()
+            .expect("*.example.com parses");
+        assert_eq!(
+            m.summarize_match(&"https://FOO.ExAmPlE.CoM/foo/bar".parse().unwrap()),
+            Some(HostMatch::Suffix(".example.com".len()))
+        );
+        assert_eq!(
+            m.summarize_match(&"https://BAR.foo.EXAMPLE.COM./foo/bar".parse().unwrap()),
+            Some(HostMatch::Suffix(".example.com".len()))
+        );
+        // The wildcard must still require at least one leading label.
+        assert_eq!(
+            m.summarize_match(&"https://EXAMPLE.COM/foo/bar".parse().unwrap()),
+            None
         );
     }
 
