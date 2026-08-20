@@ -26,6 +26,7 @@ linkerd-app-inbound = { path = "./inbound" }
 linkerd-app-outbound = { path = "./outbound" }
 linkerd-error = { path = "../error" }
 linkerd-opentelemetry = { path = "../opentelemetry" }
+linkerd-stack = { path = "../stack" }
 linkerd-tonic-stream = { path = "../tonic-stream" }
 linkerd-workers = { path = "../workers" }
 rangemap = "1"

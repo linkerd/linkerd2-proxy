@@ -1507,6 +1507,7 @@ dependencies = [
  "linkerd-app-outbound",
  "linkerd-error",
  "linkerd-opentelemetry",
+ "linkerd-stack",
  "linkerd-tonic-stream",
  "linkerd-workers",
  "rangemap",

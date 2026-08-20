@@ -109,11 +109,15 @@ impl api::tap_server::Tap for Server {
     ) -> Result<grpc::Response<Self::ObserveStream>, grpc::Status> {
         let req = req.into_inner();
 
-        let limit = req.limit as usize;
+        let mut limit = req.limit as usize;
         if limit == 0 {
             let err = Self::invalid_arg("limit must be positive".into());
             return Err(err);
         };
+        if limit > super::super::PER_RESPONSE_EVENT_MAX {
+            limit = super::super::PER_RESPONSE_EVENT_MAX;
+        }
+        let limit = limit;
         trace!(limit);
 
         // Read the match logic into a type we can use to evaluate against

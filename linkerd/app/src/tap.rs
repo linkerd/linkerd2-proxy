@@ -9,7 +9,7 @@ use linkerd_app_core::{
     transport::{addrs::AddrPair, listen::Bind, ClientAddr, Local, Remote, ServerAddr},
     Error,
 };
-use std::pin::Pin;
+use std::{pin::Pin, time::Duration};
 use tower::util::{service_fn, ServiceExt};
 
 #[derive(Clone, Debug)]
@@ -19,6 +19,7 @@ pub enum Config {
     Enabled {
         config: ServerConfig,
         max_concurrent: usize,
+        max_lifetime: Duration,
         permitted_client_id: tls::server::ClientId,
     },
 }
@@ -60,6 +61,7 @@ impl Config {
             Config::Enabled {
                 config,
                 max_concurrent,
+                max_lifetime,
                 permitted_client_id,
             } => {
                 let (listen_addr, listen) = bind.bind(&config)?;
@@ -86,6 +88,8 @@ impl Config {
                         TlsParams { identity },
                     ))
                     .push_on_service(svc::ConcurrencyLimitLayer::new(max_concurrent))
+                    .push_on_service(svc::LoadShed::layer())
+                    .push_on_service(linkerd_stack::Timeout::layer(max_lifetime))
                     .check_new_service::<B::Addrs, _>()
                     .into_inner();
 

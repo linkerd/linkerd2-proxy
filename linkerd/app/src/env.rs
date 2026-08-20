@@ -260,6 +260,8 @@ pub const ENV_TAP_SVC_NAME: &str = "LINKERD2_PROXY_TAP_SVC_NAME";
 /// The maximum number of concurrent tap connections permitted, without regard
 /// to the caller's identity.
 pub const ENV_TAP_CONCURRENT: &str = "LINKERD2_PROXY_TAP_CONCURRENT";
+/// The maximum lifetime of a tap connection.
+pub const ENV_TAP_LIFETIME: &str = "LINKERD2_PROXY_TAP_LIFETIME";
 
 /// Configures a minimum value for the TTL of DNS lookups.
 ///
@@ -362,6 +364,8 @@ const DEFAULT_OUTBOUND_MAX_IN_FLIGHT: usize = 100_000;
 // The default maximum number of concurrent tap connections permitted,
 // without regard to the caller's identity.
 const DEFAULT_TAP_CONCURRENT: usize = 100;
+// The default tap lifetime of a connection in seconds
+const DEFAULT_TAP_LIFETIME: Duration = Duration::from_secs(90);
 
 const DEFAULT_DESTINATION_PROFILE_SUFFIXES: &str = "svc.cluster.local.";
 const DEFAULT_DESTINATION_PROFILE_SKIP_TIMEOUT: Duration = Duration::from_millis(500);
@@ -888,16 +892,19 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
     let tap = tap?
         .map(
-            |(addr, permitted_client_id, tap_concurrent)| super::tap::Config::Enabled {
-                permitted_client_id,
-                max_concurrent: tap_concurrent,
-                config: ServerConfig {
-                    addr: DualListenAddr(addr, None),
-                    keepalive: inbound.proxy.server.keepalive,
-                    user_timeout: inbound.proxy.server.user_timeout,
-                    backlog: inbound.proxy.server.backlog,
-                    http2: inbound.proxy.server.http2.clone(),
-                },
+            |(addr, permitted_client_id, tap_concurrent, tap_lifetime)| {
+                super::tap::Config::Enabled {
+                    permitted_client_id,
+                    max_concurrent: tap_concurrent,
+                    max_lifetime: tap_lifetime,
+                    config: ServerConfig {
+                        addr: DualListenAddr(addr, None),
+                        keepalive: inbound.proxy.server.keepalive,
+                        user_timeout: inbound.proxy.server.user_timeout,
+                        backlog: inbound.proxy.server.backlog,
+                        http2: inbound.proxy.server.http2.clone(),
+                    },
+                }
             },
         )
         .unwrap_or(super::tap::Config::Disabled);
@@ -954,8 +961,9 @@ impl Env {
 ///   ENV_TAP_SVC_NAME.
 fn parse_tap_config(
     strings: &dyn Strings,
-) -> Result<Option<(SocketAddr, tls::server::ClientId, usize)>, EnvError> {
+) -> Result<Option<(SocketAddr, tls::server::ClientId, usize, Duration)>, EnvError> {
     let tap_concurrent = parse(strings, ENV_TAP_CONCURRENT, parse_number::<usize>);
+    let tap_lifetime = parse(strings, ENV_TAP_LIFETIME, parse_duration);
     let tap_identity = parse(strings, ENV_TAP_SVC_NAME, parse_identity)?;
     let addr = parse(strings, ENV_CONTROL_LISTEN_ADDR, parse_socket_addr)?
         .unwrap_or_else(|| parse_socket_addr(DEFAULT_CONTROL_LISTEN_ADDR).unwrap());
@@ -964,6 +972,7 @@ fn parse_tap_config(
             addr,
             tls::ClientId(id),
             tap_concurrent?.unwrap_or(DEFAULT_TAP_CONCURRENT),
+            tap_lifetime?.unwrap_or(DEFAULT_TAP_LIFETIME),
         )));
     }
     Ok(None)
