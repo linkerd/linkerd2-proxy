@@ -1510,6 +1510,7 @@ dependencies = [
  "linkerd-stack",
  "linkerd-tonic-stream",
  "linkerd-workers",
+ "prometheus-client",
  "rangemap",
  "regex",
  "tempfile",
