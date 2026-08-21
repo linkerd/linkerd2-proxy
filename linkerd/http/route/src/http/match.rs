@@ -97,9 +97,9 @@ impl std::cmp::Ord for RequestMatch {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.path_match
             .cmp(&other.path_match)
+            .then_with(|| self.method.cmp(&other.method))
             .then_with(|| self.headers.cmp(&other.headers))
             .then_with(|| self.query_params.cmp(&other.query_params))
-            .then_with(|| self.method.cmp(&other.method))
     }
 }
 
