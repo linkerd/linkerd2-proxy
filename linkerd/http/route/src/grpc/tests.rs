@@ -161,6 +161,60 @@ fn header_count_precedence() {
     assert_eq!(*policy, Policy::Expected, "incorrect rule matched");
 }
 
+/// A rule may leave the service and method unset and constrain only the
+/// headers. Such a rule matches any RPC that carries those headers.
+#[test]
+fn headers_without_rpc() {
+    let rts = vec![Route {
+        hosts: vec![],
+        rules: vec![
+            Rule {
+                matches: vec![MatchRoute {
+                    rpc: MatchRpc {
+                        service: None,
+                        method: None,
+                    },
+                    headers: vec![MatchHeader::Exact(
+                        "session-id".parse().unwrap(),
+                        "user-1".parse().unwrap(),
+                    )],
+                }],
+                policy: Policy::Expected,
+            },
+            // Matches every request.
+            Rule::default(),
+        ],
+    }];
+
+    let req = http::Request::builder()
+        .method(http::Method::POST)
+        .uri("http://foo.example.com/foo/bar")
+        .header("session-id", "user-1")
+        .body(())
+        .unwrap();
+    let (_, policy) = find(&rts, &req).expect("must match");
+    assert_eq!(*policy, Policy::Expected, "incorrect rule matched");
+
+    // Any other service and method matches just the same.
+    let req = http::Request::builder()
+        .method(http::Method::POST)
+        .uri("http://foo.example.com/bah/baz")
+        .header("session-id", "user-1")
+        .body(())
+        .unwrap();
+    let (_, policy) = find(&rts, &req).expect("must match");
+    assert_eq!(*policy, Policy::Expected, "incorrect rule matched");
+
+    // Without the header, the rule does not apply and the fallback is used.
+    let req = http::Request::builder()
+        .method(http::Method::POST)
+        .uri("http://foo.example.com/foo/bar")
+        .body(())
+        .unwrap();
+    let (_, policy) = find(&rts, &req).expect("must match");
+    assert_eq!(*policy, Policy::Unexpected, "header match must be required");
+}
+
 /// Given two routes with header matches, use the one that matches more
 /// headers.
 #[test]
