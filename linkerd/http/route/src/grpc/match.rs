@@ -113,9 +113,6 @@ pub mod proto {
     pub enum InvalidRouteMatch {
         #[error("invalid header match: {0}")]
         Header(#[from] InvalidHeaderMatch),
-
-        #[error("missing RPC match")]
-        MissingRpc,
     }
 
     impl TryFrom<api::GrpcRouteMatch> for MatchRoute {
@@ -123,7 +120,9 @@ pub mod proto {
 
         fn try_from(pb: api::GrpcRouteMatch) -> Result<Self, Self::Error> {
             Ok(MatchRoute {
-                rpc: pb.rpc.ok_or(InvalidRouteMatch::MissingRpc)?.into(),
+                // Note that the MatchRpc default represents an "empty"
+                // rpc value.
+                rpc: pb.rpc.map(MatchRpc::from).unwrap_or_default(),
                 headers: pb
                     .headers
                     .into_iter()
