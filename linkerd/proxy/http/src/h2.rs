@@ -75,6 +75,7 @@ where
             max_concurrent_reset_streams,
             max_frame_size,
             max_send_buf_size,
+            max_header_list_size,
         } = self.params;
 
         let connect = self
@@ -121,6 +122,9 @@ where
                 }
                 if let Some(sz) = max_send_buf_size {
                     builder.max_send_buf_size(sz);
+                }
+                if let Some(sz) = max_header_list_size {
+                    builder.max_header_list_size(sz);
                 }
 
                 let (tx, conn) = builder

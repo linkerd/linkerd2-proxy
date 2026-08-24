@@ -207,6 +207,9 @@ fn to_http2_client_params(pb: Http2ClientParams) -> linkerd_http_h2::ClientParam
             .as_ref()
             .map(|i| i.max_send_buf_size as usize)
             .filter(|n| *n > 0),
+        // The API doesn't set this value, it's only ever configured
+        // via the linkerd ENV.
+        max_header_list_size: None,
     }
 }
 
