@@ -273,6 +273,10 @@ const ENV_INITIAL_STREAM_WINDOW_SIZE: &str = "LINKERD2_PROXY_HTTP2_INITIAL_STREA
 const ENV_INITIAL_CONNECTION_WINDOW_SIZE: &str =
     "LINKERD2_PROXY_HTTP2_INITIAL_CONNECTION_WINDOW_SIZE";
 
+/// Configure the maximum size of header list that the sender is prepared to accept.
+const ENV_HTTP2_SETTINGS_MAX_HEADER_LIST_SIZE: &str =
+    "LINKERD2_PROXY_HTTP2_SETTINGS_MAX_HEADER_LIST_SIZE";
+
 const ENV_INBOUND_HTTP1_CONNECTION_POOL_IDLE_TIMEOUT: &str =
     "LINKERD2_PROXY_INBOUND_HTTP1_CONNECTION_POOL_IDLE_TIMEOUT";
 const ENV_OUTBOUND_HTTP1_CONNECTION_POOL_IDLE_TIMEOUT: &str =
@@ -472,6 +476,11 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     let initial_connection_window_size =
         parse(strings, ENV_INITIAL_CONNECTION_WINDOW_SIZE, parse_number)?
             .unwrap_or(DEFAULT_INITIAL_CONNECTION_WINDOW_SIZE);
+    let settings_max_header_list_size = parse(
+        strings,
+        ENV_HTTP2_SETTINGS_MAX_HEADER_LIST_SIZE,
+        parse_number,
+    )?;
 
     let dst_profile_suffixes = dst_profile_suffixes?
         .unwrap_or_else(|| parse_dns_suffixes(DEFAULT_DESTINATION_PROFILE_SUFFIXES).unwrap());
@@ -545,6 +554,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                     initial_stream_window_size,
                     initial_connection_window_size,
                 }),
+                max_header_list_size: settings_max_header_list_size,
                 ..Default::default()
             },
             http1: h1::PoolSettings {
@@ -639,6 +649,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                     initial_stream_window_size,
                     initial_connection_window_size,
                 }),
+                max_header_list_size: settings_max_header_list_size,
                 ..Default::default()
             },
             http1: h1::PoolSettings {
