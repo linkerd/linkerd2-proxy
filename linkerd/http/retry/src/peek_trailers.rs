@@ -503,7 +503,7 @@ mod tests {
         assert_eq!(trailers.unwrap().get("trailer").unwrap(), "shiny");
     }
 
-    /// Regression test for linkerd/linkerd2-proxy#15414.
+    /// Regression test for linkerd/linkerd2#15414.
     #[tokio::test]
     async fn peeking_data_with_trailers_does_not_report_exact_size() {
         let body = MockBody::default()
