@@ -373,6 +373,8 @@ mod tests {
         let peek = PeekTrailersBody::read_body(empty).await;
         assert!(peek.peek_trailers().is_none());
         assert!(peek.is_end_stream());
+        assert_eq!(peek.size_hint().lower(), 0);
+        assert_eq!(peek.size_hint().upper(), None);
 
         let (data, trailers) = collect(peek).await;
         assert_eq!(data, "");
@@ -386,6 +388,8 @@ mod tests {
         let peek = PeekTrailersBody::read_body(only_trailers).await;
         assert!(peek.peek_trailers().is_some());
         assert!(peek.is_end_stream().not());
+        assert_eq!(peek.size_hint().lower(), 0);
+        assert_eq!(peek.size_hint().upper(), None);
 
         let (data, trailers) = collect(peek).await;
         assert_eq!(data, "");
@@ -401,6 +405,8 @@ mod tests {
         let peek = PeekTrailersBody::read_body(body).await;
         assert!(peek.peek_trailers().is_some());
         assert!(peek.is_end_stream().not());
+        assert_eq!(peek.size_hint().lower(), 5);
+        assert_eq!(peek.size_hint().upper(), Some(5));
 
         let (data, trailers) = collect(peek).await;
         assert_eq!(data, "hello");
@@ -417,6 +423,8 @@ mod tests {
         let peek = PeekTrailersBody::read_body(body).await;
         assert!(peek.peek_trailers().is_none());
         assert!(peek.is_end_stream().not());
+        assert_eq!(peek.size_hint().lower(), 5);
+        assert_eq!(peek.size_hint().upper(), None);
 
         let (data, trailers) = collect(peek).await;
         assert_eq!(data, "hello");
@@ -433,6 +441,8 @@ mod tests {
         let peek = PeekTrailersBody::read_body(body).await;
         assert!(peek.peek_trailers().is_some());
         assert!(peek.is_end_stream().not());
+        assert_eq!(peek.size_hint().lower(), 5);
+        assert_eq!(peek.size_hint().upper(), Some(5));
 
         let (data, trailers) = collect(peek).await;
         assert_eq!(data, "hello");
@@ -449,6 +459,8 @@ mod tests {
         let peek = PeekTrailersBody::read_body(body).await;
         assert!(peek.peek_trailers().is_none());
         assert!(peek.is_end_stream().not());
+        assert_eq!(peek.size_hint().lower(), 10);
+        assert_eq!(peek.size_hint().upper(), None);
 
         let (data, trailers) = collect(peek).await;
         assert_eq!(data, "hellohello");
@@ -467,6 +479,8 @@ mod tests {
         let peek = PeekTrailersBody::read_body(body).await;
         assert!(peek.peek_trailers().is_none());
         assert!(peek.is_end_stream().not());
+        assert_eq!(peek.size_hint().lower(), 5);
+        assert_eq!(peek.size_hint().upper(), None);
 
         let (data, trailers) = collect(peek).await;
         assert_eq!(data, "hellohello");
