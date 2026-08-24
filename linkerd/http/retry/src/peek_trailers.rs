@@ -486,4 +486,22 @@ mod tests {
         assert_eq!(data, "hellohello");
         assert_eq!(trailers.unwrap().get("trailer").unwrap(), "shiny");
     }
+
+    /// Regression test for linkerd/linkerd2-proxy#15414.
+    #[tokio::test]
+    async fn peeking_data_with_trailers_does_not_report_exact_size() {
+        let body = MockBody::default()
+            .then_yield_data(Poll::Ready(data()))
+            .then_yield_trailer(Poll::Ready(trailers()));
+
+        let peek = PeekTrailersBody::read_body(body).await;
+
+        assert!(peek.peek_trailers().is_some());
+        assert_eq!(peek.size_hint().lower(), 5);
+        assert_eq!(peek.size_hint().exact(), None);
+
+        let (data, trailers) = collect(peek).await;
+        assert_eq!(data, "hello");
+        assert_eq!(trailers.unwrap().get("trailer").unwrap(), "shiny");
+    }
 }
