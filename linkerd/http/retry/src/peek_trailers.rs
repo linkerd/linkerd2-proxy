@@ -299,10 +299,26 @@ where
             Inner::Passthru { inner } => inner.size_hint(),
             Inner::Unary {
                 data: Some(Ok(data)),
-                ..
+                trailers: None,
             } => {
                 let size = data.remaining() as u64;
                 http_body::SizeHint::with_exact(size)
+            }
+            Inner::Unary {
+                data: Some(Ok(data)),
+                trailers: Some(_),
+            } => {
+                // NB: An exact size hint is not provided if we have any trailers to emit.
+                // Protocols like grpc-web encode the response status as part of the response body,
+                // so providing an exact hint would might cause clients to see errors related to
+                // missing trailers.
+                //
+                // For more information, see:
+                // https://github.com/grpc/grpc/blob/master/doc/PROTOCOL-WEB.md#protocol-differences-vs-grpc-over-http2.
+                let size = data.remaining() as u64;
+                let mut hint = http_body::SizeHint::new();
+                hint.set_lower(size);
+                hint
             }
             Inner::Unary {
                 data: None | Some(Err(_)),
@@ -373,6 +389,8 @@ mod tests {
         let peek = PeekTrailersBody::read_body(empty).await;
         assert!(peek.peek_trailers().is_none());
         assert!(peek.is_end_stream());
+        assert_eq!(peek.size_hint().lower(), 0);
+        assert_eq!(peek.size_hint().upper(), None);
 
         let (data, trailers) = collect(peek).await;
         assert_eq!(data, "");
@@ -386,6 +404,8 @@ mod tests {
         let peek = PeekTrailersBody::read_body(only_trailers).await;
         assert!(peek.peek_trailers().is_some());
         assert!(peek.is_end_stream().not());
+        assert_eq!(peek.size_hint().lower(), 0);
+        assert_eq!(peek.size_hint().upper(), None);
 
         let (data, trailers) = collect(peek).await;
         assert_eq!(data, "");
@@ -401,6 +421,8 @@ mod tests {
         let peek = PeekTrailersBody::read_body(body).await;
         assert!(peek.peek_trailers().is_some());
         assert!(peek.is_end_stream().not());
+        assert_eq!(peek.size_hint().lower(), 5);
+        assert_eq!(peek.size_hint().upper(), None);
 
         let (data, trailers) = collect(peek).await;
         assert_eq!(data, "hello");
@@ -417,6 +439,8 @@ mod tests {
         let peek = PeekTrailersBody::read_body(body).await;
         assert!(peek.peek_trailers().is_none());
         assert!(peek.is_end_stream().not());
+        assert_eq!(peek.size_hint().lower(), 5);
+        assert_eq!(peek.size_hint().upper(), None);
 
         let (data, trailers) = collect(peek).await;
         assert_eq!(data, "hello");
@@ -433,6 +457,8 @@ mod tests {
         let peek = PeekTrailersBody::read_body(body).await;
         assert!(peek.peek_trailers().is_some());
         assert!(peek.is_end_stream().not());
+        assert_eq!(peek.size_hint().lower(), 5);
+        assert_eq!(peek.size_hint().upper(), None);
 
         let (data, trailers) = collect(peek).await;
         assert_eq!(data, "hello");
@@ -449,6 +475,8 @@ mod tests {
         let peek = PeekTrailersBody::read_body(body).await;
         assert!(peek.peek_trailers().is_none());
         assert!(peek.is_end_stream().not());
+        assert_eq!(peek.size_hint().lower(), 10);
+        assert_eq!(peek.size_hint().upper(), None);
 
         let (data, trailers) = collect(peek).await;
         assert_eq!(data, "hellohello");
@@ -467,9 +495,29 @@ mod tests {
         let peek = PeekTrailersBody::read_body(body).await;
         assert!(peek.peek_trailers().is_none());
         assert!(peek.is_end_stream().not());
+        assert_eq!(peek.size_hint().lower(), 5);
+        assert_eq!(peek.size_hint().upper(), None);
 
         let (data, trailers) = collect(peek).await;
         assert_eq!(data, "hellohello");
+        assert_eq!(trailers.unwrap().get("trailer").unwrap(), "shiny");
+    }
+
+    /// Regression test for linkerd/linkerd2#15414.
+    #[tokio::test]
+    async fn peeking_data_with_trailers_does_not_report_exact_size() {
+        let body = MockBody::default()
+            .then_yield_data(Poll::Ready(data()))
+            .then_yield_trailer(Poll::Ready(trailers()));
+
+        let peek = PeekTrailersBody::read_body(body).await;
+
+        assert!(peek.peek_trailers().is_some());
+        assert_eq!(peek.size_hint().lower(), 5);
+        assert_eq!(peek.size_hint().exact(), None);
+
+        let (data, trailers) = collect(peek).await;
+        assert_eq!(data, "hello");
         assert_eq!(trailers.unwrap().get("trailer").unwrap(), "shiny");
     }
 }
