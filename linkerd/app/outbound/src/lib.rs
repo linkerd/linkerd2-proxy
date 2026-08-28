@@ -23,7 +23,7 @@ use linkerd_app_core::{
     svc::{self, ServiceExt},
     tls::ConnectMeta as TlsConnectMeta,
     transport::addrs::*,
-    AddrMatch, Error, NameAddr, ProxyRuntime,
+    AddrMatch, Error, IpMatch, NameAddr, ProxyRuntime,
 };
 use linkerd_tonic_stream::ReceiveLimits;
 use std::{
@@ -80,6 +80,17 @@ pub struct Config {
     // forwarded without discovery/routing/mTLS.
     pub ingress_mode: bool,
     pub inbound_ips: Arc<HashSet<IpAddr>>,
+
+    /// The default outbound policy: whether the proxy may fall back to a
+    /// cleartext connection to a target that has no mesh identity. Defaults to
+    /// [`policy::DefaultPolicy::Allow`] (today's behavior). Enforced at connect
+    /// time in the `tcp::connect` module.
+    pub default_policy: policy::DefaultPolicy,
+
+    /// The cluster networks, used to scope the `cluster-authenticated` default
+    /// policy to in-cluster destinations. Empty when
+    /// `LINKERD2_PROXY_POLICY_CLUSTER_NETWORKS` is unset.
+    pub cluster_networks: IpMatch,
 
     // Whether the proxy may include informational headers on HTTP responses.
     pub emit_headers: bool,
