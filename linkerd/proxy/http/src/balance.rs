@@ -81,9 +81,6 @@ where
     S: Service<http::Request<B>, Response = http::Response<RspB>> + Send + 'static,
     S::Future: Send + 'static,
     S::Error: Into<Error>,
-    // The penalty estimator inspects responses for rate-limit signals, and HTTP
-    // responses hold those signals in their headers.
-    S::Response: ResponseFailureHint + Send + 'static,
     // Each branch boxes its response body, so the two estimators need not produce
     // the same body type. The peak-EWMA branch tracks load through a [`Body`]
     // wrapper while the penalty branch tracks it through the biaser's own
