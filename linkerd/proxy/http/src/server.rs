@@ -8,9 +8,10 @@ use std::{
     future::Future,
     pin::Pin,
     task::{Context, Poll},
+    time::Duration,
 };
 use tower::Service;
-use tracing::{debug, Instrument};
+use tracing::{debug, info, Instrument};
 
 #[cfg(test)]
 mod tests;
@@ -36,6 +37,7 @@ pub struct ServeHttp<N> {
     version: Variant,
     http1: hyper::server::conn::http1::Builder,
     http2: hyper::server::conn::http2::Builder<TokioExecutor>,
+    max_connection_age: Option<Duration>,
     inner: N,
     drain: drain::Watch,
 }
@@ -70,6 +72,7 @@ where
             keep_alive,
             flow_control,
             max_concurrent_streams,
+            max_connection_age,
             max_frame_size,
             max_header_list_size,
             max_send_buf_size,
@@ -124,6 +127,7 @@ where
             drain,
             http1,
             http2,
+            max_connection_age,
         }
     }
 }
@@ -154,17 +158,18 @@ where
         let drain = self.drain.clone();
         let http1 = self.http1.clone();
         let http2 = self.http2.clone();
+        let max_connection_age = self.max_connection_age;
 
         let res = io.peer_addr().map(|pa| {
             let (handle, closed) = ClientHandle::new(pa);
             let svc = self.inner.new_service(handle.clone());
             let svc = SetClientHandle::new(handle, svc);
-            (svc, closed)
+            (svc, closed, pa)
         });
 
         Box::pin(
             async move {
-                let (svc, closed) = res?;
+                let (svc, closed, peer) = res?;
                 debug!(?version, "Handling as HTTP");
                 match version {
                     Variant::Http1 => {
@@ -201,6 +206,24 @@ where
                         let io = hyper_util::rt::TokioIo::new(io);
                         let mut conn = http2.serve_connection(io, svc);
 
+                        // Bound the connection's lifetime if a max age is
+                        // configured, so long-lived pooled peer connections
+                        // (and the buffer high-water memory they retain) are
+                        // periodically recycled. A deterministic per-connection
+                        // jitter of up to +10%, derived from the client's
+                        // ephemeral port, avoids synchronized shutdowns.
+                        let max_age = async move {
+                            match max_connection_age {
+                                Some(age) => {
+                                    let jitter =
+                                        age.mul_f64(f64::from(peer.port() % 128) / 1280.0);
+                                    tokio::time::sleep(age + jitter).await;
+                                }
+                                None => std::future::pending().await,
+                            }
+                        };
+                        tokio::pin!(max_age);
+
                         tokio::select! {
                             res = &mut conn => {
                                 debug!(?res, "The client is shutting down the connection");
@@ -213,6 +236,11 @@ where
                             }
                             () = closed => {
                                 debug!("The stack is tearing down the connection");
+                                Pin::new(&mut conn).graceful_shutdown();
+                                conn.await?;
+                            }
+                            () = &mut max_age => {
+                                info!(client.addr = %peer, "Max connection age reached; gracefully shutting down the connection");
                                 Pin::new(&mut conn).graceful_shutdown();
                                 conn.await?;
                             }

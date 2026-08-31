@@ -5,6 +5,11 @@ pub struct ServerParams {
     pub flow_control: Option<FlowControl>,
     pub keep_alive: Option<KeepAlive>,
     pub max_concurrent_streams: Option<u32>,
+    /// If set, server connections are gracefully shut down (GOAWAY) after this
+    /// age, bounding how long a pooled peer connection (and the buffer
+    /// high-water memory it retains) can live. A per-connection jitter of up
+    /// to +10% is applied to avoid synchronized shutdowns.
+    pub max_connection_age: Option<Duration>,
 
     // Internals
     pub max_frame_size: Option<u32>,

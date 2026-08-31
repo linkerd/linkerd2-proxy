@@ -9,6 +9,11 @@ pub(super) fn parse_server<S: Strings>(
     Ok(ServerParams {
         flow_control: Some(parse_flow_control(strings, base)?),
         keep_alive: parse_keep_alive(strings, &format!("{base}_KEEP_ALIVE"))?,
+        max_connection_age: parse(
+            strings,
+            &format!("{base}_MAX_CONNECTION_AGE"),
+            parse_duration,
+        )?,
         max_concurrent_streams: parse(
             strings,
             &format!("{base}_MAX_CONCURRENT_STREAMS"),
@@ -107,6 +112,7 @@ mod tests {
         env.insert("TEST_KEEP_ALIVE_INTERVAL", "2s");
         env.insert("TEST_INITIAL_STREAM_WINDOW_SIZE", "1");
         env.insert("TEST_INITIAL_CONNECTION_WINDOW_SIZE", "2");
+        env.insert("TEST_MAX_CONNECTION_AGE", "900s");
         let expected = h2::ServerParams {
             flow_control: Some(h2::FlowControl::Fixed {
                 initial_stream_window_size: 1,
@@ -116,6 +122,7 @@ mod tests {
                 interval: Duration::from_secs(2),
                 timeout: Duration::from_secs(1),
             }),
+            max_connection_age: Some(Duration::from_secs(900)),
             max_concurrent_streams: Some(3),
             max_frame_size: Some(4),
             max_header_list_size: Some(5),
