@@ -31,6 +31,19 @@ pub struct NewServeHttp<X, N> {
     params: X,
 }
 
+/// How a served connection is being torn down, as decided by the serve loop's
+/// completion branches.
+enum Teardown {
+    /// The client closed the connection; nothing left to do.
+    ClientClosed,
+    /// The process is draining: shut down gracefully, holding the drain
+    /// release guard until the connection closes.
+    Drain(drain::ReleaseShutdown),
+    /// Stack teardown or max connection age: shut down gracefully, then wait
+    /// for the connection to close.
+    Graceful,
+}
+
 /// Serves HTTP connections with an inner service.
 #[derive(Clone, Debug)]
 pub struct ServeHttp<N> {
@@ -160,16 +173,16 @@ where
         let http2 = self.http2.clone();
         let max_connection_age = self.max_connection_age;
 
-        let res = io.peer_addr().map(|pa| {
-            let (handle, closed) = ClientHandle::new(pa);
+        let res = io.peer_addr().map(|peer_addr| {
+            let (handle, closed) = ClientHandle::new(peer_addr);
             let svc = self.inner.new_service(handle.clone());
             let svc = SetClientHandle::new(handle, svc);
-            (svc, closed, pa)
+            (svc, closed, peer_addr)
         });
 
         Box::pin(
             async move {
-                let (svc, closed, peer) = res?;
+                let (svc, closed, peer_addr) = res?;
                 debug!(?version, "Handling as HTTP");
                 match version {
                     Variant::Http1 => {
@@ -216,7 +229,7 @@ where
                             match max_connection_age {
                                 Some(age) => {
                                     let jitter =
-                                        age.mul_f64(f64::from(peer.port() % 128) / 1280.0);
+                                        age.mul_f64(f64::from(peer_addr.port() % 128) / 1280.0);
                                     tokio::time::sleep(age + jitter).await;
                                 }
                                 None => std::future::pending().await,
@@ -224,23 +237,33 @@ where
                         };
                         tokio::pin!(max_age);
 
-                        tokio::select! {
+                        let teardown = tokio::select! {
                             res = &mut conn => {
                                 debug!(?res, "The client is shutting down the connection");
-                                res?
+                                res?;
+                                Teardown::ClientClosed
                             }
                             shutdown = drain.signaled() => {
                                 debug!("The process is shutting down the connection");
-                                Pin::new(&mut conn).graceful_shutdown();
-                                shutdown.release_after(conn).await?;
+                                Teardown::Drain(shutdown)
                             }
                             () = closed => {
                                 debug!("The stack is tearing down the connection");
-                                Pin::new(&mut conn).graceful_shutdown();
-                                conn.await?;
+                                Teardown::Graceful
                             }
                             () = &mut max_age => {
-                                debug!(client.addr = %peer, "Max connection age reached; gracefully shutting down the connection");
+                                debug!(client.addr = %peer_addr, "Max connection age reached; gracefully shutting down the connection");
+                                Teardown::Graceful
+                            }
+                        };
+
+                        match teardown {
+                            Teardown::ClientClosed => {}
+                            Teardown::Drain(shutdown) => {
+                                Pin::new(&mut conn).graceful_shutdown();
+                                shutdown.release_after(conn).await?;
+                            }
+                            Teardown::Graceful => {
                                 Pin::new(&mut conn).graceful_shutdown();
                                 conn.await?;
                             }
