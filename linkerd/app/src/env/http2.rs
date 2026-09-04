@@ -154,4 +154,31 @@ mod tests {
             }
         );
     }
+
+    /// Like every other SERVER_HTTP2 setting, max connection age is parsed
+    /// under both the inbound and outbound server prefixes.
+    #[test]
+    fn max_connection_age_parses_for_both_servers() {
+        let mut env = HashMap::default();
+        env.insert(
+            "LINKERD2_PROXY_INBOUND_SERVER_HTTP2_MAX_CONNECTION_AGE",
+            "15m",
+        );
+        env.insert(
+            "LINKERD2_PROXY_OUTBOUND_SERVER_HTTP2_MAX_CONNECTION_AGE",
+            "1h",
+        );
+
+        let inbound = parse_server(&env, "LINKERD2_PROXY_INBOUND_SERVER_HTTP2").unwrap();
+        assert_eq!(
+            inbound.max_connection_age,
+            Some(Duration::from_secs(15 * 60))
+        );
+
+        let outbound = parse_server(&env, "LINKERD2_PROXY_OUTBOUND_SERVER_HTTP2").unwrap();
+        assert_eq!(
+            outbound.max_connection_age,
+            Some(Duration::from_secs(60 * 60))
+        );
+    }
 }
