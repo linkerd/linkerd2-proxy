@@ -192,6 +192,13 @@ pub const ENV_INBOUND_GATEWAY_SUFFIXES: &str = "LINKERD2_PROXY_INBOUND_GATEWAY_S
 pub const ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION: &str =
     "LINKERD2_PROXY_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION";
 
+/// Ports for which the proxy should prepend a HAProxy PROXY protocol v2
+/// header (carrying the real client address and, when available, its
+/// verified mTLS identity) onto the TCP connection opened to the local
+/// application.
+pub const ENV_INBOUND_PORTS_PROXY_PROTOCOL_V2: &str =
+    "LINKERD2_PROXY_INBOUND_PORTS_PROXY_PROTOCOL_V2";
+
 pub const ENV_INBOUND_PORTS_REQUIRE_IDENTITY: &str =
     "LINKERD2_PROXY_INBOUND_PORTS_REQUIRE_IDENTITY";
 
@@ -672,6 +679,17 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         })?
         .unwrap_or(false);
 
+        // Determine the ports on which a PROXY protocol v2 header should be
+        // prepended to connections forwarded to the application.
+        let proxy_protocol_v2_ports = parse(
+            strings,
+            ENV_INBOUND_PORTS_PROXY_PROTOCOL_V2,
+            parse_port_range_set,
+        )?
+        // If the environment variable is not set, no ports are configured,
+        // and that's fine.
+        .unwrap_or_default();
+
         // Ensure that connections that directly target the inbound port are secured (unless
         // identity is disabled).
         let policy = {
@@ -759,6 +777,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                     .unwrap_or(DEFAULT_INBOUND_HTTP_FAILFAST_TIMEOUT),
             },
             unsafe_authority_labels,
+            proxy_protocol_v2_ports,
         }
     };
 
