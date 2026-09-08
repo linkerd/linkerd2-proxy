@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use http::Uri;
 use regex::Regex;
 
@@ -98,7 +100,17 @@ impl std::cmp::PartialOrd for PathMatch {
 
 impl std::cmp::Ord for PathMatch {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.len().cmp(&other.len())
+        // Exact paths take higher precedence than
+        // other path matching options
+        let is_self_exact_match = matches!(self, PathMatch::Exact(_));
+        let is_other_exact_match = matches!(other, PathMatch::Exact(_));
+        if is_self_exact_match && !is_other_exact_match {
+            Ordering::Greater
+        } else if !is_self_exact_match && is_other_exact_match {
+            Ordering::Less
+        } else {
+            self.len().cmp(&other.len())
+        }
     }
 }
 

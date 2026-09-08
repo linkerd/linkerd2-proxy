@@ -185,3 +185,98 @@ fn multiple() {
         .unwrap();
     assert_eq!(m.match_request(&req), None);
 }
+
+// A route may match on headers alone, leaving the service and method
+// unconstrained. Such a route applies to every RPC that carries the headers.
+// See linkerd/linkerd2#14047.
+#[test]
+fn headers_without_rpc() {
+    let m = MatchRoute {
+        rpc: MatchRpc {
+            service: None,
+            method: None,
+        },
+        headers: vec![MatchHeader::Exact(
+            HeaderName::from_static("session-id"),
+            HeaderValue::from_static("user-1"),
+        )],
+    };
+
+    // No service or method characters are matched, so the summary is decided
+    // entirely by the header count...
+    let req = http::Request::builder()
+        .method(http::Method::POST)
+        .uri("http://example.com/foo/bar")
+        .header("session-id", "user-1")
+        .body(())
+        .unwrap();
+    assert_eq!(
+        m.match_request(&req),
+        Some(RouteMatch {
+            rpc: RpcMatch {
+                service: 0,
+                method: 0
+            },
+            headers: 1
+        })
+    );
+
+    // ...and any other service and method matches just the same.
+    let req = http::Request::builder()
+        .method(http::Method::POST)
+        .uri("https://example.org/bah/baz")
+        .header("session-id", "user-1")
+        .body(())
+        .unwrap();
+    assert_eq!(
+        m.match_request(&req),
+        Some(RouteMatch {
+            rpc: RpcMatch {
+                service: 0,
+                method: 0
+            },
+            headers: 1
+        })
+    );
+
+    // The header is still required.
+    let req = http::Request::builder()
+        .method(http::Method::POST)
+        .uri("http://example.com/foo/bar")
+        .body(())
+        .unwrap();
+    assert_eq!(m.match_request(&req), None);
+}
+
+// An unconstrained RPC match matches zero characters, so it is less specific
+// than any match on a service or method, and ties are broken by header count.
+#[test]
+fn rpc_precedence() {
+    let unconstrained = RouteMatch {
+        rpc: RpcMatch {
+            service: 0,
+            method: 0,
+        },
+        headers: 3,
+    };
+    let service = RouteMatch {
+        rpc: RpcMatch {
+            service: 3,
+            method: 0,
+        },
+        headers: 0,
+    };
+    assert!(service > unconstrained, "a service match is more specific");
+
+    let fewer_headers = RouteMatch {
+        rpc: RpcMatch {
+            service: 0,
+            method: 0,
+        },
+        headers: 1,
+    };
+    assert!(
+        unconstrained > fewer_headers,
+        "header count breaks ties between unconstrained matches"
+    );
+}

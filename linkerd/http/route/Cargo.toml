@@ -21,3 +21,6 @@ url = "2"
 workspace = true
 features = ["http-route", "grpc-route"]
 optional = true
+
+[dev-dependencies]
+rstest = "0.26.1"

@@ -126,6 +126,52 @@ fn header_count_precedence() {
     assert_eq!(*policy, Policy::Expected, "incorrect rule matched");
 }
 
+// If, within a single rule, several matches may tie. The "first"
+// element should be preserved.
+#[test]
+fn first_tied_match_in_rule_wins() {
+    let prefix = MatchRequest {
+        path: Some(MatchPath::Prefix("/abc".to_string())),
+        ..MatchRequest::default()
+    };
+    let regex = MatchRequest {
+        path: Some(MatchPath::Regex("/abc".parse().unwrap())),
+        ..MatchRequest::default()
+    };
+    let req = http::Request::builder()
+        .uri("http://www.example.com/abc")
+        .body(())
+        .unwrap();
+
+    let rts = vec![Route {
+        hosts: vec![],
+        rules: vec![Rule {
+            matches: vec![prefix.clone(), regex.clone()],
+            policy: Policy::Expected,
+        }],
+    }];
+    let (m, _) = find(&rts, &req).expect("must match");
+    assert_eq!(
+        *m.route.path(),
+        PathMatch::Prefix(4),
+        "the first-listed match's summary must survive"
+    );
+
+    let rts = vec![Route {
+        hosts: vec![],
+        rules: vec![Rule {
+            matches: vec![regex, prefix],
+            policy: Policy::Expected,
+        }],
+    }];
+    let (m, _) = find(&rts, &req).expect("must match");
+    assert_eq!(
+        *m.route.path(),
+        PathMatch::Regex(4),
+        "the first-listed match's summary must survive here too"
+    );
+}
+
 /// Given two routes with header matches, use the one that matches more
 /// headers.
 #[test]
