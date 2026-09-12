@@ -59,6 +59,11 @@ fn parse_context(header_value: &str) -> Option<TraceContext> {
     let (trace_id, rest) = parse_header_value(rest, 16)?;
     let (parent_id, rest) = parse_header_value(rest, 8)?;
 
+    if rest.len() != 2 {
+        debug!(header = %HTTP_TRACEPARENT, flags = %rest, "Tracecontext flags must be exactly one byte");
+        return None;
+    }
+
     let flags = match hex::decode(rest) {
         // If valid hex, take final bit and AND with 1. W3C only uses one bit
         // for flags in version 00, and the bit is used to control sampling
@@ -120,6 +125,14 @@ mod tests {
     #[test]
     fn w3c_context_invalid_flags() {
         let input = "00-94d7f6ec6b95f3e916179cb6cfd01390-55ccfce77f972614-011";
+        let actual = parse_context(input);
+        assert!(actual.is_none());
+
+        let input = "00-94d7f6ec6b95f3e916179cb6cfd01390-55ccfce77f972614-0102";
+        let actual = parse_context(input);
+        assert!(actual.is_none());
+
+        let input = "00-94d7f6ec6b95f3e916179cb6cfd01390-55ccfce77f972614-";
         let actual = parse_context(input);
         assert!(actual.is_none());
 
