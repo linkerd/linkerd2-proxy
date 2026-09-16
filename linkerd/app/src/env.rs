@@ -3,12 +3,15 @@ use linkerd_app_core::{
     addr,
     config::*,
     control::{Config as ControlConfig, ControlAddr},
-    proxy::http::{h1, h2},
+    proxy::{
+        http::{h1, h2, HeaderName},
+        tap,
+    },
     tls,
     transport::{Backlog, DualListenAddr, Keepalive, ListenAddr, UserTimeout},
     AddrMatch, Conditional, IpNet,
 };
-use std::{collections::HashSet, net::SocketAddr, path::PathBuf, time::Duration};
+use std::{collections::HashSet, net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
 use thiserror::Error;
 use tracing::{debug, error, info, warn};
 
@@ -80,6 +83,8 @@ pub enum ParseError {
     ),
     #[error("not a valid port range")]
     NotAPortRange,
+    #[error("not a valid header name")]
+    NotAHeaderName,
     #[error("{0}")]
     AddrError(#[source] addr::Error),
     #[error("only two addresses are supported")]
@@ -262,6 +267,11 @@ pub const ENV_TAP_SVC_NAME: &str = "LINKERD2_PROXY_TAP_SVC_NAME";
 pub const ENV_TAP_CONCURRENT: &str = "LINKERD2_PROXY_TAP_CONCURRENT";
 /// The maximum lifetime of a tap connection.
 pub const ENV_TAP_LIFETIME: &str = "LINKERD2_PROXY_TAP_LIFETIME";
+/// A comma-separated allow-list of header names that a cluster administrator
+/// permits to be included in tap output when a tap client requests header
+/// extraction. If unset, a built-in default of safe headers is used. If set
+/// to an empty string, no headers are extracted.
+pub const ENV_TAP_HEADERS_ALLOW: &str = "LINKERD2_PROXY_TAP_HEADERS_ALLOW";
 
 /// Configures a minimum value for the TTL of DNS lookups.
 ///
@@ -903,11 +913,12 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
     let tap = tap?
         .map(
-            |(addr, permitted_client_id, tap_concurrent, tap_lifetime)| {
+            |(addr, permitted_client_id, tap_concurrent, tap_lifetime, header_allowlist)| {
                 super::tap::Config::Enabled {
                     permitted_client_id,
                     max_concurrent: tap_concurrent,
                     max_lifetime: tap_lifetime,
+                    header_allowlist,
                     config: ServerConfig {
                         addr: DualListenAddr(addr, None),
                         keepalive: inbound.proxy.server.keepalive,
@@ -970,20 +981,33 @@ impl Env {
 ///   ENV_TAP_SVC_NAME is set.
 /// - If identity is enabled, the status of tap is determined by
 ///   ENV_TAP_SVC_NAME.
+#[allow(clippy::type_complexity)]
 fn parse_tap_config(
     strings: &dyn Strings,
-) -> Result<Option<(SocketAddr, tls::server::ClientId, usize, Duration)>, EnvError> {
+) -> Result<
+    Option<(
+        SocketAddr,
+        tls::server::ClientId,
+        usize,
+        Duration,
+        Arc<HashSet<HeaderName>>,
+    )>,
+    EnvError,
+> {
     let tap_concurrent = parse(strings, ENV_TAP_CONCURRENT, parse_number::<usize>);
     let tap_lifetime = parse(strings, ENV_TAP_LIFETIME, parse_duration);
     let tap_identity = parse(strings, ENV_TAP_SVC_NAME, parse_identity)?;
+    let tap_header_allowlist = parse(strings, ENV_TAP_HEADERS_ALLOW, parse_header_name_set);
     let addr = parse(strings, ENV_CONTROL_LISTEN_ADDR, parse_socket_addr)?
         .unwrap_or_else(|| parse_socket_addr(DEFAULT_CONTROL_LISTEN_ADDR).unwrap());
     if let Some(id) = tap_identity {
+        let header_allowlist = tap_header_allowlist?.unwrap_or_else(tap::default_header_allowlist);
         return Ok(Some((
             addr,
             tls::ClientId(id),
             tap_concurrent?.unwrap_or(DEFAULT_TAP_CONCURRENT),
             tap_lifetime?.unwrap_or(DEFAULT_TAP_LIFETIME),
+            Arc::new(header_allowlist),
         )));
     }
     Ok(None)

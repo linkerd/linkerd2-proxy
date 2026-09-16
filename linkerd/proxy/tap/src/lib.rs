@@ -2,7 +2,7 @@
 #![forbid(unsafe_code)]
 
 use linkerd_tls as tls;
-use std::{net, sync::Arc};
+use std::{collections::HashSet, net, sync::Arc};
 
 mod accept;
 mod grpc;
@@ -16,9 +16,26 @@ const PER_RESPONSE_EVENT_BUFFER_CAPACITY: usize = 400;
 // The max limit (number of events) to accept in the tap/observe rpc call.
 const PER_RESPONSE_EVENT_MAX: usize = 10_000;
 
-pub fn new() -> (Registry, grpc::Server) {
+/// Header names that are propagated in tap output when no explicit
+/// allow-list has been configured by the cluster administrator.
+pub fn default_header_allowlist() -> HashSet<http::header::HeaderName> {
+    [
+        http::header::ACCEPT,
+        http::header::CONTENT_LENGTH,
+        http::header::CONTENT_TYPE,
+        http::header::DATE,
+        http::header::HOST,
+        http::header::LAST_MODIFIED,
+        http::header::SERVER,
+        http::header::USER_AGENT,
+    ]
+    .into_iter()
+    .collect()
+}
+
+pub fn new(header_allowlist: Arc<HashSet<http::header::HeaderName>>) -> (Registry, grpc::Server) {
     let registry = Registry::new();
-    let server = grpc::Server::new(registry.clone());
+    let server = grpc::Server::new(registry.clone(), header_allowlist);
     (registry, server)
 }
 
