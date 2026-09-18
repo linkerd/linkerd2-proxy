@@ -32,5 +32,8 @@ tracing = { workspace = true }
 [target.x86_64-unknown-linux-gnu.dependencies]
 tikv-jemallocator = "0.6"
 
+[target.aarch64-unknown-linux-gnu.dependencies]
+tikv-jemallocator = "0.6"
+
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tokio_unstable)'] }
