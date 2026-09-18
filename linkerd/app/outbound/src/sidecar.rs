@@ -30,6 +30,7 @@ struct HttpSidecar {
     orig_dst: OrigDstAddr,
     version: http::Variant,
     routes: watch::Receiver<http::Routes>,
+    provider: RouteProvider,
 }
 
 #[derive(Clone, Debug)]
@@ -42,6 +43,21 @@ struct TlsSidecar {
 struct OpaqSidecar {
     orig_dst: OrigDstAddr,
     routes: watch::Receiver<opaq::Routes>,
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+pub enum RouteProvider {
+    ServiceProfile,
+    ClientPolicy,
+}
+
+impl std::fmt::Debug for RouteProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ServiceProfile => write!(f, "ServiceProfile"),
+            Self::ClientPolicy => write!(f, "ClientPolicy"),
+        }
+    }
 }
 
 // === impl Outbound ===
@@ -196,10 +212,12 @@ impl From<protocol::Http<Sidecar>> for HttpSidecar {
                     http::spawn_routes(profile, init, move |profile: &profiles::Profile| {
                         Some(Self::mk_profile_routes(addr.clone(), profile))
                     });
+                let provider = RouteProvider::ServiceProfile;
                 return HttpSidecar {
                     orig_dst,
                     version,
                     routes,
+                    provider,
                 };
             }
         }
@@ -210,10 +228,12 @@ impl From<protocol::Http<Sidecar>> for HttpSidecar {
         let routes = http::spawn_routes(policy, init, move |policy: &policy::ClientPolicy| {
             Self::mk_policy_routes(orig_dst, version, policy)
         });
+        let provider = RouteProvider::ClientPolicy;
         HttpSidecar {
             orig_dst,
             version,
             routes,
+            provider,
         }
     }
 }
@@ -334,6 +354,7 @@ impl std::hash::Hash for HttpSidecar {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.orig_dst.hash(state);
         self.version.hash(state);
+        self.provider.hash(state);
     }
 }
 
