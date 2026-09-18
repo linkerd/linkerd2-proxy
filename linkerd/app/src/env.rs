@@ -6,7 +6,7 @@ use linkerd_app_core::{
     proxy::http::{h1, h2},
     tls,
     transport::{Backlog, DualListenAddr, Keepalive, ListenAddr, UserTimeout},
-    AddrMatch, Conditional, IpNet,
+    AddrMatch, Conditional, IpMatch, IpNet,
 };
 use std::{collections::HashSet, net::SocketAddr, path::PathBuf, time::Duration};
 use thiserror::Error;
@@ -204,6 +204,19 @@ pub const ENV_INBOUND_PORTS_REQUIRE_TLS: &str = "LINKERD2_PROXY_INBOUND_PORTS_RE
 ///
 /// By default, this is `unauthenticated`.
 pub const ENV_INBOUND_DEFAULT_POLICY: &str = "LINKERD2_PROXY_INBOUND_DEFAULT_POLICY";
+
+/// Configures the default policy for outbound connections: whether the proxy
+/// may fall back to a cleartext connection to a target endpoint that has no
+/// mesh identity.
+///
+/// The proxy accepts only the subset of the inbound value vocabulary that maps
+/// to meaningful outbound behavior: `all-unauthenticated` (permit cleartext to
+/// unmeshed targets — today's behavior), `all-authenticated` (require a mesh
+/// identity for every outbound endpoint), and `cluster-authenticated` (require
+/// a mesh identity only for endpoints within the cluster networks).
+///
+/// By default, this is `all-unauthenticated`.
+pub const ENV_OUTBOUND_DEFAULT_POLICY: &str = "LINKERD2_PROXY_OUTBOUND_DEFAULT_POLICY";
 
 pub const ENV_INBOUND_PORTS: &str = "LINKERD2_PROXY_INBOUND_PORTS";
 pub const ENV_POLICY_SVC_BASE: &str = "LINKERD2_PROXY_POLICY_SVC";
@@ -496,6 +509,14 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         std::sync::Arc::new(ips)
     };
 
+    // The cluster networks scope both the inbound and outbound cluster-scoped
+    // default policies.
+    let cluster_nets =
+        parse(strings, ENV_POLICY_CLUSTER_NETWORKS, parse_networks)?.unwrap_or_else(|| {
+            info!("{ENV_POLICY_CLUSTER_NETWORKS} not set; cluster-scoped modes are unsupported",);
+            Default::default()
+        });
+
     let outbound = {
         let ingress_mode = parse(strings, ENV_INGRESS_MODE, parse_bool)?.unwrap_or(false);
 
@@ -576,9 +597,28 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         let http_failfast_timeout =
             outbound_http_failfast_timeout?.unwrap_or(DEFAULT_OUTBOUND_HTTP_FAILFAST_TIMEOUT);
 
+        // The default outbound policy: whether the proxy may fall back to a
+        // cleartext connection to a target with no mesh identity. When unset,
+        // cleartext is permitted (preserving today's behavior).
+        let default_policy = parse(strings, ENV_OUTBOUND_DEFAULT_POLICY, |s| {
+            parse_outbound_default_policy(s, &cluster_nets)
+        })?
+        .unwrap_or_else(|| {
+            // TODO: promote to `warn!` (mirroring the inbound default policy)
+            // once the control plane always injects a value.
+            debug!(
+                "{} was not set; using `all-unauthenticated`",
+                ENV_OUTBOUND_DEFAULT_POLICY
+            );
+            outbound::policy::DefaultPolicy::Allow
+        });
+        let cluster_networks = IpMatch::new(cluster_nets.clone());
+
         outbound::Config {
             ingress_mode,
             emit_headers: !disable_headers,
+            default_policy,
+            cluster_networks,
             allow_discovery: AddrMatch::new(dst_profile_suffixes.clone(), dst_profile_networks),
             proxy: ProxyConfig {
                 server,
@@ -676,14 +716,6 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         // identity is disabled).
         let policy = {
             let inbound_port = ListenAddr(server.addr.0).port();
-
-            let cluster_nets = parse(strings, ENV_POLICY_CLUSTER_NETWORKS, parse_networks)?
-                .unwrap_or_else(|| {
-                    info!(
-                        "{ENV_POLICY_CLUSTER_NETWORKS} not set; cluster-scoped modes are unsupported",
-                    );
-                    Default::default()
-                });
 
             // We always configure a default policy. This policy applies when no other policy is
             // configured, especially when the port is not documented in via `ENV_INBOUND_PORTS`.
@@ -1040,6 +1072,40 @@ fn parse_default_policy(
     }
 }
 
+/// Parses the default *outbound* policy.
+///
+/// The outbound default policy expresses an *mTLS requirement*: whether the
+/// proxy may fall back to a cleartext connection to a target that has no mesh
+/// identity. The accepted subset of the inbound value vocabulary is:
+///
+/// * `all-unauthenticated` (the default) permits cleartext to unmeshed targets
+///   (today's behavior).
+/// * `all-authenticated` requires a mesh identity for every outbound endpoint.
+/// * `cluster-authenticated` requires a mesh identity only for endpoints within
+///   the cluster networks; it is only accepted when
+///   `LINKERD2_PROXY_POLICY_CLUSTER_NETWORKS` is non-empty (mirroring inbound).
+///
+/// The remaining inbound values (`deny`, `cluster-unauthenticated`, `audit`)
+/// have no meaningful outbound mapping and are rejected as invalid.
+fn parse_outbound_default_policy(
+    s: &str,
+    cluster_nets: &HashSet<IpNet>,
+) -> Result<outbound::policy::DefaultPolicy, ParseError> {
+    use outbound::policy::DefaultPolicy;
+    match s {
+        "all-unauthenticated" => Ok(DefaultPolicy::Allow),
+        "all-authenticated" => Ok(DefaultPolicy::RequireIdentity),
+
+        // Cluster-scoped enforcement requires knowing the cluster networks.
+        "cluster-authenticated" if cluster_nets.is_empty() => {
+            Err(ParseError::InvalidPortPolicy(s.to_string()))
+        }
+        "cluster-authenticated" => Ok(DefaultPolicy::RequireIdentityWithinCluster),
+
+        name => Err(ParseError::InvalidPortPolicy(name.to_string())),
+    }
+}
+
 pub fn parse_backoff<S: Strings>(
     strings: &S,
     base: &str,
@@ -1097,5 +1163,102 @@ pub fn parse_control_addr<S: Strings>(
 impl Strings for std::collections::HashMap<&'static str, &'static str> {
     fn get(&self, key: &str) -> Result<Option<String>, EnvError> {
         Ok(self.get(key).map(ToString::to_string))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use outbound::policy::DefaultPolicy;
+    use std::collections::HashMap;
+
+    fn cluster_nets() -> HashSet<IpNet> {
+        Some("10.0.0.0/8".parse::<IpNet>().unwrap())
+            .into_iter()
+            .collect()
+    }
+
+    #[test]
+    fn outbound_default_policy_accepted_values() {
+        let nets = cluster_nets();
+        assert_eq!(
+            parse_outbound_default_policy("all-unauthenticated", &nets),
+            Ok(DefaultPolicy::Allow),
+        );
+        assert_eq!(
+            parse_outbound_default_policy("all-authenticated", &nets),
+            Ok(DefaultPolicy::RequireIdentity),
+        );
+        assert_eq!(
+            parse_outbound_default_policy("cluster-authenticated", &nets),
+            Ok(DefaultPolicy::RequireIdentityWithinCluster),
+        );
+    }
+
+    #[test]
+    fn outbound_default_policy_cluster_requires_cluster_networks() {
+        // `cluster-authenticated` needs cluster networks to scope enforcement;
+        // without them it is rejected (mirroring the inbound behavior).
+        let empty = HashSet::new();
+        assert_eq!(
+            parse_outbound_default_policy("cluster-authenticated", &empty),
+            Err(ParseError::InvalidPortPolicy(
+                "cluster-authenticated".to_string()
+            )),
+        );
+        // `all-unauthenticated` / `all-authenticated` do not need them.
+        assert_eq!(
+            parse_outbound_default_policy("all-unauthenticated", &empty),
+            Ok(DefaultPolicy::Allow),
+        );
+        assert_eq!(
+            parse_outbound_default_policy("all-authenticated", &empty),
+            Ok(DefaultPolicy::RequireIdentity),
+        );
+    }
+
+    #[test]
+    fn outbound_default_policy_rejects_unsupported_values() {
+        // These inbound values have no meaningful outbound mTLS mapping.
+        let nets = cluster_nets();
+        for value in ["deny", "cluster-unauthenticated", "audit", "bogus"] {
+            assert_eq!(
+                parse_outbound_default_policy(value, &nets),
+                Err(ParseError::InvalidPortPolicy(value.to_string())),
+                "{value} must be rejected",
+            );
+        }
+    }
+
+    #[test]
+    fn outbound_default_policy_env() {
+        let nets = cluster_nets();
+
+        // Unset yields `None` so the caller applies the `all-unauthenticated`
+        // default (preserving today's behavior).
+        let env = HashMap::<&'static str, &'static str>::default();
+        assert_eq!(
+            parse(&env, ENV_OUTBOUND_DEFAULT_POLICY, |s| {
+                parse_outbound_default_policy(s, &nets)
+            })
+            .unwrap(),
+            None,
+        );
+
+        let mut env = HashMap::default();
+        env.insert(ENV_OUTBOUND_DEFAULT_POLICY, "all-authenticated");
+        assert_eq!(
+            parse(&env, ENV_OUTBOUND_DEFAULT_POLICY, |s| {
+                parse_outbound_default_policy(s, &nets)
+            })
+            .unwrap(),
+            Some(DefaultPolicy::RequireIdentity),
+        );
+
+        env.insert(ENV_OUTBOUND_DEFAULT_POLICY, "nonsense");
+        assert!(parse(&env, ENV_OUTBOUND_DEFAULT_POLICY, |s| {
+            parse_outbound_default_policy(s, &nets)
+        })
+        .is_err());
     }
 }
