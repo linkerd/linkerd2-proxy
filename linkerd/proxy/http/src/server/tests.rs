@@ -159,6 +159,76 @@ async fn h2_stream_window_exhaustion() {
     */
 }
 
+/// Tests that a server connection is gracefully shut down after its max
+/// connection age elapses: in-flight streams complete, but the connection is
+/// then closed so the client must reconnect.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn h2_max_connection_age() {
+    let _trace = linkerd_tracing::test::with_default_filter(LOG_LEVEL);
+
+    const MAX_AGE: time::Duration = time::Duration::from_secs(10);
+    // The effective age includes a deterministic per-connection jitter of up
+    // to +10%; sleep comfortably past it.
+    const PAST_AGE: time::Duration = time::Duration::from_secs(12);
+
+    let mut server = TestServer::connect_h2(
+        h2::ServerParams {
+            max_connection_age: Some(MAX_AGE),
+            ..Default::default()
+        },
+        hyper::client::conn::http2::Builder::new(TokioExecutor::new())
+            .timer(hyper_util::rt::TokioTimer::new()),
+    )
+    .await;
+
+    let bytes = Bytes::from_static(b"hello");
+
+    tracing::info!("Before the age elapses, requests are served normally");
+    let rx = timeout(server.respond(bytes.clone()))
+        .await
+        .expect("timed out");
+    let body = timeout(rx.collect())
+        .await
+        .expect("response timed out")
+        .expect("response");
+    assert_eq!(body.to_bytes(), bytes);
+
+    tracing::info!("A stream that is in flight when the age elapses still completes");
+    let (mut tx, mut body) = timeout(server.get()).await.expect("timed out");
+    time::sleep(PAST_AGE).await;
+    tx.send_data(bytes.clone())
+        .await
+        .expect("in-flight stream remains writable after the age elapses");
+    drop(tx);
+    let data = body
+        .frame()
+        .await
+        .expect("yields a result")
+        .expect("yields a frame")
+        .into_data()
+        .expect("yields data");
+    assert_eq!(data, bytes);
+    // Drain the body to its end; only an empty end-of-stream frame may remain.
+    while let Some(frame) = timeout(body.frame()).await.expect("body ends") {
+        let frame = frame.expect("body yields frames until end");
+        if let Ok(data) = frame.into_data() {
+            assert!(data.is_empty(), "no more data expected");
+        }
+    }
+
+    tracing::info!("Once in-flight streams complete, the connection is closed");
+    timeout(async {
+        loop {
+            if server.client.ready().await.is_err() {
+                return;
+            }
+            time::sleep(time::Duration::from_millis(100)).await;
+        }
+    })
+    .await
+    .expect("client should observe the connection closing");
+}
+
 // === Utilities ===
 
 const LOG_LEVEL: &str = "h2::proto=trace,hyper=trace,linkerd=trace,info";
