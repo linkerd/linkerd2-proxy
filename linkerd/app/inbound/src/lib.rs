@@ -13,6 +13,7 @@ pub mod direct;
 mod http;
 mod metrics;
 pub mod policy;
+mod proxy_protocol;
 mod server;
 
 #[cfg(any(test, feature = "test-util", fuzzing))]
@@ -34,6 +35,7 @@ use linkerd_app_core::{
     transport::{self, Remote, ServerAddr},
     Error, NameAddr, NameMatch, ProxyRuntime,
 };
+use rangemap::RangeInclusiveSet;
 use std::{fmt::Debug, time::Duration};
 use thiserror::Error;
 
@@ -57,6 +59,14 @@ pub struct Config {
 
     /// Enables unsafe authority labels.
     pub unsafe_authority_labels: bool,
+
+    /// Ports on which the proxy prepends a HAProxy PROXY protocol v2 header
+    /// (carrying the real client address and, when available, its verified
+    /// mTLS identity) to the TCP connection opened to the local application.
+    ///
+    /// This only applies to the opaque/TCP forwarding path; HTTP connections
+    /// proxied by this process never carry this header.
+    pub proxy_protocol_v2_ports: RangeInclusiveSet<u16>,
 }
 
 #[derive(Clone)]

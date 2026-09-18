@@ -1,11 +1,11 @@
-use crate::{direct, policy, ForwardError, Inbound};
+use crate::{direct, policy, proxy_protocol, ForwardError, Inbound};
 use linkerd_app_core::{
     config::ConnectConfig,
     drain,
     exp_backoff::ExponentialBackoff,
     io, profiles,
     proxy::{http, tcp},
-    svc,
+    svc, tls,
     transport::{self, addrs::*},
     Error,
 };
@@ -13,9 +13,11 @@ use linkerd_tonic_stream::ReceiveLimits;
 use std::{fmt::Debug, sync::Arc};
 use tracing::debug_span;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 struct TcpEndpoint {
     addr: Remote<ServerAddr>,
+    client: Remote<ClientAddr>,
+    tls: tls::ConditionalServerTls,
 }
 
 // === impl Inbound ===
@@ -168,6 +170,8 @@ impl<S> Inbound<S> {
     where
         T: svc::Param<transport::labels::Key>
             + svc::Param<Remote<ServerAddr>>
+            + svc::Param<Remote<ClientAddr>>
+            + svc::Param<tls::ConditionalServerTls>
             + Clone
             + Send
             + Sync
@@ -179,8 +183,12 @@ impl<S> Inbound<S> {
         S::Metadata: Send + Unpin,
         S::Future: Send,
     {
-        self.map_stack(|_, rt, connect| {
+        self.map_stack(|config, rt, connect| {
+            let proxy_protocol_v2_ports = Arc::new(config.proxy_protocol_v2_ports.clone());
             connect
+                .push(proxy_protocol::SendProxyProtocol::layer(
+                    proxy_protocol_v2_ports,
+                ))
                 .push(transport::metrics::Client::layer(
                     rt.metrics.proxy.transport.clone(),
                 ))
@@ -199,14 +207,35 @@ impl<S> Inbound<S> {
 // === impl TcpEndpoint ===
 
 impl TcpEndpoint {
-    pub fn from_param<T: svc::Param<Remote<ServerAddr>>>(t: T) -> Self {
-        Self { addr: t.param() }
+    pub fn from_param<T>(t: T) -> Self
+    where
+        T: svc::Param<Remote<ServerAddr>>
+            + svc::Param<Remote<ClientAddr>>
+            + svc::Param<tls::ConditionalServerTls>,
+    {
+        Self {
+            addr: t.param(),
+            client: t.param(),
+            tls: t.param(),
+        }
     }
 }
 
 impl svc::Param<Remote<ServerAddr>> for TcpEndpoint {
     fn param(&self) -> Remote<ServerAddr> {
         self.addr
+    }
+}
+
+impl svc::Param<Remote<ClientAddr>> for TcpEndpoint {
+    fn param(&self) -> Remote<ClientAddr> {
+        self.client
+    }
+}
+
+impl svc::Param<tls::ConditionalServerTls> for TcpEndpoint {
+    fn param(&self) -> tls::ConditionalServerTls {
+        self.tls.clone()
     }
 }
 
