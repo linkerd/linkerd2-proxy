@@ -189,6 +189,7 @@ where
                 tracing::trace!("Cannot replay buffered body, maximum buffer length reached");
                 return Poll::Ready(Some(Err(Capped.into())));
             }
+            this.replay_body = false;
         }
         if this.replay_trailers {
             this.replay_trailers = false;
