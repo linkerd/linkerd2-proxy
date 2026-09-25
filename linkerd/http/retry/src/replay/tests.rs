@@ -47,6 +47,23 @@ async fn replays_one_chunk() {
 }
 
 #[tokio::test]
+async fn replays_unpolled_body() {
+    let Test {
+        mut tx,
+        initial,
+        replay,
+        _trace,
+    } = Test::new();
+    tx.send_data("hello world").await;
+    drop(tx);
+    drop(initial);
+
+    let (data, trailers) = body_to_string(replay).await;
+    assert_eq!(data, "hello world");
+    assert_eq!(trailers, None);
+}
+
+#[tokio::test]
 async fn replays_several_chunks() {
     let Test {
         mut tx,
