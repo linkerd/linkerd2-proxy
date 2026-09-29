@@ -1,10 +1,12 @@
-//! Encodes and writes a HAProxy PROXY protocol v2 header onto opaque TCP
+//! Encodes and writes a HAProxy PROXY protocol header onto opaque TCP
 //! connections established to the local application.
 //!
-//! When a target port is included in the configured port set, the real
-//! client address (and, when the connection was mutually TLS-authenticated,
-//! the verified client identity) is encoded into a PROXY protocol v2 header
-//! and written to the application connection before any bytes are spliced.
+//! When a target port is included in one of the configured port sets, the
+//! real client address is encoded into a PROXY protocol header and written to
+//! the application connection before any bytes are spliced. Version 2 headers
+//! additionally carry the verified client identity (when the connection was
+//! mutually TLS-authenticated); version 1 is a text format with no room for
+//! extensions, so it carries addresses only.
 //!
 //! This is only ever used on the opaque/TCP forwarding path: HTTP
 //! connections proxied by this process never carry this header.
@@ -18,7 +20,7 @@ use linkerd_app_core::{
 };
 use rangemap::RangeInclusiveSet;
 use std::{
-    net::{IpAddr, SocketAddr},
+    net::{IpAddr, Ipv6Addr, SocketAddr},
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
@@ -42,21 +44,48 @@ const AF_INET6_STREAM: u8 = 0x21;
 /// A Linkerd-specific TLV carrying the verified mTLS client identity.
 const TLV_TYPE_CLIENT_ID: u8 = 0xE0;
 
-/// Wraps a connector, writing a PROXY protocol v2 header to the connection
-/// once established, iff the connection's target port is in the configured
-/// port set.
+/// The inbound ports on which each PROXY protocol version is sent.
+///
+/// Configuration parsing guarantees the two sets are disjoint.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Ports {
+    pub(crate) v1: RangeInclusiveSet<u16>,
+    pub(crate) v2: RangeInclusiveSet<u16>,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum Version {
+    V1,
+    V2,
+}
+
+/// Wraps a connector, writing a PROXY protocol header to the connection once
+/// established, iff the connection's target port is in one of the configured
+/// port sets.
 #[derive(Clone, Debug)]
 pub(crate) struct SendProxyProtocol<S> {
     inner: S,
-    ports: Arc<RangeInclusiveSet<u16>>,
+    ports: Arc<Ports>,
+}
+
+// === impl Ports ===
+
+impl Ports {
+    fn version(&self, port: u16) -> Option<Version> {
+        if self.v2.contains(&port) {
+            Some(Version::V2)
+        } else if self.v1.contains(&port) {
+            Some(Version::V1)
+        } else {
+            None
+        }
+    }
 }
 
 // === impl SendProxyProtocol ===
 
 impl<S> SendProxyProtocol<S> {
-    pub(crate) fn layer(
-        ports: Arc<RangeInclusiveSet<u16>>,
-    ) -> impl svc::layer::Layer<S, Service = Self> + Clone {
+    pub(crate) fn layer(ports: Arc<Ports>) -> impl svc::layer::Layer<S, Service = Self> + Clone {
         svc::layer::mk(move |inner| Self {
             inner,
             ports: ports.clone(),
@@ -87,25 +116,30 @@ where
     fn call(&mut self, target: T) -> Self::Future {
         let Remote(ServerAddr(server_addr)) = target.param();
 
-        if !self.ports.contains(&server_addr.port()) {
+        let Some(version) = self.ports.version(server_addr.port()) else {
             return Box::pin(self.inner.connect(target).err_into::<Error>());
-        }
+        };
 
         let Remote(ClientAddr(client_addr)) = target.param();
-        let client_id = match target.param() {
-            Conditional::Some(tls::ServerTls::Established {
-                client_id: Some(id),
-                ..
-            }) => Some(id.to_str().into_owned()),
-            _ => None,
+        let header = match version {
+            Version::V1 => encode_v1(client_addr, server_addr),
+            Version::V2 => {
+                let client_id = match target.param() {
+                    Conditional::Some(tls::ServerTls::Established {
+                        client_id: Some(id),
+                        ..
+                    }) => Some(id.to_str().into_owned()),
+                    _ => None,
+                };
+                encode_v2(client_addr, server_addr, client_id.as_deref())
+            }
         };
 
         let connect = self.inner.connect(target);
         Box::pin(async move {
             let (mut io, meta) = connect.await.map_err(Into::into)?;
 
-            let header = encode(client_addr, server_addr, client_id.as_deref());
-            debug!("writing PROXY protocol v2 header");
+            debug!(?version, "writing PROXY protocol header");
             io.write_all(&header).await?;
 
             Ok((io, meta))
@@ -120,7 +154,11 @@ where
 /// If `client` and `server` are of different address families, the IPv4
 /// address is converted to its IPv6-mapped equivalent so that both addresses
 /// can be encoded using the same (larger) address block.
-pub(crate) fn encode(client: SocketAddr, server: SocketAddr, client_id: Option<&str>) -> Vec<u8> {
+pub(crate) fn encode_v2(
+    client: SocketAddr,
+    server: SocketAddr,
+    client_id: Option<&str>,
+) -> Vec<u8> {
     let (family, src_bytes, dst_bytes): (u8, Vec<u8>, Vec<u8>) = match (client.ip(), server.ip()) {
         (IpAddr::V4(c), IpAddr::V4(s)) => {
             (AF_INET_STREAM, c.octets().to_vec(), s.octets().to_vec())
@@ -169,11 +207,37 @@ pub(crate) fn encode(client: SocketAddr, server: SocketAddr, client_id: Option<&
     buf
 }
 
+/// Encodes a PROXY protocol v1 (text) header describing a connection from
+/// `client` to `server`, e.g. `PROXY TCP4 10.1.2.3 10.9.8.7 33000 5432\r\n`.
+///
+/// Version 1 has no extension mechanism, so the client identity cannot be
+/// included. As with v2, mixed address families are encoded as IPv6 by
+/// promoting the IPv4 address to its IPv6-mapped form.
+pub(crate) fn encode_v1(client: SocketAddr, server: SocketAddr) -> Vec<u8> {
+    let (family, src, dst) = match (client.ip(), server.ip()) {
+        (c @ IpAddr::V4(_), s @ IpAddr::V4(_)) => ("TCP4", c, s),
+        (c, s) => ("TCP6", IpAddr::V6(to_ipv6(c)), IpAddr::V6(to_ipv6(s))),
+    };
+    format!(
+        "PROXY {family} {src} {dst} {} {}\r\n",
+        client.port(),
+        server.port()
+    )
+    .into_bytes()
+}
+
+fn to_ipv6(ip: IpAddr) -> Ipv6Addr {
+    match ip {
+        IpAddr::V4(ip) => ip.to_ipv6_mapped(),
+        IpAddr::V6(ip) => ip,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use linkerd_app_core::io;
-    use std::net::{Ipv4Addr, Ipv6Addr};
+    use std::net::Ipv4Addr;
     use tower::util::{service_fn, ServiceExt};
 
     // Identity string used in the golden encoder test below. Its length
@@ -187,7 +251,7 @@ mod tests {
         let client: SocketAddr = "10.1.2.3:33000".parse().unwrap();
         let server: SocketAddr = "10.9.8.7:5432".parse().unwrap();
 
-        let buf = encode(client, server, Some(IDENTITY));
+        let buf = encode_v2(client, server, Some(IDENTITY));
 
         // addr block = 4B src ip + 4B dst ip + 2B src port + 2B dst port = 12
         // TLV        = 1B type + 2B len + 59B identity            = 62
@@ -216,7 +280,7 @@ mod tests {
         let client: SocketAddr = "10.1.2.3:33000".parse().unwrap();
         let server: SocketAddr = "10.9.8.7:5432".parse().unwrap();
 
-        let buf = encode(client, server, None);
+        let buf = encode_v2(client, server, None);
 
         // addr block = 12B, no TLV, so length = 12 (0x00_0C).
         let mut expected = vec![
@@ -237,7 +301,7 @@ mod tests {
         let client: SocketAddr = "[fd00::1]:33000".parse().unwrap();
         let server: SocketAddr = "[fd00::2]:5432".parse().unwrap();
 
-        let buf = encode(client, server, None);
+        let buf = encode_v2(client, server, None);
 
         // addr block = 16B src ip + 16B dst ip + 2B src port + 2B dst port = 36 (0x00_24).
         let mut expected = vec![
@@ -262,7 +326,7 @@ mod tests {
         let client: SocketAddr = "10.1.2.3:33000".parse().unwrap();
         let server: SocketAddr = "[fd00::2]:5432".parse().unwrap();
 
-        let buf = encode(client, server, None);
+        let buf = encode_v2(client, server, None);
 
         assert_eq!(buf[12], 0x21); // version 2, command PROXY
         assert_eq!(buf[13], 0x21); // AF_INET6, STREAM
@@ -315,7 +379,7 @@ mod tests {
         let _trace = linkerd_tracing::test::trace_init();
 
         let client_id = tls::ClientId(IDENTITY.parse().unwrap());
-        let header = encode(
+        let header = encode_v2(
             "10.1.2.3:33000".parse().unwrap(),
             "10.9.8.7:5432".parse().unwrap(),
             Some(IDENTITY),
@@ -332,7 +396,10 @@ mod tests {
                     .build();
                 future::ready(Ok::<_, io::Error>((io, ())))
             }),
-            ports: Arc::new(ports),
+            ports: Arc::new(Ports {
+                v2: ports,
+                ..Default::default()
+            }),
         };
 
         let target = Target {
@@ -353,7 +420,7 @@ mod tests {
                 let io = tokio_test::io::Builder::new().write(b"hello").build();
                 future::ready(Ok::<_, io::Error>((io, ())))
             }),
-            ports: Arc::new(RangeInclusiveSet::new()),
+            ports: Arc::new(Ports::default()),
         };
 
         let target = Target {
@@ -363,5 +430,91 @@ mod tests {
 
         let (mut io, _meta) = svc.oneshot(target).await.expect("connect must not fail");
         io.write_all(b"hello").await.expect("write must succeed");
+    }
+
+    #[test]
+    fn encode_v1_ipv4() {
+        let buf = encode_v1(
+            "10.1.2.3:33000".parse().unwrap(),
+            "10.9.8.7:5432".parse().unwrap(),
+        );
+        assert_eq!(buf, b"PROXY TCP4 10.1.2.3 10.9.8.7 33000 5432\r\n");
+    }
+
+    #[test]
+    fn encode_v1_ipv6() {
+        let buf = encode_v1(
+            "[fd00::1]:33000".parse().unwrap(),
+            "[fd00::2]:5432".parse().unwrap(),
+        );
+        assert_eq!(buf, b"PROXY TCP6 fd00::1 fd00::2 33000 5432\r\n");
+    }
+
+    #[test]
+    fn encode_v1_mixed_family_v4_mapped() {
+        let buf = encode_v1(
+            "10.1.2.3:33000".parse().unwrap(),
+            "[fd00::2]:5432".parse().unwrap(),
+        );
+        assert_eq!(buf, b"PROXY TCP6 ::ffff:10.1.2.3 fd00::2 33000 5432\r\n");
+    }
+
+    #[test]
+    fn encode_v1_max_length() {
+        // The spec bounds a v1 header at 107 bytes.
+        let buf = encode_v1(
+            "[ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff]:65535"
+                .parse()
+                .unwrap(),
+            "[ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff]:65535"
+                .parse()
+                .unwrap(),
+        );
+        assert!(buf.len() <= 107, "{} bytes", buf.len());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn writes_v1_header_without_identity() {
+        let _trace = linkerd_tracing::test::trace_init();
+
+        let header = b"PROXY TCP4 10.1.2.3 10.9.8.7 33000 5432\r\n";
+        let mut v1 = RangeInclusiveSet::new();
+        v1.insert(5432..=5432);
+
+        let svc = SendProxyProtocol {
+            inner: service_fn(move |_: Target| {
+                let io = tokio_test::io::Builder::new()
+                    .write(header)
+                    .write(b"hello")
+                    .build();
+                future::ready(Ok::<_, io::Error>((io, ())))
+            }),
+            ports: Arc::new(Ports {
+                v1,
+                ..Default::default()
+            }),
+        };
+
+        // Even for an mTLS-authenticated client, the v1 header carries no
+        // identity.
+        let target = Target {
+            server_port: 5432,
+            client_id: Some(tls::ClientId(IDENTITY.parse().unwrap())),
+        };
+
+        let (mut io, _meta) = svc.oneshot(target).await.expect("connect must not fail");
+        io.write_all(b"hello").await.expect("write must succeed");
+    }
+
+    #[test]
+    fn ports_select_version() {
+        let mut v1 = RangeInclusiveSet::new();
+        v1.insert(3306..=3306);
+        let mut v2 = RangeInclusiveSet::new();
+        v2.insert(5432..=5433);
+        let ports = Ports { v1, v2 };
+        assert_eq!(ports.version(3306), Some(Version::V1));
+        assert_eq!(ports.version(5433), Some(Version::V2));
+        assert_eq!(ports.version(8080), None);
     }
 }

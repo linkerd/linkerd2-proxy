@@ -184,10 +184,13 @@ impl<S> Inbound<S> {
         S::Future: Send,
     {
         self.map_stack(|config, rt, connect| {
-            let proxy_protocol_v2_ports = Arc::new(config.proxy_protocol_v2_ports.clone());
+            let proxy_protocol_ports = Arc::new(proxy_protocol::Ports {
+                v1: config.proxy_protocol_v1_ports.clone(),
+                v2: config.proxy_protocol_v2_ports.clone(),
+            });
             connect
                 .push(proxy_protocol::SendProxyProtocol::layer(
-                    proxy_protocol_v2_ports,
+                    proxy_protocol_ports,
                 ))
                 .push(transport::metrics::Client::layer(
                     rt.metrics.proxy.transport.clone(),

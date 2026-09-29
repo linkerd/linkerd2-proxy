@@ -67,6 +67,14 @@ pub struct Config {
     /// This only applies to the opaque/TCP forwarding path; HTTP connections
     /// proxied by this process never carry this header.
     pub proxy_protocol_v2_ports: RangeInclusiveSet<u16>,
+
+    /// Ports on which the proxy prepends a HAProxy PROXY protocol v1 (text)
+    /// header to the TCP connection opened to the local application, for
+    /// applications that do not support v2. Version 1 carries the client
+    /// address only; it cannot carry the client identity.
+    ///
+    /// Must not overlap with `proxy_protocol_v2_ports`.
+    pub proxy_protocol_v1_ports: RangeInclusiveSet<u16>,
 }
 
 #[derive(Clone)]
