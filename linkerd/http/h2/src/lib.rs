@@ -5,6 +5,7 @@ pub struct ServerParams {
     pub flow_control: Option<FlowControl>,
     pub keep_alive: Option<KeepAlive>,
     pub max_concurrent_streams: Option<u32>,
+    pub max_connection_age: Option<Duration>,
 
     // Internals
     pub max_frame_size: Option<u32>,
