@@ -89,6 +89,8 @@ pub fn default_config() -> Config {
         discovery_idle_timeout: Duration::from_secs(20),
         profile_skip_timeout: Duration::from_secs(1),
         unsafe_authority_labels: false,
+        proxy_protocol_v2_ports: Default::default(),
+        proxy_protocol_v1_ports: Default::default(),
     }
 }
 

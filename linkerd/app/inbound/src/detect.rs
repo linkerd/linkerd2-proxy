@@ -322,6 +322,18 @@ impl svc::Param<Remote<ServerAddr>> for Forward {
     }
 }
 
+impl svc::Param<Remote<ClientAddr>> for Forward {
+    fn param(&self) -> Remote<ClientAddr> {
+        self.client_addr
+    }
+}
+
+impl svc::Param<tls::ConditionalServerTls> for Forward {
+    fn param(&self) -> tls::ConditionalServerTls {
+        self.tls.clone()
+    }
+}
+
 impl svc::Param<transport::labels::Key> for Forward {
     fn param(&self) -> transport::labels::Key {
         transport::labels::Key::inbound_server(

@@ -8,6 +8,7 @@ use linkerd_app_core::{
     transport::{Backlog, DualListenAddr, Keepalive, ListenAddr, UserTimeout},
     AddrMatch, Conditional, IpNet,
 };
+use rangemap::RangeInclusiveSet;
 use std::{collections::HashSet, net::SocketAddr, path::PathBuf, time::Duration};
 use thiserror::Error;
 use tracing::{debug, error, info, warn};
@@ -191,6 +192,20 @@ pub const ENV_INBOUND_GATEWAY_SUFFIXES: &str = "LINKERD2_PROXY_INBOUND_GATEWAY_S
 // has a port in the provided list.
 pub const ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION: &str =
     "LINKERD2_PROXY_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION";
+
+/// Ports for which the proxy should prepend a HAProxy PROXY protocol v2
+/// header (carrying the real client address and, when available, its
+/// verified mTLS identity) onto the TCP connection opened to the local
+/// application.
+pub const ENV_INBOUND_PORTS_PROXY_PROTOCOL_V2: &str =
+    "LINKERD2_PROXY_INBOUND_PORTS_PROXY_PROTOCOL_V2";
+
+/// Ports for which the proxy should prepend a HAProxy PROXY protocol v1
+/// (text) header, carrying only the real client address, onto the TCP
+/// connection opened to the local application. Must not overlap with
+/// `LINKERD2_PROXY_INBOUND_PORTS_PROXY_PROTOCOL_V2`.
+pub const ENV_INBOUND_PORTS_PROXY_PROTOCOL_V1: &str =
+    "LINKERD2_PROXY_INBOUND_PORTS_PROXY_PROTOCOL_V1";
 
 pub const ENV_INBOUND_PORTS_REQUIRE_IDENTITY: &str =
     "LINKERD2_PROXY_INBOUND_PORTS_REQUIRE_IDENTITY";
@@ -672,6 +687,32 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         })?
         .unwrap_or(false);
 
+        // Determine the ports on which a PROXY protocol v2 header should be
+        // prepended to connections forwarded to the application.
+        let proxy_protocol_v2_ports = parse(
+            strings,
+            ENV_INBOUND_PORTS_PROXY_PROTOCOL_V2,
+            parse_port_range_set,
+        )?
+        // If the environment variable is not set, no ports are configured,
+        // and that's fine.
+        .unwrap_or_default();
+        let proxy_protocol_v1_ports = parse(
+            strings,
+            ENV_INBOUND_PORTS_PROXY_PROTOCOL_V1,
+            parse_port_range_set,
+        )?
+        .unwrap_or_default();
+        if let Some(port) =
+            proxy_protocol_overlap(&proxy_protocol_v1_ports, &proxy_protocol_v2_ports)
+        {
+            error!(
+                "{ENV_INBOUND_PORTS_PROXY_PROTOCOL_V1} and {ENV_INBOUND_PORTS_PROXY_PROTOCOL_V2} \
+                 must not overlap, but both include port {port}"
+            );
+            return Err(EnvError::InvalidEnvVar);
+        }
+
         // Ensure that connections that directly target the inbound port are secured (unless
         // identity is disabled).
         let policy = {
@@ -759,6 +800,8 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                     .unwrap_or(DEFAULT_INBOUND_HTTP_FAILFAST_TIMEOUT),
             },
             unsafe_authority_labels,
+            proxy_protocol_v2_ports,
+            proxy_protocol_v1_ports,
         }
     };
 
@@ -1093,9 +1136,40 @@ pub fn parse_control_addr<S: Strings>(
     }
 }
 
+/// Returns a port that is configured for both PROXY protocol versions, if
+/// any.
+fn proxy_protocol_overlap(v1: &RangeInclusiveSet<u16>, v2: &RangeInclusiveSet<u16>) -> Option<u16> {
+    v2.iter()
+        .find_map(|r| v1.overlapping(r).next().map(|o| *o.start().max(r.start())))
+}
+
 #[cfg(test)]
 impl Strings for std::collections::HashMap<&'static str, &'static str> {
     fn get(&self, key: &str) -> Result<Option<String>, EnvError> {
         Ok(self.get(key).map(ToString::to_string))
+    }
+}
+
+#[cfg(test)]
+mod proxy_protocol_tests {
+    use super::*;
+
+    #[test]
+    fn proxy_protocol_ports_must_not_overlap() {
+        let set = |s| parse_port_range_set(s).unwrap();
+        assert_eq!(proxy_protocol_overlap(&set("3306"), &set("5432")), None);
+        assert_eq!(proxy_protocol_overlap(&set(""), &set("5432")), None);
+        assert_eq!(
+            proxy_protocol_overlap(&set("5000-5500"), &set("5432")),
+            Some(5432)
+        );
+        assert_eq!(
+            proxy_protocol_overlap(&set("5432"), &set("5000-5500")),
+            Some(5432)
+        );
+        assert_eq!(
+            proxy_protocol_overlap(&set("100-200"), &set("150-300")),
+            Some(150)
+        );
     }
 }
