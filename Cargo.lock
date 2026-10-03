@@ -1472,7 +1472,7 @@ source = "git+https://github.com/linkerd/linkerd-kubert.git?tag=kubert-prometheu
 dependencies = [
  "libc",
  "procfs",
- "prometheus-client",
+ "prometheus-client 0.24.1",
  "tracing",
 ]
 
@@ -1481,7 +1481,7 @@ name = "kubert-prometheus-tokio"
 version = "0.2.1"
 source = "git+https://github.com/linkerd/linkerd-kubert.git?tag=kubert-prometheus-tokio%2Fv0.2.1#cb414cccb5099a0246f4b9b3f298f66e1bf21318"
 dependencies = [
- "prometheus-client",
+ "prometheus-client 0.24.1",
  "tokio",
  "tokio-metrics",
  "tracing",
@@ -1636,7 +1636,7 @@ dependencies = [
  "linkerd-transport-header",
  "linkerd-transport-metrics",
  "pin-project",
- "prometheus-client",
+ "prometheus-client 0.25.1",
  "semver",
  "thiserror",
  "tokio",
@@ -1781,7 +1781,7 @@ dependencies = [
  "once_cell",
  "parking_lot",
  "pin-project",
- "prometheus-client",
+ "prometheus-client 0.25.1",
  "thiserror",
  "tokio",
  "tokio-rustls",
@@ -1842,7 +1842,7 @@ dependencies = [
  "hickory-resolver",
  "linkerd-dns-name",
  "linkerd-error",
- "prometheus-client",
+ "prometheus-client 0.25.1",
  "thiserror",
  "tokio",
  "tracing",
@@ -1984,7 +1984,7 @@ dependencies = [
  "linkerd-io",
  "linkerd-stack",
  "linkerd-tracing",
- "prometheus-client",
+ "prometheus-client 0.25.1",
  "thiserror",
  "tokio",
  "tokio-test",
@@ -2050,7 +2050,7 @@ dependencies = [
  "linkerd-mock-http-body",
  "linkerd-stack",
  "pin-project",
- "prometheus-client",
+ "prometheus-client 0.25.1",
  "thiserror",
  "tokio",
  "tonic",
@@ -2160,7 +2160,7 @@ dependencies = [
  "linkerd-dns-name",
  "linkerd-error",
  "linkerd-metrics",
- "prometheus-client",
+ "prometheus-client 0.25.1",
  "thiserror",
  "tracing",
  "url",
@@ -2261,7 +2261,7 @@ dependencies = [
  "linkerd-http-box",
  "linkerd-stack",
  "parking_lot",
- "prometheus-client",
+ "prometheus-client 0.25.1",
  "quickcheck",
  "tokio",
  "tracing",
@@ -2340,7 +2340,7 @@ dependencies = [
  "linkerd-stack",
  "linkerd-tracing",
  "parking_lot",
- "prometheus-client",
+ "prometheus-client 0.25.1",
  "quickcheck",
  "rand 0.10.2",
  "tokio",
@@ -2395,7 +2395,7 @@ name = "linkerd-proxy-balance-gauge-endpoints"
 version = "0.1.0"
 dependencies = [
  "linkerd-stack",
- "prometheus-client",
+ "prometheus-client 0.25.1",
 ]
 
 [[package]]
@@ -3422,14 +3422,26 @@ dependencies = [
 ]
 
 [[package]]
-name = "prometheus-client-derive-encode"
-version = "0.5.0"
+name = "prometheus-client"
+version = "0.25.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9adf1691c04c0a5ff46ff8f262b58beb07b0dbb61f96f9f54f6cbd82106ed87f"
+checksum = "1784dc11a05f5a8f57c4a62915686be140f24f70301290b997e317241fa9ffc2"
+dependencies = [
+ "dtoa",
+ "itoa",
+ "parking_lot",
+ "prometheus-client-derive-encode",
+]
+
+[[package]]
+name = "prometheus-client-derive-encode"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "01e34894696ff94f64a20c2c373a6440903e9c2789a303d68ec6e6f953f890e4"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.115",
+ "syn 3.0.3",
 ]
 
 [[package]]
