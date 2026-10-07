@@ -17,7 +17,7 @@ use std::{fmt::Debug, marker::PhantomData, net::SocketAddr};
 use tokio::time;
 use tower::load::{self, PeakEwma};
 
-pub use linkerd_load_biaser::{FailureHint, ResponseFailureHint};
+pub use linkerd_load_biaser::FailureHint;
 pub use linkerd_proxy_balance_queue::{Pool, QueueMetricFamilies, QueueMetrics, Update};
 pub use tower::load::peak_ewma;
 
@@ -277,7 +277,6 @@ where
     // biaser-wrapped endpoint must be a real request-serving Service. The
     // PendingUntilFirstData completion that NewLoadBiaser defaults to is
     // satisfied for HTTP responses, and HTTP is the only path that selects it.
-    S::Response: ResponseFailureHint + Send + 'static,
     LoadBiaser<GaugeBalancerEndpoint<S>>: Service<Req, Error = S::Error>,
     <LoadBiaser<GaugeBalancerEndpoint<S>> as Service<Req>>::Future: Send + 'static,
     Req: Send + 'static,
