@@ -31,7 +31,10 @@ docker-tag := `git rev-parse --abbrev-ref HEAD | sed 's|/|.|g'` + "." + `git rev
 docker-image := docker-repo + ":" + docker-tag
 
 # The architecture name to use for packages. Either 'amd64' or 'arm64'.
-arch := "amd64"
+# Defaults to the host's architecture; override with `just arch=... <recipe>`.
+arch := if arch() == "x86_64" { "amd64" \
+    } else if arch() == "aarch64" { "arm64" \
+    } else { error("unsupported architecture: " + arch()) }
 # The OS name to use for packages. Either 'linux' or 'windows'.
 os := "linux"
 
@@ -184,6 +187,7 @@ export DOCKER_BUILDX_CACHE_DIR := env_var_or_default('DOCKER_BUILDX_CACHE_DIR', 
 # Build a docker image (FOR TESTING ONLY)
 docker *args='--output=type=docker': && _clean-cache
     docker buildx build . \
+        --platform=linux/{{ arch }} \
         --pull \
         --tag={{ docker-image }} \
         --build-arg PROFILE='{{ profile }}' \
@@ -295,7 +299,13 @@ k3d-load-linkerd: _tag-set _k3d-ready
 
 # Install crds on the test cluster.
 _linkerd-crds-install: _k3d-ready
-    {{ _kubectl }} apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.1/standard-install.yaml
+    # k3s preinstalls the Gateway API CRDs and guards them with a
+    # ValidatingAdmissionPolicy that rejects reinstalling them, so rather than
+    # installing our own copy we assert that the resources linkerd needs exist.
+    {{ _kubectl }} wait crd --for=condition=established \
+        httproutes.gateway.networking.k8s.io \
+        grpcroutes.gateway.networking.k8s.io \
+        --timeout={{ wait-timeout }}
     {{ _linkerd }} install --crds \
         | {{ _kubectl }} apply -f -
     {{ _kubectl }} wait crd --for condition=established \
