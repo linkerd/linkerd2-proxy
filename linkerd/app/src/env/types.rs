@@ -1,5 +1,5 @@
 use super::ParseError;
-use linkerd_app_core::{dns, identity, Addr, IpNet};
+use linkerd_app_core::{dns, identity, proxy::http::HeaderName, Addr, IpNet};
 use rangemap::RangeInclusiveSet;
 use std::{
     collections::HashSet,
@@ -150,6 +150,21 @@ pub(super) fn parse_dns_suffix(s: &str) -> Result<dns::Suffix, ParseError> {
     dns::Suffix::from_str(s).map_err(|_| ParseError::NotADomainSuffix)
 }
 
+pub(super) fn parse_header_name_set(list: &str) -> Result<HashSet<HeaderName>, ParseError> {
+    let mut names = HashSet::new();
+    for item in list.split(',') {
+        let item = item.trim();
+        if !item.is_empty() {
+            let name = HeaderName::from_bytes(item.as_bytes()).map_err(|_| {
+                error!("Not a valid header name: {item}");
+                ParseError::NotAHeaderName
+            })?;
+            names.insert(name);
+        }
+    }
+    Ok(names)
+}
+
 pub(super) fn parse_networks(list: &str) -> Result<HashSet<IpNet>, ParseError> {
     let mut nets = HashSet::new();
     for input in list.split(',') {
@@ -279,6 +294,28 @@ mod tests {
             Ok(vec!["multi.case.name".to_owned()]),
             "names are coerced to lowercase"
         );
+    }
+
+    #[test]
+    fn header_name_sets() {
+        fn p(s: &str) -> Result<Vec<String>, ParseError> {
+            let mut names = parse_header_name_set(s)?
+                .into_iter()
+                .map(|n| n.as_str().to_owned())
+                .collect::<Vec<_>>();
+            names.sort();
+            Ok(names)
+        }
+
+        assert_eq!(p(""), Ok(vec![]), "empty string means no headers");
+        assert_eq!(p(",,,"), Ok(vec![]), "empty list components are ignored");
+        assert_eq!(p("host"), Ok(vec!["host".to_owned()]));
+        assert_eq!(
+            p("Host, User-Agent"),
+            Ok(vec!["host".to_owned(), "user-agent".to_owned()]),
+            "names are coerced to lowercase and whitespace is ignored"
+        );
+        assert!(p("not a valid header name").is_err());
     }
 
     #[test]

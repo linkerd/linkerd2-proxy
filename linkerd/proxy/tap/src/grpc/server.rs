@@ -8,6 +8,7 @@ use linkerd_conditional::Conditional;
 use linkerd_proxy_http::HasH2Reason;
 use linkerd_tls as tls;
 use pin_project::pin_project;
+use std::collections::HashSet;
 use std::iter;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -22,6 +23,7 @@ use tracing::{debug, trace, warn};
 pub struct Server {
     base_id: Arc<AtomicUsize>,
     registry: Registry,
+    header_allowlist: Arc<HashSet<http::header::HeaderName>>,
 }
 
 #[pin_project]
@@ -39,6 +41,7 @@ struct Shared {
     limit: usize,
     match_: Match,
     extract: ExtractKind,
+    header_allowlist: Arc<HashSet<http::header::HeaderName>>,
     events_tx: mpsc::Sender<api::TapEvent>,
 }
 
@@ -59,6 +62,7 @@ pub struct TapResponse {
     request_init_at: Instant,
     /// Should headers be extracted?
     extract_headers: bool,
+    header_allowlist: Arc<HashSet<http::header::HeaderName>>,
     tap: TapTx,
 }
 
@@ -71,6 +75,7 @@ pub struct TapResponsePayload {
     tap: TapTx,
     /// Should headers be extracted?
     extract_headers: bool,
+    header_allowlist: Arc<HashSet<http::header::HeaderName>>,
     // Response-headers may include grpc-status when there is no response body.
     grpc_status: Option<u32>,
 }
@@ -88,9 +93,16 @@ enum ExtractKind {
 // === impl Server ===
 
 impl Server {
-    pub(crate) fn new(registry: Registry) -> Self {
+    pub(crate) fn new(
+        registry: Registry,
+        header_allowlist: Arc<HashSet<http::header::HeaderName>>,
+    ) -> Self {
         let base_id = Arc::new(0.into());
-        Self { base_id, registry }
+        Self {
+            base_id,
+            registry,
+            header_allowlist,
+        }
     }
 
     fn invalid_arg(message: String) -> grpc::Status {
@@ -164,6 +176,7 @@ impl api::tap_server::Tap for Server {
             limit,
             match_,
             extract,
+            header_allowlist: self.header_allowlist.clone(),
             events_tx,
         });
 
@@ -293,9 +306,9 @@ impl Tap {
                             .unwrap_or_default(),
                     },
                 ];
-                headers_to_pb(pseudos, req.headers())
+                headers_to_pb(pseudos, req.headers(), &shared.header_allowlist)
             } else {
-                headers_to_pb(iter::empty(), req.headers())
+                headers_to_pb(iter::empty(), req.headers(), &shared.header_allowlist)
             };
             Some(headers)
         } else {
@@ -328,6 +341,7 @@ impl Tap {
             base_event,
             request_init_at,
             extract_headers,
+            header_allowlist: shared.header_allowlist.clone(),
         })
     }
 }
@@ -344,9 +358,9 @@ impl TapResponse {
                     name: ":status".to_owned(),
                     value: rsp.status().as_str().as_bytes().into(),
                 });
-                headers_to_pb(pseudos, rsp.headers())
+                headers_to_pb(pseudos, rsp.headers(), &self.header_allowlist)
             } else {
-                headers_to_pb(iter::empty(), rsp.headers())
+                headers_to_pb(iter::empty(), rsp.headers(), &self.header_allowlist)
             };
             Some(headers)
         } else {
@@ -375,6 +389,7 @@ impl TapResponse {
             response_bytes: 0,
             tap: self.tap,
             extract_headers: self.extract_headers,
+            header_allowlist: self.header_allowlist,
             grpc_status: rsp
                 .headers()
                 .get("grpc-status")
@@ -433,7 +448,7 @@ impl TapResponsePayload {
     fn send(self, end: Option<api::eos::End>, trls: Option<&http::HeaderMap>) {
         let response_end_at = Instant::now();
         let trailers = if self.extract_headers {
-            trls.map(|trls| headers_to_pb(iter::empty(), trls))
+            trls.map(|trls| headers_to_pb(iter::empty(), trls, &self.header_allowlist))
         } else {
             None
         };
@@ -544,6 +559,7 @@ fn base_event<B, I: Inspect>(req: &http::Request<B>, inspect: &I) -> api::TapEve
 fn headers_to_pb(
     pseudos: impl IntoIterator<Item = http_types::headers::Header>,
     headers: &http::HeaderMap,
+    allowlist: &HashSet<http::header::HeaderName>,
 ) -> http_types::Headers {
     http_types::Headers {
         headers: pseudos
@@ -551,6 +567,7 @@ fn headers_to_pb(
             .chain(
                 headers
                     .iter()
+                    .filter(|(name, _)| allowlist.contains(*name))
                     .map(|(name, value)| http_types::headers::Header {
                         name: name.as_str().to_owned(),
                         value: value.as_bytes().into(),
@@ -565,4 +582,51 @@ fn pb_duration(duration: std::time::Duration) -> Option<prost_types::Duration> {
         .try_into()
         .map_err(|error| warn!(%error, ?duration, "Failed to convert duration to protobuf"))
         .ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn header_names(headers: &http_types::Headers) -> Vec<&str> {
+        headers.headers.iter().map(|h| h.name.as_str()).collect()
+    }
+
+    #[test]
+    fn headers_to_pb_filters_by_allowlist() {
+        let mut headers = http::HeaderMap::new();
+        headers.insert("host", "example.com".parse().unwrap());
+        headers.insert("cookie", "secret=1".parse().unwrap());
+        headers.insert("authorization", "bearer secret".parse().unwrap());
+
+        let allowlist: HashSet<_> = [http::header::HOST].into_iter().collect();
+        let pb = headers_to_pb(iter::empty(), &headers, &allowlist);
+
+        assert_eq!(header_names(&pb), vec!["host"]);
+    }
+
+    #[test]
+    fn headers_to_pb_empty_allowlist_extracts_nothing() {
+        let mut headers = http::HeaderMap::new();
+        headers.insert("host", "example.com".parse().unwrap());
+
+        let allowlist = HashSet::new();
+        let pb = headers_to_pb(iter::empty(), &headers, &allowlist);
+
+        assert!(pb.headers.is_empty());
+    }
+
+    #[test]
+    fn headers_to_pb_pseudo_headers_always_included() {
+        let headers = http::HeaderMap::new();
+        let pseudos = iter::once(http_types::headers::Header {
+            name: ":status".to_owned(),
+            value: b"200".to_vec(),
+        });
+
+        let allowlist = HashSet::new();
+        let pb = headers_to_pb(pseudos, &headers, &allowlist);
+
+        assert_eq!(header_names(&pb), vec![":status"]);
+    }
 }

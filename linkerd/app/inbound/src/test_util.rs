@@ -94,7 +94,7 @@ pub fn default_config() -> Config {
 
 pub fn runtime() -> (ProxyRuntime, drain::Signal) {
     let (drain_tx, drain) = drain::channel();
-    let (tap, _) = tap::new();
+    let (tap, _) = tap::new(std::sync::Arc::new(tap::default_header_allowlist()));
     let (metrics, _) = metrics::Metrics::new(std::time::Duration::from_secs(10));
     let runtime = ProxyRuntime {
         identity: identity::creds::default_for_test().1,
