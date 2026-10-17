@@ -1,4 +1,4 @@
-use super::IdentityRequired;
+use super::{IdentityRequired, InvalidRequiredIdentity};
 use crate::{http, trace_labels, Outbound};
 use linkerd_app_core::{drain, errors, http_tracing, io, svc, Error, Result};
 
@@ -146,7 +146,9 @@ impl errors::HttpRescue<Error> for ServerRescue {
 
         // A request with a `l5d-require-id` header are dispatched to endpoints
         // with a different identity.
-        if errors::is_caused_by::<IdentityRequired>(&*error) {
+        if errors::is_caused_by::<IdentityRequired>(&*error)
+            || errors::is_caused_by::<InvalidRequiredIdentity>(&*error)
+        {
             return Ok(errors::SyntheticHttpResponse::bad_gateway(error));
         }
 
