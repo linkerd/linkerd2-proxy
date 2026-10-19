@@ -183,6 +183,7 @@ fn parse_http_conditions(s: &str) -> Option<policy::http::StatusRanges> {
 
     Some(policy::http::StatusRanges(
         s.split(',')
+            .map(str::trim)
             .filter_map(|cond| {
                 if cond.eq_ignore_ascii_case("5xx") {
                     return Some(500..=599);
@@ -211,6 +212,7 @@ fn parse_http_conditions(s: &str) -> Option<policy::http::StatusRanges> {
 fn parse_grpc_conditions(s: &str) -> Option<policy::grpc::Codes> {
     Some(policy::grpc::Codes(std::sync::Arc::new(
         s.split(',')
+            .map(str::trim)
             .filter_map(|cond| {
                 if cond.eq_ignore_ascii_case("cancelled") {
                     return Some(tonic::Code::Cancelled as u16);
@@ -262,4 +264,28 @@ fn parse_duration(hv: http::HeaderValue) -> Option<time::Duration> {
         return None;
     };
     Some(d)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn http_conditions_allow_whitespace() {
+        let policy::http::StatusRanges(ranges) =
+            parse_http_conditions("gateway-error, 429 ,500-501").expect("must parse");
+        assert_eq!(*ranges, [502..=504, 429..=429, 500..=501]);
+    }
+
+    #[test]
+    fn grpc_conditions_allow_whitespace() {
+        let policy::grpc::Codes(codes) =
+            parse_grpc_conditions("unavailable, cancelled ,internal").expect("must parse");
+        let expected = [
+            tonic::Code::Cancelled as u16,
+            tonic::Code::Internal as u16,
+            tonic::Code::Unavailable as u16,
+        ];
+        assert!(codes.iter().eq(expected.iter()), "{codes:?}");
+    }
 }
