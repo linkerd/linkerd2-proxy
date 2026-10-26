@@ -9,6 +9,7 @@
 //! This is only ever used on the opaque/TCP forwarding path: HTTP
 //! connections proxied by this process never carry this header.
 
+use bytes::BufMut;
 use futures::prelude::*;
 use linkerd_app_core::{
     io::AsyncWriteExt,
@@ -18,7 +19,7 @@ use linkerd_app_core::{
 };
 use rangemap::RangeInclusiveSet;
 use std::{
-    net::{IpAddr, SocketAddr},
+    net::{SocketAddr, SocketAddrV4, SocketAddrV6},
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
@@ -29,6 +30,10 @@ use tracing::debug;
 const SIGNATURE: [u8; 12] = [
     0x0D, 0x0A, 0x0D, 0x0A, 0x00, 0x0D, 0x0A, 0x51, 0x55, 0x49, 0x54, 0x0A,
 ];
+
+/// The length of the fixed-size prefix of every PROXY protocol v2 header: the
+/// signature, the version/command byte, the family byte and the 2-byte length.
+const PREFIX_LEN: usize = SIGNATURE.len() + 1 + 1 + 2;
 
 /// Version 2, command PROXY (as opposed to LOCAL).
 const VERSION_COMMAND: u8 = 0x21;
@@ -116,57 +121,97 @@ where
 /// Encodes a PROXY protocol v2 header describing a connection from `client`
 /// to `server`, optionally carrying `client_id` (the verified mTLS identity
 /// of the client) in a custom TLV of type `0xE0`.
-///
-/// If `client` and `server` are of different address families, the IPv4
-/// address is converted to its IPv6-mapped equivalent so that both addresses
-/// can be encoded using the same (larger) address block.
 pub(crate) fn encode(client: SocketAddr, server: SocketAddr, client_id: Option<&str>) -> Vec<u8> {
-    let (family, src_bytes, dst_bytes): (u8, Vec<u8>, Vec<u8>) = match (client.ip(), server.ip()) {
-        (IpAddr::V4(c), IpAddr::V4(s)) => {
-            (AF_INET_STREAM, c.octets().to_vec(), s.octets().to_vec())
-        }
-        (IpAddr::V6(c), IpAddr::V6(s)) => {
-            (AF_INET6_STREAM, c.octets().to_vec(), s.octets().to_vec())
-        }
-        // Mixed address families: promote the IPv4 side to its
-        // IPv6-mapped form so both addresses fit in a single (IPv6-sized)
-        // address block.
-        (IpAddr::V4(c), IpAddr::V6(s)) => (
-            AF_INET6_STREAM,
-            c.to_ipv6_mapped().octets().to_vec(),
-            s.octets().to_vec(),
-        ),
-        (IpAddr::V6(c), IpAddr::V4(s)) => (
-            AF_INET6_STREAM,
-            c.octets().to_vec(),
-            s.to_ipv6_mapped().octets().to_vec(),
-        ),
-    };
-
+    let addrs = AddrBlock::new(client, server);
     // The TLV, if present, contributes a 1-byte type + 2-byte length prefix,
     // plus the identity string itself.
-    let tlv_len = client_id.map(|id| 3 + id.len()).unwrap_or(0);
-    // The address block is the two addresses plus two 2-byte ports.
-    let addr_block_len = src_bytes.len() + dst_bytes.len() + 4;
+    let tlv_len = client_id.map_or(0, |id| 3 + id.len());
     // This is the "length" field of the header: everything that follows the
-    // 16-byte signature/version/command/family/length prefix.
-    let len = addr_block_len + tlv_len;
+    // fixed-size prefix.
+    let len = addrs.encoded_len() + tlv_len;
 
-    let mut buf = Vec::with_capacity(16 + len);
-    buf.extend_from_slice(&SIGNATURE);
-    buf.push(VERSION_COMMAND);
-    buf.push(family);
-    buf.extend_from_slice(&(len as u16).to_be_bytes());
-    buf.extend_from_slice(&src_bytes);
-    buf.extend_from_slice(&dst_bytes);
-    buf.extend_from_slice(&client.port().to_be_bytes());
-    buf.extend_from_slice(&server.port().to_be_bytes());
+    let mut buf = Vec::with_capacity(PREFIX_LEN + len);
+    buf.put_slice(&SIGNATURE);
+    buf.put_u8(VERSION_COMMAND);
+    buf.put_u8(addrs.family());
+    buf.put_u16(len as u16);
+    addrs.put(&mut buf);
     if let Some(id) = client_id {
-        buf.push(TLV_TYPE_CLIENT_ID);
-        buf.extend_from_slice(&(id.len() as u16).to_be_bytes());
-        buf.extend_from_slice(id.as_bytes());
+        buf.put_u8(TLV_TYPE_CLIENT_ID);
+        buf.put_u16(id.len() as u16);
+        buf.put_slice(id.as_bytes());
     }
     buf
+}
+
+/// The address block of a PROXY protocol v2 header: the source and
+/// destination addresses, followed by the source and destination ports.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum AddrBlock {
+    Inet {
+        src: SocketAddrV4,
+        dst: SocketAddrV4,
+    },
+    Inet6 {
+        src: SocketAddrV6,
+        dst: SocketAddrV6,
+    },
+}
+
+// === impl AddrBlock ===
+
+impl AddrBlock {
+    /// If `src` and `dst` are of different address families, the IPv4
+    /// address is converted to its IPv6-mapped equivalent so that both
+    /// addresses can be encoded using the same (larger) address block.
+    fn new(src: SocketAddr, dst: SocketAddr) -> Self {
+        match (src, dst) {
+            (SocketAddr::V4(src), SocketAddr::V4(dst)) => Self::Inet { src, dst },
+            (src, dst) => Self::Inet6 {
+                src: to_ipv6(src),
+                dst: to_ipv6(dst),
+            },
+        }
+    }
+
+    fn family(&self) -> u8 {
+        match self {
+            Self::Inet { .. } => AF_INET_STREAM,
+            Self::Inet6 { .. } => AF_INET6_STREAM,
+        }
+    }
+
+    fn encoded_len(&self) -> usize {
+        // Two addresses plus two 2-byte ports.
+        match self {
+            Self::Inet { .. } => 4 + 4 + 2 + 2,
+            Self::Inet6 { .. } => 16 + 16 + 2 + 2,
+        }
+    }
+
+    fn put(&self, buf: &mut impl BufMut) {
+        let (src_port, dst_port) = match self {
+            Self::Inet { src, dst } => {
+                buf.put_slice(&src.ip().octets());
+                buf.put_slice(&dst.ip().octets());
+                (src.port(), dst.port())
+            }
+            Self::Inet6 { src, dst } => {
+                buf.put_slice(&src.ip().octets());
+                buf.put_slice(&dst.ip().octets());
+                (src.port(), dst.port())
+            }
+        };
+        buf.put_u16(src_port);
+        buf.put_u16(dst_port);
+    }
+}
+
+fn to_ipv6(addr: SocketAddr) -> SocketAddrV6 {
+    match addr {
+        SocketAddr::V4(addr) => SocketAddrV6::new(addr.ip().to_ipv6_mapped(), addr.port(), 0, 0),
+        SocketAddr::V6(addr) => addr,
+    }
 }
 
 #[cfg(test)]
@@ -274,6 +319,27 @@ mod tests {
             &buf[32..48],
             &Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 2).octets()
         );
+        assert_eq!(&buf[48..50], &33000u16.to_be_bytes());
+        assert_eq!(&buf[50..52], &5432u16.to_be_bytes());
+    }
+
+    #[test]
+    fn encode_mixed_family_v6_client() {
+        // The reverse of the above: an IPv6 client and an IPv4 server
+        // address. The server's address must be IPv6-mapped.
+        let client: SocketAddr = "[fd00::1]:33000".parse().unwrap();
+        let server: SocketAddr = "10.9.8.7:5432".parse().unwrap();
+
+        let buf = encode(client, server, None);
+
+        assert_eq!(buf[13], 0x21); // AF_INET6, STREAM
+        assert_eq!(&buf[14..16], &36u16.to_be_bytes()); // length = 16+16+2+2
+        assert_eq!(
+            &buf[16..32],
+            &Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 1).octets()
+        );
+        let mapped = Ipv4Addr::new(10, 9, 8, 7).to_ipv6_mapped();
+        assert_eq!(&buf[32..48], &mapped.octets());
         assert_eq!(&buf[48..50], &33000u16.to_be_bytes());
         assert_eq!(&buf[50..52], &5432u16.to_be_bytes());
     }
