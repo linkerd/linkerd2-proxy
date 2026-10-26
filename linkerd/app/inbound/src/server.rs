@@ -186,7 +186,7 @@ impl<S> Inbound<S> {
         self.map_stack(|config, rt, connect| {
             let proxy_protocol_v2_ports = Arc::new(config.proxy_protocol_v2_ports.clone());
             connect
-                .push(proxy_protocol::SendProxyProtocol::layer(
+                .push(proxy_protocol::ProxyProtocol::layer(
                     proxy_protocol_v2_ports,
                 ))
                 .push(transport::metrics::Client::layer(

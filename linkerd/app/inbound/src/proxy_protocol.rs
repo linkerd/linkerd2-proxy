@@ -46,14 +46,14 @@ const TLV_TYPE_CLIENT_ID: u8 = 0xE0;
 /// once established, iff the connection's target port is in the configured
 /// port set.
 #[derive(Clone, Debug)]
-pub(crate) struct SendProxyProtocol<S> {
+pub(crate) struct ProxyProtocol<S> {
     inner: S,
     ports: Arc<RangeInclusiveSet<u16>>,
 }
 
-// === impl SendProxyProtocol ===
+// === impl ProxyProtocol ===
 
-impl<S> SendProxyProtocol<S> {
+impl<S> ProxyProtocol<S> {
     pub(crate) fn layer(
         ports: Arc<RangeInclusiveSet<u16>>,
     ) -> impl svc::layer::Layer<S, Service = Self> + Clone {
@@ -64,7 +64,7 @@ impl<S> SendProxyProtocol<S> {
     }
 }
 
-impl<T, S> svc::Service<T> for SendProxyProtocol<S>
+impl<T, S> svc::Service<T> for ProxyProtocol<S>
 where
     T: svc::Param<Remote<ServerAddr>>
         + svc::Param<Remote<ClientAddr>>
@@ -324,7 +324,7 @@ mod tests {
         let mut ports = RangeInclusiveSet::new();
         ports.insert(5432..=5432);
 
-        let svc = SendProxyProtocol {
+        let svc = ProxyProtocol {
             inner: service_fn(move |_: Target| {
                 let io = tokio_test::io::Builder::new()
                     .write(&header[..])
@@ -348,7 +348,7 @@ mod tests {
     async fn passthrough_when_port_not_configured() {
         let _trace = linkerd_tracing::test::trace_init();
 
-        let svc = SendProxyProtocol {
+        let svc = ProxyProtocol {
             inner: service_fn(|_: Target| {
                 let io = tokio_test::io::Builder::new().write(b"hello").build();
                 future::ready(Ok::<_, io::Error>((io, ())))
