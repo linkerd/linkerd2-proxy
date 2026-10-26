@@ -44,8 +44,29 @@ const AF_INET_STREAM: u8 = 0x11;
 /// Address family/protocol byte for "TCP over IPv6".
 const AF_INET6_STREAM: u8 = 0x21;
 
-/// A Linkerd-specific TLV carrying the verified mTLS client identity.
-const TLV_TYPE_CLIENT_ID: u8 = 0xE0;
+/// The TLV type under which Linkerd sends its own fields.
+///
+/// The spec sets aside types 0xE0-0xEF for application-specific data but
+/// keeps no registry of them. Known assignments, which this must avoid:
+///
+/// - 0xE0: Google Cloud Private Service Connect (connection ID)
+/// - 0xE1: Alibaba Cloud PrivateLink (VPC, endpoint and endpoint service IDs)
+/// - 0xE4: Teleport (connection metadata)
+/// - 0xEA: AWS PrivateLink (VPC endpoint ID)
+/// - 0xEC: SAP Converged Cloud Archer (endpoint ID)
+/// - 0xEE: Azure Private Link (private endpoint LinkID)
+///
+/// Some software also assigns its own meanings to 0xE0-0xE6 (ByteDance g3's
+/// proxies; MongoDB reads 0xE0 and 0xE1 as client certificate attributes).
+///
+/// As with the AWS, Azure and Alibaba types, the value starts with a 1-byte
+/// subtype naming the field that follows, so that further fields can be
+/// added without claiming more types.
+const TLV_TYPE_LINKERD: u8 = 0xED;
+
+/// The [`TLV_TYPE_LINKERD`] subtype carrying the verified mTLS client
+/// identity, i.e. the value `l5d-client-id` carries for HTTP.
+const TLV_SUBTYPE_CLIENT_ID: u8 = 0x01;
 
 /// Wraps a connector, writing a PROXY protocol v2 header to the connection
 /// once established, iff the connection's target port is in the configured
@@ -120,12 +141,12 @@ where
 
 /// Encodes a PROXY protocol v2 header describing a connection from `client`
 /// to `server`, optionally carrying `client_id` (the verified mTLS identity
-/// of the client) in a custom TLV of type `0xE0`.
+/// of the client) in a [`TLV_TYPE_LINKERD`] TLV.
 pub(crate) fn encode(client: SocketAddr, server: SocketAddr, client_id: Option<&str>) -> Vec<u8> {
     let addrs = AddrBlock::new(client, server);
     // The TLV, if present, contributes a 1-byte type + 2-byte length prefix,
-    // plus the identity string itself.
-    let tlv_len = client_id.map_or(0, |id| 3 + id.len());
+    // then a 1-byte subtype and the identity string itself.
+    let tlv_len = client_id.map_or(0, |id| 3 + 1 + id.len());
     // This is the "length" field of the header: everything that follows the
     // fixed-size prefix.
     let len = addrs.encoded_len() + tlv_len;
@@ -137,8 +158,9 @@ pub(crate) fn encode(client: SocketAddr, server: SocketAddr, client_id: Option<&
     buf.put_u16(len as u16);
     addrs.put(&mut buf);
     if let Some(id) = client_id {
-        buf.put_u8(TLV_TYPE_CLIENT_ID);
-        buf.put_u16(id.len() as u16);
+        buf.put_u8(TLV_TYPE_LINKERD);
+        buf.put_u16((1 + id.len()) as u16);
+        buf.put_u8(TLV_SUBTYPE_CLIENT_ID);
         buf.put_slice(id.as_bytes());
     }
     buf
@@ -235,25 +257,26 @@ mod tests {
         let buf = encode(client, server, Some(IDENTITY));
 
         // addr block = 4B src ip + 4B dst ip + 2B src port + 2B dst port = 12
-        // TLV        = 1B type + 2B len + 59B identity            = 62
-        // length     = 12 + 62                                    = 74 (0x00_4A)
+        // TLV        = 1B type + 2B len + 1B subtype + 59B identity     = 63
+        // length     = 12 + 63                                          = 75 (0x00_4B)
         let mut expected = vec![
             0x0D, 0x0A, 0x0D, 0x0A, 0x00, 0x0D, 0x0A, 0x51, 0x55, 0x49, 0x54,
             0x0A, // signature
             0x21, // version 2, command PROXY
             0x11, // AF_INET, STREAM
-            0x00, 0x4A, // length = 74
+            0x00, 0x4B, // length = 75
         ];
         expected.extend_from_slice(&[10, 1, 2, 3]); // src (client) ip
         expected.extend_from_slice(&[10, 9, 8, 7]); // dst (server) ip
         expected.extend_from_slice(&33000u16.to_be_bytes()); // src port
         expected.extend_from_slice(&5432u16.to_be_bytes()); // dst port
-        expected.push(0xE0); // TLV type: client identity
-        expected.extend_from_slice(&59u16.to_be_bytes()); // TLV length
+        expected.push(0xED); // TLV type: Linkerd
+        expected.extend_from_slice(&60u16.to_be_bytes()); // TLV length: subtype + identity
+        expected.push(0x01); // TLV subtype: client identity
         expected.extend_from_slice(IDENTITY.as_bytes());
 
         assert_eq!(buf, expected);
-        assert_eq!(buf.len(), 16 + 74);
+        assert_eq!(buf.len(), 16 + 75);
     }
 
     #[test]
