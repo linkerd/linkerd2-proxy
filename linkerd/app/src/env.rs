@@ -903,11 +903,11 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
     let tap = tap?
         .map(
-            |(addr, permitted_client_id, tap_concurrent, tap_lifetime)| {
+            |(addr, permitted_client_id, max_concurrent, max_lifetime)| {
                 super::tap::Config::Enabled {
                     permitted_client_id,
-                    max_concurrent: tap_concurrent,
-                    max_lifetime: tap_lifetime,
+                    max_concurrent,
+                    max_lifetime,
                     config: ServerConfig {
                         addr: DualListenAddr(addr, None),
                         keepalive: inbound.proxy.server.keepalive,
