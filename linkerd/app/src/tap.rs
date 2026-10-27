@@ -3,14 +3,14 @@ use linkerd_app_core::{
     config::ServerConfig,
     drain, identity,
     metrics::prom,
-    proxy::tap,
+    proxy::{http, tap},
     serve,
     svc::{self, ExtractParam, InsertParam, MapErr, Param},
     tls,
     transport::{addrs::AddrPair, listen::Bind, ClientAddr, Local, Remote, ServerAddr},
     Error,
 };
-use std::{pin::Pin, time::Duration};
+use std::{collections::HashSet, pin::Pin, sync::Arc, time::Duration};
 use tower::util::{service_fn, ServiceExt};
 
 #[derive(Clone, Debug)]
@@ -22,6 +22,7 @@ pub enum Config {
         max_concurrent: usize,
         max_lifetime: Duration,
         permitted_client_id: tls::server::ClientId,
+        header_allowlist: Arc<HashSet<http::header::HeaderName>>,
     },
 }
 
@@ -88,7 +89,13 @@ impl Config {
         B::Addrs: Param<Remote<ClientAddr>>,
         B::Addrs: Param<AddrPair>,
     {
-        let (registry, server) = tap::new();
+        let header_allowlist = match &self {
+            Config::Disabled => Arc::new(HashSet::new()),
+            Config::Enabled {
+                header_allowlist, ..
+            } => header_allowlist.clone(),
+        };
+        let (registry, server) = tap::new(header_allowlist);
         match self {
             Config::Disabled => {
                 drop(server);
@@ -99,6 +106,7 @@ impl Config {
                 max_concurrent,
                 max_lifetime,
                 permitted_client_id,
+                header_allowlist: _,
             } => {
                 let (listen_addr, listen) = bind.bind(&config)?;
                 let accept = svc::stack(server)
