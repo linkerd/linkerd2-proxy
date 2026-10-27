@@ -2,14 +2,15 @@ use futures::prelude::*;
 use linkerd_app_core::{
     config::ServerConfig,
     drain, identity,
+    metrics::prom,
     proxy::tap,
     serve,
-    svc::{self, ExtractParam, InsertParam, Param},
+    svc::{self, ExtractParam, InsertParam, MapErr, Param},
     tls,
     transport::{addrs::AddrPair, listen::Bind, ClientAddr, Local, Remote, ServerAddr},
     Error,
 };
-use std::pin::Pin;
+use std::{pin::Pin, time::Duration};
 use tower::util::{service_fn, ServiceExt};
 
 #[derive(Clone, Debug)]
@@ -18,6 +19,8 @@ pub enum Config {
     Disabled,
     Enabled {
         config: ServerConfig,
+        max_concurrent: usize,
+        max_lifetime: Duration,
         permitted_client_id: tls::server::ClientId,
     },
 }
@@ -38,12 +41,47 @@ struct TlsParams {
     identity: identity::Server,
 }
 
+/// Metrics tracks connections for tap.
+#[derive(Clone, Debug, Default)]
+pub struct Metrics {
+    /// closed counts dropped connections
+    closed: prom::Family<CloseLabels, prom::Counter>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, prom::encoding::EncodeLabelSet)]
+struct CloseLabels {
+    reason: CloseReason,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, prom::encoding::EncodeLabelValue)]
+#[allow(non_camel_case_types)]
+enum CloseReason {
+    /// The connection exceeded `max_lifetime`.
+    LifetimeExpired,
+    /// The connection was rejected because `max_concurrent` was already reached.
+    Overloaded,
+}
+
+impl Metrics {
+    pub fn register(registry: &mut prom::Registry) -> Self {
+        let closed = prom::Family::default();
+        registry.register(
+            "closed",
+            "The total number of tap connections closed by a proxy-imposed limit",
+            closed.clone(),
+        );
+
+        Self { closed }
+    }
+}
+
 impl Config {
     pub fn build<B>(
         self,
         bind: B,
         identity: identity::Server,
         drain: drain::Watch,
+        metrics: Metrics,
     ) -> Result<Tap, Error>
     where
         B: Bind<ServerConfig, BoundAddrs = Local<ServerAddr>>,
@@ -58,6 +96,8 @@ impl Config {
             }
             Config::Enabled {
                 config,
+                max_concurrent,
+                max_lifetime,
                 permitted_client_id,
             } => {
                 let (listen_addr, listen) = bind.bind(&config)?;
@@ -83,6 +123,23 @@ impl Config {
                     .push(tls::NewDetectTls::<identity::Server, _, _>::layer(
                         TlsParams { identity },
                     ))
+                    .push_on_service(svc::ConcurrencyLimitLayer::new(max_concurrent))
+                    .push_on_service(svc::LoadShed::layer())
+                    .push_on_service(linkerd_stack::Timeout::layer(max_lifetime))
+                    .push_on_service(MapErr::layer(move |err: Error| {
+                        let reason = if err.is::<linkerd_stack::TimeoutError>() {
+                            Some(CloseReason::LifetimeExpired)
+                        } else if err.is::<svc::LoadShedError>() {
+                            Some(CloseReason::Overloaded)
+                        } else {
+                            None
+                        };
+                        if let Some(reason) = reason {
+                            tracing::info!(%err, ?reason, "Tap connection closed by proxy-imposed limit");
+                            metrics.closed.get_or_create(&CloseLabels { reason }).inc();
+                        }
+                        err
+                    }))
                     .check_new_service::<B::Addrs, _>()
                     .into_inner();
 

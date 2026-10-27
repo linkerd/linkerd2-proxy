@@ -158,8 +158,15 @@ impl Config {
         debug!(config = ?tap, "Building Tap server");
         let tap = {
             let bind = bind_admin.clone();
-            info_span!("tap")
-                .in_scope(|| tap.build(bind, identity.receiver().server(), drain_rx.clone()))?
+            let tap_metrics = tap::Metrics::register(registry.sub_registry_with_prefix("tap"));
+            info_span!("tap").in_scope(|| {
+                tap.build(
+                    bind,
+                    identity.receiver().server(),
+                    drain_rx.clone(),
+                    tap_metrics,
+                )
+            })?
         };
 
         debug!("Building Destination client");

@@ -13,6 +13,8 @@ pub use self::{accept::AcceptPermittedClients, registry::Registry, service::NewT
 
 // The number of events that may be buffered for a given response.
 const PER_RESPONSE_EVENT_BUFFER_CAPACITY: usize = 400;
+// The max limit (number of events) to accept in the tap/observe rpc call.
+const PER_RESPONSE_EVENT_MAX: usize = 10_000;
 
 pub fn new() -> (Registry, grpc::Server) {
     let registry = Registry::new();
