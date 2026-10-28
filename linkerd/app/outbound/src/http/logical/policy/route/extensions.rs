@@ -99,10 +99,10 @@ impl<S> SetExtensions<S> {
 
         let user_retry_http = req
             .remove("l5d-retry-http")
-            .and_then(|val| val.to_str().ok().and_then(parse_http_conditions));
+            .and_then(|v| HeaderCondition::from_header(&v).and_then(parse_http_conditions));
         let user_retry_grpc = req
             .remove("l5d-retry-grpc")
-            .and_then(|val| val.to_str().ok().and_then(parse_grpc_conditions));
+            .and_then(|v| HeaderCondition::from_header(&v).and_then(parse_grpc_conditions));
         let user_retry_limit = req
             .remove("l5d-retry-limit")
             .and_then(|val| val.to_str().ok().and_then(|v| v.parse::<usize>().ok()));
@@ -171,7 +171,28 @@ impl<S> SetExtensions<S> {
     }
 }
 
-fn parse_http_conditions(s: &str) -> Option<policy::http::StatusRanges> {
+/// A comma-separated retry condition header value.
+#[derive(Copy, Clone, Debug)]
+struct HeaderCondition<'a>(&'a str);
+
+impl<'a> HeaderCondition<'a> {
+    fn from_header(hv: &'a http::HeaderValue) -> Option<Self> {
+        hv.to_str().ok().map(Self)
+    }
+
+    /// Yields each list item with surrounding whitespace trimmed.
+    ///
+    /// [RFC 9110 5.6.1](https://www.rfc-editor.org/rfc/rfc9110.html#section-5.6.1):
+    /// > each separated by a single comma (",") and optional whitespace.
+    ///
+    /// [RFC 9110 5.6.1.2](https://www.rfc-editor.org/rfc/rfc9110.html#section-5.6.1.2):
+    /// > A recipient MUST parse and ignore a reasonable number of empty list elements
+    fn items(self) -> impl Iterator<Item = &'a str> {
+        self.0.split(',').map(str::trim).filter(|s| !s.is_empty())
+    }
+}
+
+fn parse_http_conditions(conds: HeaderCondition<'_>) -> Option<policy::http::StatusRanges> {
     fn to_code(s: &str) -> Option<u16> {
         let code = s.parse::<u16>().ok()?;
         if (100..600).contains(&code) {
@@ -182,7 +203,8 @@ fn parse_http_conditions(s: &str) -> Option<policy::http::StatusRanges> {
     }
 
     Some(policy::http::StatusRanges(
-        s.split(',')
+        conds
+            .items()
             .filter_map(|cond| {
                 if cond.eq_ignore_ascii_case("5xx") {
                     return Some(500..=599);
@@ -208,9 +230,10 @@ fn parse_http_conditions(s: &str) -> Option<policy::http::StatusRanges> {
     ))
 }
 
-fn parse_grpc_conditions(s: &str) -> Option<policy::grpc::Codes> {
+fn parse_grpc_conditions(conds: HeaderCondition<'_>) -> Option<policy::grpc::Codes> {
     Some(policy::grpc::Codes(std::sync::Arc::new(
-        s.split(',')
+        conds
+            .items()
             .filter_map(|cond| {
                 if cond.eq_ignore_ascii_case("cancelled") {
                     return Some(tonic::Code::Cancelled as u16);
@@ -262,4 +285,48 @@ fn parse_duration(hv: http::HeaderValue) -> Option<time::Duration> {
         return None;
     };
     Some(d)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn header_condition_items_trim_and_skip_empty() {
+        // Build a header value mixing every whitespace and empty-item case.
+        let hv = http::HeaderValue::from_static(" a ,b,, \t,c ,");
+        let conds = HeaderCondition::from_header(&hv).expect("value must be ASCII");
+
+        // Only the non-empty, trimmed items remain, in order.
+        assert_eq!(conds.items().collect::<Vec<_>>(), ["a", "b", "c"]);
+    }
+
+    #[test]
+    fn test_http_conditions_allow_whitespace() {
+        // Parse a header with whitespace on both sides of a comma.
+        let hv = http::HeaderValue::from_static("gateway-error, 429 ,500-501");
+        let ranges = HeaderCondition::from_header(&hv)
+            .and_then(parse_http_conditions)
+            .expect("conditions must parse");
+
+        // Every item survives, in header order.
+        assert_eq!(&*ranges.0, [502..=504, 429..=429, 500..=501]);
+    }
+
+    #[test]
+    fn test_grpc_conditions_allow_whitespace() {
+        // Parse a header with whitespace on both sides of a comma.
+        let hv = http::HeaderValue::from_static("unavailable, cancelled ,internal");
+        let codes = HeaderCondition::from_header(&hv)
+            .and_then(parse_grpc_conditions)
+            .expect("conditions must parse");
+
+        // `Codes` is a sorted set, so compare against codes in numeric order.
+        let expected = [
+            tonic::Code::Cancelled as u16,
+            tonic::Code::Internal as u16,
+            tonic::Code::Unavailable as u16,
+        ];
+        assert!(codes.0.iter().eq(expected.iter()));
+    }
 }
