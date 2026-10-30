@@ -2,7 +2,7 @@ mod http;
 mod tcp;
 
 pub(crate) use self::{http::Http, tcp::Tcp};
-use crate::http::IdentityRequired;
+use crate::http::{IdentityRequired, InvalidRequiredIdentity};
 use linkerd_app_core::{
     errors::{FailFastError, LoadShedError},
     metrics::legacy::FmtLabels,
@@ -27,7 +27,7 @@ impl ErrorKind {
     fn mk(err: &(dyn std::error::Error + 'static)) -> Self {
         if err.is::<std::io::Error>() {
             ErrorKind::Io
-        } else if err.is::<IdentityRequired>() {
+        } else if err.is::<IdentityRequired>() || err.is::<InvalidRequiredIdentity>() {
             ErrorKind::IdentityRequired
         } else if err.is::<FailFastError>() {
             ErrorKind::FailFast
