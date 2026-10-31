@@ -138,7 +138,9 @@ pub mod proto {
             match rm.kind.ok_or(InvalidPathMatch::MissingMatch)? {
                 api::path_match::Kind::Exact(p) => Ok(MatchPath::Exact(p)),
                 api::path_match::Kind::Prefix(p) => Ok(MatchPath::Prefix(p)),
-                api::path_match::Kind::Regex(re) => Ok(MatchPath::Regex(re.parse()?)),
+                api::path_match::Kind::Regex(re) => Ok(MatchPath::Regex(
+                    super::super::proto::parse_full_match_regex(&re)?,
+                )),
             }
         }
     }
@@ -210,5 +212,39 @@ mod tests {
         assert_eq!(m.match_length(&"/foo/4abc".parse().unwrap()), None);
         assert_eq!(m.match_length(&"/foo/4/bar".parse().unwrap()), None);
         assert_eq!(m.match_length(&"/foo/bar".parse().unwrap()), None);
+    }
+
+    #[cfg(feature = "proto")]
+    #[test]
+    fn path_regex_matches_entire_path() {
+        use linkerd2_proxy_api::http_route as api;
+
+        let regex = |re: &str| {
+            MatchPath::try_from(api::PathMatch {
+                kind: Some(api::path_match::Kind::Regex(re.to_string())),
+            })
+        };
+
+        // `Regex::find` stops at the leftmost-first alternative or the
+        // shortest lazy repetition, which must not keep a pattern from
+        // matching the entire path.
+        let m = regex("/foo|/foo/.*").unwrap();
+        assert_eq!(
+            m.match_length(&"/foo".parse().unwrap()),
+            Some(PathMatch::Regex("/foo".len()))
+        );
+        assert_eq!(
+            m.match_length(&"/foo/bar".parse().unwrap()),
+            Some(PathMatch::Regex("/foo/bar".len()))
+        );
+        assert_eq!(m.match_length(&"/foobar".parse().unwrap()), None);
+
+        let m = regex("/foo/.+?").unwrap();
+        assert_eq!(
+            m.match_length(&"/foo/bar".parse().unwrap()),
+            Some(PathMatch::Regex("/foo/bar".len()))
+        );
+
+        assert!(regex("/foo)|(/bar").is_err());
     }
 }
