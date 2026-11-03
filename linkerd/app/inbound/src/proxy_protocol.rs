@@ -249,7 +249,7 @@ impl<'a> Header<'a> {
         buf.put_u8(VERSION_COMMAND);
         buf.put_u8(self.addrs.family());
         buf.put_u16(len as u16);
-        self.addrs.put(&mut buf);
+        self.addrs.encode(&mut buf);
         if let Some(id) = self.client_id {
             buf.put_u8(TLV_TYPE_LINKERD);
             // The spec says the TLV length does not include the type and
@@ -309,7 +309,7 @@ impl AddrBlock {
         }
     }
 
-    fn put(&self, buf: &mut impl BufMut) {
+    fn encode(&self, buf: &mut impl BufMut) {
         let (src_port, dst_port) = match self {
             Self::Inet { src, dst } => {
                 buf.put_slice(&src.ip().octets());
