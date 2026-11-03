@@ -142,6 +142,7 @@ pub(crate) struct ProxyProtocol<S> {
 // === impl ProxyProtocol ===
 
 impl<S> ProxyProtocol<S> {
+    /// Builds a layer that wraps a connector with this service.
     pub(crate) fn layer(
         ports: Arc<RangeInclusiveSet<u16>>,
     ) -> impl svc::layer::Layer<S, Service = Self> + Clone {
@@ -172,13 +173,23 @@ where
         self.inner.poll_ready(cx).map_err(Into::into)
     }
 
+    /// Connects to the application, and writes a PROXY protocol header first
+    /// if the target port is one of the configured ports.
+    ///
+    /// The header is written before we hand the connection back, so it is
+    /// always the first thing the application reads. On any other port this
+    /// just connects and adds nothing.
     fn call(&mut self, target: T) -> Self::Future {
         let Remote(ServerAddr(server_addr)) = target.param();
 
+        // Not a configured port: connect as normal, with no header.
         if !self.ports.contains(&server_addr.port()) {
             return Box::pin(self.inner.connect(target).err_into::<Error>());
         }
 
+        // Read what goes in the header before `target` is moved into
+        // `connect`. The client identity is only there if the client used
+        // mTLS.
         let Remote(ClientAddr(client_addr)) = target.param();
         let client_id = match target.param() {
             Conditional::Some(tls::ServerTls::Established {
@@ -293,6 +304,7 @@ impl AddrBlock {
         }
     }
 
+    /// The family/protocol byte (the 14th byte of the header).
     fn family(&self) -> u8 {
         match self {
             Self::Inet { .. } => AF_INET_STREAM,
@@ -300,6 +312,7 @@ impl AddrBlock {
         }
     }
 
+    /// How many bytes the address block takes up.
     fn encoded_len(&self) -> usize {
         // Two addresses plus two 2-byte ports. The spec's `proxy_addr` union
         // gives the same totals: "len = 12" for IPv4 and "len = 36" for IPv6.
@@ -309,6 +322,7 @@ impl AddrBlock {
         }
     }
 
+    /// Writes the addresses, then the ports, in network byte order.
     fn encode(&self, buf: &mut impl BufMut) {
         let (src_port, dst_port) = match self {
             Self::Inet { src, dst } => {
