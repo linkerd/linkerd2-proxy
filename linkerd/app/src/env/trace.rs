@@ -49,7 +49,7 @@ impl TraceAttributes {
         }
 
         if let Some(otel_attrs) = self.otel_attrs {
-            trace_labels.extend(parse_attrs(&otel_attrs));
+            trace_labels.extend(parse_otel_attrs(&otel_attrs));
         }
 
         trace_labels
@@ -81,6 +81,25 @@ fn parse_attrs(attrs: &str) -> HashMap<String, String> {
             // Trim double quotes in value, present by default when attached through k8s downwardAPI
             (key.to_string(), val.trim_matches('"').to_string()))
             })
+        })
+        .collect()
+}
+
+/// Parses `OTEL_RESOURCE_ATTRIBUTES`, which the OpenTelemetry specification
+/// defines as a comma-separated list of `key=value` pairs, unlike the
+/// newline-separated format used for Linkerd's own attribute sources.
+///
+/// See <https://opentelemetry.io/docs/specs/otel/resource/sdk/#specifying-resource-information-via-an-environment-variable>.
+fn parse_otel_attrs(attrs: &str) -> HashMap<String, String> {
+    attrs
+        .split(',')
+        .filter_map(|pair| {
+            let (key, val) = pair.split_once('=')?;
+            let key = key.trim();
+            if key.is_empty() {
+                return None;
+            }
+            Some((key.to_string(), val.trim().to_string()))
         })
         .collect()
 }
@@ -128,6 +147,42 @@ mod tests {
         .collect();
 
         assert_eq!(parse_attrs(attrs), expected);
+    }
+
+    #[test]
+    fn parse_otel_attrs_comma_separated() {
+        let attrs = "service.namespace=shop, deployment.environment=prod,,team=a=b,invalid,=nokey";
+
+        let expected = [
+            ("service.namespace".to_string(), "shop".to_string()),
+            ("deployment.environment".to_string(), "prod".to_string()),
+            ("team".to_string(), "a=b".to_string()),
+        ]
+        .into_iter()
+        .collect();
+
+        assert_eq!(parse_otel_attrs(attrs), expected);
+    }
+
+    #[test]
+    fn otel_attrs_override_other_labels() {
+        let mut actual = TraceAttributes {
+            labels_path: None,
+            extra_attrs: Some("k8s.pod.ip=\"0.0.0.0\"\n".to_string()),
+            otel_attrs: Some("service.name=web,deployment.environment=prod".to_string()),
+            service_name: Some("linkerd-proxy".to_string()),
+        }
+        .into_labels()
+        .into_iter()
+        .collect::<Vec<_>>();
+        actual.sort_unstable();
+
+        let expected = vec![
+            ("deployment.environment".to_string(), "prod".to_string()),
+            ("k8s.pod.ip".to_string(), "0.0.0.0".to_string()),
+            ("service.name".to_string(), "web".to_string()),
+        ];
+        assert_eq!(expected, actual);
     }
 
     #[test]
