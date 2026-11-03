@@ -126,8 +126,8 @@ const TLV_SUBTYPE_CLIENT_ID: u8 = 0x01;
 /// DNS names are at most 253 bytes and SPIFFE IDs are at most 2048 (SPIFFE-ID
 /// spec, section 2.3). If an identity is longer than this, we leave it out
 /// instead of cutting it short, because a cut-down identity could match a
-/// different real one. The limit also keeps the `as u16` casts in [`encode`]
-/// safe.
+/// different real one. The limit also keeps the `as u16` casts in
+/// [`Header::encode`] safe.
 const MAX_CLIENT_ID_LEN: usize = 2048;
 
 /// Wraps a connector, writing a PROXY protocol v2 header to the connection
@@ -192,7 +192,7 @@ where
         Box::pin(async move {
             let (mut io, meta) = connect.await.map_err(Into::into)?;
 
-            let header = encode(client_addr, server_addr, client_id.as_deref());
+            let header = Header::new(client_addr, server_addr, client_id.as_deref()).encode();
             debug!("writing PROXY protocol v2 header");
             io.write_all(&header).await?;
 
@@ -201,45 +201,66 @@ where
     }
 }
 
-/// Encodes a PROXY protocol v2 header describing a connection from `client`
-/// to `server`, optionally carrying `client_id` (the verified mTLS identity
-/// of the client) in a [`TLV_TYPE_LINKERD`] TLV.
-pub(crate) fn encode(client: SocketAddr, server: SocketAddr, client_id: Option<&str>) -> Vec<u8> {
-    let addrs = AddrBlock::new(client, server);
-    let client_id = match client_id {
-        Some(id) if id.len() > MAX_CLIENT_ID_LEN => {
-            warn!(
-                len = id.len(),
-                max = MAX_CLIENT_ID_LEN,
-                "client identity too long; omitting it from the PROXY protocol header"
-            );
-            None
-        }
-        id => id,
-    };
-    // Section 2.2 says a TLV is a 1-byte type, a 2-byte length, then the
-    // value. That is 3 bytes before the value. Our value is a 1-byte subtype
-    // followed by the identity.
-    let tlv_len = client_id.map_or(0, |id| 3 + 1 + id.len());
-    // This is the "length" field of the header: everything that follows the
-    // fixed-size prefix.
-    let len = addrs.encoded_len() + tlv_len;
+/// A PROXY protocol v2 header describing a connection from a client to a
+/// server, optionally carrying the client's verified mTLS identity in a
+/// [`TLV_TYPE_LINKERD`] TLV.
+struct Header<'a> {
+    addrs: AddrBlock,
+    client_id: Option<&'a str>,
+}
 
-    let mut buf = Vec::with_capacity(PREFIX_LEN + len);
-    buf.put_slice(&SIGNATURE);
-    buf.put_u8(VERSION_COMMAND);
-    buf.put_u8(addrs.family());
-    buf.put_u16(len as u16);
-    addrs.put(&mut buf);
-    if let Some(id) = client_id {
-        buf.put_u8(TLV_TYPE_LINKERD);
-        // The spec says the TLV length does not include the type and length
-        // bytes. So it is just the 1-byte subtype plus the identity.
-        buf.put_u16((1 + id.len()) as u16);
-        buf.put_u8(TLV_SUBTYPE_CLIENT_ID);
-        buf.put_slice(id.as_bytes());
+// === impl Header ===
+
+impl<'a> Header<'a> {
+    /// Builds a header for a connection from `client` to `server`.
+    ///
+    /// An identity longer than [`MAX_CLIENT_ID_LEN`] is left out. That is
+    /// what keeps the `as u16` casts in [`Header::encode`] safe.
+    fn new(client: SocketAddr, server: SocketAddr, client_id: Option<&'a str>) -> Self {
+        let client_id = match client_id {
+            Some(id) if id.len() > MAX_CLIENT_ID_LEN => {
+                warn!(
+                    len = id.len(),
+                    max = MAX_CLIENT_ID_LEN,
+                    "client identity too long; omitting it from the PROXY protocol header"
+                );
+                None
+            }
+            id => id,
+        };
+        Self {
+            addrs: AddrBlock::new(client, server),
+            client_id,
+        }
     }
-    buf
+
+    /// Writes the header out as bytes, ready to send on the connection.
+    fn encode(&self) -> Vec<u8> {
+        // Section 2.2 says a TLV is a 1-byte type, a 2-byte length, then the
+        // value. That is 3 bytes before the value. Our value is a 1-byte
+        // subtype followed by the identity.
+        let tlv_len = self.client_id.map_or(0, |id| 3 + 1 + id.len());
+        // This is the "length" field of the header: everything that follows
+        // the fixed-size prefix.
+        let len = self.addrs.encoded_len() + tlv_len;
+
+        let mut buf = Vec::with_capacity(PREFIX_LEN + len);
+        buf.put_slice(&SIGNATURE);
+        buf.put_u8(VERSION_COMMAND);
+        buf.put_u8(self.addrs.family());
+        buf.put_u16(len as u16);
+        self.addrs.put(&mut buf);
+        if let Some(id) = self.client_id {
+            buf.put_u8(TLV_TYPE_LINKERD);
+            // The spec says the TLV length does not include the type and
+            // length bytes. So it is just the 1-byte subtype plus the
+            // identity.
+            buf.put_u16((1 + id.len()) as u16);
+            buf.put_u8(TLV_SUBTYPE_CLIENT_ID);
+            buf.put_slice(id.as_bytes());
+        }
+        buf
+    }
 }
 
 /// The address block of a PROXY protocol v2 header: the source and
@@ -266,8 +287,8 @@ impl AddrBlock {
         match (src, dst) {
             (SocketAddr::V4(src), SocketAddr::V4(dst)) => Self::Inet { src, dst },
             (src, dst) => Self::Inet6 {
-                src: to_ipv6(src),
-                dst: to_ipv6(dst),
+                src: Self::to_ipv6(src),
+                dst: Self::to_ipv6(dst),
             },
         }
     }
@@ -304,12 +325,16 @@ impl AddrBlock {
         buf.put_u16(src_port);
         buf.put_u16(dst_port);
     }
-}
 
-fn to_ipv6(addr: SocketAddr) -> SocketAddrV6 {
-    match addr {
-        SocketAddr::V4(addr) => SocketAddrV6::new(addr.ip().to_ipv6_mapped(), addr.port(), 0, 0),
-        SocketAddr::V6(addr) => addr,
+    /// Converts an IPv4 address to its IPv6-mapped form. IPv6 addresses are
+    /// returned as they are.
+    fn to_ipv6(addr: SocketAddr) -> SocketAddrV6 {
+        match addr {
+            SocketAddr::V4(addr) => {
+                SocketAddrV6::new(addr.ip().to_ipv6_mapped(), addr.port(), 0, 0)
+            }
+            SocketAddr::V6(addr) => addr,
+        }
     }
 }
 
@@ -331,7 +356,7 @@ mod tests {
         let client: SocketAddr = "10.1.2.3:33000".parse().unwrap();
         let server: SocketAddr = "10.9.8.7:5432".parse().unwrap();
 
-        let buf = encode(client, server, Some(IDENTITY));
+        let buf = Header::new(client, server, Some(IDENTITY)).encode();
 
         // addr block = 4B src ip + 4B dst ip + 2B src port + 2B dst port = 12
         // TLV        = 1B type + 2B len + 1B subtype + 59B identity     = 63
@@ -362,12 +387,12 @@ mod tests {
         let server: SocketAddr = "10.9.8.7:5432".parse().unwrap();
 
         let max = "a".repeat(MAX_CLIENT_ID_LEN);
-        let buf = encode(client, server, Some(&max));
+        let buf = Header::new(client, server, Some(&max)).encode();
         assert_eq!(buf.len(), PREFIX_LEN + 12 + 3 + 1 + MAX_CLIENT_ID_LEN);
 
         let too_long = "a".repeat(MAX_CLIENT_ID_LEN + 1);
-        let buf = encode(client, server, Some(&too_long));
-        assert_eq!(buf, encode(client, server, None));
+        let buf = Header::new(client, server, Some(&too_long)).encode();
+        assert_eq!(buf, Header::new(client, server, None).encode());
     }
 
     #[test]
@@ -375,7 +400,7 @@ mod tests {
         let client: SocketAddr = "10.1.2.3:33000".parse().unwrap();
         let server: SocketAddr = "10.9.8.7:5432".parse().unwrap();
 
-        let buf = encode(client, server, None);
+        let buf = Header::new(client, server, None).encode();
 
         // addr block = 12B, no TLV, so length = 12 (0x00_0C).
         let mut expected = vec![
@@ -396,7 +421,7 @@ mod tests {
         let client: SocketAddr = "[fd00::1]:33000".parse().unwrap();
         let server: SocketAddr = "[fd00::2]:5432".parse().unwrap();
 
-        let buf = encode(client, server, None);
+        let buf = Header::new(client, server, None).encode();
 
         // addr block = 16B src ip + 16B dst ip + 2B src port + 2B dst port = 36 (0x00_24).
         let mut expected = vec![
@@ -421,7 +446,7 @@ mod tests {
         let client: SocketAddr = "10.1.2.3:33000".parse().unwrap();
         let server: SocketAddr = "[fd00::2]:5432".parse().unwrap();
 
-        let buf = encode(client, server, None);
+        let buf = Header::new(client, server, None).encode();
 
         assert_eq!(buf[12], 0x21); // version 2, command PROXY
         assert_eq!(buf[13], 0x21); // AF_INET6, STREAM
@@ -444,7 +469,7 @@ mod tests {
         let client: SocketAddr = "[fd00::1]:33000".parse().unwrap();
         let server: SocketAddr = "10.9.8.7:5432".parse().unwrap();
 
-        let buf = encode(client, server, None);
+        let buf = Header::new(client, server, None).encode();
 
         assert_eq!(buf[13], 0x21); // AF_INET6, STREAM
         assert_eq!(&buf[14..16], &36u16.to_be_bytes()); // length = 16+16+2+2
@@ -495,11 +520,12 @@ mod tests {
         let _trace = linkerd_tracing::test::trace_init();
 
         let client_id = tls::ClientId(IDENTITY.parse().unwrap());
-        let header = encode(
+        let header = Header::new(
             "10.1.2.3:33000".parse().unwrap(),
             "10.9.8.7:5432".parse().unwrap(),
             Some(IDENTITY),
-        );
+        )
+        .encode();
 
         let mut ports = RangeInclusiveSet::new();
         ports.insert(5432..=5432);
