@@ -8,6 +8,36 @@
 //!
 //! This is only ever used on the opaque/TCP forwarding path: HTTP
 //! connections proxied by this process never carry this header.
+//!
+//! The format is described in
+//! <https://www.haproxy.org/download/3.5/doc/proxy-protocol.txt>.
+//! The section numbers in the comments below are from that document.
+//!
+//! # Header layout
+//!
+//! ```text
+//!  0                   1                   2                   3
+//!  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+//! +---------------------------------------------------------------+
+//! |                        signature (12 bytes)                   |
+//! |                                                               |
+//! |                                                               |
+//! +-------------------------------+-------------------------------+
+//! | ver_cmd (1)  | fam (1)        | len (2)                       |
+//! +-------------------------------+-------------------------------+  16 bytes
+//! | src addr (4 or 16)                                            |
+//! | dst addr (4 or 16)                                            |
+//! | src port (2) | dst port (2)                                   |  addr block
+//! +---------------+-----------------------------------------------+
+//! | TLV type (1) | TLV length (2)         | subtype (1) | value... |  optional TLV
+//! +---------------+-----------------------------------------------+
+//! ```
+//!
+//! `len` is everything after the first 16 bytes (the addresses and any
+//! TLVs). The spec says, in section 2.2:
+//!
+//! > Thus the length of the protocol header in bytes is always exactly 16 +
+//! > this value.
 
 use bytes::BufMut;
 use futures::prelude::*;
@@ -24,9 +54,13 @@ use std::{
     sync::Arc,
     task::{Context, Poll},
 };
-use tracing::debug;
+use tracing::{debug, warn};
 
 /// The 12-byte signature that must prefix every PROXY protocol v2 header.
+///
+/// From section 2.2: "The binary header format starts with a constant 12
+/// bytes block containing the protocol signature:
+/// `\x0D \x0A \x0D \x0A \x00 \x0D \x0A \x51 \x55 \x49 \x54 \x0A`".
 const SIGNATURE: [u8; 12] = [
     0x0D, 0x0A, 0x0D, 0x0A, 0x00, 0x0D, 0x0A, 0x51, 0x55, 0x49, 0x54, 0x0A,
 ];
@@ -36,18 +70,37 @@ const SIGNATURE: [u8; 12] = [
 const PREFIX_LEN: usize = SIGNATURE.len() + 1 + 1 + 2;
 
 /// Version 2, command PROXY (as opposed to LOCAL).
+///
+/// From section 2.2: the top 4 bits are the version, which "must always be
+/// sent as \x2". The bottom 4 bits are the command, and "\x1 : PROXY" means
+/// "the connection was established on behalf of another node". Put together,
+/// that is `0x21`.
 const VERSION_COMMAND: u8 = 0x21;
 
 /// Address family/protocol byte for "TCP over IPv4".
+///
+/// From section 2.2: the top 4 bits are the address family (`0x1` is
+/// AF_INET) and the bottom 4 bits are the protocol (`0x1` is STREAM). The
+/// spec calls this "\x11 : TCP over IPv4" and says "Address length is
+/// 2*4 + 2*2 = 12 bytes."
 const AF_INET_STREAM: u8 = 0x11;
 
 /// Address family/protocol byte for "TCP over IPv6".
+///
+/// From section 2.2: same idea, but the family is `0x2` (AF_INET6). The spec
+/// calls this "\x21 : TCP over IPv6" and says "Address length is
+/// 2*16 + 2*2 = 36 bytes."
 const AF_INET6_STREAM: u8 = 0x21;
 
 /// The TLV type under which Linkerd sends its own fields.
 ///
-/// The spec sets aside types 0xE0-0xEF for application-specific data but
-/// keeps no registry of them. Known assignments, which this must avoid:
+/// From section 2.2.8: "The following range of 16 type values is reserved
+/// for application-specific data and will be never used by the PROXY
+/// Protocol. If you need more values consider extending the range with a
+/// type field in your TLVs." That range is 0xE0 to 0xEF.
+///
+/// Nobody keeps a list of who uses what in that range. These are the ones we
+/// know about, so we stay away from them:
 ///
 /// - 0xE0: Google Cloud Private Service Connect (connection ID)
 /// - 0xE1: Alibaba Cloud PrivateLink (VPC, endpoint and endpoint service IDs)
@@ -67,6 +120,15 @@ const TLV_TYPE_LINKERD: u8 = 0xED;
 /// The [`TLV_TYPE_LINKERD`] subtype carrying the verified mTLS client
 /// identity, i.e. the value `l5d-client-id` carries for HTTP.
 const TLV_SUBTYPE_CLIENT_ID: u8 = 0x01;
+
+/// The longest client identity we will send.
+///
+/// DNS names are at most 253 bytes and SPIFFE IDs are at most 2048 (SPIFFE-ID
+/// spec, section 2.3). If an identity is longer than this, we leave it out
+/// instead of cutting it short, because a cut-down identity could match a
+/// different real one. The limit also keeps the `as u16` casts in [`encode`]
+/// safe.
+const MAX_CLIENT_ID_LEN: usize = 2048;
 
 /// Wraps a connector, writing a PROXY protocol v2 header to the connection
 /// once established, iff the connection's target port is in the configured
@@ -144,8 +206,20 @@ where
 /// of the client) in a [`TLV_TYPE_LINKERD`] TLV.
 pub(crate) fn encode(client: SocketAddr, server: SocketAddr, client_id: Option<&str>) -> Vec<u8> {
     let addrs = AddrBlock::new(client, server);
-    // The TLV, if present, contributes a 1-byte type + 2-byte length prefix,
-    // then a 1-byte subtype and the identity string itself.
+    let client_id = match client_id {
+        Some(id) if id.len() > MAX_CLIENT_ID_LEN => {
+            warn!(
+                len = id.len(),
+                max = MAX_CLIENT_ID_LEN,
+                "client identity too long; omitting it from the PROXY protocol header"
+            );
+            None
+        }
+        id => id,
+    };
+    // Section 2.2 says a TLV is a 1-byte type, a 2-byte length, then the
+    // value. That is 3 bytes before the value. Our value is a 1-byte subtype
+    // followed by the identity.
     let tlv_len = client_id.map_or(0, |id| 3 + 1 + id.len());
     // This is the "length" field of the header: everything that follows the
     // fixed-size prefix.
@@ -159,6 +233,8 @@ pub(crate) fn encode(client: SocketAddr, server: SocketAddr, client_id: Option<&
     addrs.put(&mut buf);
     if let Some(id) = client_id {
         buf.put_u8(TLV_TYPE_LINKERD);
+        // The spec says the TLV length does not include the type and length
+        // bytes. So it is just the 1-byte subtype plus the identity.
         buf.put_u16((1 + id.len()) as u16);
         buf.put_u8(TLV_SUBTYPE_CLIENT_ID);
         buf.put_slice(id.as_bytes());
@@ -204,7 +280,8 @@ impl AddrBlock {
     }
 
     fn encoded_len(&self) -> usize {
-        // Two addresses plus two 2-byte ports.
+        // Two addresses plus two 2-byte ports. The spec's `proxy_addr` union
+        // gives the same totals: "len = 12" for IPv4 and "len = 36" for IPv6.
         match self {
             Self::Inet { .. } => 4 + 4 + 2 + 2,
             Self::Inet6 { .. } => 16 + 16 + 2 + 2,
@@ -277,6 +354,20 @@ mod tests {
 
         assert_eq!(buf, expected);
         assert_eq!(buf.len(), 16 + 75);
+    }
+
+    #[test]
+    fn encode_omits_overlong_identity() {
+        let client: SocketAddr = "10.1.2.3:33000".parse().unwrap();
+        let server: SocketAddr = "10.9.8.7:5432".parse().unwrap();
+
+        let max = "a".repeat(MAX_CLIENT_ID_LEN);
+        let buf = encode(client, server, Some(&max));
+        assert_eq!(buf.len(), PREFIX_LEN + 12 + 3 + 1 + MAX_CLIENT_ID_LEN);
+
+        let too_long = "a".repeat(MAX_CLIENT_ID_LEN + 1);
+        let buf = encode(client, server, Some(&too_long));
+        assert_eq!(buf, encode(client, server, None));
     }
 
     #[test]
