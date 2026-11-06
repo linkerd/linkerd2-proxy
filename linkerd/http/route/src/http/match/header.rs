@@ -87,7 +87,10 @@ pub mod proto {
             let name = http::header::HeaderName::from_bytes(hm.name.as_bytes())?;
             match hm.value.ok_or(InvalidHeaderMatch::MissingValueMatch)? {
                 api::header_match::Value::Exact(h) => Ok(MatchHeader::Exact(name, h.try_into()?)),
-                api::header_match::Value::Regex(re) => Ok(MatchHeader::Regex(name, re.parse()?)),
+                api::header_match::Value::Regex(re) => Ok(MatchHeader::Regex(
+                    name,
+                    super::super::proto::parse_full_match_regex(&re)?,
+                )),
             }
         }
     }
@@ -180,5 +183,25 @@ mod tests {
             );
             h
         }));
+    }
+
+    #[cfg(feature = "proto")]
+    #[test]
+    fn headers_regex_matches_entire_value() {
+        use linkerd2_proxy_api::http_route as api;
+
+        let m = MatchHeader::try_from(api::HeaderMatch {
+            name: "foo".to_string(),
+            value: Some(api::header_match::Value::Regex("bar|bar-.*".to_string())),
+        })
+        .unwrap();
+        let headers = |v: &'static str| {
+            let mut h = http::HeaderMap::new();
+            h.insert(HeaderName::from_static("foo"), HeaderValue::from_static(v));
+            h
+        };
+        assert!(m.is_match(&headers("bar")));
+        assert!(m.is_match(&headers("bar-baz")));
+        assert!(!m.is_match(&headers("barbaz")));
     }
 }
