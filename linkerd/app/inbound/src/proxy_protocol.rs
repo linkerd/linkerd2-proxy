@@ -59,15 +59,18 @@ use tracing::{debug, warn};
 /// The 12-byte signature that must prefix every PROXY protocol v2 header.
 ///
 /// From section 2.2: "The binary header format starts with a constant 12
-/// bytes block containing the protocol signature:
-/// `\x0D \x0A \x0D \x0A \x00 \x0D \x0A \x51 \x55 \x49 \x54 \x0A`".
+/// bytes block containing the protocol signature", which is
+/// `\x0D \x0A \x0D \x0A \x00 \x0D \x0A \x51 \x55 \x49 \x54 \x0A`.
 const SIGNATURE: [u8; 12] = [
     0x0D, 0x0A, 0x0D, 0x0A, 0x00, 0x0D, 0x0A, 0x51, 0x55, 0x49, 0x54, 0x0A,
 ];
 
 /// The length of the fixed-size prefix of every PROXY protocol v2 header: the
 /// signature, the version/command byte, the family byte and the 2-byte length.
-const PREFIX_LEN: usize = SIGNATURE.len() + 1 + 1 + 2;
+///
+/// From section 2.2: "So the 16-byte version 2 header can be described this
+/// way", followed by `struct proxy_hdr_v2` with those four fields.
+const PREFIX_LEN: usize = 16;
 
 /// Version 2, command PROXY (as opposed to LOCAL).
 ///
@@ -81,16 +84,37 @@ const VERSION_COMMAND: u8 = 0x21;
 ///
 /// From section 2.2: the top 4 bits are the address family (`0x1` is
 /// AF_INET) and the bottom 4 bits are the protocol (`0x1` is STREAM). The
-/// spec calls this "\x11 : TCP over IPv4" and says "Address length is
-/// 2*4 + 2*2 = 12 bytes."
+/// spec calls this "\x11 : TCP over IPv4".
 const AF_INET_STREAM: u8 = 0x11;
 
 /// Address family/protocol byte for "TCP over IPv6".
 ///
 /// From section 2.2: same idea, but the family is `0x2` (AF_INET6). The spec
-/// calls this "\x21 : TCP over IPv6" and says "Address length is
-/// 2*16 + 2*2 = 36 bytes."
+/// calls this "\x21 : TCP over IPv6".
 const AF_INET6_STREAM: u8 = 0x21;
+
+/// The length of the address block for TCP over IPv4: two 4-byte addresses
+/// and two 2-byte ports.
+///
+/// From section 2.2, for "\x11 : TCP over IPv4": "Address length is
+/// 2*4 + 2*2 = 12 bytes." The `proxy_addr` union in the same section agrees:
+/// "for TCP/UDP over IPv4, len = 12".
+const IPV4_ADDR_BLOCK_LEN: usize = 12;
+
+/// The length of the address block for TCP over IPv6: two 16-byte addresses
+/// and two 2-byte ports.
+///
+/// From section 2.2, for "\x21 : TCP over IPv6": "Address length is
+/// 2*16 + 2*2 = 36 bytes." The `proxy_addr` union in the same section agrees:
+/// "for TCP/UDP over IPv6, len = 36".
+const IPV6_ADDR_BLOCK_LEN: usize = 36;
+
+/// The length of a TLV's type and length fields, which come before its value.
+///
+/// From section 2.2: "The first byte is the Type of the vector. The second
+/// two bytes represent the length in bytes of the value (not included the
+/// Type and Length bytes)". That is 1 + 2 = 3 bytes.
+const TLV_HEADER_LEN: usize = 3;
 
 /// The TLV type under which Linkerd sends its own fields.
 ///
@@ -99,23 +123,32 @@ const AF_INET6_STREAM: u8 = 0x21;
 /// Protocol. If you need more values consider extending the range with a
 /// type field in your TLVs." That range is 0xE0 to 0xEF.
 ///
-/// Nobody keeps a list of who uses what in that range. These are the ones we
-/// know about, so we stay away from them:
+/// The spec keeps no registry of this range. These are the uses we know
+/// about, so we stay away from them:
 ///
 /// - 0xE0: Google Cloud Private Service Connect (connection ID)
 /// - 0xE1: Alibaba Cloud PrivateLink (VPC, endpoint and endpoint service IDs)
 /// - 0xE4: Teleport (connection metadata)
 /// - 0xEA: AWS PrivateLink (VPC endpoint ID)
-/// - 0xEC: SAP Converged Cloud Archer (endpoint ID)
+/// - 0xEC: SAP Cloud Infrastructure's Archer endpoint service (endpoint ID)
 /// - 0xEE: Azure Private Link (private endpoint LinkID)
 ///
 /// Some software also assigns its own meanings to 0xE0-0xE6 (ByteDance g3's
-/// proxies; MongoDB reads 0xE0 and 0xE1 as client certificate attributes).
+/// proxies; MongoDB reads 0xE0 as the client certificate's DN and 0xE1 as the
+/// peer's roles).
 ///
 /// As with the AWS, Azure and Alibaba types, the value starts with a 1-byte
 /// subtype naming the field that follows, so that further fields can be
 /// added without claiming more types.
 const TLV_TYPE_LINKERD: u8 = 0xED;
+
+/// The length of the subtype byte at the start of a [`TLV_TYPE_LINKERD`]
+/// value.
+///
+/// The spec does not define this byte. It is Linkerd's own layout, following
+/// the advice in section 2.2.8 to extend the custom range "with a type field
+/// in your TLVs".
+const TLV_SUBTYPE_LEN: usize = 1;
 
 /// The [`TLV_TYPE_LINKERD`] subtype carrying the verified mTLS client
 /// identity, i.e. the value `l5d-client-id` carries for HTTP.
@@ -123,12 +156,24 @@ const TLV_SUBTYPE_CLIENT_ID: u8 = 0x01;
 
 /// The longest client identity we will send.
 ///
-/// DNS names are at most 253 bytes and SPIFFE IDs are at most 2048 (SPIFFE-ID
-/// spec, section 2.3). If an identity is longer than this, we leave it out
-/// instead of cutting it short, because a cut-down identity could match a
-/// different real one. The limit also keeps the `as u16` casts in
-/// [`Header::encode`] safe.
+/// This is our own limit, not one from a spec. DNS-name identities are
+/// already capped at 253 bytes by `linkerd-dns-name`. URI identities have no
+/// limit in RFC 3986, and Linkerd accepts any URI, not only SPIFFE IDs. For
+/// SPIFFE IDs, the SPIFFE-ID spec (section 2.3) says implementations "MUST
+/// support SPIFFE URIs up to 2048 bytes in length and SHOULD NOT generate URIs
+/// of length greater than 2048 bytes", so we use the same number.
+///
+/// If an identity is longer than this, we leave it out instead of cutting it
+/// short, because a cut-down identity could match a different real one. The
+/// limit also keeps the `as u16` casts in [`Header::encode`] safe, which the
+/// assertion below checks at compile time.
 const MAX_CLIENT_ID_LEN: usize = 2048;
+
+// The largest `len` field we can write: an IPv6 address block plus a TLV
+// carrying the longest identity we send. It must fit in the 2-byte field.
+const _: () = assert!(
+    IPV6_ADDR_BLOCK_LEN + TLV_HEADER_LEN + TLV_SUBTYPE_LEN + MAX_CLIENT_ID_LEN <= u16::MAX as usize
+);
 
 /// Wraps a connector, writing a PROXY protocol v2 header to the connection
 /// once established, iff the connection's target port is in the configured
@@ -247,11 +292,12 @@ impl<'a> Header<'a> {
 
     /// Writes the header out as bytes, ready to send on the connection.
     fn encode(&self) -> Vec<u8> {
-        // Section 2.2 says a TLV is a 1-byte type, a 2-byte length, then the
-        // value. That is 3 bytes before the value. Our value is a 1-byte
-        // subtype followed by the identity.
-        let tlv_len = self.client_id.map_or(0, |id| 3 + 1 + id.len());
-        // This is the "length" field of the header: everything that follows
+        // A TLV is its type and length fields, then the value. Our value is a
+        // subtype byte followed by the identity.
+        let tlv_len = self
+            .client_id
+            .map_or(0, |id| TLV_HEADER_LEN + TLV_SUBTYPE_LEN + id.len());
+        // This is the `len` field of the header: everything that follows
         // the fixed-size prefix.
         let len = self.addrs.encoded_len() + tlv_len;
 
@@ -264,9 +310,8 @@ impl<'a> Header<'a> {
         if let Some(id) = self.client_id {
             buf.put_u8(TLV_TYPE_LINKERD);
             // The spec says the TLV length does not include the type and
-            // length bytes. So it is just the 1-byte subtype plus the
-            // identity.
-            buf.put_u16((1 + id.len()) as u16);
+            // length bytes. So it is just the subtype plus the identity.
+            buf.put_u16((TLV_SUBTYPE_LEN + id.len()) as u16);
             buf.put_u8(TLV_SUBTYPE_CLIENT_ID);
             buf.put_slice(id.as_bytes());
         }
@@ -314,11 +359,9 @@ impl AddrBlock {
 
     /// How many bytes the address block takes up.
     fn encoded_len(&self) -> usize {
-        // Two addresses plus two 2-byte ports. The spec's `proxy_addr` union
-        // gives the same totals: "len = 12" for IPv4 and "len = 36" for IPv6.
         match self {
-            Self::Inet { .. } => 4 + 4 + 2 + 2,
-            Self::Inet6 { .. } => 16 + 16 + 2 + 2,
+            Self::Inet { .. } => IPV4_ADDR_BLOCK_LEN,
+            Self::Inet6 { .. } => IPV6_ADDR_BLOCK_LEN,
         }
     }
 
@@ -358,6 +401,11 @@ mod tests {
     use linkerd_app_core::io;
     use std::net::{Ipv4Addr, Ipv6Addr};
     use tower::util::{service_fn, ServiceExt};
+
+    // The golden tests below spell out the expected bytes, lengths and
+    // offsets as literals on purpose. They check the encoder's output against
+    // the spec without using the constants above, so a wrong address block
+    // or TLV length makes them fail instead of agreeing with itself.
 
     // Identity string used in the golden encoder test below. Its length
     // (59 bytes) is load-bearing for the expected TLV/header lengths.
@@ -402,7 +450,10 @@ mod tests {
 
         let max = "a".repeat(MAX_CLIENT_ID_LEN);
         let buf = Header::new(client, server, Some(&max)).encode();
-        assert_eq!(buf.len(), PREFIX_LEN + 12 + 3 + 1 + MAX_CLIENT_ID_LEN);
+        assert_eq!(
+            buf.len(),
+            PREFIX_LEN + IPV4_ADDR_BLOCK_LEN + TLV_HEADER_LEN + TLV_SUBTYPE_LEN + MAX_CLIENT_ID_LEN
+        );
 
         let too_long = "a".repeat(MAX_CLIENT_ID_LEN + 1);
         let buf = Header::new(client, server, Some(&too_long)).encode();
