@@ -222,8 +222,13 @@ where
 {
     type Response = (S::Connection, S::Metadata);
     type Error = Error;
-    type Future =
-        Pin<Box<dyn Future<Output = Result<(S::Connection, S::Metadata), Error>> + Send + 'static>>;
+    /// Connections to ports without PROXY protocol use the inner future as
+    /// is, so they don't pay for a heap allocation. Only connections that
+    /// write a header are boxed.
+    type Future = future::Either<
+        future::ErrInto<S::Future, Error>,
+        Pin<Box<dyn Future<Output = Result<(S::Connection, S::Metadata), Error>> + Send + 'static>>,
+    >;
 
     #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -241,7 +246,7 @@ where
 
         // Not a configured port: connect as normal, with no header.
         if !self.ports.contains(&server_addr.port()) {
-            return Box::pin(self.inner.connect(target).err_into::<Error>());
+            return future::Either::Left(self.inner.connect(target).err_into::<Error>());
         }
 
         // Read what goes in the header before `target` is moved into
@@ -257,7 +262,7 @@ where
         };
 
         let connect = self.inner.connect(target);
-        Box::pin(async move {
+        future::Either::Right(Box::pin(async move {
             let (mut io, meta) = connect.await.map_err(Into::into)?;
 
             let header = Header::new(client_addr, server_addr, client_id.as_deref()).encode();
@@ -267,7 +272,7 @@ where
                 .map_err(|source| WriteHeaderError { source })?;
 
             Ok((io, meta))
-        })
+        }))
     }
 }
 
