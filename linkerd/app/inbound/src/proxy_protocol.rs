@@ -184,6 +184,18 @@ pub(crate) struct ProxyProtocol<S> {
     ports: Arc<RangeInclusiveSet<u16>>,
 }
 
+/// Writing the PROXY protocol header to the application failed.
+///
+/// This is its own error so that it does not look the same as the
+/// application refusing the connection: the connection was made, and it was
+/// the header write that failed.
+#[derive(Debug, thiserror::Error)]
+#[error("failed to write PROXY protocol header: {source}")]
+struct WriteHeaderError {
+    #[source]
+    source: std::io::Error,
+}
+
 // === impl ProxyProtocol ===
 
 impl<S> ProxyProtocol<S> {
@@ -250,7 +262,9 @@ where
 
             let header = Header::new(client_addr, server_addr, client_id.as_deref()).encode();
             debug!("writing PROXY protocol v2 header");
-            io.write_all(&header).await?;
+            io.write_all(&header)
+                .await
+                .map_err(|source| WriteHeaderError { source })?;
 
             Ok((io, meta))
         })
@@ -613,6 +627,37 @@ mod tests {
 
         let (mut io, _meta) = svc.oneshot(target).await.expect("connect must not fail");
         io.write_all(b"hello").await.expect("write must succeed");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn header_write_failure_is_a_typed_error() {
+        let _trace = linkerd_tracing::test::trace_init();
+
+        let mut ports = RangeInclusiveSet::new();
+        ports.insert(5432..=5432);
+
+        let svc = ProxyProtocol {
+            inner: service_fn(|_: Target| {
+                let io = tokio_test::io::Builder::new()
+                    .write_error(io::Error::from(io::ErrorKind::BrokenPipe))
+                    .build();
+                future::ready(Ok::<_, io::Error>((io, ())))
+            }),
+            ports: Arc::new(ports),
+        };
+
+        let target = Target {
+            server_port: 5432,
+            client_id: None,
+        };
+
+        let Err(error) = svc.oneshot(target).await else {
+            panic!("connect must fail when the header write fails");
+        };
+        let error = error
+            .downcast_ref::<WriteHeaderError>()
+            .expect("error must be a WriteHeaderError");
+        assert_eq!(error.source.kind(), io::ErrorKind::BrokenPipe);
     }
 
     #[tokio::test(flavor = "current_thread")]
