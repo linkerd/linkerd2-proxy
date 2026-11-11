@@ -89,7 +89,7 @@ async fn opaque_hinted() {
     assert_eq!(client.get("/").await, "hello");
 }
 
-async fn mk_inbound(
+pub(super) async fn mk_inbound(
     srv: server::Listening,
     id: identity::Controller,
     dst: &str,
