@@ -4,36 +4,10 @@
 //! itself, so it checks the bytes the proxy writes rather than trusting a
 //! PROXY protocol library.
 
-use super::direct::mk_inbound;
+use super::direct::{mk_inbound, mk_outbound};
 use crate::*;
 use std::net::{IpAddr, Ipv4Addr};
 use tokio::net::TcpStream;
-
-/// Like `direct::mk_outbound`, but with an outbound policy for `dst`. Without
-/// one, the outbound proxy connects to `srv_addr` itself rather than to the
-/// endpoint's opaque port on the inbound proxy, and the inbound proxy never
-/// sees the connection.
-async fn mk_outbound(
-    srv_addr: SocketAddr,
-    dst: &str,
-    ctrl: controller::Controller,
-    out_identity: identity::Identity,
-) -> (proxy::Listening, controller::ProfileSender) {
-    let profile = ctrl.profile_tx_default(srv_addr, "opaque.test.svc.cluster.local");
-    let ctrl = ctrl
-        .run()
-        .instrument(tracing::info_span!("ctrl", "outbound"))
-        .await;
-    let policy = controller::policy().outbound_default(srv_addr, dst);
-    let proxy = proxy::new()
-        .controller(ctrl)
-        .policy(policy.run().await)
-        .identity(out_identity.service().run().await)
-        .outbound_ip(srv_addr)
-        .run_with_test_env(out_identity.env)
-        .await;
-    (proxy, profile)
-}
 
 const SIGNATURE: [u8; 12] = [
     0x0D, 0x0A, 0x0D, 0x0A, 0x00, 0x0D, 0x0A, 0x51, 0x55, 0x49, 0x54, 0x0A,
