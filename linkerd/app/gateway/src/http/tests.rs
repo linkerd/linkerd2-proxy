@@ -98,6 +98,28 @@ async fn upgraded_request_remains_relative_form() {
         }
     }
 
+    impl svc::Param<outbound::policy::Receiver> for Target {
+        fn param(&self) -> outbound::policy::Receiver {
+            let meta = outbound::policy::Meta::new_default("test");
+            let queue = outbound::policy::Queue {
+                capacity: 100,
+                failfast_timeout: time::Duration::from_secs(3),
+            };
+            let policy = outbound::synthesize_forward_policy(
+                &meta,
+                time::Duration::from_secs(10),
+                queue,
+                ([10, 10, 10, 10], 4143).into(),
+                Default::default(),
+            );
+            let (tx, rx) = watch::channel(policy);
+            tokio::spawn(async move {
+                tx.closed().await;
+            });
+            rx
+        }
+    }
+
     impl svc::Param<http::Variant> for Target {
         fn param(&self) -> http::Variant {
             http::Variant::H2
