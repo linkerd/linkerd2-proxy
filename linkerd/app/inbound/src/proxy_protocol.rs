@@ -6,8 +6,10 @@
 //! the verified client identity) is encoded into a PROXY protocol v2 header
 //! and written to the application connection before any bytes are spliced.
 //!
-//! This is only ever used on the opaque/TCP forwarding path: HTTP
-//! connections proxied by this process never carry this header.
+//! A configured port only accepts opaque TCP connections: ones whose server
+//! policy is `opaque` (or `tls`). Every other connection to it is refused,
+//! including HTTP, because one upstream HTTP connection can carry requests
+//! from many clients and a header can only describe one.
 //!
 //! The format is described in
 //! <https://www.haproxy.org/download/3.5/doc/proxy-protocol.txt>.
@@ -196,6 +198,49 @@ struct WriteHeaderError {
     source: std::io::Error,
 }
 
+/// What the connect target knows about the connection, as far as PROXY
+/// protocol is concerned. Every inbound connect target provides this.
+#[derive(Clone, Debug)]
+pub(crate) enum Peer {
+    /// An opaque TCP stream from this client: a header may be written.
+    Opaque {
+        client: Remote<ClientAddr>,
+        tls: tls::ConditionalServerTls,
+    },
+    /// Not an opaque TCP stream. On a PROXY protocol port, the connection
+    /// is refused.
+    NotOpaque(NotOpaque),
+}
+
+/// Why a connection is not opaque.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum NotOpaque {
+    /// The proxy is speaking HTTP to the application. One upstream HTTP
+    /// connection can carry requests from many clients, so there is no single
+    /// client to describe.
+    Http,
+    /// The port's server policy is not `opaque` (or `tls`); the stream was
+    /// forwarded because detection did not find HTTP.
+    Detect,
+}
+
+impl std::fmt::Display for NotOpaque {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Http => "HTTP",
+            Self::Detect => "not declared opaque by its server policy",
+        })
+    }
+}
+
+/// A connection on a PROXY protocol port that is not an opaque TCP stream.
+#[derive(Debug, thiserror::Error)]
+#[error("PROXY protocol port {port} only accepts opaque TCP connections: {kind}")]
+pub(crate) struct NotOpaqueError {
+    port: u16,
+    kind: NotOpaque,
+}
+
 // === impl ProxyProtocol ===
 
 impl<S> ProxyProtocol<S> {
@@ -212,9 +257,7 @@ impl<S> ProxyProtocol<S> {
 
 impl<T, S> svc::Service<T> for ProxyProtocol<S>
 where
-    T: svc::Param<Remote<ServerAddr>>
-        + svc::Param<Remote<ClientAddr>>
-        + svc::Param<tls::ConditionalServerTls>,
+    T: svc::Param<Remote<ServerAddr>> + svc::Param<Peer>,
     S: svc::MakeConnection<T> + Send + 'static,
     S::Connection: Send + Unpin,
     S::Metadata: Send + Unpin,
@@ -251,14 +294,32 @@ where
 
         // Read what goes in the header before `target` is moved into
         // `connect`. The client identity is only there if the client used
-        // mTLS.
-        let Remote(ClientAddr(client_addr)) = target.param();
-        let client_id = match target.param() {
-            Conditional::Some(tls::ServerTls::Established {
-                client_id: Some(id),
-                ..
-            }) => Some(id.to_str().into_owned()),
-            _ => None,
+        // mTLS. Anything that is not an opaque TCP stream is refused.
+        let (client_addr, client_id) = match target.param() {
+            Peer::Opaque {
+                client: Remote(ClientAddr(client_addr)),
+                tls,
+            } => {
+                let client_id = match tls {
+                    Conditional::Some(tls::ServerTls::Established {
+                        client_id: Some(id),
+                        ..
+                    }) => Some(id.to_str().into_owned()),
+                    _ => None,
+                };
+                (client_addr, client_id)
+            }
+            Peer::NotOpaque(kind) => {
+                let error = NotOpaqueError {
+                    port: server_addr.port(),
+                    kind,
+                };
+                warn!(%error, "Refusing connection");
+                // An `io::Error`, like a refused connect, so that an HTTP
+                // client gets a 502 rather than a 500.
+                let error = std::io::Error::new(std::io::ErrorKind::ConnectionRefused, error);
+                return future::Either::Right(Box::pin(async move { Err(error.into()) }));
+            }
         };
 
         let connect = self.inner.connect(target);
@@ -571,6 +632,7 @@ mod tests {
     struct Target {
         server_port: u16,
         client_id: Option<tls::ClientId>,
+        opaque: bool,
     }
 
     impl svc::Param<Remote<ServerAddr>> for Target {
@@ -581,22 +643,59 @@ mod tests {
         }
     }
 
-    impl svc::Param<Remote<ClientAddr>> for Target {
-        fn param(&self) -> Remote<ClientAddr> {
-            Remote(ClientAddr((Ipv4Addr::new(10, 1, 2, 3), 33000).into()))
+    impl svc::Param<Peer> for Target {
+        fn param(&self) -> Peer {
+            if !self.opaque {
+                return Peer::NotOpaque(NotOpaque::Detect);
+            }
+            Peer::Opaque {
+                client: Remote(ClientAddr((Ipv4Addr::new(10, 1, 2, 3), 33000).into())),
+                tls: match &self.client_id {
+                    Some(client_id) => Conditional::Some(tls::ServerTls::Established {
+                        client_id: Some(client_id.clone()),
+                        negotiated_protocol: None,
+                    }),
+                    None => Conditional::None(tls::NoServerTls::Disabled),
+                },
+            }
         }
     }
 
-    impl svc::Param<tls::ConditionalServerTls> for Target {
-        fn param(&self) -> tls::ConditionalServerTls {
-            match &self.client_id {
-                Some(client_id) => Conditional::Some(tls::ServerTls::Established {
-                    client_id: Some(client_id.clone()),
-                    negotiated_protocol: None,
-                }),
-                None => Conditional::None(tls::NoServerTls::Disabled),
-            }
-        }
+    #[tokio::test(flavor = "current_thread")]
+    async fn refuses_non_opaque_on_configured_port() {
+        let _trace = linkerd_tracing::test::trace_init();
+
+        let mut ports = RangeInclusiveSet::new();
+        ports.insert(5432..=5432);
+
+        let svc = ProxyProtocol {
+            inner: service_fn(
+                |_: Target| -> future::Ready<Result<(tokio_test::io::Mock, ()), io::Error>> {
+                    panic!("must not connect")
+                },
+            ),
+            ports: Arc::new(ports),
+        };
+
+        let target = Target {
+            server_port: 5432,
+            client_id: None,
+            opaque: false,
+        };
+
+        let Err(error) = svc.oneshot(target).await else {
+            panic!("connect must be refused");
+        };
+        let error = error
+            .downcast_ref::<io::Error>()
+            .expect("error must be an io::Error");
+        assert_eq!(error.kind(), io::ErrorKind::ConnectionRefused);
+        let error = error
+            .get_ref()
+            .and_then(|e| e.downcast_ref::<NotOpaqueError>())
+            .expect("error must wrap a NotOpaqueError");
+        assert_eq!(error.port, 5432);
+        assert_eq!(error.kind, NotOpaque::Detect);
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -628,6 +727,7 @@ mod tests {
         let target = Target {
             server_port: 5432,
             client_id: Some(client_id),
+            opaque: true,
         };
 
         let (mut io, _meta) = svc.oneshot(target).await.expect("connect must not fail");
@@ -654,6 +754,7 @@ mod tests {
         let target = Target {
             server_port: 5432,
             client_id: None,
+            opaque: true,
         };
 
         let Err(error) = svc.oneshot(target).await else {
@@ -680,6 +781,7 @@ mod tests {
         let target = Target {
             server_port: 5432,
             client_id: None,
+            opaque: true,
         };
 
         let (mut io, _meta) = svc.oneshot(target).await.expect("connect must not fail");

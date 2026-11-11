@@ -320,6 +320,21 @@ impl Param<tls::ConditionalServerTls> for AuthorizedLocalTcp {
     }
 }
 
+impl Param<crate::proxy_protocol::Peer> for AuthorizedLocalTcp {
+    fn param(&self) -> crate::proxy_protocol::Peer {
+        use crate::proxy_protocol::{NotOpaque, Peer};
+        // The client hinted opaque via the transport header, but the server
+        // policy decides whether the port is opaque.
+        match self.permit.protocol {
+            policy::Protocol::Opaque(_) | policy::Protocol::Tls(_) => Peer::Opaque {
+                client: self.client_addr,
+                tls: Param::<tls::ConditionalServerTls>::param(self),
+            },
+            _ => Peer::NotOpaque(NotOpaque::Detect),
+        }
+    }
+}
+
 impl Param<transport::labels::Key> for AuthorizedLocalTcp {
     fn param(&self) -> transport::labels::Key {
         transport::labels::Key::inbound_server(

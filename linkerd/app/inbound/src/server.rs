@@ -5,7 +5,7 @@ use linkerd_app_core::{
     exp_backoff::ExponentialBackoff,
     io, profiles,
     proxy::{http, tcp},
-    svc, tls,
+    svc,
     transport::{self, addrs::*},
     Error,
 };
@@ -16,8 +16,7 @@ use tracing::debug_span;
 #[derive(Clone, Debug)]
 struct TcpEndpoint {
     addr: Remote<ServerAddr>,
-    client: Remote<ClientAddr>,
-    tls: tls::ConditionalServerTls,
+    peer: proxy_protocol::Peer,
 }
 
 // === impl Inbound ===
@@ -123,7 +122,7 @@ impl Inbound<()> {
             > + Clone,
     >
     where
-        T: svc::Param<Remote<ServerAddr>> + 'static,
+        T: svc::Param<Remote<ServerAddr>> + svc::Param<proxy_protocol::Peer> + 'static,
     {
         self.map_stack(|config, _, _| {
             // Establishes connections to remote peers (for both TCP
@@ -134,22 +133,29 @@ impl Inbound<()> {
                 ref timeout,
                 ..
             } = config.proxy.connect;
+            let proxy_protocol_v2_ports = Arc::new(config.proxy_protocol_v2_ports.clone());
 
             #[derive(Debug, thiserror::Error)]
             #[error("inbound connection must not target port {0}")]
             struct Loop(u16);
 
             svc::stack(transport::ConnectTcp::new(*keepalive, *user_timeout))
-                // Limits the time we wait for a connection to be established.
+                // On PROXY protocol ports, writes the header to opaque TCP
+                // connections and refuses everything else.
+                .push(proxy_protocol::ProxyProtocol::layer(
+                    proxy_protocol_v2_ports,
+                ))
+                // Limits the time we wait for a connection to be established
+                // (including the PROXY protocol header write).
                 .push_connect_timeout(*timeout)
                 // Prevent connections that would target the inbound proxy port from looping.
                 .push_filter(move |t: T| {
-                    let addr = t.param();
+                    let addr: Remote<ServerAddr> = t.param();
                     let port = addr.port();
                     if port == proxy_port {
                         return Err(Loop(port));
                     }
-                    Ok(addr)
+                    Ok(t)
                 })
         })
     }
@@ -170,8 +176,6 @@ impl<S> Inbound<S> {
     where
         T: svc::Param<transport::labels::Key>
             + svc::Param<Remote<ServerAddr>>
-            + svc::Param<Remote<ClientAddr>>
-            + svc::Param<tls::ConditionalServerTls>
             + Clone
             + Send
             + Sync
@@ -183,12 +187,8 @@ impl<S> Inbound<S> {
         S::Metadata: Send + Unpin,
         S::Future: Send,
     {
-        self.map_stack(|config, rt, connect| {
-            let proxy_protocol_v2_ports = Arc::new(config.proxy_protocol_v2_ports.clone());
+        self.map_stack(|_, rt, connect| {
             connect
-                .push(proxy_protocol::ProxyProtocol::layer(
-                    proxy_protocol_v2_ports,
-                ))
                 .push(transport::metrics::Client::layer(
                     rt.metrics.proxy.transport.clone(),
                 ))
@@ -209,14 +209,11 @@ impl<S> Inbound<S> {
 impl TcpEndpoint {
     pub fn from_param<T>(t: T) -> Self
     where
-        T: svc::Param<Remote<ServerAddr>>
-            + svc::Param<Remote<ClientAddr>>
-            + svc::Param<tls::ConditionalServerTls>,
+        T: svc::Param<Remote<ServerAddr>> + svc::Param<proxy_protocol::Peer>,
     {
         Self {
             addr: t.param(),
-            client: t.param(),
-            tls: t.param(),
+            peer: t.param(),
         }
     }
 }
@@ -227,15 +224,9 @@ impl svc::Param<Remote<ServerAddr>> for TcpEndpoint {
     }
 }
 
-impl svc::Param<Remote<ClientAddr>> for TcpEndpoint {
-    fn param(&self) -> Remote<ClientAddr> {
-        self.client
-    }
-}
-
-impl svc::Param<tls::ConditionalServerTls> for TcpEndpoint {
-    fn param(&self) -> tls::ConditionalServerTls {
-        self.tls.clone()
+impl svc::Param<proxy_protocol::Peer> for TcpEndpoint {
+    fn param(&self) -> proxy_protocol::Peer {
+        self.peer.clone()
     }
 }
 
