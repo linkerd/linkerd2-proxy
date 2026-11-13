@@ -23,7 +23,7 @@ mod retry;
 mod server;
 
 pub use self::logical::{policy, profile, LogicalAddr, Routes};
-pub(crate) use self::require_id_header::IdentityRequired;
+pub(crate) use self::require_id_header::{IdentityRequired, InvalidRequiredIdentity};
 pub use linkerd_app_core::proxy::http::{self as http, *};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
