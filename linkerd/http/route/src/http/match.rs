@@ -123,6 +123,19 @@ pub mod proto {
         Method(#[from] http_types::InvalidMethod),
     }
 
+    /// Parses a regular expression that must match an entire value.
+    ///
+    /// `Regex::find` returns the leftmost-first match, so an unanchored pattern
+    /// like `/foo|/foo/.*` stops at `/foo` and never spans `/foo/bar`, even
+    /// though the pattern as a whole matches it. Anchoring the pattern makes the
+    /// search consider only matches of the entire value. The pattern is parsed
+    /// on its own first so that wrapping it cannot change how an otherwise
+    /// invalid pattern (e.g. `a)|(b`) is interpreted.
+    pub(crate) fn parse_full_match_regex(re: &str) -> Result<regex::Regex, regex::Error> {
+        regex::Regex::new(re)?;
+        regex::Regex::new(&format!("^(?:{re})$"))
+    }
+
     // === impl MatchRequest ===
 
     impl TryFrom<api::HttpRouteMatch> for MatchRequest {

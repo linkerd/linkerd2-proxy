@@ -84,9 +84,10 @@ pub mod proto {
             }
             match qpm.value.ok_or(InvalidQueryParamMatch::MissingValue)? {
                 api::query_param_match::Value::Exact(v) => Ok(MatchQueryParam::Exact(qpm.name, v)),
-                api::query_param_match::Value::Regex(re) => {
-                    Ok(MatchQueryParam::Regex(qpm.name, re.parse()?))
-                }
+                api::query_param_match::Value::Regex(re) => Ok(MatchQueryParam::Regex(
+                    qpm.name,
+                    super::super::proto::parse_full_match_regex(&re)?,
+                )),
             }
         }
     }
@@ -128,5 +129,22 @@ mod tests {
 
         let m = MatchQueryParam::Regex("foo".to_string(), ".*".parse().unwrap());
         assert!(m.is_match(&"/?foo".parse().unwrap()));
+    }
+
+    #[cfg(feature = "proto")]
+    #[test]
+    fn query_param_regex_matches_entire_value() {
+        use linkerd2_proxy_api::http_route as api;
+
+        let m = MatchQueryParam::try_from(api::QueryParamMatch {
+            name: "foo".to_string(),
+            value: Some(api::query_param_match::Value::Regex(
+                "bar|bar-.*".to_string(),
+            )),
+        })
+        .unwrap();
+        assert!(m.is_match(&"/?foo=bar".parse().unwrap()));
+        assert!(m.is_match(&"/?foo=bar-baz".parse().unwrap()));
+        assert!(!m.is_match(&"/?foo=barbaz".parse().unwrap()));
     }
 }
