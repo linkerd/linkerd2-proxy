@@ -172,6 +172,12 @@ impl<T> svc::Param<Option<watch::Receiver<profiles::Profile>>> for Http<T> {
     }
 }
 
+impl<T> svc::Param<outbound::policy::Receiver> for Http<T> {
+    fn param(&self) -> outbound::policy::Receiver {
+        self.parent.param()
+    }
+}
+
 impl<T> svc::Param<inbound::policy::AllowPolicy> for Http<T>
 where
     T: svc::Param<inbound::policy::AllowPolicy>,
