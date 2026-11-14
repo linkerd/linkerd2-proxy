@@ -38,6 +38,7 @@ pub(crate) struct LocalTcp {
 #[derive(Debug, Clone)]
 pub(crate) struct AuthorizedLocalTcp {
     addr: Remote<ServerAddr>,
+    client_addr: Remote<ClientAddr>,
     client_id: tls::ClientId,
     permit: policy::ServerPermit,
 }
@@ -123,6 +124,7 @@ impl<N> Inbound<N> {
                 .push_map_target(|(permit, tcp): (policy::ServerPermit, LocalTcp)| {
                     AuthorizedLocalTcp {
                         addr: tcp.server_addr,
+                        client_addr: tcp.client_addr,
                         client_id: tcp.client_id,
                         permit,
                     }
@@ -300,6 +302,36 @@ impl Param<tls::ConditionalServerTls> for LocalTcp {
 impl Param<Remote<ServerAddr>> for AuthorizedLocalTcp {
     fn param(&self) -> Remote<ServerAddr> {
         self.addr
+    }
+}
+
+impl Param<Remote<ClientAddr>> for AuthorizedLocalTcp {
+    fn param(&self) -> Remote<ClientAddr> {
+        self.client_addr
+    }
+}
+
+impl Param<tls::ConditionalServerTls> for AuthorizedLocalTcp {
+    fn param(&self) -> tls::ConditionalServerTls {
+        tls::ConditionalServerTls::Some(tls::ServerTls::Established {
+            client_id: Some(self.client_id.clone()),
+            negotiated_protocol: None,
+        })
+    }
+}
+
+impl Param<crate::proxy_protocol::Peer> for AuthorizedLocalTcp {
+    fn param(&self) -> crate::proxy_protocol::Peer {
+        use crate::proxy_protocol::{NotOpaque, Peer};
+        // The client hinted opaque via the transport header, but the server
+        // policy decides whether the port is opaque.
+        match self.permit.protocol {
+            policy::Protocol::Opaque(_) | policy::Protocol::Tls(_) => Peer::Opaque {
+                client: self.client_addr,
+                tls: Param::<tls::ConditionalServerTls>::param(self),
+            },
+            _ => Peer::NotOpaque(NotOpaque::Detect),
+        }
     }
 }
 
