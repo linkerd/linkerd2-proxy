@@ -86,20 +86,23 @@ fn parse_attrs(attrs: &str) -> HashMap<String, String> {
 }
 
 /// Parses `OTEL_RESOURCE_ATTRIBUTES`, which the OpenTelemetry specification
-/// defines as a comma-separated list of `key=value` pairs, unlike the
-/// newline-separated format used for Linkerd's own attribute sources.
+/// defines as a comma-separated list of `key=value` pairs.
+///
+/// Newlines are also accepted as separators, and surrounding double quotes are
+/// trimmed from values, so that values written in the newline-separated format
+/// used for Linkerd's own attribute sources continue to work.
 ///
 /// See <https://opentelemetry.io/docs/specs/otel/resource/sdk/#specifying-resource-information-via-an-environment-variable>.
 fn parse_otel_attrs(attrs: &str) -> HashMap<String, String> {
     attrs
-        .split(',')
+        .split([',', '\n'])
         .filter_map(|pair| {
             let (key, val) = pair.split_once('=')?;
             let key = key.trim();
             if key.is_empty() {
                 return None;
             }
-            Some((key.to_string(), val.trim().to_string()))
+            Some((key.to_string(), val.trim().trim_matches('"').to_string()))
         })
         .collect()
 }
@@ -157,6 +160,44 @@ mod tests {
             ("service.namespace".to_string(), "shop".to_string()),
             ("deployment.environment".to_string(), "prod".to_string()),
             ("team".to_string(), "a=b".to_string()),
+        ]
+        .into_iter()
+        .collect();
+
+        assert_eq!(parse_otel_attrs(attrs), expected);
+    }
+
+    #[test]
+    fn parse_otel_attrs_newline_separated() {
+        let attrs = "\
+        service.namespace=\"shop\"\n\
+        deployment.environment=prod\r\n\
+        \n\
+        team=a=b\n\
+        invalid\n\
+        =nokey\n\
+        ";
+
+        let expected = [
+            ("service.namespace".to_string(), "shop".to_string()),
+            ("deployment.environment".to_string(), "prod".to_string()),
+            ("team".to_string(), "a=b".to_string()),
+        ]
+        .into_iter()
+        .collect();
+
+        assert_eq!(parse_otel_attrs(attrs), expected);
+    }
+
+    #[test]
+    fn parse_otel_attrs_mixed_separators() {
+        let attrs = "service.namespace=shop,deployment.environment=prod\nteam=core,region=eu\n";
+
+        let expected = [
+            ("service.namespace".to_string(), "shop".to_string()),
+            ("deployment.environment".to_string(), "prod".to_string()),
+            ("team".to_string(), "core".to_string()),
+            ("region".to_string(), "eu".to_string()),
         ]
         .into_iter()
         .collect();
