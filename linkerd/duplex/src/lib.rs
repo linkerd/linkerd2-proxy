@@ -329,18 +329,35 @@ unsafe impl BufMut for CopyBuf {
     }
 
     fn chunk_mut(&mut self) -> &mut bytes::buf::UninitSlice {
-        // Safety: The memory is initialized. This is the only way to turn a
-        // `&[T]` into a `&[MaybeUninit<T>]` without ptr casting.
-        unsafe {
-            bytes::buf::UninitSlice::from_raw_parts_mut(
-                &mut self.buf[self.write_pos] as *mut _,
-                self.buf.len() - self.write_pos,
-            )
-        }
+        bytes::buf::UninitSlice::new(&mut self.buf[self.write_pos..])
     }
 
     unsafe fn advance_mut(&mut self, cnt: usize) {
         assert!(self.buf.len() >= self.write_pos + cnt);
         self.write_pos += cnt;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn copy_buf_put_and_chunk() {
+        let mut buf = CopyBuf::new();
+        buf.put_slice(b"hello world");
+        assert_eq!(buf.chunk(), b"hello world");
+        buf.advance(6);
+        assert_eq!(buf.chunk(), b"world");
+    }
+
+    #[test]
+    fn copy_buf_chunk_mut_when_full() {
+        let mut buf = CopyBuf::new();
+        let cap = buf.remaining_mut();
+        buf.put_bytes(0xff, cap);
+        assert_eq!(buf.remaining_mut(), 0);
+        assert_eq!(buf.chunk_mut().len(), 0);
+        assert_eq!(buf.remaining(), cap);
     }
 }
