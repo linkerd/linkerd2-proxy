@@ -50,6 +50,8 @@ pub(crate) fn default_config() -> Config {
             detect_protocol_timeout: Duration::from_secs(3),
         },
         inbound_ips: Default::default(),
+        default_policy: Default::default(),
+        cluster_networks: Default::default(),
         discovery_idle_timeout: Duration::from_secs(60),
         tcp_connection_queue: buffer,
         http_request_queue: buffer,
