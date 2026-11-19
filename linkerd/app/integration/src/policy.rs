@@ -483,7 +483,7 @@ where
             // policy. Send a "no results" error.
             Err(grpc_no_results())
         } else {
-            // We recieved a request that did not match the expected calls, and
+            // We received a request that did not match the expected calls, and
             // we have no default policy. Return an error.
             Err(grpc_unexpected_request())
         }

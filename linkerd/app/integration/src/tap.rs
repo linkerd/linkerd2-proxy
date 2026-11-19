@@ -206,7 +206,7 @@ impl SyncSvc {
     /// Collects the given [`Body`], returning a [`Bytes`].
     ///
     /// NB: This blocks the current thread until the provided body has been collected. This is
-    /// an acceptable practice in test code for the sake of simplicitly, because we will always
+    /// an acceptable practice in test code for the sake of simplicity, because we will always
     /// provide [`SyncSvc`] with bodies that are complete.
     fn collect_body<B>(body: B) -> Bytes
     where

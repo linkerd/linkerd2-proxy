@@ -76,7 +76,7 @@ impl retry::Policy for RetryPolicy {
         let attempt = if let Some(extensions::Attempt(n)) = src.get::<extensions::Attempt>() {
             n.saturating_add(1)
         } else {
-            // There was an already a first attmept (the original extensions).
+            // There was an already a first attempt (the original extensions).
             2.try_into().unwrap()
         };
         dst.insert(extensions::Attempt(attempt));
