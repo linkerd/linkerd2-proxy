@@ -322,6 +322,34 @@ impl svc::Param<Remote<ServerAddr>> for Forward {
     }
 }
 
+impl svc::Param<Remote<ClientAddr>> for Forward {
+    fn param(&self) -> Remote<ClientAddr> {
+        self.client_addr
+    }
+}
+
+impl svc::Param<tls::ConditionalServerTls> for Forward {
+    fn param(&self) -> tls::ConditionalServerTls {
+        self.tls.clone()
+    }
+}
+
+impl svc::Param<crate::proxy_protocol::Peer> for Forward {
+    fn param(&self) -> crate::proxy_protocol::Peer {
+        use crate::proxy_protocol::{NotOpaque, Peer};
+        match self.permit.protocol {
+            // The server policy declares the port opaque (or app TLS, which
+            // the proxy also forwards untouched).
+            Protocol::Opaque(_) | Protocol::Tls(_) => Peer::Opaque {
+                client: self.client_addr,
+                tls: self.tls.clone(),
+            },
+            // Forwarded only because detection did not find HTTP.
+            _ => Peer::NotOpaque(NotOpaque::Detect),
+        }
+    }
+}
+
 impl svc::Param<transport::labels::Key> for Forward {
     fn param(&self) -> transport::labels::Key {
         transport::labels::Key::inbound_server(

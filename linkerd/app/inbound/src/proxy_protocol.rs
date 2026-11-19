@@ -1,0 +1,790 @@
+//! Encodes and writes a HAProxy PROXY protocol v2 header onto opaque TCP
+//! connections established to the local application.
+//!
+//! When a target port is included in the configured port set, the real
+//! client address (and, when the connection was mutually TLS-authenticated,
+//! the verified client identity) is encoded into a PROXY protocol v2 header
+//! and written to the application connection before any bytes are spliced.
+//!
+//! A configured port only accepts opaque TCP connections: ones whose server
+//! policy is `opaque` (or `tls`). Every other connection to it is refused,
+//! including HTTP, because one upstream HTTP connection can carry requests
+//! from many clients and a header can only describe one.
+//!
+//! The format is described in
+//! <https://www.haproxy.org/download/3.5/doc/proxy-protocol.txt>.
+//! The section numbers in the comments below are from that document.
+//!
+//! # Header layout
+//!
+//! ```text
+//!  0                   1                   2                   3
+//!  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+//! +---------------------------------------------------------------+
+//! |                        signature (12 bytes)                   |
+//! |                                                               |
+//! |                                                               |
+//! +-------------------------------+-------------------------------+
+//! | ver_cmd (1)  | fam (1)        | len (2)                       |
+//! +-------------------------------+-------------------------------+  16 bytes
+//! | src addr (4 or 16)                                            |
+//! | dst addr (4 or 16)                                            |
+//! | src port (2) | dst port (2)                                   |  addr block
+//! +---------------+-----------------------------------------------+
+//! | TLV type (1) | TLV length (2)         | subtype (1) | value... |  optional TLV
+//! +---------------+-----------------------------------------------+
+//! ```
+//!
+//! `len` is everything after the first 16 bytes (the addresses and any
+//! TLVs). The spec says, in section 2.2:
+//!
+//! > Thus the length of the protocol header in bytes is always exactly 16 +
+//! > this value.
+
+use bytes::BufMut;
+use futures::prelude::*;
+use linkerd_app_core::{
+    io::AsyncWriteExt,
+    svc, tls,
+    transport::{ClientAddr, Remote, ServerAddr},
+    Conditional, Error,
+};
+use rangemap::RangeInclusiveSet;
+use std::{
+    net::{SocketAddr, SocketAddrV4, SocketAddrV6},
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+};
+use tracing::{debug, warn};
+
+/// The 12-byte signature that must prefix every PROXY protocol v2 header.
+///
+/// From section 2.2: "The binary header format starts with a constant 12
+/// bytes block containing the protocol signature", which is
+/// `\x0D \x0A \x0D \x0A \x00 \x0D \x0A \x51 \x55 \x49 \x54 \x0A`.
+const SIGNATURE: [u8; 12] = [
+    0x0D, 0x0A, 0x0D, 0x0A, 0x00, 0x0D, 0x0A, 0x51, 0x55, 0x49, 0x54, 0x0A,
+];
+
+/// The length of the fixed-size prefix of every PROXY protocol v2 header: the
+/// signature, the version/command byte, the family byte and the 2-byte length.
+///
+/// From section 2.2: "So the 16-byte version 2 header can be described this
+/// way", followed by `struct proxy_hdr_v2` with those four fields.
+const PREFIX_LEN: usize = 16;
+
+/// Version 2, command PROXY (as opposed to LOCAL).
+///
+/// From section 2.2: the top 4 bits are the version, which "must always be
+/// sent as \x2". The bottom 4 bits are the command, and "\x1 : PROXY" means
+/// "the connection was established on behalf of another node". Put together,
+/// that is `0x21`.
+const VERSION_COMMAND: u8 = 0x21;
+
+/// Address family/protocol byte for "TCP over IPv4".
+///
+/// From section 2.2: the top 4 bits are the address family (`0x1` is
+/// AF_INET) and the bottom 4 bits are the protocol (`0x1` is STREAM). The
+/// spec calls this "\x11 : TCP over IPv4".
+const AF_INET_STREAM: u8 = 0x11;
+
+/// Address family/protocol byte for "TCP over IPv6".
+///
+/// From section 2.2: same idea, but the family is `0x2` (AF_INET6). The spec
+/// calls this "\x21 : TCP over IPv6".
+const AF_INET6_STREAM: u8 = 0x21;
+
+/// The length of the address block for TCP over IPv4: two 4-byte addresses
+/// and two 2-byte ports.
+///
+/// From section 2.2, for "\x11 : TCP over IPv4": "Address length is
+/// 2*4 + 2*2 = 12 bytes." The `proxy_addr` union in the same section agrees:
+/// "for TCP/UDP over IPv4, len = 12".
+const IPV4_ADDR_BLOCK_LEN: usize = 12;
+
+/// The length of the address block for TCP over IPv6: two 16-byte addresses
+/// and two 2-byte ports.
+///
+/// From section 2.2, for "\x21 : TCP over IPv6": "Address length is
+/// 2*16 + 2*2 = 36 bytes." The `proxy_addr` union in the same section agrees:
+/// "for TCP/UDP over IPv6, len = 36".
+const IPV6_ADDR_BLOCK_LEN: usize = 36;
+
+/// The length of a TLV's type and length fields, which come before its value.
+///
+/// From section 2.2: "The first byte is the Type of the vector. The second
+/// two bytes represent the length in bytes of the value (not included the
+/// Type and Length bytes)". That is 1 + 2 = 3 bytes.
+const TLV_HEADER_LEN: usize = 3;
+
+/// The TLV type under which Linkerd sends its own fields.
+///
+/// From section 2.2.8: "The following range of 16 type values is reserved
+/// for application-specific data and will be never used by the PROXY
+/// Protocol. If you need more values consider extending the range with a
+/// type field in your TLVs." That range is 0xE0 to 0xEF.
+///
+/// The spec keeps no registry of this range. These are the uses we know
+/// about, so we stay away from them:
+///
+/// - 0xE0: Google Cloud Private Service Connect (connection ID)
+/// - 0xE1: Alibaba Cloud PrivateLink (VPC, endpoint and endpoint service IDs)
+/// - 0xE4: Teleport (connection metadata)
+/// - 0xEA: AWS PrivateLink (VPC endpoint ID)
+/// - 0xEC: SAP Cloud Infrastructure's Archer endpoint service (endpoint ID)
+/// - 0xEE: Azure Private Link (private endpoint LinkID)
+///
+/// Some software also assigns its own meanings to 0xE0-0xE6 (ByteDance g3's
+/// proxies; MongoDB reads 0xE0 as the client certificate's DN and 0xE1 as the
+/// peer's roles).
+///
+/// As with the AWS, Azure and Alibaba types, the value starts with a 1-byte
+/// subtype naming the field that follows, so that further fields can be
+/// added without claiming more types.
+const TLV_TYPE_LINKERD: u8 = 0xED;
+
+/// The length of the subtype byte at the start of a [`TLV_TYPE_LINKERD`]
+/// value.
+///
+/// The spec does not define this byte. It is Linkerd's own layout, following
+/// the advice in section 2.2.8 to extend the custom range "with a type field
+/// in your TLVs".
+const TLV_SUBTYPE_LEN: usize = 1;
+
+/// The [`TLV_TYPE_LINKERD`] subtype carrying the verified mTLS client
+/// identity, i.e. the value `l5d-client-id` carries for HTTP.
+const TLV_SUBTYPE_CLIENT_ID: u8 = 0x01;
+
+/// The longest client identity we will send.
+///
+/// This is our own limit, not one from a spec. DNS-name identities are
+/// already capped at 253 bytes by `linkerd-dns-name`. URI identities have no
+/// limit in RFC 3986, and Linkerd accepts any URI, not only SPIFFE IDs. For
+/// SPIFFE IDs, the SPIFFE-ID spec (section 2.3) says implementations "MUST
+/// support SPIFFE URIs up to 2048 bytes in length and SHOULD NOT generate URIs
+/// of length greater than 2048 bytes", so we use the same number.
+///
+/// If an identity is longer than this, we leave it out instead of cutting it
+/// short, because a cut-down identity could match a different real one. The
+/// limit also keeps the `as u16` casts in [`Header::encode`] safe, which the
+/// assertion below checks at compile time.
+const MAX_CLIENT_ID_LEN: usize = 2048;
+
+// The largest `len` field we can write: an IPv6 address block plus a TLV
+// carrying the longest identity we send. It must fit in the 2-byte field.
+const _: () = assert!(
+    IPV6_ADDR_BLOCK_LEN + TLV_HEADER_LEN + TLV_SUBTYPE_LEN + MAX_CLIENT_ID_LEN <= u16::MAX as usize
+);
+
+/// Wraps a connector, writing a PROXY protocol v2 header to the connection
+/// once established, iff the connection's target port is in the configured
+/// port set.
+#[derive(Clone, Debug)]
+pub(crate) struct ProxyProtocol<S> {
+    inner: S,
+    ports: Arc<RangeInclusiveSet<u16>>,
+}
+
+/// Writing the PROXY protocol header to the application failed.
+///
+/// This is its own error so that it does not look the same as the
+/// application refusing the connection: the connection was made, and it was
+/// the header write that failed.
+#[derive(Debug, thiserror::Error)]
+#[error("failed to write PROXY protocol header: {source}")]
+struct WriteHeaderError {
+    #[source]
+    source: std::io::Error,
+}
+
+/// What the connect target knows about the connection, as far as PROXY
+/// protocol is concerned. Every inbound connect target provides this.
+#[derive(Clone, Debug)]
+pub(crate) enum Peer {
+    /// An opaque TCP stream from this client: a header may be written.
+    Opaque {
+        client: Remote<ClientAddr>,
+        tls: tls::ConditionalServerTls,
+    },
+    /// Not an opaque TCP stream. On a PROXY protocol port, the connection
+    /// is refused.
+    NotOpaque(NotOpaque),
+}
+
+/// Why a connection is not opaque.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum NotOpaque {
+    /// The proxy is speaking HTTP to the application. One upstream HTTP
+    /// connection can carry requests from many clients, so there is no single
+    /// client to describe.
+    Http,
+    /// The port's server policy is not `opaque` (or `tls`); the stream was
+    /// forwarded because detection did not find HTTP.
+    Detect,
+}
+
+impl std::fmt::Display for NotOpaque {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Http => "HTTP",
+            Self::Detect => "not declared opaque by its server policy",
+        })
+    }
+}
+
+/// A connection on a PROXY protocol port that is not an opaque TCP stream.
+#[derive(Debug, thiserror::Error)]
+#[error("PROXY protocol port {port} only accepts opaque TCP connections: {kind}")]
+pub(crate) struct NotOpaqueError {
+    port: u16,
+    kind: NotOpaque,
+}
+
+// === impl ProxyProtocol ===
+
+impl<S> ProxyProtocol<S> {
+    /// Builds a layer that wraps a connector with this service.
+    pub(crate) fn layer(
+        ports: Arc<RangeInclusiveSet<u16>>,
+    ) -> impl svc::layer::Layer<S, Service = Self> + Clone {
+        svc::layer::mk(move |inner| Self {
+            inner,
+            ports: ports.clone(),
+        })
+    }
+}
+
+impl<T, S> svc::Service<T> for ProxyProtocol<S>
+where
+    T: svc::Param<Remote<ServerAddr>> + svc::Param<Peer>,
+    S: svc::MakeConnection<T> + Send + 'static,
+    S::Connection: Send + Unpin,
+    S::Metadata: Send + Unpin,
+    S::Future: Send + 'static,
+{
+    type Response = (S::Connection, S::Metadata);
+    type Error = Error;
+    /// Connections to ports without PROXY protocol use the inner future as
+    /// is, so they don't pay for a heap allocation. Only connections that
+    /// write a header are boxed.
+    type Future = future::Either<
+        future::ErrInto<S::Future, Error>,
+        Pin<Box<dyn Future<Output = Result<(S::Connection, S::Metadata), Error>> + Send + 'static>>,
+    >;
+
+    #[inline]
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx).map_err(Into::into)
+    }
+
+    /// Connects to the application, and writes a PROXY protocol header first
+    /// if the target port is one of the configured ports.
+    ///
+    /// The header is written before we hand the connection back, so it is
+    /// always the first thing the application reads. On any other port this
+    /// just connects and adds nothing.
+    fn call(&mut self, target: T) -> Self::Future {
+        let Remote(ServerAddr(server_addr)) = target.param();
+
+        // Not a configured port: connect as normal, with no header.
+        if !self.ports.contains(&server_addr.port()) {
+            return future::Either::Left(self.inner.connect(target).err_into::<Error>());
+        }
+
+        // Read what goes in the header before `target` is moved into
+        // `connect`. The client identity is only there if the client used
+        // mTLS. Anything that is not an opaque TCP stream is refused.
+        let (client_addr, client_id) = match target.param() {
+            Peer::Opaque {
+                client: Remote(ClientAddr(client_addr)),
+                tls,
+            } => {
+                let client_id = match tls {
+                    Conditional::Some(tls::ServerTls::Established {
+                        client_id: Some(id),
+                        ..
+                    }) => Some(id.to_str().into_owned()),
+                    _ => None,
+                };
+                (client_addr, client_id)
+            }
+            Peer::NotOpaque(kind) => {
+                let error = NotOpaqueError {
+                    port: server_addr.port(),
+                    kind,
+                };
+                warn!(%error, "Refusing connection");
+                // An `io::Error`, like a refused connect, so that an HTTP
+                // client gets a 502 rather than a 500.
+                let error = std::io::Error::new(std::io::ErrorKind::ConnectionRefused, error);
+                return future::Either::Right(Box::pin(async move { Err(error.into()) }));
+            }
+        };
+
+        let connect = self.inner.connect(target);
+        future::Either::Right(Box::pin(async move {
+            let (mut io, meta) = connect.await.map_err(Into::into)?;
+
+            let header = Header::new(client_addr, server_addr, client_id.as_deref()).encode();
+            debug!("writing PROXY protocol v2 header");
+            io.write_all(&header)
+                .await
+                .map_err(|source| WriteHeaderError { source })?;
+
+            Ok((io, meta))
+        }))
+    }
+}
+
+/// A PROXY protocol v2 header describing a connection from a client to a
+/// server, optionally carrying the client's verified mTLS identity in a
+/// [`TLV_TYPE_LINKERD`] TLV.
+struct Header<'a> {
+    addrs: AddrBlock,
+    client_id: Option<&'a str>,
+}
+
+// === impl Header ===
+
+impl<'a> Header<'a> {
+    /// Builds a header for a connection from `client` to `server`.
+    ///
+    /// An identity longer than [`MAX_CLIENT_ID_LEN`] is left out. That is
+    /// what keeps the `as u16` casts in [`Header::encode`] safe.
+    fn new(client: SocketAddr, server: SocketAddr, client_id: Option<&'a str>) -> Self {
+        let client_id = match client_id {
+            Some(id) if id.len() > MAX_CLIENT_ID_LEN => {
+                warn!(
+                    len = id.len(),
+                    max = MAX_CLIENT_ID_LEN,
+                    "client identity too long; omitting it from the PROXY protocol header"
+                );
+                None
+            }
+            id => id,
+        };
+        Self {
+            addrs: AddrBlock::new(client, server),
+            client_id,
+        }
+    }
+
+    /// Writes the header out as bytes, ready to send on the connection.
+    fn encode(&self) -> Vec<u8> {
+        // A TLV is its type and length fields, then the value. Our value is a
+        // subtype byte followed by the identity.
+        let tlv_len = self
+            .client_id
+            .map_or(0, |id| TLV_HEADER_LEN + TLV_SUBTYPE_LEN + id.len());
+        // This is the `len` field of the header: everything that follows
+        // the fixed-size prefix.
+        let len = self.addrs.encoded_len() + tlv_len;
+
+        let mut buf = Vec::with_capacity(PREFIX_LEN + len);
+        buf.put_slice(&SIGNATURE);
+        buf.put_u8(VERSION_COMMAND);
+        buf.put_u8(self.addrs.family());
+        buf.put_u16(len as u16);
+        self.addrs.encode(&mut buf);
+        if let Some(id) = self.client_id {
+            buf.put_u8(TLV_TYPE_LINKERD);
+            // The spec says the TLV length does not include the type and
+            // length bytes. So it is just the subtype plus the identity.
+            buf.put_u16((TLV_SUBTYPE_LEN + id.len()) as u16);
+            buf.put_u8(TLV_SUBTYPE_CLIENT_ID);
+            buf.put_slice(id.as_bytes());
+        }
+        buf
+    }
+}
+
+/// The address block of a PROXY protocol v2 header: the source and
+/// destination addresses, followed by the source and destination ports.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum AddrBlock {
+    Inet {
+        src: SocketAddrV4,
+        dst: SocketAddrV4,
+    },
+    Inet6 {
+        src: SocketAddrV6,
+        dst: SocketAddrV6,
+    },
+}
+
+// === impl AddrBlock ===
+
+impl AddrBlock {
+    /// If `src` and `dst` are of different address families, the IPv4
+    /// address is converted to its IPv6-mapped equivalent so that both
+    /// addresses can be encoded using the same (larger) address block.
+    fn new(src: SocketAddr, dst: SocketAddr) -> Self {
+        match (src, dst) {
+            (SocketAddr::V4(src), SocketAddr::V4(dst)) => Self::Inet { src, dst },
+            (src, dst) => Self::Inet6 {
+                src: Self::to_ipv6(src),
+                dst: Self::to_ipv6(dst),
+            },
+        }
+    }
+
+    /// The family/protocol byte (the 14th byte of the header).
+    fn family(&self) -> u8 {
+        match self {
+            Self::Inet { .. } => AF_INET_STREAM,
+            Self::Inet6 { .. } => AF_INET6_STREAM,
+        }
+    }
+
+    /// How many bytes the address block takes up.
+    fn encoded_len(&self) -> usize {
+        match self {
+            Self::Inet { .. } => IPV4_ADDR_BLOCK_LEN,
+            Self::Inet6 { .. } => IPV6_ADDR_BLOCK_LEN,
+        }
+    }
+
+    /// Writes the addresses, then the ports, in network byte order.
+    fn encode(&self, buf: &mut impl BufMut) {
+        let (src_port, dst_port) = match self {
+            Self::Inet { src, dst } => {
+                buf.put_slice(&src.ip().octets());
+                buf.put_slice(&dst.ip().octets());
+                (src.port(), dst.port())
+            }
+            Self::Inet6 { src, dst } => {
+                buf.put_slice(&src.ip().octets());
+                buf.put_slice(&dst.ip().octets());
+                (src.port(), dst.port())
+            }
+        };
+        buf.put_u16(src_port);
+        buf.put_u16(dst_port);
+    }
+
+    /// Converts an IPv4 address to its IPv6-mapped form. IPv6 addresses are
+    /// returned as they are.
+    fn to_ipv6(addr: SocketAddr) -> SocketAddrV6 {
+        match addr {
+            SocketAddr::V4(addr) => {
+                SocketAddrV6::new(addr.ip().to_ipv6_mapped(), addr.port(), 0, 0)
+            }
+            SocketAddr::V6(addr) => addr,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use linkerd_app_core::io;
+    use std::net::{Ipv4Addr, Ipv6Addr};
+    use tower::util::{service_fn, ServiceExt};
+
+    // The golden tests below spell out the expected bytes, lengths and
+    // offsets as literals on purpose. They check the encoder's output against
+    // the spec without using the constants above, so a wrong address block
+    // or TLV length makes them fail instead of agreeing with itself.
+
+    // Identity string used in the golden encoder test below. Its length
+    // (59 bytes) is load-bearing for the expected TLV/header lengths.
+    const IDENTITY: &str = "web.emojivoto.serviceaccount.identity.linkerd.cluster.local";
+
+    #[test]
+    fn encode_ipv4_with_identity_golden() {
+        assert_eq!(IDENTITY.len(), 59);
+
+        let client: SocketAddr = "10.1.2.3:33000".parse().unwrap();
+        let server: SocketAddr = "10.9.8.7:5432".parse().unwrap();
+
+        let buf = Header::new(client, server, Some(IDENTITY)).encode();
+
+        // addr block = 4B src ip + 4B dst ip + 2B src port + 2B dst port = 12
+        // TLV        = 1B type + 2B len + 1B subtype + 59B identity     = 63
+        // length     = 12 + 63                                          = 75 (0x00_4B)
+        let mut expected = vec![
+            0x0D, 0x0A, 0x0D, 0x0A, 0x00, 0x0D, 0x0A, 0x51, 0x55, 0x49, 0x54,
+            0x0A, // signature
+            0x21, // version 2, command PROXY
+            0x11, // AF_INET, STREAM
+            0x00, 0x4B, // length = 75
+        ];
+        expected.extend_from_slice(&[10, 1, 2, 3]); // src (client) ip
+        expected.extend_from_slice(&[10, 9, 8, 7]); // dst (server) ip
+        expected.extend_from_slice(&33000u16.to_be_bytes()); // src port
+        expected.extend_from_slice(&5432u16.to_be_bytes()); // dst port
+        expected.push(0xED); // TLV type: Linkerd
+        expected.extend_from_slice(&60u16.to_be_bytes()); // TLV length: subtype + identity
+        expected.push(0x01); // TLV subtype: client identity
+        expected.extend_from_slice(IDENTITY.as_bytes());
+
+        assert_eq!(buf, expected);
+        assert_eq!(buf.len(), 16 + 75);
+    }
+
+    #[test]
+    fn encode_omits_overlong_identity() {
+        let client: SocketAddr = "10.1.2.3:33000".parse().unwrap();
+        let server: SocketAddr = "10.9.8.7:5432".parse().unwrap();
+
+        let max = "a".repeat(MAX_CLIENT_ID_LEN);
+        let buf = Header::new(client, server, Some(&max)).encode();
+        assert_eq!(
+            buf.len(),
+            PREFIX_LEN + IPV4_ADDR_BLOCK_LEN + TLV_HEADER_LEN + TLV_SUBTYPE_LEN + MAX_CLIENT_ID_LEN
+        );
+
+        let too_long = "a".repeat(MAX_CLIENT_ID_LEN + 1);
+        let buf = Header::new(client, server, Some(&too_long)).encode();
+        assert_eq!(buf, Header::new(client, server, None).encode());
+    }
+
+    #[test]
+    fn encode_ipv4_no_identity() {
+        let client: SocketAddr = "10.1.2.3:33000".parse().unwrap();
+        let server: SocketAddr = "10.9.8.7:5432".parse().unwrap();
+
+        let buf = Header::new(client, server, None).encode();
+
+        // addr block = 12B, no TLV, so length = 12 (0x00_0C).
+        let mut expected = vec![
+            0x0D, 0x0A, 0x0D, 0x0A, 0x00, 0x0D, 0x0A, 0x51, 0x55, 0x49, 0x54, 0x0A, 0x21, 0x11,
+            0x00, 0x0C,
+        ];
+        expected.extend_from_slice(&[10, 1, 2, 3]);
+        expected.extend_from_slice(&[10, 9, 8, 7]);
+        expected.extend_from_slice(&33000u16.to_be_bytes());
+        expected.extend_from_slice(&5432u16.to_be_bytes());
+
+        assert_eq!(buf, expected);
+        assert_eq!(buf.len(), 16 + 12);
+    }
+
+    #[test]
+    fn encode_ipv6_no_identity() {
+        let client: SocketAddr = "[fd00::1]:33000".parse().unwrap();
+        let server: SocketAddr = "[fd00::2]:5432".parse().unwrap();
+
+        let buf = Header::new(client, server, None).encode();
+
+        // addr block = 16B src ip + 16B dst ip + 2B src port + 2B dst port = 36 (0x00_24).
+        let mut expected = vec![
+            0x0D, 0x0A, 0x0D, 0x0A, 0x00, 0x0D, 0x0A, 0x51, 0x55, 0x49, 0x54, 0x0A, 0x21, 0x21,
+            0x00, 0x24,
+        ];
+        expected.extend_from_slice(&Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 1).octets());
+        expected.extend_from_slice(&Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 2).octets());
+        expected.extend_from_slice(&33000u16.to_be_bytes());
+        expected.extend_from_slice(&5432u16.to_be_bytes());
+
+        assert_eq!(buf, expected);
+        assert_eq!(buf.len(), 16 + 36);
+    }
+
+    #[test]
+    fn encode_mixed_family_v4_mapped() {
+        // The client connects over IPv4, but the server (original
+        // destination) address is IPv6: the client's address must be
+        // converted to its IPv6-mapped form and the family byte must
+        // indicate IPv6.
+        let client: SocketAddr = "10.1.2.3:33000".parse().unwrap();
+        let server: SocketAddr = "[fd00::2]:5432".parse().unwrap();
+
+        let buf = Header::new(client, server, None).encode();
+
+        assert_eq!(buf[12], 0x21); // version 2, command PROXY
+        assert_eq!(buf[13], 0x21); // AF_INET6, STREAM
+        assert_eq!(&buf[14..16], &36u16.to_be_bytes()); // length = 16+16+2+2
+
+        let mapped = Ipv4Addr::new(10, 1, 2, 3).to_ipv6_mapped();
+        assert_eq!(&buf[16..32], &mapped.octets());
+        assert_eq!(
+            &buf[32..48],
+            &Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 2).octets()
+        );
+        assert_eq!(&buf[48..50], &33000u16.to_be_bytes());
+        assert_eq!(&buf[50..52], &5432u16.to_be_bytes());
+    }
+
+    #[test]
+    fn encode_mixed_family_v6_client() {
+        // The reverse of the above: an IPv6 client and an IPv4 server
+        // address. The server's address must be IPv6-mapped.
+        let client: SocketAddr = "[fd00::1]:33000".parse().unwrap();
+        let server: SocketAddr = "10.9.8.7:5432".parse().unwrap();
+
+        let buf = Header::new(client, server, None).encode();
+
+        assert_eq!(buf[13], 0x21); // AF_INET6, STREAM
+        assert_eq!(&buf[14..16], &36u16.to_be_bytes()); // length = 16+16+2+2
+        assert_eq!(
+            &buf[16..32],
+            &Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 1).octets()
+        );
+        let mapped = Ipv4Addr::new(10, 9, 8, 7).to_ipv6_mapped();
+        assert_eq!(&buf[32..48], &mapped.octets());
+        assert_eq!(&buf[48..50], &33000u16.to_be_bytes());
+        assert_eq!(&buf[50..52], &5432u16.to_be_bytes());
+    }
+
+    #[derive(Clone, Debug)]
+    struct Target {
+        server_port: u16,
+        client_id: Option<tls::ClientId>,
+        opaque: bool,
+    }
+
+    impl svc::Param<Remote<ServerAddr>> for Target {
+        fn param(&self) -> Remote<ServerAddr> {
+            Remote(ServerAddr(
+                (Ipv4Addr::new(10, 9, 8, 7), self.server_port).into(),
+            ))
+        }
+    }
+
+    impl svc::Param<Peer> for Target {
+        fn param(&self) -> Peer {
+            if !self.opaque {
+                return Peer::NotOpaque(NotOpaque::Detect);
+            }
+            Peer::Opaque {
+                client: Remote(ClientAddr((Ipv4Addr::new(10, 1, 2, 3), 33000).into())),
+                tls: match &self.client_id {
+                    Some(client_id) => Conditional::Some(tls::ServerTls::Established {
+                        client_id: Some(client_id.clone()),
+                        negotiated_protocol: None,
+                    }),
+                    None => Conditional::None(tls::NoServerTls::Disabled),
+                },
+            }
+        }
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn refuses_non_opaque_on_configured_port() {
+        let _trace = linkerd_tracing::test::trace_init();
+
+        let mut ports = RangeInclusiveSet::new();
+        ports.insert(5432..=5432);
+
+        let svc = ProxyProtocol {
+            inner: service_fn(
+                |_: Target| -> future::Ready<Result<(tokio_test::io::Mock, ()), io::Error>> {
+                    panic!("must not connect")
+                },
+            ),
+            ports: Arc::new(ports),
+        };
+
+        let target = Target {
+            server_port: 5432,
+            client_id: None,
+            opaque: false,
+        };
+
+        let Err(error) = svc.oneshot(target).await else {
+            panic!("connect must be refused");
+        };
+        let error = error
+            .downcast_ref::<io::Error>()
+            .expect("error must be an io::Error");
+        assert_eq!(error.kind(), io::ErrorKind::ConnectionRefused);
+        let error = error
+            .get_ref()
+            .and_then(|e| e.downcast_ref::<NotOpaqueError>())
+            .expect("error must wrap a NotOpaqueError");
+        assert_eq!(error.port, 5432);
+        assert_eq!(error.kind, NotOpaque::Detect);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn writes_header_when_port_configured() {
+        let _trace = linkerd_tracing::test::trace_init();
+
+        let client_id = tls::ClientId(IDENTITY.parse().unwrap());
+        let header = Header::new(
+            "10.1.2.3:33000".parse().unwrap(),
+            "10.9.8.7:5432".parse().unwrap(),
+            Some(IDENTITY),
+        )
+        .encode();
+
+        let mut ports = RangeInclusiveSet::new();
+        ports.insert(5432..=5432);
+
+        let svc = ProxyProtocol {
+            inner: service_fn(move |_: Target| {
+                let io = tokio_test::io::Builder::new()
+                    .write(&header[..])
+                    .write(b"hello")
+                    .build();
+                future::ready(Ok::<_, io::Error>((io, ())))
+            }),
+            ports: Arc::new(ports),
+        };
+
+        let target = Target {
+            server_port: 5432,
+            client_id: Some(client_id),
+            opaque: true,
+        };
+
+        let (mut io, _meta) = svc.oneshot(target).await.expect("connect must not fail");
+        io.write_all(b"hello").await.expect("write must succeed");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn header_write_failure_is_a_typed_error() {
+        let _trace = linkerd_tracing::test::trace_init();
+
+        let mut ports = RangeInclusiveSet::new();
+        ports.insert(5432..=5432);
+
+        let svc = ProxyProtocol {
+            inner: service_fn(|_: Target| {
+                let io = tokio_test::io::Builder::new()
+                    .write_error(io::Error::from(io::ErrorKind::BrokenPipe))
+                    .build();
+                future::ready(Ok::<_, io::Error>((io, ())))
+            }),
+            ports: Arc::new(ports),
+        };
+
+        let target = Target {
+            server_port: 5432,
+            client_id: None,
+            opaque: true,
+        };
+
+        let Err(error) = svc.oneshot(target).await else {
+            panic!("connect must fail when the header write fails");
+        };
+        let error = error
+            .downcast_ref::<WriteHeaderError>()
+            .expect("error must be a WriteHeaderError");
+        assert_eq!(error.source.kind(), io::ErrorKind::BrokenPipe);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn passthrough_when_port_not_configured() {
+        let _trace = linkerd_tracing::test::trace_init();
+
+        let svc = ProxyProtocol {
+            inner: service_fn(|_: Target| {
+                let io = tokio_test::io::Builder::new().write(b"hello").build();
+                future::ready(Ok::<_, io::Error>((io, ())))
+            }),
+            ports: Arc::new(RangeInclusiveSet::new()),
+        };
+
+        let target = Target {
+            server_port: 5432,
+            client_id: None,
+            opaque: true,
+        };
+
+        let (mut io, _meta) = svc.oneshot(target).await.expect("connect must not fail");
+        io.write_all(b"hello").await.expect("write must succeed");
+    }
+}

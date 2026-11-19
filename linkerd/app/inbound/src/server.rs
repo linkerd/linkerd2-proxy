@@ -1,4 +1,4 @@
-use crate::{direct, policy, ForwardError, Inbound};
+use crate::{direct, policy, proxy_protocol, ForwardError, Inbound};
 use linkerd_app_core::{
     config::ConnectConfig,
     drain,
@@ -13,9 +13,10 @@ use linkerd_tonic_stream::ReceiveLimits;
 use std::{fmt::Debug, sync::Arc};
 use tracing::debug_span;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 struct TcpEndpoint {
     addr: Remote<ServerAddr>,
+    peer: proxy_protocol::Peer,
 }
 
 // === impl Inbound ===
@@ -121,7 +122,7 @@ impl Inbound<()> {
             > + Clone,
     >
     where
-        T: svc::Param<Remote<ServerAddr>> + 'static,
+        T: svc::Param<Remote<ServerAddr>> + svc::Param<proxy_protocol::Peer> + 'static,
     {
         self.map_stack(|config, _, _| {
             // Establishes connections to remote peers (for both TCP
@@ -132,22 +133,29 @@ impl Inbound<()> {
                 ref timeout,
                 ..
             } = config.proxy.connect;
+            let proxy_protocol_v2_ports = Arc::new(config.proxy_protocol_v2_ports.clone());
 
             #[derive(Debug, thiserror::Error)]
             #[error("inbound connection must not target port {0}")]
             struct Loop(u16);
 
             svc::stack(transport::ConnectTcp::new(*keepalive, *user_timeout))
-                // Limits the time we wait for a connection to be established.
+                // On PROXY protocol ports, writes the header to opaque TCP
+                // connections and refuses everything else.
+                .push(proxy_protocol::ProxyProtocol::layer(
+                    proxy_protocol_v2_ports,
+                ))
+                // Limits the time we wait for a connection to be established
+                // (including the PROXY protocol header write).
                 .push_connect_timeout(*timeout)
                 // Prevent connections that would target the inbound proxy port from looping.
                 .push_filter(move |t: T| {
-                    let addr = t.param();
+                    let addr: Remote<ServerAddr> = t.param();
                     let port = addr.port();
                     if port == proxy_port {
                         return Err(Loop(port));
                     }
-                    Ok(addr)
+                    Ok(t)
                 })
         })
     }
@@ -199,14 +207,26 @@ impl<S> Inbound<S> {
 // === impl TcpEndpoint ===
 
 impl TcpEndpoint {
-    pub fn from_param<T: svc::Param<Remote<ServerAddr>>>(t: T) -> Self {
-        Self { addr: t.param() }
+    pub fn from_param<T>(t: T) -> Self
+    where
+        T: svc::Param<Remote<ServerAddr>> + svc::Param<proxy_protocol::Peer>,
+    {
+        Self {
+            addr: t.param(),
+            peer: t.param(),
+        }
     }
 }
 
 impl svc::Param<Remote<ServerAddr>> for TcpEndpoint {
     fn param(&self) -> Remote<ServerAddr> {
         self.addr
+    }
+}
+
+impl svc::Param<proxy_protocol::Peer> for TcpEndpoint {
+    fn param(&self) -> proxy_protocol::Peer {
+        self.peer.clone()
     }
 }
 
