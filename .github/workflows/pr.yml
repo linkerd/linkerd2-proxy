@@ -152,8 +152,7 @@ jobs:
     runs-on: ${{ vars.LINKERD2_PROXY_RUNNER || 'ubuntu-24.04' }}
 
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read
 
     steps:
       - name: Results
@@ -167,11 +166,3 @@ jobs:
         # All jobs must succeed or be skipped.
         if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
         run: exit 1
-
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        if: needs.meta.outputs.is_dependabot == 'true' && needs.meta.outputs.any_changed == 'true'
-      - name: "Merge dependabot changes"
-        if: needs.meta.outputs.is_dependabot == 'true' && needs.meta.outputs.any_changed == 'true'
-        run: gh pr merge '${{ github.event.pull_request.number }}' --auto --squash
-        env:
-          GH_TOKEN: ${{ github.token }}
