@@ -68,7 +68,7 @@ impl<H> Inbound<H> {
                 // TODO(ver) This concurrency limit applies only to
                 // requests that do not yet have responses, but ignores
                 // streaming bodies. We should change this to an
-                // HTTP-specific imlementation that tracks request and
+                // HTTP-specific implementation that tracks request and
                 // response bodies.
                 .push_on_service(svc::ConcurrencyLimitLayer::new(max_in_flight_requests))
                 // Shed load by failing requests when the concurrency

@@ -184,7 +184,7 @@ impl From<&linkerd_app_core::Error> for HttpRsp {
             Ok(error) => Self::error(error),
             Err(code) => http::StatusCode::from_u16(code)
                 .map(Self::status)
-                // This is kind of pathological, so mark it as an unkown error.
+                // This is kind of pathological, so mark it as an unknown error.
                 .unwrap_or_else(|_| Self::unknown()),
         }
     }

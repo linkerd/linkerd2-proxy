@@ -138,7 +138,7 @@ impl TestBuilder {
                     .await
                     .map(http_body_util::Collected::to_bytes);
                 let bytes = body.as_ref().map(Bytes::len);
-                tracing::debug!(?bytes, "recieved body");
+                tracing::debug!(?bytes, "received body");
                 Ok::<_, Error>(if fail {
                     Response::builder()
                         .status(533)

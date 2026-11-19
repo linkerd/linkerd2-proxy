@@ -1,4 +1,4 @@
-//! A specialized `NewIdleCache` to manage discovery stae, usually from a
+//! A specialized `NewIdleCache` to manage discovery state, usually from a
 //! control plane client.
 
 use futures::TryFutureExt;

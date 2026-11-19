@@ -256,7 +256,7 @@ async fn response_timeout_ignores_request_body() {
     time::timeout(TIMEOUT * 4, call)
         .await
         .expect("should succeed")
-        .expect("should succed");
+        .expect("should succeed");
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
