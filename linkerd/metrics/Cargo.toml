@@ -14,6 +14,7 @@ test_util = []
 
 [dependencies]
 bytes = { workspace = true }
+dashmap = "6"
 deflate = { version = "1", features = ["gzip"] }
 http = { workspace = true }
 http-body-util = { workspace = true }

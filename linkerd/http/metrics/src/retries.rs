@@ -36,8 +36,7 @@ impl<T: Hash + Eq> Retries<T> {
     }
 
     pub fn get_handle(&self, target: T) -> Handle {
-        let mut reg = self.0.lock();
-        Handle(reg.entry(target).or_default().clone())
+        Handle(self.0.get_or_default(target))
     }
 }
 
@@ -97,27 +96,31 @@ where
     T: FmtLabels + Hash + Eq,
 {
     fn fmt_metrics(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut registry = self.registry.lock();
         trace!(
             prfefix = %self.prefix,
-            targets = %registry.len(),
+            targets = %self.registry.len(),
             "Formatting HTTP retry metrics",
         );
 
-        if registry.is_empty() {
+        if self.registry.is_empty() {
             return Ok(());
         }
 
-        let metric = self.retryable_total();
-        metric.fmt_help(f)?;
-        for (tgt, tm) in registry.iter() {
-            let m = tm.lock();
-            m.retryable.fmt_metric_labeled(f, &metric.name, tgt)?;
-            m.no_budget
-                .fmt_metric_labeled(f, &metric.name, (tgt, NoBudgetLabel))?;
+        {
+            let snapshot = self.registry.snapshot();
+            let metric = self.retryable_total();
+            metric.fmt_help(f)?;
+            for (tgt, tm) in &snapshot {
+                let tgt = tgt.as_ref();
+                let m = tm.lock();
+                m.retryable.fmt_metric_labeled(f, &metric.name, tgt)?;
+                m.no_budget
+                    .fmt_metric_labeled(f, &metric.name, (tgt, NoBudgetLabel))?;
+            }
         }
 
-        registry.retain_since(Instant::now() - self.retain_idle);
+        self.registry
+            .retain_since(Instant::now() - self.retain_idle);
 
         Ok(())
     }
