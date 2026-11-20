@@ -157,6 +157,11 @@ checksec:
 
 _objcopy := 'llvm-objcopy-' + `just-cargo --evaluate _llvm-version`
 
+# Writes CycloneDX and SPDX SBOMs for the packaged binary from its embedded
+# cargo-auditable data and `cargo tree`. It runs cargo itself, so it gets plain
+# cargo rather than CI's CARGO='cargo auditable'.
+_sbom_attest := 'CARGO=cargo sbom-attest'
+
 # Build a package (i.e. for a release)
 package: build
     @mkdir -p {{ _package_dir }}/bin
@@ -164,6 +169,9 @@ package: build
     cp {{ _target_bin }} {{ _target_bin }}.dbg {{ _package_dir }}/
     tar -czvf target/package/{{ _package_name }}.tar.gz  -C target/package {{ _package_name }} >/dev/null
     cd target/package && ({{ shasum }} {{ _package_name }}.tar.gz | tee {{ _package_name }}.txt)
+    {{ _sbom_attest }} generate --package=linkerd2-proxy --target={{ _target }} {{ _features }} --offline --locked \
+        --binary={{ _target_bin }} --product-version={{ LINKERD2_PROXY_VERSION }} --author='Linkerd Developers' \
+        --cdx=target/package/{{ _package_name }}.cdx.json --spdx=target/package/{{ _package_name }}.spdx.json
     @rm -rf {{ _package_dir }}
     @du -h target/package/{{ _package_name }}.tar.gz
     @tar tzvf target/package/{{ _package_name }}.tar.gz
