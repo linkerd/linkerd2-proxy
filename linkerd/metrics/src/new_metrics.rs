@@ -54,7 +54,7 @@ where
     fn new_service(&self, target: T) -> Self::Service {
         let key = self.params.extract_param(&target);
         let inner = self.inner.new_service(target);
-        let metric = self.store.lock().get_or_default(key).clone();
+        let metric = self.store.get_or_default(key);
         S::from((inner, metric))
     }
 }

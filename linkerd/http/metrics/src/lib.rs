@@ -33,8 +33,8 @@ impl<T: Hash + Eq, C: Hash + Eq> Report<T, requests::Metrics<C>> {
         status: Option<http::StatusCode>,
         class: &C,
     ) -> Option<f64> {
-        let registry = self.registry.lock();
-        let requests = registry.get(labels)?.lock();
+        let requests = self.registry.get(labels)?;
+        let requests = requests.lock();
         let status = requests.by_status().get(&status)?;
         let class = status.by_class().get(class)?;
         Some(class.total())
