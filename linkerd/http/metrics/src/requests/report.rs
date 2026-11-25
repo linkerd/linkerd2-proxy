@@ -2,7 +2,7 @@ use super::{ClassMetrics, Metrics, StatusMetrics};
 use crate::{Prefixed, Report};
 use linkerd_metrics::{
     latency,
-    legacy::{Counter, FmtLabels, FmtMetric, FmtMetrics, Histogram, Metric, Store},
+    legacy::{Counter, FmtLabels, FmtMetric, FmtMetrics, Histogram, Metric, Snapshot},
 };
 use parking_lot::Mutex;
 use std::{fmt, hash::Hash};
@@ -48,7 +48,7 @@ where
     C: FmtLabels + Hash + Eq,
 {
     fn fmt_by_target<N, M>(
-        registry: &Store<T, Mutex<Metrics<C>>>,
+        snapshot: &Snapshot<T, Mutex<Metrics<C>>>,
         f: &mut fmt::Formatter<'_>,
         metric: Metric<'_, N, M>,
         get_metric: impl Fn(&Metrics<C>) -> &M,
@@ -57,11 +57,16 @@ where
         N: fmt::Display,
         M: FmtMetric,
     {
-        registry.fmt_by_locked(f, metric, get_metric)
+        for (tgt, tm) in snapshot {
+            let tm = tm.lock();
+            get_metric(&tm).fmt_metric_labeled(f, &metric.name, tgt.as_ref())?;
+        }
+
+        Ok(())
     }
 
     fn fmt_by_status<N, M>(
-        registry: &Store<T, Mutex<Metrics<C>>>,
+        snapshot: &Snapshot<T, Mutex<Metrics<C>>>,
         f: &mut fmt::Formatter<'_>,
         metric: Metric<'_, N, M>,
         get_metric: impl Fn(&StatusMetrics<C>) -> &M,
@@ -70,7 +75,8 @@ where
         N: fmt::Display,
         M: FmtMetric,
     {
-        for (tgt, tm) in registry.iter() {
+        for (tgt, tm) in snapshot {
+            let tgt = tgt.as_ref();
             let tm = tm.lock();
             for (status, m) in &tm.by_status {
                 let status = status.as_ref().map(|s| Status(*s));
@@ -83,7 +89,7 @@ where
     }
 
     fn fmt_by_class<N, M>(
-        registry: &Store<T, Mutex<Metrics<C>>>,
+        snapshot: &Snapshot<T, Mutex<Metrics<C>>>,
         f: &mut fmt::Formatter<'_>,
         metric: Metric<'_, N, M>,
         get_metric: impl Fn(&ClassMetrics) -> &M,
@@ -92,7 +98,8 @@ where
         N: fmt::Display,
         M: FmtMetric,
     {
-        for (tgt, tm) in registry.iter() {
+        for (tgt, tm) in snapshot {
+            let tgt = tgt.as_ref();
             let tm = tm.lock();
             for (status, sm) in &tm.by_status {
                 for (cls, m) in &sm.by_class {
@@ -113,33 +120,39 @@ where
     C: FmtLabels + Hash + Eq,
 {
     fn fmt_metrics(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut registry = self.registry.lock();
         trace!(
             prefix = self.prefix,
-            targets = registry.len(),
+            targets = self.registry.len(),
             include_latencies = self.include_latencies,
             "Formatting HTTP request metrics",
         );
 
-        if registry.is_empty() {
+        if self.registry.is_empty() {
             return Ok(());
         }
 
-        let metric = self.request_total();
-        metric.fmt_help(f)?;
-        Self::fmt_by_target(&registry, f, metric, |s| &s.total)?;
+        {
+            // Copy the entries out, then format without holding any store lock. The snapshot is
+            // dropped at the end of this block so that eviction sees the real reference counts.
+            let snapshot = self.registry.snapshot();
 
-        if self.include_latencies {
-            let metric = self.response_latency_ms();
+            let metric = self.request_total();
             metric.fmt_help(f)?;
-            Self::fmt_by_status(&registry, f, metric, |s| &s.latency)?;
+            Self::fmt_by_target(&snapshot, f, metric, |s| &s.total)?;
+
+            if self.include_latencies {
+                let metric = self.response_latency_ms();
+                metric.fmt_help(f)?;
+                Self::fmt_by_status(&snapshot, f, metric, |s| &s.latency)?;
+            }
+
+            let metric = self.response_total();
+            metric.fmt_help(f)?;
+            Self::fmt_by_class(&snapshot, f, metric, |s| &s.total)?;
         }
 
-        let metric = self.response_total();
-        metric.fmt_help(f)?;
-        Self::fmt_by_class(&registry, f, metric, |s| &s.total)?;
-
-        registry.retain_since(Instant::now() - self.retain_idle);
+        self.registry
+            .retain_since(Instant::now() - self.retain_idle);
 
         Ok(())
     }

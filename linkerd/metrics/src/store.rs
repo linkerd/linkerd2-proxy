@@ -1,26 +1,26 @@
-use crate::legacy::{FmtLabels, FmtMetric, Metric};
+use dashmap::DashMap;
 use parking_lot::Mutex;
-use std::{
-    borrow::Borrow,
-    collections::hash_map::{self, HashMap},
-    fmt,
-    hash::Hash,
-    sync::Arc,
-};
+use std::{hash::Hash, sync::Arc};
 use tokio::time::Instant;
 
 pub trait LastUpdate {
     fn last_update(&self) -> Instant;
 }
 
-pub type SharedStore<K, V> = Arc<Mutex<Store<K, V>>>;
+pub type SharedStore<K, V> = Arc<Store<K, V>>;
+
+/// A point-in-time copy of the store's contents.
+pub type Snapshot<K, V> = Vec<(Arc<K>, Arc<V>)>;
 
 #[derive(Debug)]
 pub struct Store<K, V>
 where
     K: Hash + Eq,
 {
-    inner: HashMap<K, Arc<V>>,
+    // A concurrent hashmap of metric labels and values.
+    // Each key is wrapped in an Arc to avoid expensive clones
+    // during snapshots.
+    inner: DashMap<Arc<K>, Arc<V>>,
 }
 
 impl<K, V> Store<K, V>
@@ -39,79 +39,34 @@ where
         self.inner.len()
     }
 
-    pub fn get<Q>(&self, q: &Q) -> Option<&Arc<V>>
-    where
-        K: Borrow<Q>,
-        Q: Hash + Eq,
-    {
-        self.inner.get(q)
+    pub fn get(&self, key: &K) -> Option<Arc<V>> {
+        self.inner.get(key).map(|r| r.value().clone())
     }
 
-    pub fn entry(&mut self, key: K) -> hash_map::Entry<'_, K, Arc<V>> {
-        self.inner.entry(key)
-    }
-
-    pub fn get_or_default(&mut self, k: K) -> &Arc<V>
+    pub fn get_or_default(&self, key: K) -> Arc<V>
     where
         V: Default,
     {
-        self.inner.entry(k).or_default()
+        if let Some(metric) = self.inner.get(&key).map(|r| r.value().clone()) {
+            return metric;
+        }
+        // Note that the guard from the get() call is dropped to avoid a deadlock.
+        self.inner.entry(Arc::new(key)).or_default().value().clone()
     }
 
-    pub fn iter(&self) -> hash_map::Iter<'_, K, Arc<V>> {
-        self.inner.iter()
+    pub fn snapshot(&self) -> Snapshot<K, V> {
+        self.inner
+            .iter()
+            .map(|e| (e.key().clone(), e.value().clone()))
+            .collect()
     }
 
-    pub fn retain_since(&mut self, epoch: Instant)
+    pub fn retain_since(&self, epoch: Instant)
     where
         V: LastUpdate,
     {
         self.inner
             .retain(|_, metric| Arc::strong_count(metric) > 1 || metric.last_update() >= epoch)
-    }
-
-    /// Formats a metric across all instances of `Metrics` in the registry.
-    pub fn fmt_by<N, M>(
-        &self,
-        f: &mut fmt::Formatter<'_>,
-        metric: Metric<'_, N, M>,
-        get_metric: impl Fn(&V) -> &M,
-    ) -> fmt::Result
-    where
-        K: FmtLabels,
-        N: fmt::Display,
-        M: FmtMetric,
-    {
-        for (key, m) in self.iter() {
-            get_metric(m).fmt_metric_labeled(f, &metric.name, key)?;
-        }
-
-        Ok(())
-    }
-}
-
-impl<K, V> Store<K, Mutex<V>>
-where
-    K: Hash + Eq,
-{
-    /// Formats a metric across all instances of `Metrics` in the registry.
-    pub fn fmt_by_locked<N, M>(
-        &self,
-        f: &mut fmt::Formatter<'_>,
-        metric: Metric<'_, N, M>,
-        get_metric: impl Fn(&V) -> &M,
-    ) -> fmt::Result
-    where
-        K: FmtLabels,
-        N: fmt::Display,
-        M: FmtMetric,
-    {
-        for (key, m) in self.iter() {
-            let m = m.lock();
-            get_metric(&*m).fmt_metric_labeled(f, &metric.name, key)?;
-        }
-
-        Ok(())
     }
 }
 
@@ -121,7 +76,7 @@ where
 {
     fn default() -> Self {
         Self {
-            inner: HashMap::new(),
+            inner: DashMap::new(),
         }
     }
 }

@@ -181,13 +181,10 @@ mod tests {
         let retain_idle_for = Duration::from_secs(1);
         let r = super::Requests::<Target, Class>::default();
         let report = r.clone().into_report(retain_idle_for);
-        let mut registry = r.0.lock();
+        let registry = &r.0;
 
         let before_update = Instant::now();
-        let metrics = registry
-            .entry(Target(123))
-            .or_insert_with(Default::default)
-            .clone();
+        let metrics = registry.get_or_default(Target(123));
         assert_eq!(registry.len(), 1, "target should be registered");
         let after_update = Instant::now();
 

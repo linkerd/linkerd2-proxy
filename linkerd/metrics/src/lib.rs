@@ -30,7 +30,7 @@ pub mod legacy {
         gauge::Gauge,
         histogram::Histogram,
         serve::Serve,
-        store::{LastUpdate, SharedStore, Store},
+        store::{LastUpdate, SharedStore, Snapshot, Store},
     };
 
     #[cfg(feature = "stack")]

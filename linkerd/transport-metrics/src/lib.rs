@@ -32,13 +32,13 @@ metrics! {
 }
 
 pub fn new<K: Eq + Hash + FmtLabels>(retain_idle: Duration) -> (Registry<K>, Report<K>) {
-    let inner = Arc::new(Mutex::new(Inner::new()));
+    let inner = Arc::new(Inner::new());
     let report = Report::new(inner.clone(), retain_idle);
     (Registry(inner), report)
 }
 
 #[derive(Clone, Debug)]
-pub struct Registry<K: Eq + Hash + FmtLabels>(Arc<Mutex<Inner<K>>>);
+pub struct Registry<K: Eq + Hash + FmtLabels>(Arc<Inner<K>>);
 
 type Inner<K> = Store<K, Metrics>;
 
@@ -77,7 +77,7 @@ struct EosMetrics {
 
 impl<K: Eq + Hash + FmtLabels> Registry<K> {
     pub fn metrics(&self, labels: K) -> Arc<Metrics> {
-        self.0.lock().get_or_default(labels).clone()
+        self.0.get_or_default(labels)
     }
 }
 
@@ -130,10 +130,10 @@ mod tests {
 
         let retain_idle_for = Duration::from_secs(1);
         let (r, report) = super::new(retain_idle_for);
-        let mut registry = r.0.lock();
+        let registry = &r.0;
 
         let before_update = Instant::now();
-        let metrics = registry.entry(Target(123)).or_default().clone();
+        let metrics = registry.get_or_default(Target(123));
         assert_eq!(registry.len(), 1, "target should be registered");
         let after_update = Instant::now();
 
