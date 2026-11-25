@@ -177,6 +177,7 @@ jobs:
         with:
           key: ${{ matrix.os }}-${{ matrix.arch }}
       - run: just fetch
+      - run: cargo install sbom-attest --version 0.2.1 --locked
       - run: just arch=${{ matrix.arch }} libc=${{ matrix.libc }} os=${{ matrix.os }} rustup
       - run: just arch=${{ matrix.arch }} libc=${{ matrix.libc }} os=${{ matrix.os }} profile=${{ needs.meta.outputs.profile }} build
       - run: just arch=${{ matrix.arch }} libc=${{ matrix.libc }} os=${{ matrix.os }} profile=${{ needs.meta.outputs.profile }} package
