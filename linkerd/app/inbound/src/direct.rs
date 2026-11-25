@@ -305,21 +305,6 @@ impl Param<Remote<ServerAddr>> for AuthorizedLocalTcp {
     }
 }
 
-impl Param<Remote<ClientAddr>> for AuthorizedLocalTcp {
-    fn param(&self) -> Remote<ClientAddr> {
-        self.client_addr
-    }
-}
-
-impl Param<tls::ConditionalServerTls> for AuthorizedLocalTcp {
-    fn param(&self) -> tls::ConditionalServerTls {
-        tls::ConditionalServerTls::Some(tls::ServerTls::Established {
-            client_id: Some(self.client_id.clone()),
-            negotiated_protocol: None,
-        })
-    }
-}
-
 impl Param<proxy_protocol::Peer> for AuthorizedLocalTcp {
     fn param(&self) -> proxy_protocol::Peer {
         // The client hinted opaque via the transport header, but the server
