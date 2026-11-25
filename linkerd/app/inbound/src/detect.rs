@@ -1,6 +1,6 @@
 use crate::{
     policy::{self, AllowPolicy, Protocol, ServerPermit},
-    Inbound,
+    proxy_protocol, Inbound,
 };
 use linkerd_app_core::{
     identity, io,
@@ -334,18 +334,17 @@ impl svc::Param<tls::ConditionalServerTls> for Forward {
     }
 }
 
-impl svc::Param<crate::proxy_protocol::Peer> for Forward {
-    fn param(&self) -> crate::proxy_protocol::Peer {
-        use crate::proxy_protocol::{NotOpaque, Peer};
+impl svc::Param<proxy_protocol::Peer> for Forward {
+    fn param(&self) -> proxy_protocol::Peer {
         match self.permit.protocol {
             // The server policy declares the port opaque (or app TLS, which
             // the proxy also forwards untouched).
-            Protocol::Opaque(_) | Protocol::Tls(_) => Peer::Opaque {
+            Protocol::Opaque(_) | Protocol::Tls(_) => proxy_protocol::Peer::Opaque {
                 client: self.client_addr,
                 client_id: self.tls.value().and_then(|tls| tls.client_id()).cloned(),
             },
             // Forwarded only because detection did not find HTTP.
-            _ => Peer::NotOpaque(NotOpaque::Detect),
+            _ => proxy_protocol::Peer::NotOpaque(proxy_protocol::NotOpaque::Detect),
         }
     }
 }

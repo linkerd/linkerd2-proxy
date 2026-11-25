@@ -1,6 +1,6 @@
 use crate::{
     policy::{self, HttpRoutePermit},
-    stack_labels, Inbound,
+    proxy_protocol, stack_labels, Inbound,
 };
 use linkerd_app_core::{
     classify, errors, http_tracing, profiles,
@@ -473,10 +473,10 @@ impl Param<transport::labels::Key> for Http {
     }
 }
 
-impl Param<crate::proxy_protocol::Peer> for Http {
-    fn param(&self) -> crate::proxy_protocol::Peer {
+impl Param<proxy_protocol::Peer> for Http {
+    fn param(&self) -> proxy_protocol::Peer {
         // PROXY protocol is not supported for HTTP.
-        crate::proxy_protocol::Peer::NotOpaque(crate::proxy_protocol::NotOpaque::Http)
+        proxy_protocol::Peer::NotOpaque(proxy_protocol::NotOpaque::Http)
     }
 }
 
