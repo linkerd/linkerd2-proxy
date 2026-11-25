@@ -475,9 +475,7 @@ impl Param<transport::labels::Key> for Http {
 
 impl Param<crate::proxy_protocol::Peer> for Http {
     fn param(&self) -> crate::proxy_protocol::Peer {
-        // HTTP connections to the application are shared across clients, so
-        // there is no PROXY protocol header to write; on a PROXY protocol
-        // port the connection is refused.
+        // PROXY protocol is not supported for HTTP.
         crate::proxy_protocol::Peer::NotOpaque(crate::proxy_protocol::NotOpaque::Http)
     }
 }
