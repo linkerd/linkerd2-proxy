@@ -322,18 +322,6 @@ impl svc::Param<Remote<ServerAddr>> for Forward {
     }
 }
 
-impl svc::Param<Remote<ClientAddr>> for Forward {
-    fn param(&self) -> Remote<ClientAddr> {
-        self.client_addr
-    }
-}
-
-impl svc::Param<tls::ConditionalServerTls> for Forward {
-    fn param(&self) -> tls::ConditionalServerTls {
-        self.tls.clone()
-    }
-}
-
 impl svc::Param<proxy_protocol::Peer> for Forward {
     fn param(&self) -> proxy_protocol::Peer {
         match self.permit.protocol {
