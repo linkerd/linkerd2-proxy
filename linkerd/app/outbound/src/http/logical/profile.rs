@@ -53,13 +53,13 @@ pub(crate) const DEFAULT_EWMA: balance::EwmaConfig = balance::EwmaConfig {
 /// endpoint selection and use the same RTT configuration as the default
 /// balancer. Profiles have no penalty configuration, so the penalty estimator
 /// is never selected here.
-pub(crate) const DEFAULT_LOAD: linkerd_proxy_client_policy::Load =
+pub const DEFAULT_LOAD: linkerd_proxy_client_policy::Load =
     linkerd_proxy_client_policy::Load::PeakEwma(linkerd_proxy_client_policy::PeakEwma {
         default_rtt: DEFAULT_EWMA.default_rtt,
         decay: DEFAULT_EWMA.decay,
     });
 
-pub(crate) fn should_override_policy(rx: &watch::Receiver<Profile>) -> Option<LogicalAddr> {
+pub fn should_override_policy(rx: &watch::Receiver<Profile>) -> Option<LogicalAddr> {
     let p = rx.borrow();
     if p.has_routes_or_targets() {
         p.addr.clone()

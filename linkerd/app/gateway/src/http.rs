@@ -14,6 +14,7 @@ use linkerd_app_core::{
 };
 use linkerd_app_inbound as inbound;
 use linkerd_app_outbound as outbound;
+use linkerd_proxy_client_policy as policy;
 use std::fmt::Debug;
 use tokio::sync::watch;
 
@@ -74,6 +75,7 @@ impl Gateway {
         T: svc::Param<tls::ClientId>,
         T: svc::Param<inbound::policy::AllowPolicy>,
         T: svc::Param<Option<watch::Receiver<profiles::Profile>>>,
+        T: svc::Param<outbound::policy::Receiver>,
         T: svc::Param<http::Variant>,
         T: svc::Param<http::normalize_uri::DefaultAuthority>,
         T: Clone + Send + Sync + Unpin + 'static,
@@ -128,43 +130,113 @@ where
     T: Clone
         + svc::Param<GatewayAddr>
         + svc::Param<http::Variant>
-        + svc::Param<Option<watch::Receiver<profiles::Profile>>>,
+        + svc::Param<Option<watch::Receiver<profiles::Profile>>>
+        + svc::Param<outbound::policy::Receiver>,
 {
     let parent = permitted.into_target();
-    let routes = {
-        let mut profile = svc::Param::<Option<watch::Receiver<profiles::Profile>>>::param(&parent)
-            .ok_or(GatewayDomainInvalid)?;
-        let init = mk_routes(&profile.borrow_and_update()).ok_or(GatewayDomainInvalid)?;
-        outbound::http::spawn_routes(profile, init, mk_routes)
-    };
+    let addr: GatewayAddr = parent.param();
+    let version: http::Variant = parent.param();
+
+    if let Some(mut profile) =
+        svc::Param::<Option<watch::Receiver<profiles::Profile>>>::param(&parent)
+    {
+        if let Some(laddr) = outbound::http::profile::should_override_policy(&profile) {
+            tracing::debug!("Using ServiceProfile");
+            let init = mk_profile_routes(laddr.clone(), &profile.borrow_and_update());
+            let routes =
+                outbound::http::spawn_routes(profile, init, move |profile: &profiles::Profile| {
+                    Some(mk_profile_routes(laddr.clone(), profile))
+                });
+            return Ok(Target {
+                routes,
+                addr,
+                version,
+                parent,
+            });
+        }
+    }
+
+    tracing::debug!("Using ClientPolicy routes");
+    let mut policy: outbound::policy::Receiver = parent.param();
+    let init = mk_policy_routes(addr.clone(), version, &policy.borrow_and_update())
+        .ok_or(GatewayDomainInvalid)?;
+    let routes = outbound::http::spawn_routes(policy, init, {
+        let addr = addr.clone();
+        move |policy: &policy::ClientPolicy| mk_policy_routes(addr.clone(), version, policy)
+    });
 
     Ok(Target {
         routes,
-        addr: parent.param(),
-        version: parent.param(),
+        addr,
+        version,
         parent,
     })
 }
 
-fn mk_routes(profile: &profiles::Profile) -> Option<outbound::http::Routes> {
-    if let Some(addr) = profile.addr.clone() {
-        return Some(outbound::http::Routes::Profile(
-            outbound::http::profile::Routes {
-                addr,
-                routes: profile.http_routes.clone(),
-                targets: profile.targets.clone(),
-            },
-        ));
-    }
+fn mk_policy_routes(
+    GatewayAddr(addr): GatewayAddr,
+    version: http::Variant,
+    policy: &policy::ClientPolicy,
+) -> Option<outbound::http::Routes> {
+    let parent_ref = outbound::ParentRef::from(policy.parent.clone());
 
-    if let Some((addr, metadata)) = profile.endpoint.clone() {
-        return Some(outbound::http::Routes::Endpoint(
-            Remote(ServerAddr(addr)),
-            metadata.into(),
-        ));
-    }
+    let (routes, failure_accrual) = match policy.protocol {
+        policy::Protocol::Detect {
+            ref http1,
+            ref http2,
+            ..
+        } => match version {
+            http::Variant::Http1 => (http1.routes.clone(), http1.failure_accrual),
+            http::Variant::H2 => (http2.routes.clone(), http2.failure_accrual),
+        },
+        policy::Protocol::Http1(policy::http::Http1 {
+            ref routes,
+            failure_accrual,
+        }) => (routes.clone(), failure_accrual),
+        policy::Protocol::Http2(policy::http::Http2 {
+            ref routes,
+            failure_accrual,
+        }) => (routes.clone(), failure_accrual),
+        policy::Protocol::Grpc(policy::grpc::Grpc {
+            ref routes,
+            failure_accrual,
+        }) => {
+            return Some(outbound::http::Routes::Policy(
+                outbound::http::policy::Params::Grpc(outbound::http::policy::GrpcParams {
+                    addr: addr.into(),
+                    meta: parent_ref,
+                    backends: policy.backends.clone(),
+                    routes: routes.clone(),
+                    failure_accrual,
+                }),
+            ))
+        }
+        policy::Protocol::Opaque(_) | policy::Protocol::Tls(_) => {
+            tracing::info!("Ignoring a discovery update that changed a route from HTTP to opaque");
+            return None;
+        }
+    };
 
-    None
+    Some(outbound::http::Routes::Policy(
+        outbound::http::policy::Params::Http(outbound::http::policy::HttpParams {
+            addr: addr.into(),
+            meta: parent_ref,
+            routes,
+            backends: policy.backends.clone(),
+            failure_accrual,
+        }),
+    ))
+}
+
+fn mk_profile_routes(
+    addr: profiles::LogicalAddr,
+    profile: &profiles::Profile,
+) -> outbound::http::Routes {
+    outbound::http::Routes::Profile(outbound::http::profile::Routes {
+        addr,
+        routes: profile.http_routes.clone(),
+        targets: profile.targets.clone(),
+    })
 }
 
 // === impl ByRequestVersion ===

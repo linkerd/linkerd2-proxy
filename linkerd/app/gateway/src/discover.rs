@@ -34,6 +34,7 @@ impl Gateway {
                 failfast_timeout: queue.failfast_timeout,
             }
         };
+        let load = outbound::http::profile::DEFAULT_LOAD;
         svc::mk(move |GatewayAddr(addr)| {
             tracing::debug!(%addr, "Discover");
 
@@ -92,12 +93,21 @@ impl Gateway {
                                 addr,
                                 meta.into(),
                             ),
-                            None => {
-                                tracing::debug!(
-                                    "Gateway ServiceProfile does not contain an endpoint"
-                                );
-                                ClientPolicy::invalid(detect_timeout)
-                            }
+                            None => match profile.addr {
+                                Some(ref addr) => outbound::synthesize_balance_policy(
+                                    &META,
+                                    detect_timeout,
+                                    queue,
+                                    load,
+                                    addr,
+                                ),
+                                None => {
+                                    tracing::debug!(
+                                        "Gateway ServiceProfile does not contain an endpoint or logical address"
+                                    );
+                                    ClientPolicy::invalid(detect_timeout)
+                                }
+                            },
                         }
                     },
                 );

@@ -49,7 +49,10 @@ pub mod test_util;
 pub mod tls;
 mod zone;
 
-pub use self::discover::{spawn_synthesized_profile_policy, synthesize_forward_policy, Discovery};
+pub use self::discover::{
+    spawn_synthesized_profile_policy, synthesize_balance_policy, synthesize_forward_policy,
+    Discovery,
+};
 use self::metrics::OutboundMetrics;
 
 #[derive(Clone, Debug)]
@@ -280,6 +283,12 @@ impl std::ops::Deref for ParentRef {
 
 impl From<EndpointRef> for ParentRef {
     fn from(EndpointRef(meta): EndpointRef) -> Self {
+        Self(meta)
+    }
+}
+
+impl From<Arc<policy::Meta>> for ParentRef {
+    fn from(meta: Arc<policy::Meta>) -> Self {
         Self(meta)
     }
 }
