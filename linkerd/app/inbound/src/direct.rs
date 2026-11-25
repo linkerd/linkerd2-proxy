@@ -328,7 +328,7 @@ impl Param<crate::proxy_protocol::Peer> for AuthorizedLocalTcp {
         match self.permit.protocol {
             policy::Protocol::Opaque(_) | policy::Protocol::Tls(_) => Peer::Opaque {
                 client: self.client_addr,
-                tls: Param::<tls::ConditionalServerTls>::param(self),
+                client_id: Some(self.client_id.clone()),
             },
             _ => Peer::NotOpaque(NotOpaque::Detect),
         }

@@ -47,7 +47,7 @@ use linkerd_app_core::{
     io::AsyncWriteExt,
     svc, tls,
     transport::{ClientAddr, Remote, ServerAddr},
-    Conditional, Error,
+    Error,
 };
 use rangemap::RangeInclusiveSet;
 use std::{
@@ -199,7 +199,8 @@ pub(crate) enum Peer {
     /// An opaque TCP stream from this client: a header may be written.
     Opaque {
         client: Remote<ClientAddr>,
-        tls: tls::ConditionalServerTls,
+        /// The client's verified mTLS identity, if it has one.
+        client_id: Option<tls::ClientId>,
     },
     /// Not an opaque TCP stream. On a PROXY protocol port, the connection
     /// is refused.
@@ -292,17 +293,8 @@ where
         let (client_addr, client_id) = match target.param() {
             Peer::Opaque {
                 client: Remote(ClientAddr(client_addr)),
-                tls,
-            } => {
-                let client_id = match tls {
-                    Conditional::Some(tls::ServerTls::Established {
-                        client_id: Some(id),
-                        ..
-                    }) => Some(id.to_str().into_owned()),
-                    _ => None,
-                };
-                (client_addr, client_id)
-            }
+                client_id,
+            } => (client_addr, client_id.map(|id| id.to_str().into_owned())),
             Peer::NotOpaque(kind) => {
                 let error = NotOpaqueError {
                     port: server_addr.port(),
@@ -654,13 +646,7 @@ mod tests {
             }
             Peer::Opaque {
                 client: Remote(ClientAddr((Ipv4Addr::new(10, 1, 2, 3), 33000).into())),
-                tls: match &self.client_id {
-                    Some(client_id) => Conditional::Some(tls::ServerTls::Established {
-                        client_id: Some(client_id.clone()),
-                        negotiated_protocol: None,
-                    }),
-                    None => Conditional::None(tls::NoServerTls::Disabled),
-                },
+                client_id: self.client_id.clone(),
             }
         }
     }

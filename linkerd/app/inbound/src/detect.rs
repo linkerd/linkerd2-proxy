@@ -342,7 +342,7 @@ impl svc::Param<crate::proxy_protocol::Peer> for Forward {
             // the proxy also forwards untouched).
             Protocol::Opaque(_) | Protocol::Tls(_) => Peer::Opaque {
                 client: self.client_addr,
-                tls: self.tls.clone(),
+                client_id: self.tls.value().and_then(|tls| tls.client_id()).cloned(),
             },
             // Forwarded only because detection did not find HTTP.
             _ => Peer::NotOpaque(NotOpaque::Detect),
