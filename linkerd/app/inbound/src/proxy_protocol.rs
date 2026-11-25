@@ -167,15 +167,9 @@ const TLV_SUBTYPE_CLIENT_ID: u8 = 0x01;
 ///
 /// If an identity is longer than this, we leave it out instead of cutting it
 /// short, because a cut-down identity could match a different real one. The
-/// limit also keeps the `as u16` casts in [`Header::encode`] safe, which the
-/// assertion below checks at compile time.
+/// limit also keeps the `as u16` casts in [`Header::encode`] safe, which
+/// `tests::max_header_len_fits_in_u16` checks.
 const MAX_CLIENT_ID_LEN: usize = 2048;
-
-// The largest `len` field we can write: an IPv6 address block plus a TLV
-// carrying the longest identity we send. It must fit in the 2-byte field.
-const _: () = assert!(
-    IPV6_ADDR_BLOCK_LEN + TLV_HEADER_LEN + TLV_SUBTYPE_LEN + MAX_CLIENT_ID_LEN <= u16::MAX as usize
-);
 
 /// Wraps a connector, writing a PROXY protocol v2 header to the connection
 /// once established, iff the connection's target port is in the configured
@@ -490,6 +484,16 @@ mod tests {
     // Identity string used in the golden encoder test below. Its length
     // (59 bytes) is load-bearing for the expected TLV/header lengths.
     const IDENTITY: &str = "web.emojivoto.serviceaccount.identity.linkerd.cluster.local";
+
+    /// The largest `len` field we can write, an IPv6 address block plus a TLV
+    /// with the longest identity we send, must fit in the 2-byte field.
+    #[test]
+    fn max_header_len_fits_in_u16() {
+        assert!(
+            IPV6_ADDR_BLOCK_LEN + TLV_HEADER_LEN + TLV_SUBTYPE_LEN + MAX_CLIENT_ID_LEN
+                <= u16::MAX as usize
+        );
+    }
 
     #[test]
     fn encode_ipv4_with_identity_golden() {
