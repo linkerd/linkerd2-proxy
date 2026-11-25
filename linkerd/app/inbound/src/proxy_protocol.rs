@@ -194,6 +194,9 @@ struct WriteHeaderError {
 
 /// What the connect target knows about the connection, as far as PROXY
 /// protocol is concerned. Every inbound connect target provides this.
+///
+/// On a PROXY protocol port, only `Opaque` connections are accepted. The
+/// others are refused.
 #[derive(Clone, Debug)]
 pub(crate) enum Peer {
     /// An opaque TCP stream from this client: a header may be written.
@@ -202,14 +205,6 @@ pub(crate) enum Peer {
         /// The client's verified mTLS identity, if it has one.
         client_id: Option<tls::ClientId>,
     },
-    /// Not an opaque TCP stream. On a PROXY protocol port, the connection
-    /// is refused.
-    NotOpaque(NotOpaque),
-}
-
-/// Why a connection is not opaque.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub(crate) enum NotOpaque {
     /// The proxy is speaking HTTP to the application. One upstream HTTP
     /// connection can carry requests from many clients, so there is no single
     /// client to describe.
@@ -219,21 +214,12 @@ pub(crate) enum NotOpaque {
     Detect,
 }
 
-impl std::fmt::Display for NotOpaque {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(match self {
-            Self::Http => "HTTP",
-            Self::Detect => "not declared opaque by its server policy",
-        })
-    }
-}
-
 /// A connection on a PROXY protocol port that is not an opaque TCP stream.
 #[derive(Debug, thiserror::Error)]
-#[error("PROXY protocol port {port} only accepts opaque TCP connections: {kind}")]
+#[error("PROXY protocol port {port} only accepts opaque TCP connections: {reason}")]
 pub(crate) struct NotOpaqueError {
     port: u16,
-    kind: NotOpaque,
+    reason: &'static str,
 }
 
 // === impl ProxyProtocol ===
@@ -287,6 +273,16 @@ where
             return future::Either::Left(self.inner.connect(target).err_into::<Error>());
         }
 
+        let port = server_addr.port();
+        let refuse = |reason| -> Self::Future {
+            let error = NotOpaqueError { port, reason };
+            warn!(%error, "Refusing connection");
+            // An `io::Error`, like a refused connect, so that an HTTP client
+            // gets a 502 rather than a 500.
+            let error = std::io::Error::new(std::io::ErrorKind::ConnectionRefused, error);
+            future::Either::Right(Box::pin(async move { Err(error.into()) }))
+        };
+
         // Read what goes in the header before `target` is moved into
         // `connect`. The client identity is only there if the client used
         // mTLS. Anything that is not an opaque TCP stream is refused.
@@ -295,17 +291,8 @@ where
                 client: Remote(ClientAddr(client_addr)),
                 client_id,
             } => (client_addr, client_id.map(|id| id.to_str().into_owned())),
-            Peer::NotOpaque(kind) => {
-                let error = NotOpaqueError {
-                    port: server_addr.port(),
-                    kind,
-                };
-                warn!(%error, "Refusing connection");
-                // An `io::Error`, like a refused connect, so that an HTTP
-                // client gets a 502 rather than a 500.
-                let error = std::io::Error::new(std::io::ErrorKind::ConnectionRefused, error);
-                return future::Either::Right(Box::pin(async move { Err(error.into()) }));
-            }
+            Peer::Http => return refuse("HTTP"),
+            Peer::Detect => return refuse("not declared opaque by its server policy"),
         };
 
         let connect = self.inner.connect(target);
@@ -642,7 +629,7 @@ mod tests {
     impl svc::Param<Peer> for Target {
         fn param(&self) -> Peer {
             if !self.opaque {
-                return Peer::NotOpaque(NotOpaque::Detect);
+                return Peer::Detect;
             }
             Peer::Opaque {
                 client: Remote(ClientAddr((Ipv4Addr::new(10, 1, 2, 3), 33000).into())),
@@ -685,7 +672,7 @@ mod tests {
             .and_then(|e| e.downcast_ref::<NotOpaqueError>())
             .expect("error must wrap a NotOpaqueError");
         assert_eq!(error.port, 5432);
-        assert_eq!(error.kind, NotOpaque::Detect);
+        assert_eq!(error.reason, "not declared opaque by its server policy");
     }
 
     #[tokio::test(flavor = "current_thread")]

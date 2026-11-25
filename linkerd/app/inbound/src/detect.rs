@@ -344,7 +344,7 @@ impl svc::Param<proxy_protocol::Peer> for Forward {
                 client_id: self.tls.value().and_then(|tls| tls.client_id()).cloned(),
             },
             // Forwarded only because detection did not find HTTP.
-            _ => proxy_protocol::Peer::NotOpaque(proxy_protocol::NotOpaque::Detect),
+            _ => proxy_protocol::Peer::Detect,
         }
     }
 }

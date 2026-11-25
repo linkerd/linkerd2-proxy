@@ -331,7 +331,7 @@ impl Param<proxy_protocol::Peer> for AuthorizedLocalTcp {
                     client_id: Some(self.client_id.clone()),
                 }
             }
-            _ => proxy_protocol::Peer::NotOpaque(proxy_protocol::NotOpaque::Detect),
+            _ => proxy_protocol::Peer::Detect,
         }
     }
 }

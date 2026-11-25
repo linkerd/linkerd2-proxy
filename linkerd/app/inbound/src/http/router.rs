@@ -476,7 +476,7 @@ impl Param<transport::labels::Key> for Http {
 impl Param<proxy_protocol::Peer> for Http {
     fn param(&self) -> proxy_protocol::Peer {
         // PROXY protocol is not supported for HTTP.
-        proxy_protocol::Peer::NotOpaque(proxy_protocol::NotOpaque::Http)
+        proxy_protocol::Peer::Http
     }
 }
 
