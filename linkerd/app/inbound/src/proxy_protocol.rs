@@ -180,16 +180,19 @@ pub(crate) struct ProxyProtocol<S> {
     ports: Arc<RangeInclusiveSet<u16>>,
 }
 
-/// Writing the PROXY protocol header to the application failed.
-///
-/// This is its own error so that it does not look the same as the
-/// application refusing the connection: the connection was made, and it was
-/// the header write that failed.
+/// Errors from connecting to an application on a PROXY protocol port.
 #[derive(Debug, thiserror::Error)]
-#[error("failed to write PROXY protocol header: {source}")]
-struct WriteHeaderError {
-    #[source]
-    source: std::io::Error,
+enum ProxyProtocolError {
+    /// A connection on a PROXY protocol port whose server policy is not
+    /// opaque.
+    #[error(
+        "PROXY protocol port {port} only accepts connections whose server policy is opaque or TLS"
+    )]
+    NotOpaque { port: u16 },
+
+    /// Writing the PROXY protocol header to the application failed.
+    #[error("failed to write PROXY protocol header: {0}")]
+    WriteHeader(#[source] std::io::Error),
 }
 
 /// What the connect target knows about the connection, as far as PROXY
@@ -206,13 +209,6 @@ pub(crate) enum Peer {
     /// TCP paths this means the policy is `Detect`. On a PROXY protocol port,
     /// the connection is refused.
     NotOpaque,
-}
-
-/// A connection on a PROXY protocol port whose server policy is not opaque.
-#[derive(Debug, thiserror::Error)]
-#[error("PROXY protocol port {port} only accepts connections whose server policy is opaque or TLS")]
-pub(crate) struct NotOpaqueError {
-    port: u16,
 }
 
 // === impl ProxyProtocol ===
@@ -274,7 +270,7 @@ where
             client_id,
         } = target.param()
         else {
-            let error = NotOpaqueError {
+            let error = ProxyProtocolError::NotOpaque {
                 port: server_addr.port(),
             };
             warn!(%error, "Refusing connection");
@@ -293,7 +289,7 @@ where
             debug!("writing PROXY protocol v2 header");
             io.write_all(&header)
                 .await
-                .map_err(|source| WriteHeaderError { source })?;
+                .map_err(ProxyProtocolError::WriteHeader)?;
 
             Ok((io, meta))
         }))
@@ -659,9 +655,12 @@ mod tests {
         assert_eq!(error.kind(), io::ErrorKind::ConnectionRefused);
         let error = error
             .get_ref()
-            .and_then(|e| e.downcast_ref::<NotOpaqueError>())
-            .expect("error must wrap a NotOpaqueError");
-        assert_eq!(error.port, 5432);
+            .and_then(|e| e.downcast_ref::<ProxyProtocolError>())
+            .expect("error must wrap a ProxyProtocolError");
+        assert!(
+            matches!(error, ProxyProtocolError::NotOpaque { port: 5432 }),
+            "unexpected error: {error:?}"
+        );
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -727,9 +726,15 @@ mod tests {
             panic!("connect must fail when the header write fails");
         };
         let error = error
-            .downcast_ref::<WriteHeaderError>()
-            .expect("error must be a WriteHeaderError");
-        assert_eq!(error.source.kind(), io::ErrorKind::BrokenPipe);
+            .downcast_ref::<ProxyProtocolError>()
+            .expect("error must be a ProxyProtocolError");
+        assert!(
+            matches!(
+                error,
+                ProxyProtocolError::WriteHeader(e) if e.kind() == io::ErrorKind::BrokenPipe
+            ),
+            "unexpected error: {error:?}"
+        );
     }
 
     #[tokio::test(flavor = "current_thread")]
