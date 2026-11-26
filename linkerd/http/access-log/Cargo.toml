@@ -9,7 +9,7 @@ publish = { workspace = true }
 [dependencies]
 futures-core = "0.3"
 http = { workspace = true }
-jiff = { version = "0.2", features = ["std"] }
+jiff = { version = "1.0", features = ["std"] }
 pin-project = "1"
 tokio = { version = "1", features = ["time"] }
 tracing = { workspace = true }
