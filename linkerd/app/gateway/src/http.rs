@@ -113,7 +113,7 @@ impl Gateway {
         self.inbound
             .clone()
             .with_stack(http.into_inner())
-            // Teminates HTTP connections.
+            // Terminates HTTP connections.
             // XXX Sets an identity header -- this should probably not be done
             // in the gateway, though the value will be stripped by meshed
             // servers.

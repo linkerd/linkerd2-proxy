@@ -715,7 +715,7 @@ macro_rules! http1_tests {
             // To simplify things for this test, we just use the test TCP
             // client and server to do an HTTP CONNECT.
             //
-            // We don't *actually* perfom a new connect to requested host,
+            // We don't *actually* perform a new connect to requested host,
             // but client doesn't need to know that for our tests.
 
             let connect_req = b"\
@@ -806,7 +806,7 @@ macro_rules! http1_tests {
             // To simplify things for this test, we just use the test TCP
             // client and server to do an HTTP CONNECT.
             //
-            // We don't *actually* perfom a new connect to requested host,
+            // We don't *actually* perform a new connect to requested host,
             // but client doesn't need to know that for our tests.
 
             let connect_req = b"\
