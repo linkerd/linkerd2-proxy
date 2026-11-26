@@ -16,7 +16,7 @@ use tracing::debug_span;
 #[derive(Clone, Debug)]
 struct TcpEndpoint {
     addr: Remote<ServerAddr>,
-    peer: proxy_protocol::Peer,
+    source: proxy_protocol::Source,
 }
 
 // === impl Inbound ===
@@ -122,7 +122,7 @@ impl Inbound<()> {
             > + Clone,
     >
     where
-        T: svc::Param<Remote<ServerAddr>> + svc::Param<proxy_protocol::Peer> + 'static,
+        T: svc::Param<Remote<ServerAddr>> + svc::Param<proxy_protocol::Source> + 'static,
     {
         self.map_stack(|config, _, _| {
             // Establishes connections to remote peers (for both TCP
@@ -209,11 +209,11 @@ impl<S> Inbound<S> {
 impl TcpEndpoint {
     pub fn from_param<T>(t: T) -> Self
     where
-        T: svc::Param<Remote<ServerAddr>> + svc::Param<proxy_protocol::Peer>,
+        T: svc::Param<Remote<ServerAddr>> + svc::Param<proxy_protocol::Source>,
     {
         Self {
             addr: t.param(),
-            peer: t.param(),
+            source: t.param(),
         }
     }
 }
@@ -224,9 +224,9 @@ impl svc::Param<Remote<ServerAddr>> for TcpEndpoint {
     }
 }
 
-impl svc::Param<proxy_protocol::Peer> for TcpEndpoint {
-    fn param(&self) -> proxy_protocol::Peer {
-        self.peer.clone()
+impl svc::Param<proxy_protocol::Source> for TcpEndpoint {
+    fn param(&self) -> proxy_protocol::Source {
+        self.source.clone()
     }
 }
 

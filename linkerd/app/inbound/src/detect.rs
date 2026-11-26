@@ -322,17 +322,17 @@ impl svc::Param<Remote<ServerAddr>> for Forward {
     }
 }
 
-impl svc::Param<proxy_protocol::Peer> for Forward {
-    fn param(&self) -> proxy_protocol::Peer {
+impl svc::Param<proxy_protocol::Source> for Forward {
+    fn param(&self) -> proxy_protocol::Source {
         match self.permit.protocol {
             // The server policy declares the port opaque (or app TLS, which
             // the proxy also forwards untouched).
-            Protocol::Opaque(_) | Protocol::Tls(_) => proxy_protocol::Peer::Opaque {
-                client: self.client_addr,
+            Protocol::Opaque(_) | Protocol::Tls(_) => proxy_protocol::Source::Opaque {
+                client_addr: self.client_addr,
                 client_id: self.tls.value().and_then(|tls| tls.client_id()).cloned(),
             },
             // Forwarded only because detection did not find HTTP.
-            _ => proxy_protocol::Peer::NotOpaque,
+            _ => proxy_protocol::Source::NotOpaque,
         }
     }
 }
