@@ -305,18 +305,18 @@ impl Param<Remote<ServerAddr>> for AuthorizedLocalTcp {
     }
 }
 
-impl Param<proxy_protocol::Peer> for AuthorizedLocalTcp {
-    fn param(&self) -> proxy_protocol::Peer {
+impl Param<proxy_protocol::Source> for AuthorizedLocalTcp {
+    fn param(&self) -> proxy_protocol::Source {
         // The client hinted opaque via the transport header, but the server
         // policy decides whether the port is opaque.
         match self.permit.protocol {
             policy::Protocol::Opaque(_) | policy::Protocol::Tls(_) => {
-                proxy_protocol::Peer::Opaque {
-                    client: self.client_addr,
+                proxy_protocol::Source::Opaque {
+                    client_addr: self.client_addr,
                     client_id: Some(self.client_id.clone()),
                 }
             }
-            _ => proxy_protocol::Peer::NotOpaque,
+            _ => proxy_protocol::Source::NotOpaque,
         }
     }
 }

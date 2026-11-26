@@ -473,10 +473,10 @@ impl Param<transport::labels::Key> for Http {
     }
 }
 
-impl Param<proxy_protocol::Peer> for Http {
-    fn param(&self) -> proxy_protocol::Peer {
+impl Param<proxy_protocol::Source> for Http {
+    fn param(&self) -> proxy_protocol::Source {
         // PROXY protocol is not supported for HTTP.
-        proxy_protocol::Peer::NotOpaque
+        proxy_protocol::Source::NotOpaque
     }
 }
 

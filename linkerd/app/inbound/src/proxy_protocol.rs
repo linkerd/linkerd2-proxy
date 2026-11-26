@@ -7,7 +7,8 @@
 //! and written to the application connection before any bytes are spliced.
 //!
 //! A configured port only accepts opaque TCP connections: ones whose server
-//! policy is `opaque` (or `tls`). Every other connection to it is refused,
+//! policy is [`opaque`](crate::policy::Protocol::Opaque) (or
+//! [`tls`](crate::policy::Protocol::Tls)). Every other connection to it is refused,
 //! including HTTP, because one upstream HTTP connection can carry requests
 //! from many clients and a header can only describe one.
 //!
@@ -184,7 +185,7 @@ pub(crate) struct ProxyProtocol<S> {
 #[derive(Debug, thiserror::Error)]
 enum ProxyProtocolError {
     /// A connection on a PROXY protocol port whose server policy is not
-    /// opaque.
+    /// [opaque](crate::policy::Protocol::Opaque).
     #[error(
         "PROXY protocol port {port} only accepts connections whose server policy is opaque or TLS"
     )]
@@ -195,19 +196,25 @@ enum ProxyProtocolError {
     WriteHeader(#[source] std::io::Error),
 }
 
-/// What the connect target knows about the connection, as far as PROXY
-/// protocol is concerned. Every inbound connect target provides this.
+/// The inbound source of the connection (the PROXY v2 spec's "source").
+///
+/// Both [`Protocol::Opaque`](crate::policy::Protocol::Opaque) and
+/// [`Protocol::Tls`](crate::policy::Protocol::Tls) are opaque to the proxy
+/// and support PROXY protocol.
 #[derive(Clone, Debug)]
-pub(crate) enum Peer {
-    /// An opaque TCP stream from this client: a header may be written.
+pub(crate) enum Source {
+    /// PROXY protocol is supported for opaque ports.
     Opaque {
-        client: Remote<ClientAddr>,
+        /// The client's address.
+        client_addr: Remote<ClientAddr>,
         /// The client's verified mTLS identity, if it has one.
         client_id: Option<tls::ClientId>,
     },
-    /// The server policy does not declare the port opaque (or TLS). On the
-    /// TCP paths this means the policy is `Detect`. On a PROXY protocol port,
-    /// the connection is refused.
+
+    /// PROXY protocol is only supported for opaque connections.
+    ///
+    /// On the TCP paths this means the policy is `Detect`. On a PROXY
+    /// protocol port, the connection is refused.
     NotOpaque,
 }
 
@@ -227,7 +234,7 @@ impl<S> ProxyProtocol<S> {
 
 impl<T, S> svc::Service<T> for ProxyProtocol<S>
 where
-    T: svc::Param<Remote<ServerAddr>> + svc::Param<Peer>,
+    T: svc::Param<Remote<ServerAddr>> + svc::Param<Source>,
     S: svc::MakeConnection<T> + Send + 'static,
     S::Connection: Send + Unpin,
     S::Metadata: Send + Unpin,
@@ -265,8 +272,8 @@ where
         // Read what goes in the header before `target` is moved into
         // `connect`. The client identity is only there if the client used
         // mTLS. Anything that is not an opaque TCP stream is refused.
-        let Peer::Opaque {
-            client: Remote(ClientAddr(client_addr)),
+        let Source::Opaque {
+            client_addr: Remote(ClientAddr(client_addr)),
             client_id,
         } = target.param()
         else {
@@ -612,13 +619,13 @@ mod tests {
         }
     }
 
-    impl svc::Param<Peer> for Target {
-        fn param(&self) -> Peer {
+    impl svc::Param<Source> for Target {
+        fn param(&self) -> Source {
             if !self.opaque {
-                return Peer::NotOpaque;
+                return Source::NotOpaque;
             }
-            Peer::Opaque {
-                client: Remote(ClientAddr((Ipv4Addr::new(10, 1, 2, 3), 33000).into())),
+            Source::Opaque {
+                client_addr: Remote(ClientAddr((Ipv4Addr::new(10, 1, 2, 3), 33000).into())),
                 client_id: self.client_id.clone(),
             }
         }
