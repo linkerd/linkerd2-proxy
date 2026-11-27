@@ -1,6 +1,6 @@
 use crate::{
     policy::{self, AllowPolicy, Protocol, ServerPermit},
-    Inbound,
+    proxy_protocol, Inbound,
 };
 use linkerd_app_core::{
     identity, io,
@@ -319,6 +319,21 @@ impl From<(ServerPermit, Tls)> for Forward {
 impl svc::Param<Remote<ServerAddr>> for Forward {
     fn param(&self) -> Remote<ServerAddr> {
         Remote(ServerAddr(self.orig_dst_addr.into()))
+    }
+}
+
+impl svc::Param<proxy_protocol::Source> for Forward {
+    fn param(&self) -> proxy_protocol::Source {
+        match self.permit.protocol {
+            // The server policy declares the port opaque (or app TLS, which
+            // the proxy also forwards untouched).
+            Protocol::Opaque(_) | Protocol::Tls(_) => proxy_protocol::Source::Opaque {
+                client_addr: self.client_addr,
+                client_id: self.tls.value().and_then(|tls| tls.client_id()).cloned(),
+            },
+            // Forwarded only because detection did not find HTTP.
+            _ => proxy_protocol::Source::NotOpaque,
+        }
     }
 }
 

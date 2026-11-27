@@ -1,6 +1,6 @@
 use crate::{
     policy::{self, AllowPolicy},
-    GatewayAddr, Inbound,
+    proxy_protocol, GatewayAddr, Inbound,
 };
 use linkerd_app_core::{
     identity, io, profiles,
@@ -38,6 +38,7 @@ pub(crate) struct LocalTcp {
 #[derive(Debug, Clone)]
 pub(crate) struct AuthorizedLocalTcp {
     addr: Remote<ServerAddr>,
+    client_addr: Remote<ClientAddr>,
     client_id: tls::ClientId,
     permit: policy::ServerPermit,
 }
@@ -123,6 +124,7 @@ impl<N> Inbound<N> {
                 .push_map_target(|(permit, tcp): (policy::ServerPermit, LocalTcp)| {
                     AuthorizedLocalTcp {
                         addr: tcp.server_addr,
+                        client_addr: tcp.client_addr,
                         client_id: tcp.client_id,
                         permit,
                     }
@@ -300,6 +302,22 @@ impl Param<tls::ConditionalServerTls> for LocalTcp {
 impl Param<Remote<ServerAddr>> for AuthorizedLocalTcp {
     fn param(&self) -> Remote<ServerAddr> {
         self.addr
+    }
+}
+
+impl Param<proxy_protocol::Source> for AuthorizedLocalTcp {
+    fn param(&self) -> proxy_protocol::Source {
+        // The client hinted opaque via the transport header, but the server
+        // policy decides whether the port is opaque.
+        match self.permit.protocol {
+            policy::Protocol::Opaque(_) | policy::Protocol::Tls(_) => {
+                proxy_protocol::Source::Opaque {
+                    client_addr: self.client_addr,
+                    client_id: Some(self.client_id.clone()),
+                }
+            }
+            _ => proxy_protocol::Source::NotOpaque,
+        }
     }
 }
 
