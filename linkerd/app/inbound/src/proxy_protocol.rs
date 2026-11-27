@@ -36,8 +36,7 @@
 //! +---------------+-----------------------------------------------+
 //! ```
 //!
-//! `len` is everything after the first 16 bytes (the addresses and any
-//! TLVs). The spec says, in section 2.2:
+//! `len` counts everything after the first 16 bytes. Section 2.2:
 //!
 //! > Thus the length of the protocol header in bytes is always exactly 16 +
 //! > this value.
@@ -63,73 +62,57 @@ use tracing::{debug, warn};
 
 /// The 12-byte signature that must prefix every PROXY protocol v2 header.
 ///
-/// From section 2.2: "The binary header format starts with a constant 12
-/// bytes block containing the protocol signature", which is
-/// `\x0D \x0A \x0D \x0A \x00 \x0D \x0A \x51 \x55 \x49 \x54 \x0A`.
+/// Section 2.2: "The binary header format starts with a constant 12 bytes block containing the
+/// protocol signature".
 const SIGNATURE: [u8; 12] = [
     0x0D, 0x0A, 0x0D, 0x0A, 0x00, 0x0D, 0x0A, 0x51, 0x55, 0x49, 0x54, 0x0A,
 ];
 
-/// The length of the fixed-size prefix of every PROXY protocol v2 header: the
-/// signature, the version/command byte, the family byte and the 2-byte length.
+/// Length of the fixed prefix: signature, version/command, family and 2-byte length.
 ///
-/// From section 2.2: "So the 16-byte version 2 header can be described this
-/// way", followed by `struct proxy_hdr_v2` with those four fields.
+/// Section 2.2: "So the 16-byte version 2 header can be described this way".
 const PREFIX_LEN: usize = 16;
 
-/// Version 2, command PROXY (as opposed to LOCAL).
+/// Version 2, command PROXY.
 ///
-/// From section 2.2: the top 4 bits are the version, which "must always be
-/// sent as \x2". The bottom 4 bits are the command, and "\x1 : PROXY" means
-/// "the connection was established on behalf of another node". Put together,
-/// that is `0x21`.
+/// Section 2.2: the high 4 bits are the version, which "must always be sent as \x2". The low 4
+/// bits are the command: "\x1 : PROXY" means "the connection was established on behalf of
+/// another node".
 const VERSION_COMMAND: u8 = 0x21;
 
 /// Address family/protocol byte for "TCP over IPv4".
 ///
-/// From section 2.2: the top 4 bits are the address family (`0x1` is
-/// AF_INET) and the bottom 4 bits are the protocol (`0x1` is STREAM). The
-/// spec calls this "\x11 : TCP over IPv4".
+/// Section 2.2: "\x11 : TCP over IPv4".
 const AF_INET_STREAM: u8 = 0x11;
 
 /// Address family/protocol byte for "TCP over IPv6".
 ///
-/// From section 2.2: same idea, but the family is `0x2` (AF_INET6). The spec
-/// calls this "\x21 : TCP over IPv6".
+/// Section 2.2: "\x21 : TCP over IPv6".
 const AF_INET6_STREAM: u8 = 0x21;
 
-/// The length of the address block for TCP over IPv4: two 4-byte addresses
-/// and two 2-byte ports.
+/// Address block length for TCP over IPv4.
 ///
-/// From section 2.2, for "\x11 : TCP over IPv4": "Address length is
-/// 2*4 + 2*2 = 12 bytes." The `proxy_addr` union in the same section agrees:
-/// "for TCP/UDP over IPv4, len = 12".
+/// Section 2.2: "Address length is 2*4 + 2*2 = 12 bytes."
 const IPV4_ADDR_BLOCK_LEN: usize = 12;
 
-/// The length of the address block for TCP over IPv6: two 16-byte addresses
-/// and two 2-byte ports.
+/// Address block length for TCP over IPv6.
 ///
-/// From section 2.2, for "\x21 : TCP over IPv6": "Address length is
-/// 2*16 + 2*2 = 36 bytes." The `proxy_addr` union in the same section agrees:
-/// "for TCP/UDP over IPv6, len = 36".
+/// Section 2.2: "Address length is 2*16 + 2*2 = 36 bytes."
 const IPV6_ADDR_BLOCK_LEN: usize = 36;
 
-/// The length of a TLV's type and length fields, which come before its value.
+/// Length of a TLV's type and length fields.
 ///
-/// From section 2.2: "The first byte is the Type of the vector. The second
-/// two bytes represent the length in bytes of the value (not included the
-/// Type and Length bytes)". That is 1 + 2 = 3 bytes.
+/// Section 2.2: "The first byte is the Type of the vector. The second two bytes represent the
+/// length in bytes of the value (not included the Type and Length bytes)".
 const TLV_HEADER_LEN: usize = 3;
 
-/// The TLV type under which Linkerd sends its own fields.
+/// TLV type for Linkerd's fields.
 ///
-/// From section 2.2.8: "The following range of 16 type values is reserved
-/// for application-specific data and will be never used by the PROXY
-/// Protocol. If you need more values consider extending the range with a
-/// type field in your TLVs." That range is 0xE0 to 0xEF.
+/// Section 2.2.8: "The following range of 16 type values is reserved for application-specific
+/// data and will be never used by the PROXY Protocol. If you need more values consider extending
+/// the range with a type field in your TLVs." That range is 0xE0 to 0xEF.
 ///
-/// The spec keeps no registry of this range. These are the uses we know
-/// about, so we stay away from them:
+/// The spec keeps no registry of the range, so we avoid these known users:
 ///
 /// - 0xE0: Google Cloud Private Service Connect (connection ID)
 /// - 0xE1: Alibaba Cloud PrivateLink (VPC, endpoint and endpoint service IDs)
@@ -150,8 +133,7 @@ const TLV_TYPE_LINKERD: u8 = 0xED;
 /// The length of the subtype byte at the start of a [`TLV_TYPE_LINKERD`]
 /// value.
 ///
-/// The spec does not define this byte. It is Linkerd's own layout, following
-/// the advice in section 2.2.8 to extend the custom range "with a type field
+/// Linkerd's own layout, following section 2.2.8's advice to extend the range "with a type field
 /// in your TLVs".
 const TLV_SUBTYPE_LEN: usize = 1;
 
@@ -174,9 +156,7 @@ const TLV_SUBTYPE_CLIENT_ID: u8 = 0x01;
 /// `tests::max_header_len_fits_in_u16` checks.
 const MAX_CLIENT_ID_LEN: usize = 2048;
 
-/// Wraps a connector, writing a PROXY protocol v2 header to the connection
-/// once established, iff the connection's target port is in the configured
-/// port set.
+/// Wraps a connector and writes a PROXY protocol v2 header on connections to configured ports.
 #[derive(Clone, Debug)]
 pub(crate) struct ProxyProtocol<S> {
     inner: S,
@@ -303,8 +283,7 @@ where
     }
 }
 
-/// A PROXY protocol v2 header describing a connection from a client to a
-/// server, optionally carrying the client's verified mTLS identity in a
+/// A PROXY protocol v2 header, optionally carrying the client identity in a
 /// [`TLV_TYPE_LINKERD`] TLV.
 struct Header<'a> {
     addrs: AddrBlock,
@@ -314,10 +293,7 @@ struct Header<'a> {
 // === impl Header ===
 
 impl<'a> Header<'a> {
-    /// Builds a header for a connection from `client` to `server`.
-    ///
-    /// An identity longer than [`MAX_CLIENT_ID_LEN`] is left out. That is
-    /// what keeps the `as u16` casts in [`Header::encode`] safe.
+    /// Builds a header, omitting an identity longer than [`MAX_CLIENT_ID_LEN`].
     fn new(client: SocketAddr, server: SocketAddr, client_id: Option<&'a str>) -> Self {
         let client_id = match client_id {
             Some(id) if id.len() > MAX_CLIENT_ID_LEN => {
@@ -336,10 +312,9 @@ impl<'a> Header<'a> {
         }
     }
 
-    /// Writes the header out as bytes, ready to send on the connection.
+    /// Encodes the header to bytes.
     fn encode(&self) -> Vec<u8> {
-        // A TLV is its type and length fields, then the value. Our value is a
-        // subtype byte followed by the identity.
+        // TLV: type, length, subtype, identity.
         let tlv_len = self
             .client_id
             .map_or(0, |id| TLV_HEADER_LEN + TLV_SUBTYPE_LEN + id.len());
@@ -365,8 +340,7 @@ impl<'a> Header<'a> {
     }
 }
 
-/// The address block of a PROXY protocol v2 header: the source and
-/// destination addresses, followed by the source and destination ports.
+/// The address block of a PROXY protocol v2 header.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum AddrBlock {
     Inet {
@@ -382,9 +356,9 @@ enum AddrBlock {
 // === impl AddrBlock ===
 
 impl AddrBlock {
-    /// If `src` and `dst` are of different address families, the IPv4
-    /// address is converted to its IPv6-mapped equivalent so that both
-    /// addresses can be encoded using the same (larger) address block.
+    /// Builds the block.
+    ///
+    /// On mixed families the IPv4 address is IPv6-mapped so both fit one block.
     fn new(src: SocketAddr, dst: SocketAddr) -> Self {
         match (src, dst) {
             (SocketAddr::V4(src), SocketAddr::V4(dst)) => Self::Inet { src, dst },
@@ -403,7 +377,7 @@ impl AddrBlock {
         }
     }
 
-    /// How many bytes the address block takes up.
+    /// Encoded length of the block.
     fn encoded_len(&self) -> usize {
         match self {
             Self::Inet { .. } => IPV4_ADDR_BLOCK_LEN,
@@ -429,8 +403,7 @@ impl AddrBlock {
         buf.put_u16(dst_port);
     }
 
-    /// Converts an IPv4 address to its IPv6-mapped form. IPv6 addresses are
-    /// returned as they are.
+    /// Maps an IPv4 address to IPv6; IPv6 passes through.
     fn to_ipv6(addr: SocketAddr) -> SocketAddrV6 {
         match addr {
             SocketAddr::V4(addr) => {
