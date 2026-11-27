@@ -252,7 +252,7 @@ where
                 let error = ProxyProtocolError::NotOpaque {
                     port: server_addr.port(),
                 };
-                warn!(%error, "Refusing ProxyProtocol connection since the port is not Opaque/TLS.");
+                warn!(%error, "Refusing connection on PROXY protocol port: server policy is not opaque or TLS");
                 // Return `io::Error` so return code is 502 instead of a generic 500.
                 let error = io::Error::new(ErrorKind::ConnectionRefused, error);
                 Box::pin(async move { Err(error.into()) })
