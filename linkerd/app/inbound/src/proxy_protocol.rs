@@ -52,6 +52,8 @@ use linkerd_app_core::{
 };
 use rangemap::RangeInclusiveSet;
 use std::{
+    io,
+    io::ErrorKind,
     net::{SocketAddr, SocketAddrV4, SocketAddrV6},
     pin::Pin,
     sync::Arc,
@@ -242,13 +244,8 @@ where
 {
     type Response = (S::Connection, S::Metadata);
     type Error = Error;
-    /// Connections to ports without PROXY protocol use the inner future as
-    /// is, so they don't pay for a heap allocation. Only connections that
-    /// write a header are boxed.
-    type Future = future::Either<
-        future::ErrInto<S::Future, Error>,
-        Pin<Box<dyn Future<Output = Result<(S::Connection, S::Metadata), Error>> + Send + 'static>>,
-    >;
+    type Future =
+        Pin<Box<dyn Future<Output = Result<(S::Connection, S::Metadata), Error>> + Send + 'static>>;
 
     #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -263,43 +260,46 @@ where
     /// just connects and adds nothing.
     fn call(&mut self, target: T) -> Self::Future {
         let Remote(ServerAddr(server_addr)) = target.param();
-
-        // Not a configured port: connect as normal, with no header.
+        // Not a PROXY protocol port: connect with no header.
         if !self.ports.contains(&server_addr.port()) {
-            return future::Either::Left(self.inner.connect(target).err_into::<Error>());
+            return Box::pin(self.inner.connect(target).err_into::<Error>());
         }
 
-        // Read what goes in the header before `target` is moved into
-        // `connect`. The client identity is only there if the client used
-        // mTLS. Anything that is not an opaque TCP stream is refused.
-        let Source::Opaque {
-            client_addr: Remote(ClientAddr(client_addr)),
-            client_id,
-        } = target.param()
-        else {
-            let error = ProxyProtocolError::NotOpaque {
-                port: server_addr.port(),
-            };
-            warn!(%error, "Refusing connection");
-            // An `io::Error`, like a refused connect, so that an HTTP
-            // client gets a 502 rather than a 500.
-            let error = std::io::Error::new(std::io::ErrorKind::ConnectionRefused, error);
-            return future::Either::Right(Box::pin(async move { Err(error.into()) }));
-        };
-        let client_id = client_id.map(|id| id.to_str().into_owned());
+        match target.param() {
+            Source::NotOpaque => {
+                // Refuse non-opaque traffic: only an opaque connection forwards the client's
+                // stream unchanged, so only it can carry the header.
+                let error = ProxyProtocolError::NotOpaque {
+                    port: server_addr.port(),
+                };
+                warn!(%error, "Refusing ProxyProtocol connection since the port is not Opaque/TLS.");
+                // Return `io::Error` so return code is 502 instead of a generic 500.
+                let error = io::Error::new(ErrorKind::ConnectionRefused, error);
+                Box::pin(async move { Err(error.into()) })
+            }
 
-        let connect = self.inner.connect(target);
-        future::Either::Right(Box::pin(async move {
-            let (mut io, meta) = connect.await.map_err(Into::into)?;
+            Source::Opaque {
+                client_addr: Remote(ClientAddr(client_addr)),
+                client_id,
+            } => {
+                let client_id = client_id.map(|id| id.to_str().into_owned());
+                let connect = self.inner.connect(target);
 
-            let header = Header::new(client_addr, server_addr, client_id.as_deref()).encode();
-            debug!("writing PROXY protocol v2 header");
-            io.write_all(&header)
-                .await
-                .map_err(ProxyProtocolError::WriteHeader)?;
+                // Write the header before returning the connection, so the app reads it first.
+                Box::pin(async move {
+                    let (mut io, meta) = connect.await.map_err(Into::into)?;
 
-            Ok((io, meta))
-        }))
+                    let header =
+                        Header::new(client_addr, server_addr, client_id.as_deref()).encode();
+                    debug!("writing PROXY protocol v2 header");
+                    io.write_all(&header)
+                        .await
+                        .map_err(ProxyProtocolError::WriteHeader)?;
+
+                    Ok((io, meta))
+                })
+            }
+        }
     }
 }
 
@@ -659,7 +659,7 @@ mod tests {
         let error = error
             .downcast_ref::<io::Error>()
             .expect("error must be an io::Error");
-        assert_eq!(error.kind(), io::ErrorKind::ConnectionRefused);
+        assert_eq!(error.kind(), ErrorKind::ConnectionRefused);
         let error = error
             .get_ref()
             .and_then(|e| e.downcast_ref::<ProxyProtocolError>())
@@ -716,7 +716,7 @@ mod tests {
         let svc = ProxyProtocol {
             inner: service_fn(|_: Target| {
                 let io = tokio_test::io::Builder::new()
-                    .write_error(io::Error::from(io::ErrorKind::BrokenPipe))
+                    .write_error(io::Error::from(ErrorKind::BrokenPipe))
                     .build();
                 future::ready(Ok::<_, io::Error>((io, ())))
             }),
@@ -738,7 +738,7 @@ mod tests {
         assert!(
             matches!(
                 error,
-                ProxyProtocolError::WriteHeader(e) if e.kind() == io::ErrorKind::BrokenPipe
+                ProxyProtocolError::WriteHeader(e) if e.kind() == ErrorKind::BrokenPipe
             ),
             "unexpected error: {error:?}"
         );
