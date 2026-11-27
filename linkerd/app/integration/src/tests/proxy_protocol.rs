@@ -69,11 +69,14 @@ async fn read_header(sock: &mut TcpStream) -> Header {
     }
 }
 
-/// Like `transparency::inbound_tcp`, on a PROXY protocol port that is opaque:
-/// the application reads a header for the unmeshed client, then the client's
-/// bytes.
+/// An opaque PROXY protocol port sends the application a header, then the client's bytes.
+///
+/// On a PROXY protocol port with protocol detection disabled, so the port is opaque; the client is
+/// unmeshed.
+/// Catches a missing or malformed header, wrong addresses in it, or an identity for an unmeshed
+/// client.
 #[tokio::test]
-async fn inbound_tcp() {
+async fn detect_tcp_opaque_sends_header() {
     let _trace = trace_init();
 
     let msg1 = "custom tcp hello\n";
@@ -123,11 +126,13 @@ async fn inbound_tcp() {
     proxy.join_servers().await;
 }
 
-/// A PROXY protocol port whose policy is not opaque refuses TCP: the proxy
-/// forwards the stream only because detection did not find HTTP, and it closes
-/// the client connection without connecting to the application.
+/// A PROXY protocol port whose policy is not opaque refuses TCP.
+///
+/// Sets up a PROXY protocol port with protocol detection on, and a client that sends non-HTTP
+/// bytes, so the proxy would forward the stream only because detection did not find HTTP.
+/// Catches the proxy connecting to the application instead of closing the client connection.
 #[tokio::test]
-async fn inbound_tcp_requires_opaque() {
+async fn detect_tcp_not_opaque_refused() {
     let _trace = trace_init();
 
     // One accept, so a connection the proxy shouldn't make is counted rather
@@ -163,11 +168,13 @@ async fn inbound_tcp_requires_opaque() {
     proxy.join_servers().await;
 }
 
-/// Like `direct::opaque_hinted`, on a PROXY protocol port: a meshed client
-/// sends opaque traffic over the direct path, and the header carries its mTLS
-/// identity.
+/// On the direct path, the header carries the meshed client's mTLS identity.
+///
+/// On a PROXY protocol port, a meshed client sends opaque traffic through its outbound proxy to the
+/// inbound proxy's port.
+/// Catches a missing header, or a missing or wrong client identity in it.
 #[tokio::test(flavor = "current_thread")]
-async fn opaque_hinted() {
+async fn direct_tcp_sends_header_with_identity() {
     let _trace = trace_init();
 
     // identity is always required for direct connections
@@ -239,11 +246,13 @@ async fn opaque_hinted() {
     assert_eq!(header.client_id.as_deref(), Some(out_svc_acct));
 }
 
-/// Like `direct::h2_hinted`, on a PROXY protocol port: the transport header
-/// says HTTP/2, so the inbound proxy speaks HTTP to the application. It
-/// refuses to connect, and the client gets a 502.
+/// A PROXY protocol port refuses HTTP on the direct path, and the client gets a 502.
+///
+/// On a PROXY protocol port, the transport header says HTTP/2, so the inbound proxy would speak
+/// HTTP to the application.
+/// Catches the proxy connecting to the application instead of refusing.
 #[tokio::test(flavor = "current_thread")]
-async fn h2_hinted() {
+async fn direct_http_refused() {
     let _trace = trace_init();
 
     // identity is always required for direct connections
